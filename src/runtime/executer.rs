@@ -48,7 +48,7 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     |            or local_executer().spawn_global(your_future)                               |\n\
     |                                                                                        |\n\
     |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
-    |               add async_engine::end_local_thread() in the end of future,               |\n\
+    |               add orengine::end_local_thread() in the end of future,               |\n\
     |               otherwise the local runtime will never be stopped.                       |\n\
     |                                                                                        |\n\
     |    3 - use local_executer().run()                                                      |\n\

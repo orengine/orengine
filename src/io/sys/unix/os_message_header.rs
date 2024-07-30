@@ -52,8 +52,6 @@ impl<'buf> MessageHeader<'buf> {
 
     #[inline(always)]
     pub(crate) fn socket_addr(&self) -> &SockAddr {
-        // TODO r
-        println!("socket_addr: {:?}", self.sock_addr);
         &self.sock_addr
     }
 }

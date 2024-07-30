@@ -216,8 +216,7 @@ impl IoWorker for IoUringWorker {
     #[inline(always)]
     fn peek_from(&mut self, fd: Fd, msg_header: *mut OsMessageHeader, request_ptr: *const IoRequest) {
         let msg_header = unsafe { &mut *msg_header };
-        msg_header.msg_flags |= libc::MSG_PEEK;
-        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
+        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).flags(libc::MSG_PEEK as u32).build(), request_ptr);
     }
     
     #[inline(always)]

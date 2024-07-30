@@ -84,7 +84,7 @@ impl Stream {
     ///
     /// ```no_run
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -107,7 +107,7 @@ impl Stream {
     ///
     /// ```no_run
     /// use std::net::{IpAddr, Ipv4Addr};
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -133,7 +133,7 @@ impl Stream {
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -155,7 +155,7 @@ impl Stream {
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -181,7 +181,7 @@ impl Stream {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -202,7 +202,7 @@ impl Stream {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -225,7 +225,7 @@ impl Stream {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -246,7 +246,7 @@ impl Stream {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -270,7 +270,7 @@ impl Stream {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::net::TcpStream;
+    /// use orengine::net::TcpStream;
     ///
     /// # async fn foo() {
     /// let stream = TcpStream::connect("127.0.0.1:8080")
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_client() {
-        const ADDR: &str = "127.0.0.1:8086";
+        const ADDR: &str = "127.0.0.1:6086";
 
         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_server() {
-        const ADDR: &str = "127.0.0.1:8081";
+        const ADDR: &str = "127.0.0.1:6081";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_stream() {
-        const ADDR: &str = "127.0.0.1:8082";
+        const ADDR: &str = "127.0.0.1:6082";
 
         create_local_executer_for_block_on(async {
             let wg = LocalWaitGroup::new();
@@ -492,6 +492,7 @@ mod tests {
             assert_eq!(stream.linger().expect("get_linger failed"), Some(Duration::from_secs(23)));
 
             for _ in 0..TIMES {
+                stream.poll_send().await.expect("poll failed");
                 stream.send_all_with_timeout(REQUEST, Duration::from_secs(2)).await.expect("send with timeout failed");
 
                 stream.poll_recv_with_timeout(Duration::from_secs(2)).await.expect("poll with timeout failed");
@@ -506,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_timeout() {
-        const ADDR: &str = "127.0.0.1:8083";
+        const ADDR: &str = "127.0.0.1:6083";
         const BACKLOG_SIZE: usize = 256;
 
         const CONNECT: usize = 0;

@@ -70,8 +70,8 @@ impl Socket {
     ///
     /// ```no_run
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
@@ -87,8 +87,8 @@ impl Socket {
     /// [`NotConnected`]: io::ErrorKind::NotConnected
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// assert_eq!(socket.peer_addr().unwrap_err().kind(),
@@ -106,8 +106,8 @@ impl Socket {
     ///
     /// ```no_run
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// assert_eq!(socket.local_addr().unwrap(),
@@ -127,8 +127,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_broadcast(false).expect("set_broadcast call failed");
@@ -146,8 +146,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_broadcast(false).expect("set_broadcast call failed");
@@ -167,8 +167,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_loop_v4(false).expect("set_multicast_loop_v4 call failed");
@@ -186,8 +186,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_loop_v4(false).expect("set_multicast_loop_v4 call failed");
@@ -210,8 +210,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_ttl_v4(42).expect("set_multicast_ttl_v4 call failed");
@@ -229,8 +229,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_ttl_v4(42).expect("set_multicast_ttl_v4 call failed");
@@ -250,8 +250,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_loop_v6(false).expect("set_multicast_loop_v6 call failed");
@@ -269,8 +269,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_multicast_loop_v6(false).expect("set_multicast_loop_v6 call failed");
@@ -290,8 +290,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_ttl(42).expect("set_ttl call failed");
@@ -309,8 +309,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// socket.set_ttl(42).expect("set_ttl call failed");
@@ -373,8 +373,8 @@ impl Socket {
     /// # Examples
     ///
     /// ```no_run
-    /// use async_engine::io::Bind;
-    /// use async_engine::net::UdpSocket;
+    /// use orengine::io::Bind;
+    /// use orengine::net::UdpSocket;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
     /// match socket.take_error() {
@@ -461,13 +461,16 @@ impl Drop for Socket {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
     use std::thread;
     use crate::io::{AsyncAccept, Bind};
     use crate::io::bind::BindConfig;
+    use crate::net::UdpSocket;
     use super::*;
     use crate::runtime::create_local_executer_for_block_on;
+    use crate::sleep::sleep;
     use crate::sync::{LocalMutex, LocalWaitGroup};
     use crate::sync::cond_var::LocalCondVar;
 
@@ -565,210 +568,114 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    // #[test]
-    // fn test_stream() {
-    //     const ADDR: &str = "127.0.0.1:8082";
-    //
-    //     create_local_executer_for_block_on(async {
-    //         let wg = LocalWaitGroup::new();
-    //         wg.inc();
-    //         let wg_clone = wg.clone();
-    //
-    //         local_executor().spawn_local(async move {
-    //             let mut listener = Listener::bind(ADDR).expect("bind failed");
-    //
-    //             wg_clone.done();
-    //
-    //             let mut stream = listener.accept().await.expect("accept failed").0;
-    //
-    //             for _ in 0..TIMES {
-    //                 stream.poll().await.expect("poll failed");
-    //                 let mut buf = vec![0u8; REQUEST.len()];
-    //
-    //                 stream.peek_exact(&mut buf).await.expect("peek failed");
-    //                 assert_eq!(REQUEST, buf);
-    //                 stream.peek_exact(&mut buf).await.expect("peek failed");
-    //                 assert_eq!(REQUEST, buf);
-    //
-    //                 stream.recv_exact(&mut buf).await.expect("recv failed");
-    //                 assert_eq!(REQUEST, buf);
-    //
-    //                 stream.send_all(RESPONSE).await.expect("send failed");
-    //             }
-    //         });
-    //
-    //         wg.wait().await;
-    //
-    //         let mut stream = Stream::connect_with_timeout(ADDR, Duration::from_secs(2))
-    //             .await
-    //             .expect("connect with timeout failed");
-    //
-    //         stream.set_ttl(133).expect("set_ttl failed");
-    //         assert_eq!(stream.ttl().expect("get_ttl failed"), 133);
-    //
-    //         stream.set_nodelay(true).expect("set_nodelay failed");
-    //         assert_eq!(stream.nodelay().expect("get_nodelay failed"), true);
-    //         stream.set_nodelay(false).expect("set_nodelay failed");
-    //         assert_eq!(stream.nodelay().expect("get_nodelay failed"), false);
-    //
-    //         stream.set_linger(Some(Duration::from_secs(23))).expect("set_linger failed");
-    //         assert_eq!(stream.linger().expect("get_linger failed"), Some(Duration::from_secs(23)));
-    //
-    //         for _ in 0..TIMES {
-    //             stream.send_all_with_timeout(REQUEST, Duration::from_secs(2)).await.expect("send with timeout failed");
-    //
-    //             stream.poll_with_timeout(Duration::from_secs(2)).await.expect("poll with timeout failed");
-    //             let mut buf = vec![0u8; RESPONSE.len()];
-    //             stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-    //             stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-    //             stream.recv_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("recv with timeout failed");
-    //             assert_eq!(RESPONSE, buf);
-    //         }
-    //     });
-    // }
-    //
-    // #[test]
-    // fn test_timeout() {
-    //     const ADDR: &str = "127.0.0.1:8083";
-    //     const BACKLOG_SIZE: usize = 256;
-    //
-    //     const CONNECT: usize = 0;
-    //     const SEND: usize = 1;
-    //     const POLL: usize = 2;
-    //     const RECV: usize = 3;
-    //     const PEEK: usize = 4;
-    //     const TIMEOUT: Duration = Duration::from_millis(1);
-    //
-    //     create_local_executer_for_block_on(async {
-    //         let state = LocalMutex::new(CONNECT);
-    //         let state_cond_var = LocalCondVar::new();
-    //         let state_clone = state.clone();
-    //         let state_cond_var_clone = state_cond_var.clone();
-    //         let wg = LocalWaitGroup::new();
-    //         wg.inc();
-    //         let wg_clone = wg.clone();
-    //
-    //         local_executor().spawn_local(async move {
-    //             let mut listener = Listener::bind_with_config(
-    //                 ADDR,
-    //                 BindConfig::new().backlog_size(BACKLOG_SIZE)
-    //             ).expect("bind failed");
-    //             let mut expected_state = 0;
-    //             let mut state = state_clone.lock().await;
-    //
-    //             wg_clone.done();
-    //
-    //             loop {
-    //                 while *state != expected_state {
-    //                     state = state_cond_var_clone.wait(state).await;
-    //                 }
-    //                 match *state {
-    //                     CONNECT => {}
-    //                     SEND => {
-    //                         let _ = listener.accept().await.expect("accept failed").0;
-    //                     }
-    //                     POLL | PEEK | RECV => {
-    //                         let _ = listener.accept().await.expect("accept failed").0;
-    //                     }
-    //                     _ => break
-    //                 }
-    //                 expected_state += 1;
-    //             }
-    //         });
-    //
-    //         wg.wait().await;
-    //
-    //         loop {
-    //             let mut state = state.lock().await;
-    //             match *state {
-    //                 CONNECT => {
-    //                     for _ in 0..BACKLOG_SIZE + 1 {
-    //                         let _ = Stream::connect_with_timeout(ADDR, TIMEOUT)
-    //                             .await
-    //                             .expect("connect with timeout failed");
-    //                     }
-    //                     let res = Stream::connect_with_timeout(ADDR, TIMEOUT).await;
-    //                     match res {
-    //                         Ok(_) => panic!("connect with timeout should failed"),
-    //                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-    //                             panic!("connect with timeout should failed with TimedOut, but got {:?}", err)
-    //                         }
-    //                         Err(_) => {}
-    //                     }
-    //                 }
-    //
-    //                 SEND => {
-    //                     let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
-    //                         .await
-    //                         .expect("connect with timeout failed");
-    //
-    //                     let buf = vec![0u8; 1 << 24]; // 1 MB.
-    //                     // It is impossible to send 1 MB in 1 microsecond (1 TB/s).
-    //                     let res = stream.send_all_with_deadline(
-    //                         &buf,
-    //                         Instant::now() + Duration::from_micros(1)
-    //                     ).await;
-    //                     match res {
-    //                         Ok(_) => panic!("send with timeout should failed"),
-    //                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-    //                             panic!("send with timeout should failed with TimedOut, but got {:?}", err)
-    //                         }
-    //                         Err(_) => {}
-    //                     }
-    //                 }
-    //
-    //                 POLL => {
-    //                     let stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
-    //                         .await
-    //                         .expect("connect with timeout failed");
-    //
-    //                     let res = stream.poll_with_timeout(TIMEOUT).await;
-    //                     match res {
-    //                         Ok(_) => panic!("poll with timeout should failed"),
-    //                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-    //                             panic!("poll with timeout should failed with TimedOut, but got {:?}", err)
-    //                         }
-    //                         Err(_) => {}
-    //                     }
-    //                 }
-    //
-    //                 RECV => {
-    //                     let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
-    //                         .await
-    //                         .expect("connect with timeout failed");
-    //
-    //                     let mut buf = vec![0u8; REQUEST.len()];
-    //                     let res = stream.recv_with_timeout(&mut buf, TIMEOUT).await;
-    //                     match res {
-    //                         Ok(_) => panic!("recv with timeout should failed"),
-    //                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-    //                             panic!("recv with timeout should failed with TimedOut, but got {:?}", err)
-    //                         }
-    //                         Err(_) => {}
-    //                     }
-    //                 }
-    //
-    //                 PEEK => {
-    //                     let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
-    //                         .await
-    //                         .expect("connect with timeout failed");
-    //
-    //                     let mut buf = vec![0u8; REQUEST.len()];
-    //                     let res = stream.peek_with_timeout(&mut buf, TIMEOUT).await;
-    //                     match res {
-    //                         Ok(_) => panic!("peek with timeout should failed"),
-    //                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-    //                             panic!("peek with timeout should failed with TimedOut, but got {:?}", err)
-    //                         }
-    //                         Err(_) => {}
-    //                     }
-    //                 }
-    //
-    //                 _ => break
-    //             }
-    //             *state += 1;
-    //             state_cond_var.notify_one();
-    //         }
-    //     });
-    // }
+    #[test]
+    fn test_socket() {
+        const SERVER_ADDR: &str = "127.0.0.1:10090";
+        const CLIENT_ADDR: &str = "127.0.0.1:10091";
+        const TIMEOUT: Duration = Duration::from_secs(3);
+
+        let is_server_ready = (LocalMutex::new(false), LocalCondVar::new());
+        let is_server_ready_server_clone = is_server_ready.clone();
+
+        create_local_executer_for_block_on(async move {
+            local_executor().exec_future(async {
+                let mut server = Socket::bind(SERVER_ADDR).expect("bind failed");
+
+                {
+                    let (is_ready_mu, condvar) = is_server_ready;
+                    let mut is_ready = is_ready_mu.lock().await;
+                    *is_ready = true;
+                    condvar.notify_one();
+                }
+
+                for _ in 0..TIMES {
+                    server.poll_recv().await.expect("poll failed");
+                    let mut buf = vec![0u8; REQUEST.len()];
+                    let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
+                    assert_eq!(REQUEST, buf);
+
+                    server.send_to(RESPONSE, &src).await.expect("send failed");
+                }
+            });
+            let (is_server_ready_mu, condvar) = is_server_ready_server_clone;
+            let mut is_server_ready = is_server_ready_mu.lock().await;
+            while *is_server_ready == false {
+                is_server_ready = condvar.wait(is_server_ready).await;
+            }
+
+            let mut stream = Socket::bind(CLIENT_ADDR).expect("bind failed");
+
+            assert_eq!(
+                stream.local_addr().expect("Failed to get local addr"),
+                SocketAddr::from_str(CLIENT_ADDR).unwrap()
+            );
+
+            stream.set_broadcast(false).expect("Failed to set broadcast");
+            assert_eq!(stream.broadcast().expect("Failed to get broadcast"), false);
+            stream.set_broadcast(true).expect("Failed to set broadcast");
+            assert_eq!(stream.broadcast().expect("Failed to get broadcast"), true);
+
+            stream.set_multicast_loop_v4(false).expect("Failed to set multicast_loop_v4");
+            assert_eq!(stream.multicast_loop_v4().expect("Failed to get multicast_loop_v4"), false);
+            stream.set_multicast_loop_v4(true).expect("Failed to set multicast_loop_v4");
+            assert_eq!(stream.multicast_loop_v4().expect("Failed to get multicast_loop_v4"), true);
+
+            stream.set_multicast_ttl_v4(124).expect("Failed to set multicast_ttl_v4");
+            assert_eq!(stream.multicast_ttl_v4().expect("Failed to get multicast_ttl_v4"), 124);
+
+            stream.set_ttl(144).expect("Failed to set ttl");
+            assert_eq!(stream.ttl().expect("Failed to get ttl"), 144);
+
+            match stream.take_error() {
+                Ok(err_) => {
+                    match err_ {
+                        Some(err) => panic!("Take error returned with an error: {err:?}"),
+                        None => {}
+                    }
+                }
+                Err(err) => panic!("Take error failed: {:?}", err)
+            }
+
+            for _ in 0..TIMES {
+                stream.send_to(REQUEST, SERVER_ADDR).await.expect("send failed");
+
+                stream.poll_recv().await.expect("poll failed");
+                let mut buf = vec![0u8; RESPONSE.len()];
+
+                stream.peek_from(&mut buf).await.expect("peek failed");
+                assert_eq!(RESPONSE, buf);
+                stream.peek_from(&mut buf).await.expect("peek failed");
+                assert_eq!(RESPONSE, buf);
+
+                stream.poll_recv().await.expect("poll failed");
+                stream.recv_from(&mut buf).await.expect("recv failed");
+                assert_eq!(RESPONSE, buf);
+            }
+        });
+    }
+
+    #[test]
+    fn test_timeout() {
+        const ADDR: &str = "127.0.0.1:10141";
+        const TIMEOUT: Duration = Duration::from_micros(1);
+
+        create_local_executer_for_block_on(async {
+            let mut socket = Socket::bind(ADDR).expect("bind failed");
+
+            match socket.poll_recv_with_timeout(TIMEOUT).await {
+                Ok(_) => panic!("poll_recv should timeout"),
+                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+            }
+
+            match socket.recv_from_with_timeout(&mut vec![0u8; 10], TIMEOUT).await {
+                Ok(_) => panic!("recv_from should timeout"),
+                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+            }
+
+            match socket.peek_from_with_timeout(&mut vec![0u8; 10], TIMEOUT).await {
+                Ok(_) => panic!("peek_from should timeout"),
+                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+            }
+        });
+    }
 }
