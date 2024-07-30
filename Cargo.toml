@@ -1,0 +1,16 @@
+[package]
+name = "async-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core_affinity = "0.8.1"
+socket2 = { version="0.5.7", features = ["all"] }
+smallvec = "2.0.0-alpha.7"
+io-macros = { path = "src/io/io-macros" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.6.4"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29.0", features = ["net", "event"] }
