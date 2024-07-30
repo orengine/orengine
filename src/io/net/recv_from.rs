@@ -2,14 +2,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::io::Result;
-use std::marker::PhantomData;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use crate::io::AsyncPollFd;
 use crate::io::io_request::{IoRequest};
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsFd, Fd, MessageHeader};
+use crate::io::sys::{Fd, MessageHeader};
 use crate::io::worker::{IoWorker, local_worker};
 use crate::runtime::task::Task;
 

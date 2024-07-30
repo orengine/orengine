@@ -1,18 +1,15 @@
-use std::ffi::c_int;
 use std::io::{Error, Result};
 use std::{io, mem};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
-use socket2::{Protocol, SockAddr, Type};
+use socket2::{SockAddr, Type};
 use crate::{each_addr, each_addr_sync, generate_peek, generate_peek_from, generate_recv, generate_recv_from, generate_send, generate_send_to};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::io::bind::BindConfig;
 use crate::io::connect::{Connect, ConnectWithTimeout};
 use crate::io::recv::{Recv, RecvWithDeadline};
-use crate::io::send::SendWithDeadline;
-use crate::io::send_to::{SendTo, SendToWithDeadline};
 use crate::io::sys::{AsFd, Fd};
 use crate::net::get_socket::get_socket;
 use crate::runtime::local_executor;
@@ -465,13 +462,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
     use std::thread;
-    use crate::io::{AsyncAccept, Bind};
-    use crate::io::bind::BindConfig;
-    use crate::net::UdpSocket;
+    use crate::io::{Bind};
     use super::*;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::sleep::sleep;
-    use crate::sync::{LocalMutex, LocalWaitGroup};
+    use crate::sync::{LocalMutex};
     use crate::sync::cond_var::LocalCondVar;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
@@ -543,7 +537,7 @@ mod tests {
                     server.poll_recv().await.expect("poll failed");
                     let mut buf = vec![0u8; REQUEST.len()];
                     let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
-                    assert_eq!(REQUEST, buf);
+                    assert_eq!(REQUEST, &buf[..n]);
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
@@ -554,7 +548,7 @@ mod tests {
             thread::sleep(Duration::from_millis(1));
         }
 
-        let mut stream = std::net::UdpSocket::bind("127.0.0.1:9082").expect("connect failed");
+        let stream = std::net::UdpSocket::bind("127.0.0.1:9082").expect("connect failed");
         stream.connect(SERVER_ADDR).expect("connect failed");
 
         for _ in 0..TIMES {
@@ -572,7 +566,6 @@ mod tests {
     fn test_socket() {
         const SERVER_ADDR: &str = "127.0.0.1:10090";
         const CLIENT_ADDR: &str = "127.0.0.1:10091";
-        const TIMEOUT: Duration = Duration::from_secs(3);
 
         let is_server_ready = (LocalMutex::new(false), LocalCondVar::new());
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -592,7 +585,7 @@ mod tests {
                     server.poll_recv().await.expect("poll failed");
                     let mut buf = vec![0u8; REQUEST.len()];
                     let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
-                    assert_eq!(REQUEST, buf);
+                    assert_eq!(REQUEST, &buf[..n]);
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }

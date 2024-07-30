@@ -11,7 +11,6 @@ use crate::{each_addr, generate_peek, generate_peek_exact, generate_recv, genera
 use crate::io::{AsyncClose, AsyncPollFd};
 use crate::io::connect::{Connect, ConnectWithTimeout};
 use crate::io::recv::{Recv, RecvWithDeadline};
-use crate::io::send::{Send, SendWithDeadline};
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, Fd};
 use crate::net::get_socket::get_socket;
