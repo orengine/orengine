@@ -5,13 +5,13 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
 use socket2::{SockAddr, Type};
-use crate::{each_addr, each_addr_sync, generate_peek, generate_peek_from, generate_recv, generate_recv_from, generate_send, generate_send_to};
+use crate::{each_addr, each_addr_sync, generate_peek_from, generate_recv_from, generate_send_to};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::io::bind::BindConfig;
 use crate::io::connect::{Connect, ConnectWithTimeout};
-use crate::io::recv::{Recv, RecvWithDeadline};
 use crate::io::sys::{AsFd, Fd};
 use crate::net::get_socket::get_socket;
+use crate::net::udp::connected_socket::ConnectedSocket;
 use crate::runtime::local_executor;
 use crate::utils::addr_from_to_socket_addrs;
 
@@ -29,73 +29,54 @@ impl Socket {
     // region connect
 
     #[inline(always)]
-    pub async fn connect<A: ToSocketAddrs>(&self, addrs: A) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Self> {
-            Connect::new(self.fd, addr).await
-        })
+    pub async fn connect<A: ToSocketAddrs>(self, addrs: A) -> Result<ConnectedSocket> {
+        let fd = self.fd;
+
+        let res = each_addr!(&addrs, async move |addr: SocketAddr| -> Result<ConnectedSocket> {
+            Connect::new(fd, addr).await
+        });
+
+        match res {
+            Ok(connected_socket) => {
+                mem::forget(self);
+                Ok(connected_socket)
+            },
+            Err(e) => {
+                Err(e)
+            }
+        }
     }
 
     #[inline(always)]
-    pub async fn connect_with_deadline<A: ToSocketAddrs>(&self, addrs: A, deadline: Instant) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Self> {
-            ConnectWithTimeout::new(self.fd, addr, deadline).await
-        })
+    pub async fn connect_with_deadline<A: ToSocketAddrs>(self, addrs: A, deadline: Instant) -> Result<ConnectedSocket> {
+        let fd = self.fd;
+        let res = each_addr!(&addrs, async move |addr: SocketAddr| -> Result<ConnectedSocket> {
+            ConnectWithTimeout::new(fd, addr, deadline).await
+        });
+
+        match res {
+            Ok(connected_socket) => {
+                mem::forget(self);
+                Ok(connected_socket)
+            },
+            Err(e) => {
+                Err(e)
+            }
+        }
     }
 
     #[inline(always)]
-    pub async fn connect_with_timeout<A: ToSocketAddrs>(&self, addrs: A, timeout: Duration) -> Result<Self> {
+    pub async fn connect_with_timeout<A: ToSocketAddrs>(self, addrs: A, timeout: Duration) -> Result<ConnectedSocket> {
         self.connect_with_deadline(addrs, Instant::now() + timeout).await
     }
 
     // endregion
 
-    generate_send!();
-
     generate_send_to!();
-
-    generate_recv!();
 
     generate_recv_from!();
 
-    generate_peek!();
-
     generate_peek_from!();
-
-    /// Returns the socket address of the remote peer this socket was connected to.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// socket.connect("192.168.0.1:41203").await.expect("couldn't connect to address");
-    /// assert_eq!(socket.peer_addr().unwrap(),
-    ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// If the socket isn't connected, it will return a [`NotConnected`] error.
-    ///
-    /// [`NotConnected`]: io::ErrorKind::NotConnected
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// assert_eq!(socket.peer_addr().unwrap_err().kind(),
-    ///            std::io::ErrorKind::NotConnected);
-    /// ```
-    pub fn peer_addr(&self) -> Result<SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get peer address"))
-    }
 
     /// Returns the socket address that this socket was created from.
     ///
@@ -507,11 +488,11 @@ mod tests {
             }
 
             let mut stream = Socket::bind("127.0.0.1:9081").expect("bind failed");
-            //stream.connect(SERVER_ADDR).await.expect("connect failed");
 
             for _ in 0..TIMES {
                 stream.send_to(REQUEST, SERVER_ADDR).await.expect("send failed");
                 let mut buf = vec![0u8; RESPONSE.len()];
+
                 stream.recv_from(&mut buf).await.expect("recv failed");
                 assert_eq!(RESPONSE, buf);
             }
@@ -566,6 +547,7 @@ mod tests {
     fn test_socket() {
         const SERVER_ADDR: &str = "127.0.0.1:10090";
         const CLIENT_ADDR: &str = "127.0.0.1:10091";
+        const TIMEOUT: Duration = Duration::from_secs(3);
 
         let is_server_ready = (LocalMutex::new(false), LocalCondVar::new());
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -582,14 +564,15 @@ mod tests {
                 }
 
                 for _ in 0..TIMES {
-                    server.poll_recv().await.expect("poll failed");
+                    server.poll_recv_with_timeout(TIMEOUT).await.expect("poll failed");
                     let mut buf = vec![0u8; REQUEST.len()];
-                    let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
+                    let (n, src) = server.recv_from_with_timeout(&mut buf, TIMEOUT).await.expect("accept failed");
                     assert_eq!(REQUEST, &buf[..n]);
 
-                    server.send_to(RESPONSE, &src).await.expect("send failed");
+                    server.send_to_with_timeout(RESPONSE, &src, TIMEOUT).await.expect("send failed");
                 }
             });
+
             let (is_server_ready_mu, condvar) = is_server_ready_server_clone;
             let mut is_server_ready = is_server_ready_mu.lock().await;
             while *is_server_ready == false {
@@ -630,18 +613,18 @@ mod tests {
             }
 
             for _ in 0..TIMES {
-                stream.send_to(REQUEST, SERVER_ADDR).await.expect("send failed");
+                stream.send_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT).await.expect("send failed");
 
-                stream.poll_recv().await.expect("poll failed");
+                stream.poll_recv_with_timeout(TIMEOUT).await.expect("poll failed");
                 let mut buf = vec![0u8; RESPONSE.len()];
 
-                stream.peek_from(&mut buf).await.expect("peek failed");
+                stream.peek_from_with_timeout(&mut buf, TIMEOUT).await.expect("peek failed");
                 assert_eq!(RESPONSE, buf);
-                stream.peek_from(&mut buf).await.expect("peek failed");
+                stream.peek_from_with_timeout(&mut buf, TIMEOUT).await.expect("peek failed");
                 assert_eq!(RESPONSE, buf);
 
-                stream.poll_recv().await.expect("poll failed");
-                stream.recv_from(&mut buf).await.expect("recv failed");
+                stream.poll_recv_with_timeout(TIMEOUT).await.expect("poll failed");
+                stream.recv_from_with_timeout(&mut buf, TIMEOUT).await.expect("recv failed");
                 assert_eq!(RESPONSE, buf);
             }
         });
