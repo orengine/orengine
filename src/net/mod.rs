@@ -1,8 +1,9 @@
+// TODO pub mod simplified_socket;
+pub use tcp::{Listener as TcpListener, Stream as TcpStream};
+pub use udp::{ConnectedSocket as UdpConnectedSocket, Socket as UdpSocket};
+pub use unix::{Listener as UnixListener, Stream as UnixStream};
+
 pub mod get_socket;
 pub mod tcp;
 pub mod udp;
-
-// TODO pub mod simplified_socket;
-pub use tcp::{Listener as TcpListener, Stream as TcpStream};
-pub use udp::Socket as UdpSocket;
-// TODO pub use simplified_socket::SimplifiedSocket;
+pub mod unix;

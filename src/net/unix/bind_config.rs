@@ -1,12 +1,6 @@
-// TODO maybe async via worker pool?
-
-use std::io::Result;
-use std::net::ToSocketAddrs;
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BindConfig {
     pub backlog_size: usize,
-    pub only_v6: bool,
     pub reuse_address: bool,
     pub reuse_port: bool,
 }
@@ -18,11 +12,6 @@ impl BindConfig {
 
     pub fn backlog_size(mut self, backlog_size: usize) -> Self {
         self.backlog_size = backlog_size;
-        self
-    }
-
-    pub fn only_v6(mut self, only_v6: bool) -> Self {
-        self.only_v6 = only_v6;
         self
     }
 
@@ -41,18 +30,8 @@ impl Default for BindConfig {
     fn default() -> Self {
         Self {
             backlog_size: 1024,
-            only_v6: false,
             reuse_address: true,
             reuse_port: true,
         }
-    }
-}
-
-pub trait Bind: Sized {
-    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self>;
-
-    #[inline(always)]
-    fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
-        Self::bind_with_config(addrs, BindConfig::default())
     }
 }

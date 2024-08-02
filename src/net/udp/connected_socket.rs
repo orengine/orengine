@@ -1,18 +1,19 @@
 use std::io::{Error, Result};
-use std::{io, mem};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
-use crate::{generate_peek, generate_recv, generate_send};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
+use std::{io, mem};
+
 use crate::io::recv::{Recv, RecvWithDeadline};
 use crate::io::sys::{AsFd, Fd};
+use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::runtime::local_executor;
+use crate::{generate_peek, generate_recv, generate_send};
 
 #[derive(Debug)]
 pub struct ConnectedSocket {
-    fd: Fd
+    fd: Fd,
 }
 
 impl ConnectedSocket {
@@ -48,7 +49,10 @@ impl ConnectedSocket {
     pub fn peer_addr(&self) -> Result<SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get peer address"))
+        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
+            io::ErrorKind::Other,
+            "failed to get peer address",
+        ))
     }
 
     /// Returns the socket address that this socket was created from.
@@ -67,7 +71,10 @@ impl ConnectedSocket {
     pub fn local_addr(&self) -> Result<SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get local address"))
+        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+            io::ErrorKind::Other,
+            "failed to get local address",
+        ))
     }
 
     /// Sets the value for the `IP_TTL` option on this socket.
@@ -176,7 +183,9 @@ impl Drop for ConnectedSocket {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
-            close_future.await.expect("Failed to close TCP stream");
+            close_future
+                .await
+                .expect("Failed to close UDP connected socket");
         });
     }
 }
@@ -185,14 +194,13 @@ impl Drop for ConnectedSocket {
 mod tests {
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
-    use std::sync::atomic::AtomicBool;
     use std::thread;
-    use crate::io::{Bind};
+
+    use crate::io::Bind;
     use crate::net::udp::Socket;
-    use super::*;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::sync::{LocalMutex};
-    use crate::sync::cond_var::LocalCondVar;
+
+    use super::*;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -236,8 +244,14 @@ mod tests {
             let stream = Socket::bind(CLIENT_ADDR).expect("bind failed");
             let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
 
-            assert_eq!(connected_stream.local_addr().expect(CLIENT_ADDR), SocketAddr::from_str(CLIENT_ADDR).unwrap());
-            assert_eq!(connected_stream.peer_addr().expect(CLIENT_ADDR), SocketAddr::from_str(SERVER_ADDR).unwrap());
+            assert_eq!(
+                connected_stream.local_addr().expect(CLIENT_ADDR),
+                SocketAddr::from_str(CLIENT_ADDR).unwrap()
+            );
+            assert_eq!(
+                connected_stream.peer_addr().expect(CLIENT_ADDR),
+                SocketAddr::from_str(SERVER_ADDR).unwrap()
+            );
 
             for _ in 0..TIMES {
                 connected_stream.send(REQUEST).await.expect("send failed");
@@ -257,20 +271,29 @@ mod tests {
         const TIMEOUT: Duration = Duration::from_micros(1);
 
         create_local_executer_for_block_on(async {
-            let  socket = Socket::bind(ADDR).expect("bind failed");
-            let mut connected_socket = socket.connect_with_timeout("127.0.0.1:14142", TIMEOUT).await.expect("bind failed");
+            let socket = Socket::bind(ADDR).expect("bind failed");
+            let mut connected_socket = socket
+                .connect_with_timeout("127.0.0.1:14142", TIMEOUT)
+                .await
+                .expect("bind failed");
 
             match connected_socket.poll_recv_with_timeout(TIMEOUT).await {
                 Ok(_) => panic!("poll_recv should timeout"),
                 Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
             }
 
-            match connected_socket.recv_with_timeout(&mut vec![0u8; 10], TIMEOUT).await {
+            match connected_socket
+                .recv_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+                .await
+            {
                 Ok(_) => panic!("recv_from should timeout"),
                 Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
             }
 
-            match connected_socket.peek_with_timeout(&mut vec![0u8; 10], TIMEOUT).await {
+            match connected_socket
+                .peek_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+                .await
+            {
                 Ok(_) => panic!("peek_from should timeout"),
                 Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
             }
