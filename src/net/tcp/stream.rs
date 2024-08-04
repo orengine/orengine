@@ -1,20 +1,23 @@
 //! This module contains [`Stream`].
-use std::intrinsics::unlikely;
 use std::io::{self, Error, Result};
 use std::mem;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
-use socket2::{Protocol, Type};
-use crate::{each_addr, generate_peek, generate_peek_exact, generate_recv, generate_recv_exact, generate_send, generate_send_all};
-use crate::io::{AsyncClose, AsyncPollFd};
+
+use socket2::Socket;
+
 use crate::io::connect::{Connect, ConnectWithTimeout};
-use crate::io::recv::{Recv, RecvWithDeadline};
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, Fd};
-use crate::net::get_socket::get_socket;
+use crate::io::{AsyncClose, AsyncPollFd};
+use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::runtime::local_executor;
+use crate::{
+    each_addr, generate_connect_from_new_socket, generate_peek, generate_peek_exact, generate_recv,
+    generate_recv_exact, generate_send, generate_send_all,
+};
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -40,30 +43,7 @@ impl Stream {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
 
-    // region connect
-
-    #[inline(always)]
-    pub async fn connect<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Self> {
-            let socket = get_socket(addr, Type::STREAM, Some(Protocol::TCP))?;
-            Connect::new(socket.into_raw_fd(), addr).await
-        })
-    }
-
-    #[inline(always)]
-    pub async fn connect_with_deadline<A: ToSocketAddrs>(addrs: A, deadline: Instant) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Stream> {
-            let socket = get_socket(addr, Type::STREAM, Some(Protocol::TCP))?;
-            ConnectWithTimeout::new(socket.into_raw_fd(), addr, deadline).await
-        })
-    }
-
-    #[inline(always)]
-    pub async fn connect_with_timeout<A: ToSocketAddrs>(addrs: A, timeout: Duration) -> Result<Self> {
-        Self::connect_with_deadline(addrs, Instant::now() + timeout).await
-    }
-
-    // endregion
+    generate_connect_from_new_socket!(|addr| -> Result<Socket> { new_tcp_socket(&addr) });
 
     generate_send!();
 
@@ -97,7 +77,10 @@ impl Stream {
     pub fn peer_addr(&self) -> Result<SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get peer address"))
+        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
+            io::ErrorKind::Other,
+            "failed to get peer address",
+        ))
     }
 
     /// Returns the socket address of the local half of this TCP connection.
@@ -117,7 +100,10 @@ impl Stream {
     pub fn local_addr(&self) -> Result<SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get local address"))
+        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+            io::ErrorKind::Other,
+            "failed to get local address",
+        ))
     }
 
     /// Sets the value of the `SO_LINGER` option on this socket.
@@ -331,16 +317,18 @@ impl Drop for Stream {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use std::thread;
-    use crate::io::{AsyncAccept, Bind};
+
     use crate::io::bind::BindConfig;
+    use crate::io::{AsyncAccept, Bind};
     use crate::net::tcp::Listener;
-    use super::*;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::sync::{LocalMutex, LocalWaitGroup};
     use crate::sync::cond_var::LocalCondVar;
+    use crate::sync::{LocalMutex, LocalWaitGroup};
+
+    use super::*;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -487,18 +475,38 @@ mod tests {
             stream.set_nodelay(false).expect("set_nodelay failed");
             assert_eq!(stream.nodelay().expect("get_nodelay failed"), false);
 
-            stream.set_linger(Some(Duration::from_secs(23))).expect("set_linger failed");
-            assert_eq!(stream.linger().expect("get_linger failed"), Some(Duration::from_secs(23)));
+            stream
+                .set_linger(Some(Duration::from_secs(23)))
+                .expect("set_linger failed");
+            assert_eq!(
+                stream.linger().expect("get_linger failed"),
+                Some(Duration::from_secs(23))
+            );
 
             for _ in 0..TIMES {
                 stream.poll_send().await.expect("poll failed");
-                stream.send_all_with_timeout(REQUEST, Duration::from_secs(2)).await.expect("send with timeout failed");
+                stream
+                    .send_all_with_timeout(REQUEST, Duration::from_secs(2))
+                    .await
+                    .expect("send with timeout failed");
 
-                stream.poll_recv_with_timeout(Duration::from_secs(2)).await.expect("poll with timeout failed");
+                stream
+                    .poll_recv_with_timeout(Duration::from_secs(2))
+                    .await
+                    .expect("poll with timeout failed");
                 let mut buf = vec![0u8; RESPONSE.len()];
-                stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-                stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-                stream.recv_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("recv with timeout failed");
+                stream
+                    .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("peek with timeout failed");
+                stream
+                    .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("peek with timeout failed");
+                stream
+                    .recv_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("recv with timeout failed");
                 assert_eq!(RESPONSE, buf);
             }
         });
@@ -526,10 +534,9 @@ mod tests {
             let wg_clone = wg.clone();
 
             local_executor().spawn_local(async move {
-                let mut listener = Listener::bind_with_config(
-                    ADDR,
-                    BindConfig::new().backlog_size(BACKLOG_SIZE)
-                ).expect("bind failed");
+                let mut listener =
+                    Listener::bind_with_config(ADDR, BindConfig::new().backlog_size(BACKLOG_SIZE))
+                        .expect("bind failed");
                 let mut expected_state = 0;
                 let mut state = state_clone.lock().await;
 
@@ -547,7 +554,7 @@ mod tests {
                         POLL | PEEK | RECV => {
                             let _ = listener.accept().await.expect("accept failed").0;
                         }
-                        _ => break
+                        _ => break,
                     }
                     expected_state += 1;
                 }
@@ -580,15 +587,17 @@ mod tests {
                             .expect("connect with timeout failed");
 
                         let buf = vec![0u8; 1 << 24]; // 1 MB.
-                        // It is impossible to send 1 MB in 1 microsecond (1 TB/s).
-                        let res = stream.send_all_with_deadline(
-                            &buf,
-                            Instant::now() + Duration::from_micros(1)
-                        ).await;
+                                                      // It is impossible to send 1 MB in 1 microsecond (1 TB/s).
+                        let res = stream
+                            .send_all_with_deadline(&buf, Instant::now() + Duration::from_micros(1))
+                            .await;
                         match res {
                             Ok(_) => panic!("send with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("send with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "send with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
@@ -603,7 +612,10 @@ mod tests {
                         match res {
                             Ok(_) => panic!("poll with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("poll with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "poll with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
@@ -619,7 +631,10 @@ mod tests {
                         match res {
                             Ok(_) => panic!("recv with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("recv with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "recv with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
@@ -635,13 +650,16 @@ mod tests {
                         match res {
                             Ok(_) => panic!("peek with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("peek with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "peek with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
                     }
 
-                    _ => break
+                    _ => break,
                 }
                 *state += 1;
                 state_cond_var.notify_one();

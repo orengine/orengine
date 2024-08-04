@@ -5,11 +5,13 @@ use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
 use std::{io, mem};
 
-use crate::io::recv::{Recv, RecvWithDeadline};
 use crate::io::sys::{AsFd, Fd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::runtime::local_executor;
-use crate::{generate_peek, generate_recv, generate_send};
+use crate::{
+    generate_peek, generate_peek_exact, generate_recv, generate_recv_exact, generate_send,
+    generate_send_all,
+};
 
 #[derive(Debug)]
 pub struct ConnectedSocket {
@@ -25,9 +27,15 @@ impl ConnectedSocket {
 
     generate_send!();
 
+    generate_send_all!();
+
     generate_recv!();
 
+    generate_recv_exact!();
+
     generate_peek!();
+
+    generate_peek_exact!();
 
     /// Returns the socket address of the remote peer this socket was connected to.
     ///
@@ -254,7 +262,10 @@ mod tests {
             );
 
             for _ in 0..TIMES {
-                connected_stream.send(REQUEST).await.expect("send failed");
+                connected_stream
+                    .send_all(REQUEST)
+                    .await
+                    .expect("send failed");
                 let mut buf = vec![0u8; RESPONSE.len()];
 
                 connected_stream.recv(&mut buf).await.expect("recv failed");

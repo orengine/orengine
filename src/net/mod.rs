@@ -3,7 +3,7 @@ pub use tcp::{Listener as TcpListener, Stream as TcpStream};
 pub use udp::{ConnectedSocket as UdpConnectedSocket, Socket as UdpSocket};
 pub use unix::{Listener as UnixListener, Stream as UnixStream};
 
-pub mod get_socket;
+pub(crate) mod creators_of_sockets;
 pub mod tcp;
 pub mod udp;
 pub mod unix;

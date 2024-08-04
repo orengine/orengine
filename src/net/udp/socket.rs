@@ -5,17 +5,19 @@ use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::time::{Duration, Instant};
 use std::{io, mem};
 
-use socket2::{SockAddr, Type};
+use socket2::SockAddr;
 
 use crate::io::bind::BindConfig;
 use crate::io::connect::{Connect, ConnectWithTimeout};
 use crate::io::sys::{AsFd, Fd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
-use crate::net::get_socket::get_socket;
+use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::ConnectedSocket;
 use crate::runtime::local_executor;
-use crate::utils::addr_from_to_socket_addrs;
-use crate::{each_addr, each_addr_sync, generate_peek_from, generate_recv_from, generate_send_to};
+use crate::{
+    each_addr, each_addr_sync, generate_peek_from, generate_recv_from, generate_send_all_to,
+    generate_send_to,
+};
 
 pub struct Socket {
     fd: Fd,
@@ -86,6 +88,8 @@ impl Socket {
     // endregion
 
     generate_send_to!();
+
+    generate_send_all_to!();
 
     generate_recv_from!();
 
@@ -387,7 +391,7 @@ impl Socket {
 impl Bind for Socket {
     fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self> {
         each_addr_sync!(&addrs, move |addr| {
-            let socket = get_socket(addr, Type::DGRAM, None)?;
+            let socket = new_udp_socket(&addr)?;
             if config.only_v6 {
                 socket.set_only_v6(true)?;
             }
