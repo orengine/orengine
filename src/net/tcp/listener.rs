@@ -8,10 +8,10 @@ use std::{io, mem};
 
 use socket2::SockAddr;
 
-use crate::each_addr_sync;
+use crate::{each_addr_sync, generate_accept};
 use crate::io::bind::BindConfig;
 use crate::io::sys::{AsFd, Fd, IntoFd};
-use crate::io::{AsyncAccept, AsyncClose, Bind};
+use crate::io::{AsyncClose, Bind};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::TcpStream;
 use crate::runtime::local_executor;
@@ -39,6 +39,8 @@ impl Listener {
     pub fn borrow_fd(&self) -> BorrowedFd {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
+
+    generate_accept!(TcpStream, SocketAddr, SockAddr::as_socket);
 
     /// Returns the local socket address of this listener.
     ///
@@ -124,7 +126,7 @@ impl Listener {
 }
 
 impl Bind for Listener {
-    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self> {
+    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
         each_addr_sync!(&addrs, move |addr| {
             let socket = new_tcp_socket(&addr)?;
             if config.only_v6 {
@@ -177,8 +179,6 @@ impl AsFd for Listener {
         self.fd
     }
 }
-
-impl AsyncAccept<TcpStream> for Listener {}
 
 impl AsyncClose for Listener {}
 

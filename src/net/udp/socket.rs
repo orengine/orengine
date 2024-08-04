@@ -39,7 +39,7 @@ impl Socket {
         let res = each_addr!(
             &addrs,
             async move |addr: SocketAddr| -> Result<ConnectedSocket> {
-                Connect::new(fd, addr).await
+                Connect::new(fd, SockAddr::from(addr)).await
             }
         );
 
@@ -62,7 +62,7 @@ impl Socket {
         let res = each_addr!(
             &addrs,
             async move |addr: SocketAddr| -> Result<ConnectedSocket> {
-                ConnectWithTimeout::new(fd, addr, deadline).await
+                ConnectWithTimeout::new(fd, SockAddr::from(addr), deadline).await
             }
         );
 
@@ -389,7 +389,7 @@ impl Socket {
 }
 
 impl Bind for Socket {
-    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self> {
+    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
         each_addr_sync!(&addrs, move |addr| {
             let socket = new_udp_socket(&addr)?;
             if config.only_v6 {

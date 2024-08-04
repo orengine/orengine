@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::io::Result;
 use std::marker::PhantomData;
-use std::mem;
+use std::{io, mem};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -35,7 +35,7 @@ impl<S: From<Fd>> Accept<S> {
 }
 
 impl<S: From<Fd>> Future for Accept<S> {
-    type Output = Result<(S, SocketAddr)>;
+    type Output = Result<(S, SockAddr)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -44,7 +44,7 @@ impl<S: From<Fd>> Future for Accept<S> {
 
         poll_for_io_request!((
             worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request.as_ref().unwrap_unchecked()),
-            (S::from(ret as Fd), this.addr.0.as_socket().expect("invalid addr"))
+            (S::from(ret as Fd), this.addr.0.clone())
         ));
     }
 }
@@ -71,7 +71,7 @@ impl<S: From<Fd>> AcceptWithDeadline<S> {
 }
 
 impl<S: From<Fd>> Future for AcceptWithDeadline<S> {
-    type Output = Result<(S, SocketAddr)>;
+    type Output = Result<(S, SockAddr)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -80,21 +80,60 @@ impl<S: From<Fd>> Future for AcceptWithDeadline<S> {
 
         poll_for_time_bounded_io_request!((
             worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request.as_ref().unwrap_unchecked()),
-            (S::from(ret as Fd), this.addr.0.as_socket().expect("invalid addr"))
+            (S::from(ret as Fd), this.addr.0.clone())
         ));
     }
 }
 
-pub trait AsyncAccept<S: From<Fd>>: AsFd {
-    fn accept(&mut self) -> Accept<S> {
-        Accept::new(self.as_raw_fd())
-    }
+#[macro_export]
+macro_rules! generate_accept {
+    ($stream_ty:ty) => {
+        #[inline(always)]
+        pub async fn accept(&mut self) -> std::io::Result<$stream_ty> {
+            let (stream, _) = crate::io::Accept::<$stream_ty>::new(self.as_raw_fd()).await?;
+            Ok(stream)
+        }
 
-    fn accept_with_deadline(&mut self, deadline: Instant) -> AcceptWithDeadline<S> {
-        AcceptWithDeadline::new(self.as_raw_fd(), deadline)
-    }
+        #[inline(always)]
+        pub async fn accept_with_deadline(
+            &mut self,
+            deadline: std::time::Instant
+        ) -> std::io::Result<$stream_ty> {
+            let (stream, _) = crate::io::AcceptWithDeadline::<$stream_ty>::new(self.as_raw_fd(), deadline).await?;
+            Ok(stream)
+        }
 
-    fn accept_with_timeout(&mut self, timeout: Duration) -> AcceptWithDeadline<S> {
-        AcceptWithDeadline::new(self.as_raw_fd(), Instant::now() + timeout)
-    }
+        #[inline(always)]
+        pub async fn accept_with_timeout(
+            &mut self,
+            timeout: std::time::Duration
+        ) -> std::io::Result<$stream_ty> {
+            self.accept_with_deadline(std::time::Instant::now() + timeout).await
+        }
+    };
+
+    ($stream_ty:ty, $addr_ty:ty, $to_addr_fn:expr) => {
+        #[inline(always)]
+        pub async fn accept(&mut self) -> std::io::Result<($stream_ty, $addr_ty)> {
+            let (stream, sock_addr) = crate::io::Accept::<$stream_ty>::new(self.as_raw_fd()).await?;
+            Ok((stream, $to_addr_fn(&sock_addr).unwrap()))
+        }
+
+        #[inline(always)]
+        pub async fn accept_with_deadline(
+            &mut self,
+            deadline: std::time::Instant
+        ) -> std::io::Result<($stream_ty, $addr_ty)> {
+            let (stream, sock_addr) = crate::io::AcceptWithDeadline::<$stream_ty>::new(self.as_raw_fd(), deadline).await?;
+            Ok((stream, $to_addr_fn(&sock_addr).unwrap()))
+        }
+
+        #[inline(always)]
+        pub async fn accept_with_timeout(
+            &mut self,
+            timeout: std::time::Duration
+        ) -> std::io::Result<($stream_ty, $addr_ty)> {
+            self.accept_with_deadline(std::time::Instant::now() + timeout).await
+        }
+    };
 }

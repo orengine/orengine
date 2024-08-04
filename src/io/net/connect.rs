@@ -24,10 +24,10 @@ pub struct Connect<S: From<Fd>> {
 }
 
 impl<S: From<Fd>> Connect<S> {
-    pub fn new(fd: Fd, addr: SocketAddr) -> Self {
+    pub fn new(fd: Fd, addr: SockAddr) -> Self {
         Self {
             fd,
-            addr: SockAddr::from(addr),
+            addr,
             io_request: None,
             phantom_data: PhantomData,
         }
@@ -65,10 +65,10 @@ pub struct ConnectWithTimeout<S: From<Fd>> {
 }
 
 impl<S: From<Fd>> ConnectWithTimeout<S> {
-    pub fn new(fd: Fd, addr: SocketAddr, deadline: Instant) -> Self {
+    pub fn new(fd: Fd, addr: SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
-            addr: SockAddr::from(addr),
+            addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request: None,
             phantom_data: PhantomData,
@@ -95,39 +95,4 @@ impl<S: From<Fd>> Future for ConnectWithTimeout<S> {
             S::from(this.fd)
         ));
     }
-}
-
-#[macro_export]
-macro_rules! generate_connect_from_new_socket {
-    ($new_socket: expr) => {
-        #[inline(always)]
-        pub async fn connect<A: std::net::ToSocketAddrs>(addrs: A) -> std::io::Result<Self> {
-            each_addr!(&addrs, async move |addr: SocketAddr| -> std::io::Result<Self> {
-                let socket = $new_socket(addr)?;
-                crate::io::Connect::new(socket.into_raw_fd(), addr).await
-            })
-        }
-
-        #[inline(always)]
-        pub async fn connect_with_deadline<A: std::net::ToSocketAddrs>(
-            addrs: A,
-            deadline: std::time::Instant,
-        ) -> std::io::Result<Self> {
-            each_addr!(
-                &addrs,
-                async move |addr: SocketAddr| -> std::io::Result<Stream> {
-                    let socket = $new_socket(addr)?;
-                    crate::io::ConnectWithTimeout::new(socket.into_raw_fd(), addr, deadline).await
-                }
-            )
-        }
-
-        #[inline(always)]
-        pub async fn connect_with_timeout<A: std::net::ToSocketAddrs>(
-            addrs: A,
-            timeout: std::time::Duration,
-        ) -> std::io::Result<Self> {
-            Self::connect_with_deadline(addrs, std::time::Instant::now() + timeout).await
-        }
-    };
 }

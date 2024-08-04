@@ -1,15 +1,16 @@
 use std::ffi::c_int;
 use std::io::Error;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{ToSocketAddrs};
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::path::Path;
 use std::{io, mem};
+use socket2::SockAddr;
+use crate::generate_accept;
 
 use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncAccept, AsyncClose, Bind};
+use crate::io::{AsyncClose, Bind};
 use crate::net::creators_of_sockets::new_unix_socket;
-use crate::net::unix::bind_config::BindConfig;
-use crate::net::unix::Stream;
+use crate::net::UnixStream;
 use crate::runtime::local_executor;
 
 pub struct Listener {
@@ -33,20 +34,12 @@ impl Listener {
     }
 
     #[inline(always)]
-    pub fn bind_with_config<P: AsRef<Path>>(path: P, config: &BindConfig) -> io::Result<Self> {
-        let addr = socket2::SockAddr::unix(path.as_ref())?;
+    pub fn bind_with_backlog_size<P: AsRef<Path>>(path: P, backlog_size: i32) -> io::Result<Self> {
+        let addr = SockAddr::unix(path.as_ref())?;
         let socket = new_unix_socket()?;
 
-        if config.reuse_address {
-            socket.set_reuse_address(true)?;
-        }
-
-        if config.reuse_port {
-            socket.set_reuse_port(true)?;
-        }
-
         socket.bind(&addr)?;
-        socket.listen(config.backlog_size as c_int)?;
+        socket.listen(backlog_size as c_int)?;
 
         Ok(Self {
             fd: socket.into_raw_fd(),
@@ -55,25 +48,15 @@ impl Listener {
 
     #[inline(always)]
     pub fn bind<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::bind_with_config(path, &BindConfig::default())
+        Self::bind_with_backlog_size(path, 1)
     }
 
-    /// Returns the local socket address of this listener.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::TcpListener;
-    ///
-    /// let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    /// assert_eq!(listener.local_addr().unwrap(), SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)));
-    /// ```
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+    generate_accept!(UnixStream);
+
+    pub fn local_addr(&self) -> io::Result<std::os::unix::net::SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.local_addr()?.as_unix().ok_or(Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))
@@ -131,8 +114,6 @@ impl AsFd for Listener {
     }
 }
 
-impl AsyncAccept<Stream> for Listener {}
-
 impl AsyncClose for Listener {}
 
 impl Drop for Listener {
@@ -146,6 +127,9 @@ impl Drop for Listener {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::net::SocketAddr;
+    use crate::fs::test_helper::delete_file_if_exists;
+    use crate::net::unix::Stream;
     use crate::runtime::create_local_executer_for_block_on;
 
     use super::*;
@@ -153,11 +137,16 @@ mod tests {
     #[test]
     fn test_listener() {
         create_local_executer_for_block_on(async {
-            let addr = "/test_unix_listener.sock";
+            let addr = "/tmp/test_unix_listener.sock";
+
+            delete_file_if_exists(addr);
+
             let listener = Listener::bind(addr).expect("bind call failed");
 
-            println!("TODO r local_addr: {:?}", listener.local_addr().unwrap());
-            // TODO assert_eq!(listener.local_addr().unwrap(), addr);
+            assert_eq!(
+                listener.local_addr().unwrap().as_pathname().unwrap(),
+                Path::new(addr)
+            );
 
             match listener.take_error() {
                 Ok(err) => {
@@ -168,22 +157,28 @@ mod tests {
         });
     }
 
-    // #[test]
-    // TODO
-    // fn test_accept() {
-    //     create_local_executer_for_block_on(async {
-    //         let addr = UnixAddr::local_path("/test_unix_listener.sock");
-    //         let mut listener = Listener::bind(addr).expect("bind call failed");
-    //
-    //         // Test accept
-    //         let mut stream = listener.accept().await.expect("accept failed").0;
-    //         assert_eq!(stream.local_addr().unwrap(), addr);
-    //
-    //         // Test closing listener
-    //         let close_future = listener.close();
-    //         local_executor().spawn_local(async {
-    //             close_future.await.expect("Failed to close unix listener");
-    //         });
-    //     });
-    // }
+    #[test]
+    fn test_accept() {
+        create_local_executer_for_block_on(async {
+            const ADDR: &str = "/tmp/test_unix_listener_accept.sock";
+
+            delete_file_if_exists(ADDR);
+
+            let mut listener = Listener::bind(ADDR).expect("bind call failed");
+
+            local_executor().spawn_local(async {
+                let stream = Stream::connect(ADDR).await.expect("connect failed");
+                assert_eq!(
+                    stream.peer_addr().unwrap().as_pathname().unwrap(),
+                    Path::new(ADDR)
+                );
+            });
+
+            let mut stream = listener.accept().await.expect("accept failed");
+            assert_eq!(
+                stream.local_addr().unwrap().as_pathname().unwrap(),
+                Path::new(ADDR)
+            );
+        });
+    }
 }

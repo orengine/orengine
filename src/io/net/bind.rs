@@ -49,10 +49,10 @@ impl Default for BindConfig {
 }
 
 pub trait Bind: Sized {
-    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self>;
+    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self>;
 
     #[inline(always)]
     fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
-        Self::bind_with_config(addrs, BindConfig::default())
+        Self::bind_with_config(addrs, &BindConfig::default())
     }
 }

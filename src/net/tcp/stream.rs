@@ -1,20 +1,20 @@
 //! This module contains [`Stream`].
 use std::io::{self, Error, Result};
 use std::mem;
-use std::net::{SocketAddr};
+use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use socket2::Socket;
+use socket2::{SockAddr, Socket};
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd};
+use crate::io::{AsyncClose, AsyncPollFd, Connect, ConnectWithTimeout};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::runtime::local_executor;
 use crate::{
-    each_addr, generate_connect_from_new_socket, generate_peek, generate_peek_exact, generate_recv,
+    each_addr, generate_peek, generate_peek_exact, generate_recv,
     generate_recv_exact, generate_send, generate_send_all,
 };
 
@@ -42,7 +42,39 @@ impl Stream {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
 
-    generate_connect_from_new_socket!(|addr| -> Result<Socket> { new_tcp_socket(&addr) });
+    // region connect
+
+    #[inline(always)]
+    pub async fn connect<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
+        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Self> {
+            let socket = new_tcp_socket(&addr)?;
+            Connect::new(socket.into_raw_fd(), SockAddr::from(addr)).await
+        })
+    }
+
+    #[inline(always)]
+    pub async fn connect_with_deadline<A: ToSocketAddrs>(
+        addrs: A,
+        deadline: Instant,
+    ) -> Result<Self> {
+        each_addr!(
+            &addrs,
+            async move |addr: SocketAddr| -> Result<Stream> {
+                let socket = new_tcp_socket(&addr)?;
+                ConnectWithTimeout::new(socket.into_raw_fd(), SockAddr::from(addr), deadline).await
+            }
+        )
+    }
+
+    #[inline(always)]
+    pub async fn connect_with_timeout<A: ToSocketAddrs>(
+        addrs: A,
+        timeout: Duration,
+    ) -> Result<Self> {
+        Self::connect_with_deadline(addrs, Instant::now() + timeout).await
+    }
+
+    // endregion
 
     generate_send!();
 
@@ -322,7 +354,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use crate::io::bind::BindConfig;
-    use crate::io::{AsyncAccept, Bind};
+    use crate::io::{Bind};
     use crate::net::tcp::Listener;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::cond_var::LocalCondVar;
@@ -535,7 +567,7 @@ mod tests {
 
             local_executor().spawn_local(async move {
                 let mut listener =
-                    Listener::bind_with_config(ADDR, BindConfig::new().backlog_size(BACKLOG_SIZE))
+                    Listener::bind_with_config(ADDR, &BindConfig::new().backlog_size(BACKLOG_SIZE))
                         .expect("bind failed");
                 let mut expected_state = 0;
                 let mut state = state_clone.lock().await;
