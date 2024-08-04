@@ -37,6 +37,7 @@ impl Stream {
 
     generate_connect_from_new_socket!(|_| -> io::Result<Socket> { new_unix_socket() });
 
+    #[inline(always)]
     pub fn pair() -> io::Result<(Stream, Stream)> {
         let (socket1, socket2) = Socket::pair(Domain::UNIX, Type::STREAM, None)?;
         Ok((
@@ -190,3 +191,4 @@ impl Drop for Stream {
         });
     }
 }
+

@@ -101,33 +101,33 @@ impl<S: From<Fd>> Future for ConnectWithTimeout<S> {
 macro_rules! generate_connect_from_new_socket {
     ($new_socket: expr) => {
         #[inline(always)]
-        pub async fn connect<A: ToSocketAddrs>(addrs: A) -> io::Result<Self> {
-            each_addr!(&addrs, async move |addr: SocketAddr| -> io::Result<Self> {
+        pub async fn connect<A: std::net::ToSocketAddrs>(addrs: A) -> std::io::Result<Self> {
+            each_addr!(&addrs, async move |addr: SocketAddr| -> std::io::Result<Self> {
                 let socket = $new_socket(addr)?;
-                Connect::new(socket.into_raw_fd(), addr).await
+                crate::io::Connect::new(socket.into_raw_fd(), addr).await
             })
         }
 
         #[inline(always)]
-        pub async fn connect_with_deadline<A: ToSocketAddrs>(
+        pub async fn connect_with_deadline<A: std::net::ToSocketAddrs>(
             addrs: A,
-            deadline: Instant,
-        ) -> io::Result<Self> {
+            deadline: std::time::Instant,
+        ) -> std::io::Result<Self> {
             each_addr!(
                 &addrs,
-                async move |addr: SocketAddr| -> io::Result<Stream> {
+                async move |addr: SocketAddr| -> std::io::Result<Stream> {
                     let socket = $new_socket(addr)?;
-                    ConnectWithTimeout::new(socket.into_raw_fd(), addr, deadline).await
+                    crate::io::ConnectWithTimeout::new(socket.into_raw_fd(), addr, deadline).await
                 }
             )
         }
 
         #[inline(always)]
-        pub async fn connect_with_timeout<A: ToSocketAddrs>(
+        pub async fn connect_with_timeout<A: std::net::ToSocketAddrs>(
             addrs: A,
-            timeout: Duration,
-        ) -> io::Result<Self> {
-            Self::connect_with_deadline(addrs, Instant::now() + timeout).await
+            timeout: std::time::Duration,
+        ) -> std::io::Result<Self> {
+            Self::connect_with_deadline(addrs, std::time::Instant::now() + timeout).await
         }
     };
 }

@@ -100,7 +100,7 @@ macro_rules! generate_peek {
         pub fn peek_with_deadline<'a>(
             &mut self,
             buf: &'a mut [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> crate::io::PeekWithDeadline<'a> {
             crate::io::PeekWithDeadline::new(self.as_raw_fd(), buf, deadline)
         }
@@ -109,9 +109,9 @@ macro_rules! generate_peek {
         pub fn peek_with_timeout<'a>(
             &mut self,
             buf: &'a mut [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> crate::io::PeekWithDeadline<'a> {
-            self.peek_with_deadline(buf, Instant::now() + duration)
+            self.peek_with_deadline(buf, std::time::Instant::now() + duration)
         }
     };
 }
@@ -134,7 +134,7 @@ macro_rules! generate_peek_exact {
         pub async fn peek_exact_with_deadline(
             &mut self,
             buf: &mut [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> std::io::Result<()> {
             let mut read = 0;
 
@@ -149,7 +149,7 @@ macro_rules! generate_peek_exact {
         pub async fn peek_exact_with_timeout(
             &mut self,
             buf: &mut [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> std::io::Result<()> {
             let mut read = 0;
 

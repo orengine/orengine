@@ -115,7 +115,7 @@ macro_rules! generate_recv_from {
         pub fn recv_from_with_deadline<'a>(
             &mut self,
             buf: &'a mut [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> crate::io::RecvFromWithDeadline<'a> {
             crate::io::RecvFromWithDeadline::new(self.as_raw_fd(), buf, deadline)
         }
@@ -124,9 +124,9 @@ macro_rules! generate_recv_from {
         pub fn recv_from_with_timeout<'a>(
             &mut self,
             buf: &'a mut [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> crate::io::RecvFromWithDeadline<'a> {
-            self.recv_from_with_deadline(buf, Instant::now() + duration)
+            self.recv_from_with_deadline(buf, std::time::Instant::now() + duration)
         }
     };
 }

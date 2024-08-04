@@ -86,13 +86,21 @@ macro_rules! generate_peek_from {
         }
 
         #[inline(always)]
-        pub fn peek_from_with_deadline<'buf>(&mut self, buf: &'buf mut [u8], deadline: Instant) -> crate::io::PeekFromWithDeadline<'buf> {
+        pub fn peek_from_with_deadline<'buf>(
+            &mut self,
+            buf: &'buf mut [u8],
+            deadline: std::time::Instant
+        ) -> crate::io::PeekFromWithDeadline<'buf> {
             crate::io::PeekFromWithDeadline::new(self.as_raw_fd(), buf, deadline)
         }
 
         #[inline(always)]
-        pub fn peek_from_with_timeout<'buf>(&mut self, buf: &'buf mut [u8], duration: Duration) -> crate::io::PeekFromWithDeadline<'buf> {
-            self.peek_from_with_deadline(buf, Instant::now() + duration)
+        pub fn peek_from_with_timeout<'buf>(
+            &mut self,
+            buf: &'buf mut [u8],
+            duration: std::time::Duration
+        ) -> crate::io::PeekFromWithDeadline<'buf> {
+            self.peek_from_with_deadline(buf, std::time::Instant::now() + duration)
         }
     };
 }

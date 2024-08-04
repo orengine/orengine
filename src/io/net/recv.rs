@@ -100,7 +100,7 @@ macro_rules! generate_recv {
         pub fn recv_with_deadline<'a>(
             &mut self,
             buf: &'a mut [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> crate::io::RecvWithDeadline<'a> {
             crate::io::RecvWithDeadline::new(self.as_raw_fd(), buf, deadline)
         }
@@ -109,9 +109,9 @@ macro_rules! generate_recv {
         pub fn recv_with_timeout<'a>(
             &mut self,
             buf: &'a mut [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> crate::io::RecvWithDeadline<'a> {
-            self.recv_with_deadline(buf, Instant::now() + duration)
+            self.recv_with_deadline(buf, std::time::Instant::now() + duration)
         }
     };
 }
@@ -140,7 +140,7 @@ macro_rules! generate_recv_exact {
         pub async fn recv_exact_with_deadline(
             &mut self,
             buf: &mut [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> std::io::Result<()> {
             let mut received = 0;
             let mut last_received;
@@ -163,9 +163,9 @@ macro_rules! generate_recv_exact {
         pub async fn recv_exact_with_timeout(
             &mut self,
             buf: &mut [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> std::io::Result<()> {
-            self.recv_exact_with_deadline(buf, Instant::now() + duration)
+            self.recv_exact_with_deadline(buf, std::time::Instant::now() + duration)
                 .await
         }
     };

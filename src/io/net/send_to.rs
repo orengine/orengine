@@ -90,18 +90,18 @@ impl<'a> Future for SendToWithDeadline<'a> {
 macro_rules! generate_send_to {
     () => {
         #[inline(always)]
-        pub async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
+        pub async fn send_to<A: std::net::ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> std::io::Result<usize> {
             crate::io::SendTo::new(self.fd, buf, crate::utils::addr_from_to_socket_addrs(addr)?)
                 .await
         }
 
         #[inline(always)]
-        pub async fn send_to_with_deadline<A: ToSocketAddrs>(
+        pub async fn send_to_with_deadline<A: std::net::ToSocketAddrs>(
             &mut self,
             buf: &[u8],
             addr: A,
-            deadline: Instant,
-        ) -> Result<usize> {
+            deadline: std::time::Instant,
+        ) -> std::io::Result<usize> {
             crate::io::SendToWithDeadline::new(
                 self.fd,
                 buf,
@@ -112,13 +112,13 @@ macro_rules! generate_send_to {
         }
 
         #[inline(always)]
-        pub async fn send_to_with_timeout<A: ToSocketAddrs>(
+        pub async fn send_to_with_timeout<A: std::net::ToSocketAddrs>(
             &mut self,
             buf: &[u8],
             addr: A,
-            duration: Duration,
-        ) -> Result<usize> {
-            let deadline = Instant::now() + duration;
+            duration: std::time::Duration,
+        ) -> std::io::Result<usize> {
+            let deadline = std::time::Instant::now() + duration;
             self.send_to_with_deadline(buf, addr, deadline).await
         }
     };
@@ -128,7 +128,7 @@ macro_rules! generate_send_to {
 macro_rules! generate_send_all_to {
     () => {
         #[inline(always)]
-        pub async fn send_all_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<()> {
+        pub async fn send_all_to<A: std::net::ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> std::io::Result<()> {
             let mut sent = 0;
             let socket_addr = crate::utils::addr_from_to_socket_addrs(addr)?;
 
@@ -140,12 +140,12 @@ macro_rules! generate_send_all_to {
         }
 
         #[inline(always)]
-        pub async fn send_all_to_with_deadline<A: ToSocketAddrs>(
+        pub async fn send_all_to_with_deadline<A: std::net::ToSocketAddrs>(
             &mut self,
             buf: &[u8],
             addr: A,
-            deadline: Instant,
-        ) -> Result<()> {
+            deadline: std::time::Instant,
+        ) -> std::io::Result<()> {
             let mut sent = 0;
             let socket_addr = crate::utils::addr_from_to_socket_addrs(addr)?;
 
@@ -158,13 +158,13 @@ macro_rules! generate_send_all_to {
         }
 
         #[inline(always)]
-        pub async fn send_all_to_with_timeout<A: ToSocketAddrs>(
+        pub async fn send_all_to_with_timeout<A: std::net::ToSocketAddrs>(
             &mut self,
             buf: &[u8],
             addr: A,
-            duration: Duration,
-        ) -> Result<()> {
-            let deadline = Instant::now() + duration;
+            duration: std::time::Duration,
+        ) -> std::io::Result<()> {
+            let deadline = std::time::Instant::now() + duration;
             self.send_all_to_with_deadline(buf, addr, deadline).await
         }
     };

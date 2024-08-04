@@ -1,14 +1,13 @@
 //! This module contains [`Stream`].
 use std::io::{self, Error, Result};
 use std::mem;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{SocketAddr};
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use socket2::Socket;
 
-use crate::io::connect::{Connect, ConnectWithTimeout};
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, Fd};
 use crate::io::{AsyncClose, AsyncPollFd};
@@ -320,6 +319,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::{Duration, Instant};
 
     use crate::io::bind::BindConfig;
     use crate::io::{AsyncAccept, Bind};

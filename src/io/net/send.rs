@@ -99,7 +99,7 @@ macro_rules! generate_send {
         pub fn send_with_deadline<'a>(
             &mut self,
             buf: &'a [u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> crate::io::SendWithDeadline<'a> {
             crate::io::SendWithDeadline::new(self.fd, buf, deadline)
         }
@@ -108,9 +108,9 @@ macro_rules! generate_send {
         pub fn send_with_timeout<'a>(
             &mut self,
             buf: &'a [u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> crate::io::SendWithDeadline<'a> {
-            let deadline = Instant::now() + duration;
+            let deadline = std::time::Instant::now() + duration;
             self.send_with_deadline(buf, deadline)
         }
     };
@@ -133,7 +133,7 @@ macro_rules! generate_send_all {
         pub async fn send_all_with_deadline(
             &mut self,
             buf: &[u8],
-            deadline: Instant,
+            deadline: std::time::Instant,
         ) -> std::io::Result<()> {
             let mut written = 0;
 
@@ -148,7 +148,7 @@ macro_rules! generate_send_all {
         pub async fn send_all_with_timeout(
             &mut self,
             buf: &[u8],
-            duration: Duration,
+            duration: std::time::Duration,
         ) -> std::io::Result<()> {
             let mut written = 0;
 
