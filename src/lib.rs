@@ -26,3 +26,4 @@ pub use runtime::Executor;
 pub use yield_now::yield_now;
 pub use end::end_local_thread;
 pub use run::*;
+pub use socket2;

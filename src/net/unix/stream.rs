@@ -9,7 +9,7 @@ use std::path::Path;
 use socket2::{Domain, SockAddr, Socket, Type};
 
 use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Connect, ConnectWithTimeout};
+use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Connect, ConnectWithDeadline};
 use crate::net::creators_of_sockets::new_unix_socket;
 use crate::runtime::local_executor;
 use crate::{
@@ -51,7 +51,7 @@ impl Stream {
         deadline: Instant,
     ) -> io::Result<Self> {
         let socket = new_unix_socket()?;
-        ConnectWithTimeout::new(socket.into_raw_fd(), SockAddr::unix(addr)?, deadline).await
+        ConnectWithDeadline::new(socket.into_raw_fd(), SockAddr::unix(addr)?, deadline).await
     }
 
     #[inline(always)]
@@ -138,12 +138,14 @@ impl Stream {
         ))
     }
 
+    #[inline(always)]
     pub fn set_mark(&self, mark: u32) -> io::Result<()> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
         socket_ref.set_mark(mark)
     }
 
+    #[inline(always)]
     pub fn mark(&self) -> io::Result<u32> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
@@ -230,7 +232,6 @@ mod tests {
     use crate::io::{Bind};
     use crate::net::unix::Listener;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::sync::cond_var::LocalCondVar;
     use crate::sync::{LocalMutex, LocalWaitGroup};
 
     use super::*;

@@ -56,7 +56,7 @@ impl<S: From<Fd>> Future for Connect<S> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct ConnectWithTimeout<S: From<Fd>> {
+pub struct ConnectWithDeadline<S: From<Fd>> {
     fd: Fd,
     addr: SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
@@ -64,7 +64,7 @@ pub struct ConnectWithTimeout<S: From<Fd>> {
     phantom_data: PhantomData<S>,
 }
 
-impl<S: From<Fd>> ConnectWithTimeout<S> {
+impl<S: From<Fd>> ConnectWithDeadline<S> {
     pub fn new(fd: Fd, addr: SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
@@ -76,7 +76,7 @@ impl<S: From<Fd>> ConnectWithTimeout<S> {
     }
 }
 
-impl<S: From<Fd>> Future for ConnectWithTimeout<S> {
+impl<S: From<Fd>> Future for ConnectWithDeadline<S> {
     type Output = Result<S>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

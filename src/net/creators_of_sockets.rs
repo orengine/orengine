@@ -28,3 +28,8 @@ pub(crate) fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<Socket> {
 pub(crate) fn new_unix_socket() -> std::io::Result<Socket> {
     Socket::new(Domain::UNIX, Type::STREAM, None)
 }
+
+#[inline(always)]
+pub(crate) fn new_unix_socket_datagram() -> std::io::Result<Socket> {
+    Socket::new(Domain::UNIX, Type::DGRAM, None)
+}

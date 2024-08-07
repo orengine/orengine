@@ -30,11 +30,11 @@ impl<'buf> MessageHeader<'buf> {
 
     /// Used in SendTo. So we need to use `*const [u8]` and [`SocketAddr`].
     #[inline(always)]
-    pub(crate) fn new_for_send_to(buf_ref: &'buf [u8], addr: SocketAddr) -> Self {
+    pub(crate) fn new_for_send_to(buf_ref: &'buf [u8], addr: SockAddr) -> Self {
         let mut s = MessageHeader {
             header: unsafe { mem::zeroed() },
             io_slices: vec![IoSlice::new(buf_ref)],
-            sock_addr: SockAddr::from(addr)
+            sock_addr: addr
         };
 
         s.header.msg_iov = s.io_slices.as_mut_ptr() as _;

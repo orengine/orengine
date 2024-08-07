@@ -10,7 +10,7 @@ use socket2::{SockAddr, Socket};
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd, Connect, ConnectWithTimeout};
+use crate::io::{AsyncClose, AsyncPollFd, Connect, ConnectWithDeadline};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::runtime::local_executor;
 use crate::{
@@ -61,7 +61,7 @@ impl Stream {
             &addrs,
             async move |addr: SocketAddr| -> Result<Stream> {
                 let socket = new_tcp_socket(&addr)?;
-                ConnectWithTimeout::new(socket.into_raw_fd(), SockAddr::from(addr), deadline).await
+                ConnectWithDeadline::new(socket.into_raw_fd(), SockAddr::from(addr), deadline).await
             }
         )
     }

@@ -8,7 +8,7 @@ use std::{io, mem};
 use socket2::SockAddr;
 
 use crate::io::bind::BindConfig;
-use crate::io::connect::{Connect, ConnectWithTimeout};
+use crate::io::connect::{Connect, ConnectWithDeadline};
 use crate::io::sys::{AsFd, Fd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::net::creators_of_sockets::new_udp_socket;
@@ -24,6 +24,11 @@ pub struct Socket {
 }
 
 impl Socket {
+    #[inline(always)]
+    pub fn fd(&mut self) -> Fd {
+        self.fd
+    }
+
     #[inline(always)]
     #[cfg(unix)]
     pub fn borrow_fd(&self) -> BorrowedFd {
@@ -62,7 +67,7 @@ impl Socket {
         let res = each_addr!(
             &addrs,
             async move |addr: SocketAddr| -> Result<ConnectedSocket> {
-                ConnectWithTimeout::new(fd, SockAddr::from(addr), deadline).await
+                ConnectWithDeadline::new(fd, SockAddr::from(addr), deadline).await
             }
         );
 
@@ -108,10 +113,21 @@ impl Socket {
     /// assert_eq!(socket.local_addr().unwrap(),
     ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 34254)));
     /// ```
+    #[inline(always)]
     pub fn local_addr(&self) -> Result<SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
         socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+            io::ErrorKind::Other,
+            "failed to get local address",
+        ))
+    }
+
+    #[inline(always)]
+    pub fn peer_addr(&self) -> Result<SocketAddr> {
+        let borrowed_fd = self.borrow_fd();
+        let socket_ref = socket2::SockRef::from(&borrowed_fd);
+        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))

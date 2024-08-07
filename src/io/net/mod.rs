@@ -17,7 +17,7 @@ pub use recv_from::{RecvFrom, RecvFromWithDeadline};
 pub use send_to::{SendTo, SendToWithDeadline};
 pub use peek::{Peek, PeekWithDeadline};
 pub use peek_from::{PeekFrom, PeekFromWithDeadline};
-pub use connect::{Connect, ConnectWithTimeout};
+pub use connect::{Connect, ConnectWithDeadline};
 pub use poll_fd::{AsyncPollFd};
 pub use bind::{Bind};
 pub use shutdown::{Shutdown, AsyncShutdown};
