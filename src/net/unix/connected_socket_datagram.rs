@@ -1,8 +1,7 @@
 use std::io::{Error, Result};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 #[cfg(unix)]
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::time::{Duration, Instant};
 use std::{io, mem};
 
 use crate::io::sys::{AsFd, Fd};
@@ -54,10 +53,10 @@ impl ConnectedSocketDatagram {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn peer_addr(&self) -> Result<SocketAddr> {
+    pub fn peer_addr(&self) -> Result<std::os::unix::net::SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.peer_addr()?.as_unix().ok_or(Error::new(
             io::ErrorKind::Other,
             "failed to get peer address",
         ))
@@ -76,10 +75,10 @@ impl ConnectedSocketDatagram {
     /// assert_eq!(socket.local_addr().unwrap(),
     ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 34254)));
     /// ```
-    pub fn local_addr(&self) -> Result<SocketAddr> {
+    pub fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr> {
         let borrowed_fd = self.borrow_fd();
         let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.local_addr()?.as_unix().ok_or(Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))
@@ -176,11 +175,11 @@ impl Drop for ConnectedSocketDatagram {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use crate::fs::test_helper::delete_file_if_exists;
 
+    use crate::fs::test_helper::delete_file_if_exists;
     use crate::io::Bind;
     use crate::net::unix::socket_datagram::SocketDatagram;
     use crate::runtime::create_local_executer_for_block_on;
@@ -203,7 +202,8 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            let socket = std::os::unix::net::UnixDatagram::bind(SERVER_ADDR).expect("std bind failed");
+            let socket =
+                std::os::unix::net::UnixDatagram::bind(SERVER_ADDR).expect("std bind failed");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
@@ -218,7 +218,9 @@ mod tests {
                 let (n, src) = socket.recv_from(&mut buf).expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
-                socket.send_to_addr(RESPONSE, &src).expect("std write failed");
+                socket
+                    .send_to_addr(RESPONSE, &src)
+                    .expect("std write failed");
             }
         });
 
@@ -233,12 +235,20 @@ mod tests {
             let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
 
             assert_eq!(
-                connected_stream.local_addr().expect(CLIENT_ADDR),
-                SocketAddr::from_str(CLIENT_ADDR).unwrap()
+                connected_stream
+                    .local_addr()
+                    .expect(CLIENT_ADDR)
+                    .as_pathname()
+                    .unwrap(),
+                Path::new(CLIENT_ADDR)
             );
             assert_eq!(
-                connected_stream.peer_addr().expect(CLIENT_ADDR),
-                SocketAddr::from_str(SERVER_ADDR).unwrap()
+                connected_stream
+                    .peer_addr()
+                    .expect(CLIENT_ADDR)
+                    .as_pathname()
+                    .unwrap(),
+                Path::new(SERVER_ADDR)
             );
 
             for _ in 0..TIMES {
@@ -254,42 +264,5 @@ mod tests {
         });
 
         server_thread.join().expect("server thread join failed");
-    }
-
-    #[test]
-    fn test_timeout() {
-        const ADDR: &str = "/tmp/test_connected_socket_datagram_with_timeout.sock";
-        const TIMEOUT: Duration = Duration::from_micros(1);
-
-        delete_file_if_exists(ADDR);
-
-        create_local_executer_for_block_on(async {
-            let socket = SocketDatagram::bind(ADDR).expect("bind failed");
-            let mut connected_socket = socket
-                .connect_with_timeout("127.0.0.1:14142", TIMEOUT)
-                .await
-                .expect("bind failed");
-
-            match connected_socket.poll_recv_with_timeout(TIMEOUT).await {
-                Ok(_) => panic!("poll_recv should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
-
-            match connected_socket
-                .recv_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-                .await
-            {
-                Ok(_) => panic!("recv_from should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
-
-            match connected_socket
-                .peek_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-                .await
-            {
-                Ok(_) => panic!("peek_from should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
-        });
     }
 }

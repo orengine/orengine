@@ -9,14 +9,14 @@ use socket2::SockAddr;
 
 use crate::io::bind::BindConfig;
 use crate::io::connect::{Connect, ConnectWithDeadline};
+use crate::io::recv_from::AsyncRecvFrom;
 use crate::io::sys::{AsFd, Fd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::ConnectedSocket;
 use crate::runtime::local_executor;
 use crate::{
-    each_addr, each_addr_sync, generate_peek_from, generate_recv_from, generate_send_all_to,
-    generate_send_to,
+    each_addr, each_addr_sync, generate_peek_from, generate_send_all_to, generate_send_to,
 };
 
 pub struct Socket {
@@ -95,8 +95,6 @@ impl Socket {
     generate_send_to!();
 
     generate_send_all_to!();
-
-    generate_recv_from!();
 
     generate_peek_from!();
 
@@ -459,6 +457,8 @@ impl AsFd for Socket {
 }
 
 impl AsyncPollFd for Socket {}
+
+impl AsyncRecvFrom for Socket {}
 
 impl AsyncShutdown for Socket {}
 

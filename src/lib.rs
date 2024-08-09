@@ -8,22 +8,24 @@
 #![feature(async_closure)]
 #![feature(negative_impls)]
 
-pub mod utils;
-pub mod runtime;
-pub mod yield_now;
-pub mod sleep;
-pub mod end;
-pub mod cfg;
-pub mod buf;
-pub mod local;
-pub mod io;
-pub mod fs;
-pub mod net;
-pub mod run;
-pub mod sync;
+pub use socket2;
 
-pub use runtime::Executor;
-pub use yield_now::yield_now;
 pub use end::end_local_thread;
 pub use run::*;
-pub use socket2;
+pub use runtime::Executor;
+pub use yield_now::yield_now;
+
+pub mod buf;
+pub mod cfg;
+pub mod end;
+pub mod fs;
+pub mod io;
+pub mod local;
+mod local_pool;
+pub mod net;
+pub mod run;
+pub mod runtime;
+pub mod sleep;
+pub mod sync;
+pub mod utils;
+pub mod yield_now;

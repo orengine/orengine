@@ -1,17 +1,19 @@
-use std::ffi::c_int;
-use std::{io, mem};
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::{io, mem};
+
 use socket2::{Domain, SockAddr, Socket, Type};
-use crate::{each_addr, generate_peek_from, generate_recv_from, generate_send_all_to_unix, generate_send_to_unix};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Connect, ConnectWithDeadline};
+
+use crate::io::recv_from::AsyncRecvFromPath;
 use crate::io::sys::{AsFd, Fd};
+use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Connect};
 use crate::net::creators_of_sockets::new_unix_socket_datagram;
 use crate::net::unix::connected_socket_datagram::ConnectedSocketDatagram;
 use crate::runtime::local_executor;
+use crate::{each_addr, generate_peek_from_unix, generate_send_all_to_unix, generate_send_to_unix};
 
 // TODO docs
 pub struct SocketDatagram {
@@ -34,11 +36,14 @@ impl SocketDatagram {
     // TODO macro
 
     #[inline(always)]
-    fn bind_with_backlog_size_and_sock_addr(addr: &SockAddr, backlog_size: i32) -> io::Result<Self> {
+    fn bind_with_backlog_size_and_sock_addr(
+        addr: &SockAddr,
+        backlog_size: i32,
+    ) -> io::Result<Self> {
+        println!("addr: {:?}, backlog_size: {}", addr, backlog_size);
         let socket = new_unix_socket_datagram()?;
 
         socket.bind(addr)?;
-        socket.listen(backlog_size as c_int)?;
 
         Ok(Self {
             fd: socket.into_raw_fd(),
@@ -57,12 +62,14 @@ impl SocketDatagram {
     }
 
     #[inline(always)]
-    pub fn bind_addr_with_backlog_size<A: ToSocketAddrs>(addr: A, backlog_size: i32) -> io::Result<Self> {
+    pub fn bind_addr_with_backlog_size<A: ToSocketAddrs>(
+        addr: A,
+        backlog_size: i32,
+    ) -> io::Result<Self> {
         let addr = SockAddr::from(
-            addr
-                .to_socket_addrs()?
+            addr.to_socket_addrs()?
                 .next()
-                .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?
+                .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?,
         );
         Self::bind_with_backlog_size_and_sock_addr(&addr, backlog_size)
     }
@@ -93,8 +100,6 @@ impl SocketDatagram {
         ))
     }
 
-    // region connect
-
     #[inline(always)]
     pub async fn connect<P: AsRef<Path>>(self, path: P) -> io::Result<ConnectedSocketDatagram> {
         let fd = self.fd;
@@ -111,67 +116,17 @@ impl SocketDatagram {
     }
 
     #[inline(always)]
-    pub async fn connect_with_deadline<P: AsRef<Path>>(
-        self,
-        path: P,
-        deadline: Instant,
-    ) -> io::Result<ConnectedSocketDatagram> {
-        let fd = self.fd;
-
-        let res = ConnectWithDeadline::new(fd, SockAddr::unix(path)?, deadline).await;
-
-        match res {
-            Ok(connected_socket) => {
-                mem::forget(self);
-                Ok(connected_socket)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    #[inline(always)]
-    pub async fn connect_with_timeout<P: AsRef<Path>>(
-        self,
-        path: P,
-        timeout: Duration,
-    ) -> io::Result<ConnectedSocketDatagram> {
-        self.connect_with_deadline(path, Instant::now() + timeout).await
-    }
-
-    #[inline(always)]
-    pub async fn connect_addr<A: ToSocketAddrs>(self, addrs: A) -> io::Result<ConnectedSocketDatagram> {
-        let fd = self.fd;
-
-        let res = each_addr!(
-            &addrs,
-            async move |addr: SocketAddr| -> io::Result<ConnectedSocketDatagram> {
-                Connect::new(fd, SockAddr::from(addr)).await
-            }
-        );
-
-        match res {
-            Ok(connected_socket) => {
-                mem::forget(self);
-                Ok(connected_socket)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    #[inline(always)]
-    pub async fn connect_addr_with_deadline<A: ToSocketAddrs>(
+    pub async fn connect_addr<A: ToSocketAddrs>(
         self,
         addrs: A,
-        deadline: Instant,
     ) -> io::Result<ConnectedSocketDatagram> {
         let fd = self.fd;
 
-        let res = each_addr!(
-            &addrs,
-            async move |addr: SocketAddr| -> io::Result<ConnectedSocketDatagram> {
-                ConnectWithDeadline::new(fd, SockAddr::from(addr), deadline).await
-            }
-        );
+        let res = each_addr!(&addrs, async move |addr: SocketAddr| -> io::Result<
+            ConnectedSocketDatagram,
+        > {
+            Connect::new(fd, SockAddr::from(addr)).await
+        });
 
         match res {
             Ok(connected_socket) => {
@@ -181,25 +136,12 @@ impl SocketDatagram {
             Err(e) => Err(e),
         }
     }
-
-    #[inline(always)]
-    pub async fn connect_addr_with_timeout<A: ToSocketAddrs>(
-        self,
-        addrs: A,
-        timeout: Duration,
-    ) -> io::Result<ConnectedSocketDatagram> {
-        self.connect_addr_with_deadline(addrs, Instant::now() + timeout).await
-    }
-
-    // endregion
 
     generate_send_to_unix!();
 
     generate_send_all_to_unix!();
 
-    generate_recv_from!();
-
-    generate_peek_from!();
+    generate_peek_from_unix!();
 
     #[inline(always)]
     pub fn local_addr(&self) -> io::Result<std::os::unix::net::SocketAddr> {
@@ -275,6 +217,8 @@ impl AsFd for SocketDatagram {
 
 impl AsyncPollFd for SocketDatagram {}
 
+impl AsyncRecvFromPath for SocketDatagram {}
+
 impl AsyncShutdown for SocketDatagram {}
 
 impl AsyncClose for SocketDatagram {}
@@ -283,19 +227,20 @@ impl Drop for SocketDatagram {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
-            close_future.await.expect("Failed to close UNIX datagram socket");
+            close_future
+                .await
+                .expect("Failed to close UNIX datagram socket");
         });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use crate::fs::test_helper::delete_file_if_exists;
 
+    use crate::fs::test_helper::delete_file_if_exists;
     use crate::io::Bind;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::cond_var::LocalCondVar;
@@ -319,8 +264,8 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            let socket = std::os::unix::net::UnixDatagram::bind(SERVER_ADDR).expect("std bind failed");
-
+            let socket =
+                std::os::unix::net::UnixDatagram::bind(SERVER_ADDR).expect("std bind failed");
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
                 let mut is_ready = is_ready_mu.lock().unwrap();
@@ -336,7 +281,9 @@ mod tests {
 
                 println!("TODO r it. src: {:?}", src);
 
-                socket.send_to_addr(RESPONSE, &src).expect("std write failed");
+                socket
+                    .send_to_addr(RESPONSE, &src)
+                    .expect("std write failed");
             }
         });
 
@@ -387,7 +334,7 @@ mod tests {
                     let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
                     assert_eq!(REQUEST, &buf[..n]);
 
-                    server.send_to_addr(RESPONSE, &src).await.expect("send failed");
+                    server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
             });
         });
@@ -446,7 +393,7 @@ mod tests {
                     assert_eq!(REQUEST, &buf[..n]);
 
                     server
-                        .send_to_addr_with_timeout(RESPONSE, &src, TIMEOUT)
+                        .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
                         .await
                         .expect("send failed");
                 }
@@ -461,8 +408,12 @@ mod tests {
             let mut stream = SocketDatagram::bind(CLIENT_ADDR).expect("bind failed");
 
             assert_eq!(
-                stream.local_addr().expect("Failed to get local addr").as_pathname().expect("Failed to get local pathname"),
-                Path::new(SERVER_ADDR)
+                stream
+                    .local_addr()
+                    .expect("Failed to get local addr")
+                    .as_pathname()
+                    .expect("Failed to get local pathname"),
+                Path::new(CLIENT_ADDR)
             );
 
             match stream.take_error() {

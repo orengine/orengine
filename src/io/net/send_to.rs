@@ -1,7 +1,5 @@
 use std::future::Future;
 use std::io::Result;
-use std::net::SocketAddr;
-use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -11,14 +9,14 @@ use socket2::SockAddr;
 
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{Fd, MessageHeader};
+use crate::io::sys::{Fd, MessageSendHeader};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendTo<'buf> {
     fd: Fd,
-    message_header: MessageHeader<'buf>,
+    message_header: MessageSendHeader<'buf>,
     io_request: Option<IoRequest>,
 }
 
@@ -26,7 +24,7 @@ impl<'buf> SendTo<'buf> {
     pub fn new(fd: Fd, buf: &'buf [u8], addr: SockAddr) -> Self {
         Self {
             fd,
-            message_header: MessageHeader::new_for_send_to(buf, addr),
+            message_header: MessageSendHeader::new(buf, addr),
             io_request: None,
         }
     }
@@ -53,7 +51,7 @@ impl<'buf> Future for SendTo<'buf> {
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendToWithDeadline<'buf> {
     fd: Fd,
-    message_header: MessageHeader<'buf>,
+    message_header: MessageSendHeader<'buf>,
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
@@ -62,7 +60,7 @@ impl<'a> SendToWithDeadline<'a> {
     pub fn new(fd: Fd, buf: &'a [u8], addr: SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
-            message_header: MessageHeader::new_for_send_to(buf, addr),
+            message_header: MessageSendHeader::new(buf, addr),
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request: None,
         }
@@ -92,9 +90,12 @@ impl<'a> Future for SendToWithDeadline<'a> {
 macro_rules! generate_send_to {
     () => {
         #[inline(always)]
-        pub async fn send_to<A: std::net::ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> std::io::Result<usize> {
-            crate::io::SendTo::new(self.fd, buf, crate::utils::addr_from_to_sock_addrs(addr)?)
-                .await
+        pub async fn send_to<A: std::net::ToSocketAddrs>(
+            &mut self,
+            buf: &[u8],
+            addr: A,
+        ) -> std::io::Result<usize> {
+            crate::io::SendTo::new(self.fd, buf, crate::utils::addr_from_to_sock_addrs(addr)?).await
         }
 
         #[inline(always)]
@@ -130,7 +131,11 @@ macro_rules! generate_send_to {
 macro_rules! generate_send_all_to {
     () => {
         #[inline(always)]
-        pub async fn send_all_to<A: std::net::ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> std::io::Result<()> {
+        pub async fn send_all_to<A: std::net::ToSocketAddrs>(
+            &mut self,
+            buf: &[u8],
+            addr: A,
+        ) -> std::io::Result<()> {
             let mut sent = 0;
             let socket_addr = crate::utils::addr_from_to_sock_addrs(addr)?;
 
@@ -152,7 +157,9 @@ macro_rules! generate_send_all_to {
             let socket_addr = crate::utils::addr_from_to_sock_addrs(addr)?;
 
             while sent < buf.len() {
-                sent += crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline).await?;
+                sent +=
+                    crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline)
+                        .await?;
             }
 
             Ok(())
@@ -178,10 +185,9 @@ macro_rules! generate_send_to_unix {
         pub async fn send_to<P: std::convert::AsRef<std::path::Path>>(
             &mut self,
             buf: &[u8],
-            path: P
+            path: P,
         ) -> std::io::Result<usize> {
-            crate::io::SendTo::new(self.fd, buf, crate::socket2::SockAddr::unix(path)?)
-                .await
+            crate::io::SendTo::new(self.fd, buf, crate::socket2::SockAddr::unix(path)?).await
         }
 
         #[inline(always)]
@@ -215,10 +221,9 @@ macro_rules! generate_send_to_unix {
         pub async fn send_to_addr<A: std::net::ToSocketAddrs>(
             &mut self,
             buf: &[u8],
-            addr: A
+            addr: A,
         ) -> std::io::Result<usize> {
-            crate::io::SendTo::new(self.fd, buf, crate::utils::addr_from_to_sock_addrs(addr)?)
-                .await
+            crate::io::SendTo::new(self.fd, buf, crate::utils::addr_from_to_sock_addrs(addr)?).await
         }
 
         #[inline(always)]
@@ -257,7 +262,7 @@ macro_rules! generate_send_all_to_unix {
         pub async fn send_all_to<P: std::convert::AsRef<std::path::Path>>(
             &mut self,
             buf: &[u8],
-            path: P
+            path: P,
         ) -> std::io::Result<()> {
             let mut sent = 0;
             let socket_addr = crate::socket2::SockAddr::unix(path)?;
@@ -281,7 +286,8 @@ macro_rules! generate_send_all_to_unix {
 
             while sent < buf.len() {
                 sent +=
-                    crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline).await?;
+                    crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline)
+                        .await?;
             }
 
             Ok(())
@@ -299,7 +305,11 @@ macro_rules! generate_send_all_to_unix {
         }
 
         #[inline(always)]
-        pub async fn send_all_to_addr<A: std::net::ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> std::io::Result<()> {
+        pub async fn send_all_to_addr<A: std::net::ToSocketAddrs>(
+            &mut self,
+            buf: &[u8],
+            addr: A,
+        ) -> std::io::Result<()> {
             let mut sent = 0;
             let socket_addr = crate::utils::addr_from_to_sock_addrs(addr)?;
 
@@ -322,7 +332,8 @@ macro_rules! generate_send_all_to_unix {
 
             while sent < buf.len() {
                 sent +=
-                    crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline).await?;
+                    crate::io::SendToWithDeadline::new(self.fd, buf, socket_addr.clone(), deadline)
+                        .await?;
             }
 
             Ok(())
@@ -336,7 +347,8 @@ macro_rules! generate_send_all_to_unix {
             duration: std::time::Duration,
         ) -> std::io::Result<()> {
             let deadline = std::time::Instant::now() + duration;
-            self.send_all_to_addr_with_deadline(buf, addr, deadline).await
+            self.send_all_to_addr_with_deadline(buf, addr, deadline)
+                .await
         }
     };
 }
