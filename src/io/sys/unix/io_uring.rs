@@ -16,6 +16,7 @@ use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
 use crate::io::worker::{IoWorker};
 use crate::messages::BUG;
+use crate::runtime::local_executor_unchecked;
 
 const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
 
@@ -189,8 +190,6 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequest) {
-        println!("[TODO r] socket is supported: {}", self.is_supported(opcode::Socket::CODE));
-        println!("[TODO r] send is supported: {}", self.is_supported(opcode::Send::CODE));
         if self.is_supported(opcode::Socket::CODE) {
             self.register_entry(opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(), request_ptr);
             return;
@@ -200,7 +199,7 @@ impl IoWorker for IoUringWorker {
         let socket_ = socket2::Socket::new(domain, sock_type, None);
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
-        Executor::exec_task(request.task());
+        unsafe { local_executor_unchecked().spawn_local_task(request.task()) };
     }
 
     #[inline(always)]
@@ -251,7 +250,6 @@ impl IoWorker for IoUringWorker {
     
     #[inline(always)]
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest) {
-        println!("[TODO r] SendZc is supported: {}", self.is_supported(opcode::SendZc::CODE));
         if self.is_supported(opcode::SendZc::CODE) {
             self.register_entry(opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
             return;
@@ -261,7 +259,6 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     fn send_to(&mut self, fd: RawFd, msg_header: *const OsMessageHeader, request_ptr: *mut IoRequest) {
-        println!("[TODO r] SendMsgZc is supported: {}", self.is_supported(opcode::SendMsgZc::CODE));
         if self.is_supported(opcode::SendMsgZc::CODE) {
             self.register_entry(opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(), request_ptr);
             return;

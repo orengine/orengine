@@ -148,6 +148,12 @@ impl Executor {
             F: Future<Output=()> + 'static,
     {
         let task = Task::from_future(future);
+        unsafe { self.spawn_local_task(task); }
+    }
+
+    #[inline(always)]
+    // unsafe because we can't guarantee that `task` is valid and local.
+    pub unsafe fn spawn_local_task(&mut self, task: Task) {
         self.tasks.push_back(task);
     }
 
@@ -158,6 +164,13 @@ impl Executor {
     where
         F: Future<Output=()> + Send + 'static,
     {
+        todo!()
+    }
+
+    #[inline(always)]
+    // TODO r #[allow(unused)]
+    #[allow(unused)]
+    pub fn spawn_global_task(&mut self, task: Task) {
         todo!()
     }
 
