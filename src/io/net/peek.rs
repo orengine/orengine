@@ -2,25 +2,24 @@ use std::future::Future;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::Fd;
+use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Peek<'a> {
-    fd: Fd,
+    fd: RawFd,
     buf: &'a mut [u8],
     io_request: Option<IoRequest>,
 }
 
 impl<'a> Peek<'a> {
-    pub fn new(fd: Fd, buf: &'a mut [u8]) -> Self {
+    pub fn new(fd: RawFd, buf: &'a mut [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -42,7 +41,7 @@ impl<'a> Future for Peek<'a> {
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.io_request.as_mut().unwrap_unchecked()
             ),
             ret
         ));
@@ -51,14 +50,14 @@ impl<'a> Future for Peek<'a> {
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PeekWithDeadline<'a> {
-    fd: Fd,
+    fd: RawFd,
     buf: &'a mut [u8],
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
 impl<'a> PeekWithDeadline<'a> {
-    pub fn new(fd: Fd, buf: &'a mut [u8], deadline: Instant) -> Self {
+    pub fn new(fd: RawFd, buf: &'a mut [u8], deadline: Instant) -> Self {
         Self {
             fd,
             buf,
@@ -81,83 +80,51 @@ impl<'a> Future for PeekWithDeadline<'a> {
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.io_request.as_mut().unwrap_unchecked()
             ),
             ret
         ));
     }
 }
 
-#[macro_export]
-macro_rules! generate_peek {
-    () => {
-        #[inline(always)]
-        pub fn peek<'a>(&mut self, buf: &'a mut [u8]) -> crate::io::Peek<'a> {
-            crate::io::Peek::new(self.as_raw_fd(), buf)
+pub trait AsyncPeek: AsRawFd {
+    #[inline(always)]
+    async fn peek(&mut self, buf: &mut [u8]) -> Result<usize> {
+        Peek::new(self.as_raw_fd(), buf).await
+    }
+
+    #[inline(always)]
+    async fn peek_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<usize> {
+        PeekWithDeadline::new(self.as_raw_fd(), buf, deadline).await
+    }
+
+    #[inline(always)]
+    async fn peek_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
+        self.peek_with_deadline(buf, Instant::now() + timeout).await
+    }
+
+    #[inline(always)]
+    async fn peek_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        let mut peeked = 0;
+
+        while peeked < buf.len() {
+            peeked += self.peek(&mut buf[peeked..]).await?;
         }
+        Ok(())
+    }
 
-        #[inline(always)]
-        pub fn peek_with_deadline<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            deadline: std::time::Instant,
-        ) -> crate::io::PeekWithDeadline<'a> {
-            crate::io::PeekWithDeadline::new(self.as_raw_fd(), buf, deadline)
+    #[inline(always)]
+    async fn peek_exact_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<()> {
+        let mut peeked = 0;
+
+        while peeked < buf.len() {
+            peeked += self.peek_with_deadline(&mut buf[peeked..], deadline).await?;
         }
+        Ok(())
+    }
 
-        #[inline(always)]
-        pub fn peek_with_timeout<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            duration: std::time::Duration,
-        ) -> crate::io::PeekWithDeadline<'a> {
-            self.peek_with_deadline(buf, std::time::Instant::now() + duration)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! generate_peek_exact {
-    () => {
-        #[inline(always)]
-        pub async fn peek_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
-            let mut read = 0;
-
-            while read < buf.len() {
-                read += self.peek(&mut buf[read..]).await?;
-            }
-
-            Ok(())
-        }
-
-        #[inline(always)]
-        pub async fn peek_exact_with_deadline(
-            &mut self,
-            buf: &mut [u8],
-            deadline: std::time::Instant,
-        ) -> std::io::Result<()> {
-            let mut read = 0;
-
-            while read < buf.len() {
-                read += self.peek_with_deadline(&mut buf[read..], deadline).await?;
-            }
-
-            Ok(())
-        }
-
-        #[inline(always)]
-        pub async fn peek_exact_with_timeout(
-            &mut self,
-            buf: &mut [u8],
-            duration: std::time::Duration,
-        ) -> std::io::Result<()> {
-            let mut read = 0;
-
-            while read < buf.len() {
-                read += self.peek_with_timeout(&mut buf[read..], duration).await?;
-            }
-
-            Ok(())
-        }
-    };
+    #[inline(always)]
+    async fn peek_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
+        self.peek_exact_with_deadline(buf, Instant::now() + timeout).await
+    }
 }

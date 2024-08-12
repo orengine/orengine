@@ -1,199 +1,50 @@
-use std::io::Error;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::path::Path;
-use std::time::Duration;
 use std::{io, mem};
+use std::os::fd::{AsFd, BorrowedFd};
 
-use socket2::{Domain, SockAddr, Socket, Type};
+use socket2::{Domain, SockAddr, Socket, SockRef, Type};
 
-use crate::io::recv_from::AsyncRecvFromPath;
-use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Connect};
-use crate::net::creators_of_sockets::new_unix_socket_datagram;
-use crate::net::unix::connected_socket_datagram::ConnectedSocketDatagram;
+use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
+use crate::io::{
+    AsyncBindUnix,
+    AsyncClose,
+    AsyncConnectDatagramUnix,
+    AsyncPeekFromUnix,
+    AsyncPollFd,
+    AsyncRecvFromUnix,
+    AsyncSendToUnix,
+    AsyncShutdown,
+    AsPath
+};
+use crate::net::unix::connected_socket_datagram::UnixConnectedDatagram;
 use crate::runtime::local_executor;
-use crate::{each_addr, generate_peek_from_unix, generate_send_all_to_unix, generate_send_to_unix};
+use crate::net::unix::path_datagram::PathDatagram;
+use crate::net::unix::path_socket::PathSocket;
 
-// TODO docs
-pub struct SocketDatagram {
-    fd: Fd,
+pub struct UnixDatagram {
+    fd: RawFd,
 }
 
-impl SocketDatagram {
-    // TODO macro
-    #[inline(always)]
-    pub fn fd(&mut self) -> Fd {
-        self.fd
-    }
-
-    #[inline(always)]
-    #[cfg(unix)]
-    pub fn borrow_fd(&self) -> BorrowedFd {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
-    }
-
-    // TODO macro
-
-    #[inline(always)]
-    fn bind_with_backlog_size_and_sock_addr(
-        addr: &SockAddr,
-        backlog_size: i32,
-    ) -> io::Result<Self> {
-        println!("addr: {:?}, backlog_size: {}", addr, backlog_size);
-        let socket = new_unix_socket_datagram()?;
-
-        socket.bind(addr)?;
-
-        Ok(Self {
-            fd: socket.into_raw_fd(),
-        })
-    }
-
-    #[inline(always)]
-    pub fn bind_with_backlog_size<P: AsRef<Path>>(path: P, backlog_size: i32) -> io::Result<Self> {
-        let addr = SockAddr::unix(path.as_ref())?;
-        Self::bind_with_backlog_size_and_sock_addr(&addr, backlog_size)
-    }
-
-    #[inline(always)]
-    pub fn bind<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::bind_with_backlog_size(path, 1)
-    }
-
-    #[inline(always)]
-    pub fn bind_addr_with_backlog_size<A: ToSocketAddrs>(
-        addr: A,
-        backlog_size: i32,
-    ) -> io::Result<Self> {
-        let addr = SockAddr::from(
-            addr.to_socket_addrs()?
-                .next()
-                .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?,
-        );
-        Self::bind_with_backlog_size_and_sock_addr(&addr, backlog_size)
-    }
-
-    #[inline(always)]
-    pub fn bind_addr<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
-        Self::bind_addr_with_backlog_size(addr, 1)
-    }
-
-    #[inline(always)]
-    pub fn unbound() -> io::Result<Self> {
-        let socket = new_unix_socket_datagram()?;
-        Ok(Self {
-            fd: socket.into_raw_fd(),
-        })
-    }
-
-    #[inline(always)]
-    pub fn pair() -> io::Result<(Self, Self)> {
-        let (socket1, socket2) = Socket::pair(Domain::UNIX, Type::DGRAM, None)?;
-        Ok((
-            SocketDatagram {
-                fd: socket1.into_raw_fd(),
-            },
-            SocketDatagram {
-                fd: socket2.into_raw_fd(),
-            },
-        ))
-    }
-
-    #[inline(always)]
-    pub async fn connect<P: AsRef<Path>>(self, path: P) -> io::Result<ConnectedSocketDatagram> {
-        let fd = self.fd;
-
-        let res = Connect::new(fd, SockAddr::unix(path)?).await;
-
-        match res {
-            Ok(connected_socket) => {
-                mem::forget(self);
-                Ok(connected_socket)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    #[inline(always)]
-    pub async fn connect_addr<A: ToSocketAddrs>(
-        self,
-        addrs: A,
-    ) -> io::Result<ConnectedSocketDatagram> {
-        let fd = self.fd;
-
-        let res = each_addr!(&addrs, async move |addr: SocketAddr| -> io::Result<
-            ConnectedSocketDatagram,
-        > {
-            Connect::new(fd, SockAddr::from(addr)).await
-        });
-
-        match res {
-            Ok(connected_socket) => {
-                mem::forget(self);
-                Ok(connected_socket)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    generate_send_to_unix!();
-
-    generate_send_all_to_unix!();
-
-    generate_peek_from_unix!();
-
-    #[inline(always)]
-    pub fn local_addr(&self) -> io::Result<std::os::unix::net::SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_unix().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
-    }
-
-    #[inline(always)]
-    pub fn peer_addr(&self) -> io::Result<std::os::unix::net::SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_unix().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
-    }
-
-    // TODO macro for it
-    #[inline(always)]
-    pub fn set_mark(&self, mark: u32) -> io::Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_mark(mark)
-    }
-
-    #[inline(always)]
-    pub fn mark(&self) -> io::Result<u32> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.mark()
-    }
-
-    #[inline(always)]
-    pub fn take_error(&self) -> io::Result<Option<Error>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.take_error()
-    }
-}
-
-impl Into<std::os::unix::net::UnixDatagram> for SocketDatagram {
+impl Into<std::os::unix::net::UnixDatagram> for UnixDatagram {
     #[inline(always)]
     fn into(self) -> std::os::unix::net::UnixDatagram {
-        unsafe { std::os::unix::net::UnixDatagram::from_raw_fd(self.fd) }
+        let fd = self.fd;
+        mem::forget(self);
+
+        unsafe { std::os::unix::net::UnixDatagram::from_raw_fd(fd) }
     }
 }
 
-impl From<std::os::unix::net::UnixDatagram> for SocketDatagram {
+impl IntoRawFd for UnixDatagram {
+    #[inline(always)]
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+
+        fd
+    }
+}
+
+impl From<std::os::unix::net::UnixDatagram> for UnixDatagram {
     #[inline(always)]
     fn from(stream: std::os::unix::net::UnixDatagram) -> Self {
         Self {
@@ -202,28 +53,71 @@ impl From<std::os::unix::net::UnixDatagram> for SocketDatagram {
     }
 }
 
-impl From<Fd> for SocketDatagram {
-    fn from(fd: Fd) -> Self {
+impl FromRawFd for UnixDatagram {
+    #[inline(always)]
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
     }
 }
 
-impl AsFd for SocketDatagram {
+impl AsRawFd for UnixDatagram {
     #[inline(always)]
-    fn as_raw_fd(&self) -> Fd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 }
 
-impl AsyncPollFd for SocketDatagram {}
+impl AsyncPollFd for UnixDatagram {}
 
-impl AsyncRecvFromPath for SocketDatagram {}
+impl AsyncShutdown for UnixDatagram {}
 
-impl AsyncShutdown for SocketDatagram {}
+impl AsyncClose for UnixDatagram {}
 
-impl AsyncClose for SocketDatagram {}
+impl AsFd for UnixDatagram {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+    }
+}
 
-impl Drop for SocketDatagram {
+impl AsyncBindUnix for UnixDatagram {
+    async fn bind_with_backlog_size<P: AsPath>(path: P, _backlog_size: isize) -> io::Result<Self> {
+        let s = Self::unbound().await?;
+
+        let fd = s.as_fd();
+        let socket_ref = SockRef::from(&fd);
+
+        socket_ref.bind(&SockAddr::unix(path)?)?;
+
+        Ok(s)
+    }
+}
+
+impl AsyncConnectDatagramUnix<UnixConnectedDatagram> for UnixDatagram {}
+
+impl AsyncSendToUnix for UnixDatagram {}
+
+impl AsyncRecvFromUnix for UnixDatagram {}
+
+impl AsyncPeekFromUnix for UnixDatagram {}
+
+impl PathSocket for UnixDatagram {}
+
+impl PathDatagram<UnixConnectedDatagram> for UnixDatagram {
+    #[inline(always)]
+    async fn pair() -> io::Result<(Self, Self)> {
+        let (socket1, socket2) = Socket::pair(Domain::UNIX, Type::DGRAM, None)?;
+        Ok((
+            UnixDatagram {
+                fd: socket1.into_raw_fd(),
+            },
+            UnixDatagram {
+                fd: socket2.into_raw_fd(),
+            },
+        ))
+    }
+}
+
+impl Drop for UnixDatagram {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
@@ -236,12 +130,14 @@ impl Drop for SocketDatagram {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
 
     use crate::fs::test_helper::delete_file_if_exists;
-    use crate::io::Bind;
+    use crate::io::AsyncBind;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::cond_var::LocalCondVar;
     use crate::sync::LocalMutex;
@@ -294,7 +190,7 @@ mod tests {
                 is_server_ready = condvar.wait(is_server_ready).unwrap();
             }
 
-            let mut stream = SocketDatagram::bind(CLIENT_ADDR).expect("bind failed");
+            let mut stream = UnixDatagram::bind(CLIENT_ADDR).await.expect("bind failed");
 
             for _ in 0..TIMES {
                 stream
@@ -324,7 +220,7 @@ mod tests {
 
         let server_thread = thread::spawn(move || {
             create_local_executer_for_block_on(async move {
-                let mut server = SocketDatagram::bind(SERVER_ADDR).expect("bind failed");
+                let mut server = UnixDatagram::bind(SERVER_ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
 
@@ -334,7 +230,7 @@ mod tests {
                     let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
                     assert_eq!(REQUEST, &buf[..n]);
 
-                    server.send_to(RESPONSE, &src).await.expect("send failed");
+                    server.send_to(RESPONSE, &src.as_pathname().unwrap()).await.expect("send failed");
                 }
             });
         });
@@ -371,7 +267,7 @@ mod tests {
 
         create_local_executer_for_block_on(async move {
             local_executor().exec_future(async {
-                let mut server = SocketDatagram::bind(SERVER_ADDR).expect("bind failed");
+                let mut server = UnixDatagram::bind(SERVER_ADDR).await.expect("bind failed");
 
                 {
                     let (is_ready_mu, condvar) = is_server_ready;
@@ -393,7 +289,7 @@ mod tests {
                     assert_eq!(REQUEST, &buf[..n]);
 
                     server
-                        .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
+                        .send_to_with_timeout(RESPONSE, &src.as_pathname().unwrap(), TIMEOUT)
                         .await
                         .expect("send failed");
                 }
@@ -405,7 +301,7 @@ mod tests {
                 is_server_ready = condvar.wait(is_server_ready).await;
             }
 
-            let mut stream = SocketDatagram::bind(CLIENT_ADDR).expect("bind failed");
+            let mut stream = UnixDatagram::bind(CLIENT_ADDR).await.expect("bind failed");
 
             assert_eq!(
                 stream
@@ -468,7 +364,7 @@ mod tests {
         delete_file_if_exists(SERVER_ADDR);
 
         create_local_executer_for_block_on(async {
-            let mut socket = SocketDatagram::bind(SERVER_ADDR).expect("bind failed");
+            let mut socket = UnixDatagram::bind(SERVER_ADDR).await.expect("bind failed");
 
             match socket.poll_recv_with_timeout(TIMEOUT).await {
                 Ok(_) => panic!("poll_recv should timeout"),

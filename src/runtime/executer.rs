@@ -123,7 +123,6 @@ impl Executor {
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
         let waker = create_waker(task_ptr as *const ());
-        // TODO try safe context instead of waker.
         let mut context = Context::from_waker(&waker);
 
         match unsafe { Pin::new_unchecked(future) }.as_mut().poll(&mut context) {

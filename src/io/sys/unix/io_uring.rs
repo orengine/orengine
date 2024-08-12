@@ -1,10 +1,11 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
+use std::ffi::c_int;
 use std::intrinsics::{unlikely};
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Instant};
-use io_uring::{cqueue, IoUring, opcode, types};
+use io_uring::{cqueue, IoUring, opcode, Probe, types};
 use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
 use nix::libc;
@@ -12,8 +13,9 @@ use nix::libc::sockaddr;
 use crate::Executor;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{Fd, OsMessageHeader};
+use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
 use crate::io::worker::{IoWorker};
+use crate::messages::BUG;
 
 const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
 
@@ -34,18 +36,30 @@ pub(crate) struct IoUringWorker {
     /// but it is safe, because the [`SubmissionQueue`] has already been read and submitted.
     ring: UnsafeCell<IoUring<Entry, cqueue::Entry>>,
     backlog: VecDeque<Entry>,
+    probe: Probe,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>
 }
 
 impl IoUringWorker {
     pub fn new() -> Self {
-        Self {
+        let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
             // TODO cfg entries
             ring: UnsafeCell::new(IoUring::new(1024).unwrap()),
             backlog: VecDeque::with_capacity(64),
+            probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new()
-        }
+        };
+
+        let submitter = s.ring.get_mut().submitter();
+        submitter.register_probe(&mut s.probe).expect(BUG);
+
+        s
+    }
+
+    #[inline(always)]
+    fn is_supported(&self, opcode: u8) -> bool {
+        self.probe.is_supported(opcode)
     }
 
     #[inline(always)]
@@ -65,7 +79,7 @@ impl IoUringWorker {
     }
 
     #[inline(always)]
-    fn register_entry(&mut self, sqe: Entry, data: *const IoRequest) {
+    fn register_entry(&mut self, sqe: Entry, data: *mut IoRequest) {
         self.register_entry_with_u64_data(sqe, data as _);
     }
 
@@ -174,37 +188,53 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn accept(&mut self, listen_fd: Fd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *const IoRequest) {
+    fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequest) {
+        println!("[TODO r] socket is supported: {}", self.is_supported(opcode::Socket::CODE));
+        println!("[TODO r] send is supported: {}", self.is_supported(opcode::Send::CODE));
+        if self.is_supported(opcode::Socket::CODE) {
+            self.register_entry(opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(), request_ptr);
+            return;
+        }
+
+        let request = unsafe { &mut *request_ptr };
+        let socket_ = socket2::Socket::new(domain, sock_type, None);
+        request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
+
+        Executor::exec_task(request.task());
+    }
+
+    #[inline(always)]
+    fn accept(&mut self, listen_fd: RawFd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Accept::new(types::Fd(listen_fd), addr, addrlen).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn connect(&mut self, socket_fd: Fd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *const IoRequest) {
+    fn connect(&mut self, socket_fd: RawFd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Connect::new(types::Fd(socket_fd), addr_ptr, addr_len).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn poll_fd_read(&mut self, fd: Fd, request_ptr: *const IoRequest) {
+    fn poll_fd_read(&mut self, fd: RawFd, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::PollAdd::new(types::Fd(fd), libc::POLLIN as _).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn poll_fd_write(&mut self, fd: Fd, request_ptr: *const IoRequest) {
+    fn poll_fd_write(&mut self, fd: RawFd, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::PollAdd::new(types::Fd(fd), libc::POLLOUT as _).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn recv(&mut self, fd: Fd, buf_ptr: *mut u8, len: usize, request_ptr: *const IoRequest) {
+    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Recv::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn recv_from(&mut self, fd: Fd, msg_header: *mut OsMessageHeader, request_ptr: *const IoRequest) {
+    fn recv_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn peek(&mut self, fd: Fd, buf_ptr: *mut u8, len: usize, request_ptr: *const IoRequest) {
+    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest) {
         self.register_entry(
             opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
                 .flags(libc::MSG_PEEK)
@@ -214,23 +244,33 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn peek_from(&mut self, fd: Fd, msg_header: *mut OsMessageHeader, request_ptr: *const IoRequest) {
+    fn peek_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequest) {
         let msg_header = unsafe { &mut *msg_header };
         self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).flags(libc::MSG_PEEK as u32).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn send(&mut self, fd: Fd, buf_ptr: *const u8, len: usize, request_ptr: *const IoRequest) {
+    fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest) {
+        println!("[TODO r] SendZc is supported: {}", self.is_supported(opcode::SendZc::CODE));
+        if self.is_supported(opcode::SendZc::CODE) {
+            self.register_entry(opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+            return;
+        }
         self.register_entry(opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn send_to(&mut self, fd: Fd, msg_header: *const OsMessageHeader, request_ptr: *const IoRequest) {
+    fn send_to(&mut self, fd: RawFd, msg_header: *const OsMessageHeader, request_ptr: *mut IoRequest) {
+        println!("[TODO r] SendMsgZc is supported: {}", self.is_supported(opcode::SendMsgZc::CODE));
+        if self.is_supported(opcode::SendMsgZc::CODE) {
+            self.register_entry(opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(), request_ptr);
+            return;
+        }
         self.register_entry(opcode::SendMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn shutdown(&mut self, fd: Fd, how: Shutdown, request_ptr: *const IoRequest) {
+    fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequest) {
         let how = match how {
             Shutdown::Read => libc::SHUT_RD,
             Shutdown::Write => libc::SHUT_WR,
@@ -240,52 +280,52 @@ impl IoWorker for IoUringWorker {
     }
     
     #[inline(always)]
-    fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *const IoRequest) {
+    fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::OpenAt2::new(types::Fd(libc::AT_FDCWD), path, open_how).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn read(&mut self, fd: Fd, buf_ptr: *mut u8, len: usize, request_ptr: *const IoRequest) {
+    fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn pread(&mut self, fd: Fd, buf_ptr: *mut u8, len: usize, offset: usize, request_ptr: *const IoRequest) {
+    fn pread(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, offset: usize, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Read::new(types::Fd(fd), buf_ptr, len as _).offset(offset as _).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn write(&mut self, fd: Fd, buf_ptr: *const u8, len: usize, request_ptr: *const IoRequest) {
+    fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn pwrite(&mut self, fd: Fd, buf_ptr: *const u8, len: usize, offset: usize, request_ptr: *const IoRequest) {
+    fn pwrite(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, offset: usize, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Write::new(types::Fd(fd), buf_ptr, len as _).offset(offset as _).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn close(&mut self, fd: Fd, request_ptr: *const IoRequest) {
+    fn close(&mut self, fd: RawFd, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::Close::new(types::Fd(fd)).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn rename(&mut self, old_path: *const libc::c_char, new_path: *const libc::c_char, request_ptr: *const IoRequest) {
+    fn rename(&mut self, old_path: *const libc::c_char, new_path: *const libc::c_char, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::RenameAt::new(types::Fd(libc::AT_FDCWD), old_path, types::Fd(libc::AT_FDCWD), new_path).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn create_dir(&mut self, path: *const libc::c_char, mode: u32, request_ptr: *const IoRequest) {
+    fn create_dir(&mut self, path: *const libc::c_char, mode: u32, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::MkDirAt::new(types::Fd(libc::AT_FDCWD), path).mode(mode).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn remove_file(&mut self, path: *const libc::c_char, request_ptr: *const IoRequest) {
+    fn remove_file(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).build(), request_ptr);
     }
     
     #[inline(always)]
-    fn remove_dir(&mut self, path: *const libc::c_char, request_ptr: *const IoRequest) {
+    fn remove_dir(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).flags(libc::AT_REMOVEDIR).build(), request_ptr);
     }
 }

@@ -1,90 +1,18 @@
-use std::ffi::c_int;
-use std::io::Error;
-use std::net::{ToSocketAddrs};
-use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::path::Path;
 use std::{io, mem};
-use socket2::SockAddr;
-use crate::generate_accept;
+use socket2::{SockAddr, SockRef};
 
-use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, Bind};
+use crate::io::sys::{AsRawFd, RawFd, IntoRawFd, FromRawFd, AsFd, BorrowedFd};
+use crate::io::{AsyncClose, AsyncAcceptUnix, AsyncBindUnix, AsPath};
 use crate::net::creators_of_sockets::new_unix_socket;
+use crate::net::unix::path_listener::PathListener;
 use crate::net::UnixStream;
 use crate::runtime::local_executor;
 
-pub struct Listener {
-    pub(crate) fd: Fd,
+pub struct UnixListener {
+    pub(crate) fd: RawFd,
 }
 
-// TODO update docs
-impl Listener {
-    /// Returns the state_ptr of the [`Listener`].
-    ///
-    /// Uses for low-level work with the scheduler. If you don't know what it is, don't use it.
-    #[inline(always)]
-    pub fn fd(&mut self) -> Fd {
-        self.fd
-    }
-
-    #[inline(always)]
-    #[cfg(unix)]
-    pub fn borrow_fd(&self) -> BorrowedFd {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
-    }
-
-    #[inline(always)]
-    pub fn bind_with_backlog_size<P: AsRef<Path>>(path: P, backlog_size: i32) -> io::Result<Self> {
-        let addr = SockAddr::unix(path.as_ref())?;
-        let socket = new_unix_socket()?;
-
-        socket.bind(&addr)?;
-        socket.listen(backlog_size as c_int)?;
-
-        Ok(Self {
-            fd: socket.into_raw_fd(),
-        })
-    }
-
-    #[inline(always)]
-    pub fn bind<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::bind_with_backlog_size(path, 1)
-    }
-
-    generate_accept!(UnixStream);
-
-    pub fn local_addr(&self) -> io::Result<std::os::unix::net::SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_unix().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
-    }
-
-    /// Gets the value of the `SO_ERROR` option on this socket.
-    ///
-    /// This will retrieve the stored error in the underlying socket, clearing
-    /// the field in the process. This can be useful for checking errors between
-    /// calls.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::TcpListener;
-    ///
-    /// let listener = TcpListener::bind("127.0.0.1:80").unwrap();
-    /// listener.take_error().expect("No error was expected");
-    /// ```
-    pub fn take_error(&self) -> io::Result<Option<Error>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.take_error()
-    }
-}
-
-impl Into<std::os::unix::net::UnixListener> for Listener {
+impl Into<std::os::unix::net::UnixListener> for UnixListener {
     fn into(self) -> std::os::unix::net::UnixListener {
         let fd = self.fd;
         mem::forget(self);
@@ -93,7 +21,7 @@ impl Into<std::os::unix::net::UnixListener> for Listener {
     }
 }
 
-impl From<std::os::unix::net::UnixListener> for Listener {
+impl From<std::os::unix::net::UnixListener> for UnixListener {
     fn from(listener: std::os::unix::net::UnixListener) -> Self {
         Self {
             fd: listener.into_raw_fd(),
@@ -101,22 +29,57 @@ impl From<std::os::unix::net::UnixListener> for Listener {
     }
 }
 
-impl From<Fd> for Listener {
-    fn from(fd: Fd) -> Self {
+impl FromRawFd for UnixListener {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
     }
 }
 
-impl AsFd for Listener {
+impl IntoRawFd for UnixListener {
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+
+        fd
+    }
+}
+
+impl AsRawFd for UnixListener {
     #[inline(always)]
-    fn as_raw_fd(&self) -> Fd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 }
 
-impl AsyncClose for Listener {}
+impl AsFd for UnixListener {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+    }
+}
 
-impl Drop for Listener {
+impl AsyncClose for UnixListener {}
+
+impl AsyncAcceptUnix<UnixStream> for UnixListener {}
+
+impl AsyncBindUnix for UnixListener {
+    #[inline(always)]
+    async fn bind_with_backlog_size<P: AsPath>(path: P, backlog_size: isize) -> io::Result<Self> {
+        let fd = new_unix_socket().await?;
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        let socket_ref = SockRef::from(&borrowed_fd);
+
+        socket_ref.bind(&SockAddr::unix(path)?)?;
+        socket_ref.listen(backlog_size as i32)?;
+
+        Ok(Self {
+            fd
+        })
+    }
+}
+
+impl PathListener<UnixStream> for UnixListener {}
+
+impl Drop for UnixListener {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
@@ -127,9 +90,12 @@ impl Drop for Listener {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::net::SocketAddr;
+    use std::path::Path;
     use crate::fs::test_helper::delete_file_if_exists;
-    use crate::net::unix::Stream;
+    use crate::io::AsyncConnectStreamUnix;
+    use crate::net::unix::path_socket::PathSocket;
+    use crate::net::unix::path_stream::PathStream;
+    use crate::net::unix::UnixStream;
     use crate::runtime::create_local_executer_for_block_on;
 
     use super::*;
@@ -141,7 +107,7 @@ mod tests {
 
             delete_file_if_exists(addr);
 
-            let listener = Listener::bind(addr).expect("bind call failed");
+            let listener = UnixListener::bind(addr).await.expect("bind call failed");
 
             assert_eq!(
                 listener.local_addr().unwrap().as_pathname().unwrap(),
@@ -164,19 +130,23 @@ mod tests {
 
             delete_file_if_exists(ADDR);
 
-            let mut listener = Listener::bind(ADDR).expect("bind call failed");
+            let mut listener = UnixListener::bind(ADDR).await.expect("bind call failed");
 
             local_executor().spawn_local(async {
-                let stream = Stream::connect(ADDR).await.expect("connect failed");
+                let stream = UnixStream::connect(ADDR).await.expect("connect failed");
                 assert_eq!(
                     stream.peer_addr().unwrap().as_pathname().unwrap(),
                     Path::new(ADDR)
                 );
             });
 
-            let mut stream = listener.accept().await.expect("accept failed");
+            let (stream, addr) = listener.accept().await.expect("accept failed");
             assert_eq!(
                 stream.local_addr().unwrap().as_pathname().unwrap(),
+                Path::new(ADDR)
+            );
+            assert_eq!(
+                addr.as_pathname().unwrap(),
                 Path::new(ADDR)
             );
         });

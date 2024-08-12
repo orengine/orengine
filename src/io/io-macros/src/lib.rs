@@ -14,7 +14,7 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         if this.io_request.is_none() {
             unsafe {
-                let task = (cx.waker().as_raw().data() as *const Task).read();
+                let task = (cx.waker().as_raw().data() as *const crate::runtime::Task).read();
                 this.io_request = Some(IoRequest::new(task));
 
                 #do_request;
@@ -48,11 +48,11 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         if this.io_request.is_none() {
             unsafe {
-                let task = (cx.waker().as_raw().data() as *const Task).read();
+                let task = (cx.waker().as_raw().data() as *const crate::runtime::Task).read();
                 this.io_request = Some(IoRequest::new(task));
 
                 unsafe {
-                    this.time_bounded_io_task.set_user_data(this.io_request.as_ref().unwrap_unchecked() as *const _ as u64);
+                    this.time_bounded_io_task.set_user_data(this.io_request.as_mut().unwrap_unchecked() as *const _ as u64);
                 }
 
                 worker.register_time_bounded_io_task(&mut this.time_bounded_io_task);

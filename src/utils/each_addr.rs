@@ -2,7 +2,7 @@ use std::io;
 
 pub(crate) enum EachAddrRes<R> {
     Ok(R),
-    Err(std::io::Error),
+    Err(io::Error),
     None
 }
 
@@ -31,9 +31,11 @@ macro_rules! each_addr {
             }
 
             match res {
-                EachAddrRes::Ok(res) => io::Result::Ok(res),
-                EachAddrRes::Err(err) => io::Result::Err(err),
-                EachAddrRes::None => io::Result::Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "could not resolve to any addresses")),
+                EachAddrRes::Ok(res) => std::io::Result::Ok(res),
+                EachAddrRes::Err(err) => std::io::Result::Err(err),
+                EachAddrRes::None => std::io::Result::Err(
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "could not resolve to any addresses")
+                ),
             }
         }
     }
@@ -64,9 +66,11 @@ macro_rules! each_addr_sync {
             }
 
             match res {
-                EachAddrRes::Ok(res) => io::Result::Ok(res),
-                EachAddrRes::Err(err) => io::Result::Err(err),
-                EachAddrRes::None => io::Result::Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "could not resolve to any addresses")),
+                EachAddrRes::Ok(res) => std::io::Result::Ok(res),
+                EachAddrRes::Err(err) => std::io::Result::Err(err),
+                EachAddrRes::None => std::io::Result::Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput, "could not resolve to any addresses")
+                ),
             }
         }
     }

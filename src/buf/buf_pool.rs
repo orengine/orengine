@@ -35,7 +35,7 @@ pub fn buffer() -> Buffer {
 ///
 /// ```no_run
 /// use orengine::buf::buf_pool::full_buffer;
-/// use orengine::io::AsyncPollFd;
+/// use orengine::io::{AsyncPollFd, AsyncRecv};
 /// use orengine::net::TcpStream;
 ///
 /// async fn handle_connection(mut stream: TcpStream) {

@@ -78,43 +78,29 @@ macro_rules! new_local_pool {
 
 #[cfg(test)]
 mod tests {
-    struct MustNotBeDropped(i32);
-
-    impl MustNotBeDropped {
-        fn new() -> Self {
-            Self(0)
-        }
-
-        fn increase(&mut self) {
-            self.0 += 1;
-        }
-    }
-
-    impl Drop for MustNotBeDropped {
-        fn drop(&mut self) {
-            panic!("Dropped!");
-        }
-    }
-
+    use std::ops::Deref;
     new_local_pool! {
         pub(self),
         LOCAL_TEST_POOL,
         TestPool,
-        MustNotBeDropped,
+        usize,
         TestGuard,
-        { MustNotBeDropped::new() }
+        { 0 }
     }
 
     #[test]
     fn test_new_local_pool() {
         let mut guard = TestPool::acquire();
-        assert_eq!(guard.0, 0);
+        assert_eq!(*guard.deref(), 0);
 
-        guard.increase();
-        assert_eq!(guard.0, 1);
+        *guard = 1;
+        assert_eq!(*guard.deref(), 1);
         drop(guard);
 
         let guard = TestPool::acquire();
-        assert_eq!(guard.0, 1);
+        assert_eq!(*guard.deref(), 1);
+
+        let guard2 = TestPool::acquire();
+        assert_eq!(*guard2.deref(), 0);
     }
 }

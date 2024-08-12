@@ -1,157 +1,16 @@
-use std::io::{Error, Result};
-use std::net::{SocketAddr, ToSocketAddrs};
-#[cfg(unix)]
-use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::time::{Duration, Instant};
-use std::{io, mem};
+use std::mem;
 
-use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
+use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd};
+use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, AsyncSend};
+use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
-use crate::{
-    generate_peek, generate_peek_exact, generate_recv, generate_recv_exact, generate_send,
-    generate_send_all,
-};
 
 #[derive(Debug)]
-pub struct ConnectedSocket {
-    fd: Fd,
+pub struct UdpConnectedSocket {
+    fd: RawFd,
 }
 
-impl ConnectedSocket {
-    #[inline(always)]
-    #[cfg(unix)]
-    pub fn borrow_fd(&self) -> BorrowedFd {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
-    }
-
-    generate_send!();
-
-    generate_send_all!();
-
-    generate_recv!();
-
-    generate_recv_exact!();
-
-    generate_peek!();
-
-    generate_peek_exact!();
-
-    /// Returns the socket address of the remote peer this socket was connected to.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// let connected_socket = socket.connect("192.168.0.1:41203").await.expect("couldn't connect to address");
-    /// assert_eq!(connected_socket.peer_addr().unwrap(),
-    ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn peer_addr(&self) -> Result<SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get peer address",
-        ))
-    }
-
-    /// Returns the socket address that this socket was created from.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// assert_eq!(socket.local_addr().unwrap(),
-    ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 34254)));
-    /// ```
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
-    }
-
-    /// Sets the value for the `IP_TTL` option on this socket.
-    ///
-    /// This value sets the time-to-live field that is used in every packet sent
-    /// from this socket.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// socket.set_ttl(42).expect("set_ttl call failed");
-    /// ```
-    pub fn set_ttl(&self, ttl: u32) -> Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_ttl(ttl)
-    }
-
-    /// Gets the value of the `IP_TTL` option for this socket.
-    ///
-    /// For more information about this option, see [`ConnectedSocket::set_ttl`].
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// socket.set_ttl(42).expect("set_ttl call failed");
-    /// assert_eq!(socket.ttl().unwrap(), 42);
-    /// ```
-    pub fn ttl(&self) -> Result<u32> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.ttl()
-    }
-
-    /// Gets the value of the `SO_ERROR` option on this socket.
-    ///
-    /// This will retrieve the stored error in the underlying socket, clearing
-    /// the field in the process. This can be useful for checking errors between
-    /// calls.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// match socket.take_error() {
-    ///     Ok(Some(error)) => println!("UdpSocket error: {error:?}"),
-    ///     Ok(None) => println!("No error"),
-    ///     Err(error) => println!("UdpSocket.take_error failed: {error:?}"),
-    /// }
-    /// ```
-    pub fn take_error(&self) -> Result<Option<Error>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.take_error()
-    }
-}
-
-impl Into<std::net::UdpSocket> for ConnectedSocket {
+impl Into<std::net::UdpSocket> for UdpConnectedSocket {
     fn into(self) -> std::net::UdpSocket {
         let fd = self.fd;
         mem::forget(self);
@@ -160,7 +19,7 @@ impl Into<std::net::UdpSocket> for ConnectedSocket {
     }
 }
 
-impl From<std::net::UdpSocket> for ConnectedSocket {
+impl From<std::net::UdpSocket> for UdpConnectedSocket {
     fn from(stream: std::net::UdpSocket) -> Self {
         Self {
             fd: stream.into_raw_fd(),
@@ -168,26 +27,51 @@ impl From<std::net::UdpSocket> for ConnectedSocket {
     }
 }
 
-impl From<Fd> for ConnectedSocket {
-    fn from(fd: Fd) -> Self {
+impl IntoRawFd for UdpConnectedSocket {
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+
+        fd
+    }
+}
+
+impl FromRawFd for UdpConnectedSocket {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
     }
 }
 
-impl AsFd for ConnectedSocket {
+impl AsRawFd for UdpConnectedSocket {
     #[inline(always)]
-    fn as_raw_fd(&self) -> Fd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 }
 
-impl AsyncPollFd for ConnectedSocket {}
+impl AsFd for UdpConnectedSocket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
 
-impl AsyncShutdown for ConnectedSocket {}
+impl AsyncPollFd for UdpConnectedSocket {}
 
-impl AsyncClose for ConnectedSocket {}
+impl AsyncRecv for UdpConnectedSocket {}
 
-impl Drop for ConnectedSocket {
+impl AsyncPeek for UdpConnectedSocket {}
+
+impl AsyncSend for UdpConnectedSocket {}
+
+impl AsyncShutdown for UdpConnectedSocket {}
+
+impl AsyncClose for UdpConnectedSocket {}
+
+impl Socket for UdpConnectedSocket {}
+
+impl ConnectedDatagram for UdpConnectedSocket {}
+
+impl Drop for UdpConnectedSocket {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
@@ -200,12 +84,14 @@ impl Drop for ConnectedSocket {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
-    use std::thread;
+    use std::{io, thread};
+    use std::time::Duration;
 
-    use crate::io::Bind;
-    use crate::net::udp::Socket;
+    use crate::io::{AsyncBind, AsyncConnectDatagram};
+    use crate::net::udp::UdpSocket;
     use crate::runtime::create_local_executer_for_block_on;
 
     use super::*;
@@ -249,7 +135,7 @@ mod tests {
                 is_server_ready = condvar.wait(is_server_ready).unwrap();
             }
 
-            let stream = Socket::bind(CLIENT_ADDR).expect("bind failed");
+            let stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
             let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
 
             assert_eq!(
@@ -282,7 +168,7 @@ mod tests {
         const TIMEOUT: Duration = Duration::from_micros(1);
 
         create_local_executer_for_block_on(async {
-            let socket = Socket::bind(ADDR).expect("bind failed");
+            let socket = UdpSocket::bind(ADDR).await.expect("bind failed");
             let mut connected_socket = socket
                 .connect_with_timeout("127.0.0.1:14142", TIMEOUT)
                 .await

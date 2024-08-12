@@ -4,18 +4,17 @@ use std::task::{Context, Poll};
 use io_macros::{poll_for_io_request};
 use std::io::Result;
 use crate::io::io_request::{IoRequest};
-use crate::io::sys::{AsFd, Fd};
+use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub(crate) struct Close {
-    fd: Fd,
+pub struct Close {
+    fd: RawFd,
     io_request: Option<IoRequest>
 }
 
 impl Close {
-    pub(crate) fn new(fd: Fd) -> Self {
+    pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
             io_request: None
@@ -33,13 +32,13 @@ impl Future for Close {
         let ret;
 
         poll_for_io_request!((
-             worker.close(this.fd, this.io_request.as_ref().unwrap_unchecked()),
+             worker.close(this.fd, this.io_request.as_mut().unwrap_unchecked()),
              ()
         ));
     }
 }
 
-pub(crate) trait AsyncClose: AsFd {
+pub trait AsyncClose: AsRawFd {
     fn close(&mut self) -> Close {
         Close::new(self.as_raw_fd())
     }

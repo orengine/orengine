@@ -1,43 +1,40 @@
 use std::future::Future;
 use std::io::Result;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsFd, Fd, MessageRecvHeader};
+use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::io::AsyncPollFd;
-use crate::runtime::task::Task;
+use crate::messages::BUG;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct RecvFrom<'buf> {
-    fd: Fd,
-    msg_header: MessageRecvHeader<'buf>,
+pub struct RecvFrom<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
     io_request: Option<IoRequest>,
 }
 
-impl<'buf> RecvFrom<'buf> {
-    #[inline(always)]
-    pub fn new(fd: Fd, buf: &'buf mut [u8]) -> Self {
-        let s = Self {
+impl<'fut> RecvFrom<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
+        Self {
             fd,
             msg_header: MessageRecvHeader::new(buf),
+            addr,
             io_request: None,
-        };
-
-        s
+        }
     }
 }
 
-impl<'buf> Future for RecvFrom<'buf> {
-    type Output = Result<(usize, SockAddr)>;
+impl<'fut> Future for RecvFrom<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -47,36 +44,37 @@ impl<'buf> Future for RecvFrom<'buf> {
         poll_for_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
             ),
-            (ret, this.msg_header.socket_addr().clone())
+            ret
         ));
     }
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct RecvFromWithDeadline<'buf> {
-    fd: Fd,
-    msg_header: MessageRecvHeader<'buf>,
+pub struct RecvFromWithDeadline<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
-impl<'buf> RecvFromWithDeadline<'buf> {
-    #[inline(always)]
-    pub fn new(fd: Fd, buf: &'buf mut [u8], deadline: Instant) -> Self {
+impl<'fut> RecvFromWithDeadline<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
             msg_header: MessageRecvHeader::new(buf),
+            addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request: None,
         }
     }
 }
 
-impl<'buf> Future for RecvFromWithDeadline<'buf> {
-    type Output = Result<(usize, SockAddr)>;
+impl<'fut> Future for RecvFromWithDeadline<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -86,82 +84,51 @@ impl<'buf> Future for RecvFromWithDeadline<'buf> {
         poll_for_time_bounded_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
             ),
-            (ret, this.msg_header.socket_addr().clone())
+            ret
         ));
     }
 }
 
-pub trait AsyncRecvFrom: AsFd + AsyncPollFd {
-    #[inline(always)]
-    async fn recv_from<'a>(&mut self, buf: &'a mut [u8]) -> Result<(usize, SocketAddr)> {
-        let (n, addr) = RecvFrom::new(self.as_raw_fd(), buf).await?;
-        Ok((
-            n,
-            addr.as_socket()
-                .expect("[BUG] Invalid socket address. Please report the bug."),
-        ))
-    }
+macro_rules! generate_async_recv_from {
+    ($trait_name:ident, $addr_type:ty, $cast_fn: expr) => {
+        pub trait $trait_name: AsRawFd {
+            #[inline(always)]
+            async fn recv_from(
+                &mut self,
+                buf: &mut [u8]
+            ) -> Result<(usize, $addr_type)> {
+                let mut sock_addr = unsafe { std::mem::zeroed() };
+                let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-    #[inline(always)]
-    async fn recv_from_with_deadline<'a>(
-        &mut self,
-        buf: &'a mut [u8],
-        deadline: Instant,
-    ) -> Result<(usize, SocketAddr)> {
-        let (n, addr) = RecvFromWithDeadline::new(self.as_raw_fd(), buf, deadline).await?;
-        Ok((
-            n,
-            addr.as_socket()
-                .expect("[BUG] Invalid socket address. Please report the bug."),
-        ))
-    }
+                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
+            }
 
-    #[inline(always)]
-    async fn recv_from_with_timeout<'a>(
-        &mut self,
-        buf: &'a mut [u8],
-        duration: std::time::Duration,
-    ) -> Result<(usize, SocketAddr)> {
-        self.recv_from_with_deadline(buf, Instant::now() + duration)
-            .await
-    }
+            #[inline(always)]
+            async fn recv_from_with_deadline(
+                &mut self,
+                buf: &mut [u8],
+                deadline: Instant
+            ) -> Result<(usize, $addr_type)> {
+                let mut sock_addr = unsafe { std::mem::zeroed() };
+                let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+
+                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
+            }
+
+            #[inline(always)]
+            async fn recv_from_with_timeout(
+                &mut self,
+                buf: &mut [u8],
+                timeout: Duration
+            ) -> Result<(usize, $addr_type)> {
+                self.recv_from_with_deadline(buf, Instant::now() + timeout).await
+            }
+        }
+    };
 }
 
-pub trait AsyncRecvFromPath: AsFd {
-    #[inline(always)]
-    async fn recv_from<'buf>(&mut self, buf: &'buf mut [u8]) -> Result<(usize, PathBuf)> {
-        let (n, addr) = RecvFrom::new(self.as_raw_fd(), buf).await?;
-        let path = addr
-            .as_pathname()
-            .expect("[BUG] Invalid socket address. Please report the bug.")
-            .to_path_buf();
-        Ok((n, path))
-    }
-
-    #[inline(always)]
-    async fn recv_from_with_deadline<'buf>(
-        &mut self,
-        buf: &'buf mut [u8],
-        deadline: Instant,
-    ) -> Result<(usize, PathBuf)> {
-        let (n, addr) = RecvFromWithDeadline::new(self.as_raw_fd(), buf, deadline).await?;
-        let path = addr
-            .as_pathname()
-            .expect("[BUG] Invalid socket address. Please report the bug.")
-            .to_path_buf();
-        Ok((n, path))
-    }
-
-    #[inline(always)]
-    async fn recv_from_with_timeout<'buf>(
-        &mut self,
-        buf: &'buf mut [u8],
-        duration: std::time::Duration,
-    ) -> Result<(usize, PathBuf)> {
-        self.recv_from_with_deadline(buf, Instant::now() + duration)
-            .await
-    }
-}
+generate_async_recv_from!(AsyncRecvFrom, SocketAddr, SockAddr::as_socket);
+generate_async_recv_from!(AsyncRecvFromUnix, std::os::unix::net::SocketAddr, SockAddr::as_unix);

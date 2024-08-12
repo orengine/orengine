@@ -1,37 +1,40 @@
 use std::future::Future;
 use std::io::Result;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{Fd, MessageRecvHeader};
+use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::runtime::task::Task;
+use crate::messages::BUG;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PeekFrom<'buf> {
-    fd: Fd,
-    msg_header: MessageRecvHeader<'buf>,
+pub struct PeekFrom<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
     io_request: Option<IoRequest>,
 }
 
-impl<'buf> PeekFrom<'buf> {
-    pub fn new(fd: Fd, buf: &'buf mut [u8]) -> Self {
+impl<'fut> PeekFrom<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
             fd,
             msg_header: MessageRecvHeader::new(buf),
+            addr,
             io_request: None,
         }
     }
 }
 
-impl<'buf> Future for PeekFrom<'buf> {
-    type Output = Result<(usize, SockAddr)>;
+impl<'fut> Future for PeekFrom<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -41,35 +44,37 @@ impl<'buf> Future for PeekFrom<'buf> {
         poll_for_io_request!((
             worker.peek_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
             ),
-            (ret, this.msg_header.socket_addr().clone())
+            ret
         ));
     }
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PeekFromWithDeadline<'buf> {
-    fd: Fd,
-    msg_header: MessageRecvHeader<'buf>,
+pub struct PeekFromWithDeadline<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
-impl<'buf> PeekFromWithDeadline<'buf> {
-    pub fn new(fd: Fd, buf: &'buf mut [u8], deadline: Instant) -> Self {
+impl<'fut> PeekFromWithDeadline<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
             msg_header: MessageRecvHeader::new(buf),
+            addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request: None,
         }
     }
 }
 
-impl<'buf> Future for PeekFromWithDeadline<'buf> {
-    type Output = Result<(usize, SockAddr)>;
+impl<'fut> Future for PeekFromWithDeadline<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -79,96 +84,51 @@ impl<'buf> Future for PeekFromWithDeadline<'buf> {
         poll_for_time_bounded_io_request!((
             worker.peek_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
             ),
-            (ret, this.msg_header.socket_addr().clone())
+            ret
         ));
     }
 }
 
-#[macro_export]
-macro_rules! generate_peek_from {
-    () => {
-        #[inline(always)]
-        pub async fn peek_from<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-        ) -> std::io::Result<(usize, std::net::SocketAddr)> {
-            let (n, addr) = crate::io::PeekFrom::new(self.as_raw_fd(), buf).await?;
-            Ok((
-                n,
-                addr.as_socket()
-                    .expect("[BUG] Invalid socket address. Please report the bug."),
-            ))
-        }
+macro_rules! generate_async_peek_from {
+    ($trait_name:ident, $addr_type:ty, $cast_fn: expr) => {
+        pub trait $trait_name: AsRawFd {
+            #[inline(always)]
+            async fn peek_from(
+                &mut self,
+                buf: &mut [u8]
+            ) -> Result<(usize, $addr_type)> {
+                let mut sock_addr = unsafe { std::mem::zeroed() };
+                let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-        #[inline(always)]
-        pub async fn peek_from_with_deadline<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            deadline: std::time::Instant,
-        ) -> std::io::Result<(usize, std::net::SocketAddr)> {
-            let (n, addr) =
-                crate::io::PeekFromWithDeadline::new(self.as_raw_fd(), buf, deadline).await?;
-            Ok((
-                n,
-                addr.as_socket()
-                    .expect("[BUG] Invalid socket address. Please report the bug."),
-            ))
-        }
+                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
+            }
 
-        #[inline(always)]
-        pub async fn peek_from_with_timeout<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            duration: std::time::Duration,
-        ) -> std::io::Result<(usize, std::net::SocketAddr)> {
-            self.peek_from_with_deadline(buf, std::time::Instant::now() + duration)
-                .await
+            #[inline(always)]
+            async fn peek_from_with_deadline(
+                &mut self,
+                buf: &mut [u8],
+                deadline: Instant
+            ) -> Result<(usize, $addr_type)> {
+                let mut sock_addr = unsafe { std::mem::zeroed() };
+                let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+
+                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
+            }
+
+            #[inline(always)]
+            async fn peek_from_with_timeout(
+                &mut self,
+                buf: &mut [u8],
+                timeout: Duration
+            ) -> Result<(usize, $addr_type)> {
+                self.peek_from_with_deadline(buf, Instant::now() + timeout).await
+            }
         }
     };
 }
 
-#[macro_export]
-macro_rules! generate_peek_from_unix {
-    () => {
-        #[inline(always)]
-        pub async fn peek_from<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-        ) -> std::io::Result<(usize, std::os::unix::net::SocketAddr)> {
-            let (n, addr) = crate::io::PeekFrom::new(self.as_raw_fd(), buf).await?;
-            Ok((
-                n,
-                addr.as_unix()
-                    .expect("[BUG] Invalid socket address. Please report the bug."),
-            ))
-        }
-
-        #[inline(always)]
-        pub async fn peek_from_with_deadline<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            deadline: std::time::Instant,
-        ) -> std::io::Result<(usize, std::os::unix::net::SocketAddr)> {
-            let (n, addr) =
-                crate::io::PeekFromWithDeadline::new(self.as_raw_fd(), buf, deadline).await?;
-            Ok((
-                n,
-                addr.as_unix()
-                    .expect("[BUG] Invalid socket address. Please report the bug."),
-            ))
-        }
-
-        #[inline(always)]
-        pub async fn peek_from_with_timeout<'a>(
-            &mut self,
-            buf: &'a mut [u8],
-            duration: std::time::Duration,
-        ) -> std::io::Result<(usize, std::os::unix::net::SocketAddr)> {
-            self.peek_from_with_deadline(buf, std::time::Instant::now() + duration)
-                .await
-        }
-    };
-}
+generate_async_peek_from!(AsyncPeekFrom, SocketAddr, SockAddr::as_socket);
+generate_async_peek_from!(AsyncPeekFromUnix, std::os::unix::net::SocketAddr, SockAddr::as_unix);

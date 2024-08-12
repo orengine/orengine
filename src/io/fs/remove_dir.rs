@@ -6,7 +6,6 @@ use io_macros::poll_for_io_request;
 use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct RemoveDir {
@@ -33,7 +32,7 @@ impl Future for RemoveDir {
         let ret;
 
         poll_for_io_request!((
-            worker.remove_dir(this.path.as_ptr(), this.io_request.as_ref().unwrap_unchecked()),
+            worker.remove_dir(this.path.as_ptr(), this.io_request.as_mut().unwrap_unchecked()),
             ()
         ));
     }

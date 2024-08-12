@@ -3,20 +3,20 @@ use std::pin::Pin;
 use std::io::Result;
 use std::task::{Context, Poll};
 use io_macros::{poll_for_io_request};
-use crate::runtime::task::Task;
-use crate::io::sys::{AsFd, Fd};
+
+use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::io_request::{IoRequest};
 use crate::io::worker::{IoWorker, local_worker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]     
 pub struct Write<'a> {         
-    fd: Fd,       
+    fd: RawFd,
     buf: &'a [u8],
     io_request: Option<IoRequest>
 }     
 
 impl<'a> Write<'a> {      
-    pub fn new(fd: Fd, buf: &'a [u8]) -> Self {     
+    pub fn new(fd: RawFd, buf: &'a [u8]) -> Self {
         Self {               
             fd,              
             buf,
@@ -33,7 +33,7 @@ impl<'a> Future for Write<'a> {
         let ret;
 
         poll_for_io_request!((
-             worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), this.io_request.as_ref().unwrap_unchecked()),
+             worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), this.io_request.as_mut().unwrap_unchecked()),
              ret
         ));
     }  
@@ -41,14 +41,14 @@ impl<'a> Future for Write<'a> {
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PositionedWrite<'a> {
-    fd: Fd,
+    fd: RawFd,
     buf: &'a [u8],
     offset: usize,
     io_request: Option<IoRequest>
 }
 
 impl<'a> PositionedWrite<'a> {
-    pub fn new(fd: Fd, buf: &'a [u8], offset: usize) -> Self {
+    pub fn new(fd: RawFd, buf: &'a [u8], offset: usize) -> Self {
         Self {
             fd,
             buf,
@@ -67,13 +67,13 @@ impl<'a> Future for PositionedWrite<'a> {
         let ret;
 
         poll_for_io_request!((
-             worker.pwrite(this.fd, this.buf.as_ptr(), this.buf.len(), this.offset, this.io_request.as_ref().unwrap_unchecked()),
+             worker.pwrite(this.fd, this.buf.as_ptr(), this.buf.len(), this.offset, this.io_request.as_mut().unwrap_unchecked()),
              ret
         ));
     }
 }
 
-pub trait AsyncWrite: AsFd {
+pub trait AsyncWrite: AsRawFd {
     #[inline(always)]
     fn write<'a>(&mut self, buf: &'a [u8]) -> Write<'a> {
         Write::new(self.as_raw_fd(), buf)

@@ -7,6 +7,9 @@
 #![allow(async_fn_in_trait)]
 #![feature(async_closure)]
 #![feature(negative_impls)]
+#![feature(trait_alias)]
+
+// TODO rename lifetimes
 
 pub use socket2;
 
@@ -29,3 +32,4 @@ pub mod sleep;
 pub mod sync;
 pub mod utils;
 pub mod yield_now;
+mod messages;

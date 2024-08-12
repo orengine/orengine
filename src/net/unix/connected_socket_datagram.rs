@@ -1,132 +1,17 @@
-use std::io::{Error, Result};
-use std::net::ToSocketAddrs;
-#[cfg(unix)]
-use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::{io, mem};
+use std::mem;
 
-use crate::io::sys::{AsFd, Fd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, Bind};
+use crate::io::sys::{AsRawFd, BorrowedFd, IntoRawFd, FromRawFd, RawFd, AsFd};
+use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, AsyncSend};
+use crate::net::unix::path_connected_datagram::PathConnectedDatagram;
+use crate::net::unix::path_socket::PathSocket;
 use crate::runtime::local_executor;
-use crate::{
-    generate_peek, generate_peek_exact, generate_recv, generate_recv_exact, generate_send,
-    generate_send_all,
-};
 
 #[derive(Debug)]
-pub struct ConnectedSocketDatagram {
-    fd: Fd,
+pub struct UnixConnectedDatagram {
+    fd: RawFd,
 }
 
-impl ConnectedSocketDatagram {
-    #[inline(always)]
-    #[cfg(unix)]
-    pub fn borrow_fd(&self) -> BorrowedFd {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
-    }
-
-    generate_send!();
-
-    generate_send_all!();
-
-    generate_recv!();
-
-    generate_recv_exact!();
-
-    generate_peek!();
-
-    generate_peek_exact!();
-
-    /// Returns the socket address of the remote peer this socket was connected to.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// let connected_socket = socket.connect("192.168.0.1:41203").await.expect("couldn't connect to address");
-    /// assert_eq!(connected_socket.peer_addr().unwrap(),
-    ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn peer_addr(&self) -> Result<std::os::unix::net::SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_unix().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get peer address",
-        ))
-    }
-
-    /// Returns the socket address that this socket was created from.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// assert_eq!(socket.local_addr().unwrap(),
-    ///            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 34254)));
-    /// ```
-    pub fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_unix().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
-    }
-
-    // TODO macro for it
-
-    #[inline(always)]
-    pub fn set_mark(&self, mark: u32) -> Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_mark(mark)
-    }
-
-    #[inline(always)]
-    pub fn mark(&self) -> Result<u32> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.mark()
-    }
-
-    /// Gets the value of the `SO_ERROR` option on this socket.
-    ///
-    /// This will retrieve the stored error in the underlying socket, clearing
-    /// the field in the process. This can be useful for checking errors between
-    /// calls.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use orengine::io::Bind;
-    /// use orengine::net::UdpSocket;
-    ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// match socket.take_error() {
-    ///     Ok(Some(error)) => println!("UdpSocket error: {error:?}"),
-    ///     Ok(None) => println!("No error"),
-    ///     Err(error) => println!("UdpSocket.take_error failed: {error:?}"),
-    /// }
-    /// ```
-    pub fn take_error(&self) -> Result<Option<Error>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.take_error()
-    }
-}
-
-impl Into<std::os::unix::net::UnixDatagram> for ConnectedSocketDatagram {
+impl Into<std::os::unix::net::UnixDatagram> for UnixConnectedDatagram {
     fn into(self) -> std::os::unix::net::UnixDatagram {
         let fd = self.fd;
         mem::forget(self);
@@ -135,7 +20,7 @@ impl Into<std::os::unix::net::UnixDatagram> for ConnectedSocketDatagram {
     }
 }
 
-impl From<std::os::unix::net::UnixDatagram> for ConnectedSocketDatagram {
+impl From<std::os::unix::net::UnixDatagram> for UnixConnectedDatagram {
     fn from(stream: std::os::unix::net::UnixDatagram) -> Self {
         Self {
             fd: stream.into_raw_fd(),
@@ -143,26 +28,53 @@ impl From<std::os::unix::net::UnixDatagram> for ConnectedSocketDatagram {
     }
 }
 
-impl From<Fd> for ConnectedSocketDatagram {
-    fn from(fd: Fd) -> Self {
+impl IntoRawFd for UnixConnectedDatagram {
+    #[inline(always)]
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+
+        fd
+    }
+}
+
+impl FromRawFd for UnixConnectedDatagram {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
     }
 }
 
-impl AsFd for ConnectedSocketDatagram {
+impl AsRawFd for UnixConnectedDatagram {
     #[inline(always)]
-    fn as_raw_fd(&self) -> Fd {
+    fn as_raw_fd(&self) -> RawFd  {
         self.fd
     }
 }
 
-impl AsyncPollFd for ConnectedSocketDatagram {}
+impl AsFd for UnixConnectedDatagram {
+    #[inline(always)]
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
 
-impl AsyncShutdown for ConnectedSocketDatagram {}
+impl AsyncPollFd for UnixConnectedDatagram {}
 
-impl AsyncClose for ConnectedSocketDatagram {}
+impl AsyncSend for UnixConnectedDatagram {}
 
-impl Drop for ConnectedSocketDatagram {
+impl AsyncRecv for UnixConnectedDatagram {}
+
+impl AsyncPeek for UnixConnectedDatagram {}
+
+impl AsyncShutdown for UnixConnectedDatagram {}
+
+impl AsyncClose for UnixConnectedDatagram {}
+
+impl PathSocket for UnixConnectedDatagram {}
+
+impl PathConnectedDatagram for UnixConnectedDatagram {}
+
+impl Drop for UnixConnectedDatagram {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
@@ -180,8 +92,8 @@ mod tests {
     use std::thread;
 
     use crate::fs::test_helper::delete_file_if_exists;
-    use crate::io::Bind;
-    use crate::net::unix::socket_datagram::SocketDatagram;
+    use crate::io::{AsyncBind, AsyncBindUnix, AsyncConnectDatagramUnix};
+    use crate::net::unix::datagram::UnixDatagram;
     use crate::runtime::create_local_executer_for_block_on;
 
     use super::*;
@@ -231,7 +143,7 @@ mod tests {
                 is_server_ready = condvar.wait(is_server_ready).unwrap();
             }
 
-            let stream = SocketDatagram::bind(CLIENT_ADDR).expect("bind failed");
+            let stream = UnixDatagram::bind(CLIENT_ADDR).await.expect("bind failed");
             let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
 
             assert_eq!(

@@ -6,4 +6,3 @@ mod addr_from_to_socket_addrs;
 
 pub use ptr::*;
 pub use core::*;
-pub(crate) use addr_from_to_socket_addrs::*;
