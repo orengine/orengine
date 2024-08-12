@@ -5,19 +5,18 @@ use io_macros::{poll_for_io_request};
 use std::io::Result;
 use std::net::Shutdown as ShutdownHow;
 use crate::io::io_request::{IoRequest};
-use crate::io::sys::{AsFd, Fd};
+use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Shutdown {
-    fd: Fd,
+    fd: RawFd,
     how: ShutdownHow,
     io_request: Option<IoRequest>
 }
 
 impl Shutdown {
-    pub fn new(fd: Fd, how: ShutdownHow) -> Self {
+    pub fn new(fd: RawFd, how: ShutdownHow) -> Self {
         Self {
             fd,
             how,
@@ -36,13 +35,13 @@ impl Future for Shutdown {
         let ret;
 
         poll_for_io_request!((
-             worker.shutdown(this.fd, this.how, this.io_request.as_ref().unwrap_unchecked()),
+             worker.shutdown(this.fd, this.how, this.io_request.as_mut().unwrap_unchecked()),
              ()
         ));
     }
 }
 
-pub trait AsyncShutdown: AsFd {
+pub trait AsyncShutdown: AsRawFd {
     fn shutdown(&mut self, how: ShutdownHow) -> Shutdown {
         Shutdown::new(self.as_raw_fd(), how)
     }

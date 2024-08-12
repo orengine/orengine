@@ -6,7 +6,6 @@ use io_macros::poll_for_io_request;
 use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Rename {
@@ -38,7 +37,7 @@ impl Future for Rename {
             worker.rename(
                 this.old_path.as_ptr(),
                 this.new_path.as_ptr(),
-                this.io_request.as_ref().unwrap_unchecked()
+                this.io_request.as_mut().unwrap_unchecked()
             ),
             ()
         ));

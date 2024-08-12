@@ -4,19 +4,18 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use io_macros::poll_for_io_request;
 use crate::io::io_request::{IoRequest};
-use crate::io::sys::{AsFd, Fd};
+use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Read<'a> {
-    fd: Fd,
+    fd: RawFd,
     buf: &'a mut [u8],
     io_request: Option<IoRequest>
 }
 
 impl<'a> Read<'a> {
-    pub fn new(fd: Fd, buf: &'a mut [u8]) -> Self {
+    pub fn new(fd: RawFd, buf: &'a mut [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -34,7 +33,7 @@ impl<'a> Future for Read<'a> {
         let ret;
 
         poll_for_io_request!((
-             worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.io_request.as_ref().unwrap_unchecked()),
+             worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.io_request.as_mut().unwrap_unchecked()),
              ret
         ));
     }
@@ -42,14 +41,14 @@ impl<'a> Future for Read<'a> {
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PositionedRead<'a> {
-    fd: Fd,
+    fd: RawFd,
     buf: &'a mut [u8],
     offset: usize,
     io_request: Option<IoRequest>
 }
 
 impl<'a> PositionedRead<'a> {
-    pub fn new(fd: Fd, buf: &'a mut [u8], offset: usize) -> Self {
+    pub fn new(fd: RawFd, buf: &'a mut [u8], offset: usize) -> Self {
         Self {
             fd,
             buf,
@@ -68,13 +67,13 @@ impl<'a> Future for PositionedRead<'a> {
         let ret;
 
         poll_for_io_request!((
-             worker.pread(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.offset, this.io_request.as_ref().unwrap_unchecked()),
+             worker.pread(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.offset, this.io_request.as_mut().unwrap_unchecked()),
              ret
         ));
     }
 }
 
-pub trait AsyncRead: AsFd {
+pub trait AsyncRead: AsRawFd {
     #[inline(always)]
     fn read<'a>(&mut self, buf: &'a mut [u8]) -> Read<'a> {
         Read::new(self.as_raw_fd(), buf)

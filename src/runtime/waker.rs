@@ -29,6 +29,8 @@ unsafe fn drop(_: *const ()) {}
 
 pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
+
+#[inline(always)]
 pub fn create_waker(data_ptr: *const ()) -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(data_ptr, &VTABLE)) }
 }

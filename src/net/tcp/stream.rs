@@ -1,298 +1,37 @@
-//! This module contains [`Stream`].
-use std::intrinsics::unlikely;
-use std::io::{self, Error, Result};
+//! This module contains [`TcpStream`].
+use std::io::Result;
 use std::mem;
-use std::net::{SocketAddr, ToSocketAddrs};
-#[cfg(unix)]
-use std::os::fd::{BorrowedFd, FromRawFd, IntoRawFd};
-use std::time::{Duration, Instant};
-use socket2::{Protocol, Type};
-use crate::{each_addr, generate_peek, generate_peek_exact, generate_recv, generate_recv_exact, generate_send, generate_send_all};
-use crate::io::{AsyncClose, AsyncPollFd};
-use crate::io::connect::{Connect, ConnectWithTimeout};
-use crate::io::recv::{Recv, RecvWithDeadline};
-use crate::io::send::{Send, SendWithDeadline};
+use socket2::{Domain, Type};
+
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, Fd};
-use crate::net::get_socket::get_socket;
+use crate::io::sys::{AsFd, AsRawFd, RawFd, IntoRawFd, FromRawFd, BorrowedFd};
+use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
+use crate::net::Stream;
 use crate::runtime::local_executor;
 
 /// A TCP stream between a local and a remote socket.
 ///
 /// # Close
 ///
-/// [`Stream`] is automatically closed after it is dropped.
-pub struct Stream {
-    fd: Fd,
+/// [`TcpStream`] is automatically closed after it is dropped.
+pub struct TcpStream {
+    fd: RawFd,
 }
 
-impl Stream {
-    /// Returns the state_ptr of the [`Stream`].
-    ///
-    /// Uses for low-level work with the scheduler. If you don't know what it is, don't use it.
+impl AsRawFd for TcpStream {
     #[inline(always)]
-    pub fn fd(&mut self) -> Fd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
+}
 
-    #[inline(always)]
-    #[cfg(unix)]
-    pub fn borrow_fd(&self) -> BorrowedFd {
+impl AsFd for TcpStream {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
-
-    // region connect
-
-    #[inline(always)]
-    pub async fn connect<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Self> {
-            let socket = get_socket(addr, Type::STREAM, Some(Protocol::TCP))?;
-            Connect::new(socket.into_raw_fd(), addr).await
-        })
-    }
-
-    #[inline(always)]
-    pub async fn connect_with_deadline<A: ToSocketAddrs>(addrs: A, deadline: Instant) -> Result<Self> {
-        each_addr!(&addrs, async move |addr: SocketAddr| -> Result<Stream> {
-            let socket = get_socket(addr, Type::STREAM, Some(Protocol::TCP))?;
-            ConnectWithTimeout::new(socket.into_raw_fd(), addr, deadline).await
-        })
-    }
-
-    #[inline(always)]
-    pub async fn connect_with_timeout<A: ToSocketAddrs>(addrs: A, timeout: Duration) -> Result<Self> {
-        Self::connect_with_deadline(addrs, Instant::now() + timeout).await
-    }
-
-    // endregion
-
-    generate_send!();
-
-    generate_send_all!();
-
-    generate_recv!();
-
-    generate_recv_exact!();
-
-    generate_peek!();
-
-    generate_peek_exact!();
-
-    /// Returns the socket address of the remote peer of this TCP connection.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// assert_eq!(
-    ///     stream.peer_addr().unwrap(),
-    ///     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
-    /// );
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn peer_addr(&self) -> Result<SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get peer address"))
-    }
-
-    /// Returns the socket address of the local half of this TCP connection.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::net::{IpAddr, Ipv4Addr};
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// assert_eq!(stream.local_addr().unwrap().ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(io::ErrorKind::Other, "failed to get local address"))
-    }
-
-    /// Sets the value of the `SO_LINGER` option on this socket.
-    ///
-    /// This value controls how the socket is closed when data remains
-    /// to be sent. If `SO_LINGER` is set, the socket will remain open
-    /// for the specified duration as the system attempts to send pending data.
-    /// Otherwise, the system may close the socket immediately, or wait for a
-    /// default timeout.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::time::Duration;
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_linger(Some(Duration::from_secs(0))).expect("set_linger call failed");
-    /// # }
-    /// ```
-    pub fn set_linger(&self, linger: Option<Duration>) -> Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_linger(linger)
-    }
-
-    /// Gets the value of the `SO_LINGER` option on this socket.
-    ///
-    /// For more information about this option, see [`set_linger`](#method.set_linger).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use std::time::Duration;
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_linger(Some(Duration::from_secs(0))).expect("set_linger call failed");
-    /// assert_eq!(stream.linger().unwrap(), Some(Duration::from_secs(0)));
-    /// # }
-    /// ```
-    pub fn linger(&self) -> Result<Option<Duration>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.linger()
-    }
-
-    /// Sets the value of the `TCP_NODELAY` option on this socket.
-    ///
-    /// If set, this option disables the Nagle algorithm. This means that
-    /// segments are always sent as soon as possible, even if there is only a
-    /// small amount of data. When not set, data is buffered until there is a
-    /// sufficient amount to send out, thereby avoiding the frequent sending of
-    /// small packets.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_nodelay(true).expect("set_nodelay call failed");
-    /// # }
-    /// ```
-    pub fn set_nodelay(&self, nodelay: bool) -> Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_nodelay(nodelay)
-    }
-
-    /// Gets the value of the `TCP_NODELAY` option on this socket.
-    ///
-    /// For more information about this option, see [`set_nodelay`](#method.set_nodelay).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_nodelay(true).expect("set_nodelay call failed");
-    /// assert_eq!(stream.nodelay().unwrap_or(false), true);
-    /// # }
-    /// ```
-    pub fn nodelay(&self) -> Result<bool> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.nodelay()
-    }
-
-    /// Sets the value for the `IP_TTL` option on this socket.
-    ///
-    /// This value sets the time-to-live field that is used in every packet sent
-    /// from this socket.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_ttl(100).expect("set_ttl call failed");
-    /// # }
-    /// ```
-    pub fn set_ttl(&self, ttl: u32) -> Result<()> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.set_ttl(ttl)
-    }
-
-    /// Gets the value of the `IP_TTL` option for this socket.
-    ///
-    /// For more information about this option, see [`set_ttl`](#method.set_ttl).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.set_ttl(100).expect("set_ttl call failed");
-    /// assert_eq!(stream.ttl().unwrap_or(0), 100);
-    /// # }
-    /// ```
-    pub fn ttl(&self) -> Result<u32> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.ttl()
-    }
-
-    /// Gets the value of the `SO_ERROR` option on this socket.
-    ///
-    /// This will retrieve the stored error in the underlying socket, clearing
-    /// the field in the process. This can be useful for checking errors between
-    /// calls.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use async_engine::net::TcpStream;
-    ///
-    /// # async fn foo() {
-    /// let stream = TcpStream::connect("127.0.0.1:8080")
-    ///                        .await.expect("Couldn't connect to the server...");
-    /// stream.take_error().expect("No error was expected...");
-    /// # }
-    /// ```
-    pub fn take_error(&self) -> Result<Option<Error>> {
-        let borrowed_fd = self.borrow_fd();
-        let socket_ref = socket2::SockRef::from(&borrowed_fd);
-        socket_ref.take_error()
-    }
 }
 
-impl AsFd for Stream {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> Fd {
-        self.fd
-    }
-}
-
-impl Into<std::net::TcpStream> for Stream {
+impl Into<std::net::TcpStream> for TcpStream {
     fn into(self) -> std::net::TcpStream {
         let fd = self.fd;
         mem::forget(self);
@@ -301,7 +40,7 @@ impl Into<std::net::TcpStream> for Stream {
     }
 }
 
-impl From<std::net::TcpStream> for Stream {
+impl From<std::net::TcpStream> for TcpStream {
     fn from(stream: std::net::TcpStream) -> Self {
         Self {
             fd: stream.into_raw_fd(),
@@ -309,19 +48,53 @@ impl From<std::net::TcpStream> for Stream {
     }
 }
 
-impl From<Fd> for Stream {
-    fn from(fd: Fd) -> Self {
+impl IntoRawFd for TcpStream {
+    #[inline(always)]
+    fn into_raw_fd(self) -> RawFd {
+        let fd = self.fd;
+        mem::forget(self);
+
+        fd
+    }
+}
+
+impl FromRawFd for TcpStream {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
     }
 }
 
-impl AsyncPollFd for Stream {}
+impl AsyncConnectStream for TcpStream {
+    async fn new_ip4() -> Result<Self> {
+        Ok(Self {
+            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM).await?
+        })
+    }
 
-impl AsyncShutdown for Stream {}
+    async fn new_ip6() -> Result<Self> {
+        Ok(Self {
+            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM).await?
+        })
+    }
+}
 
-impl AsyncClose for Stream {}
+impl AsyncPollFd for TcpStream {}
 
-impl Drop for Stream {
+impl AsyncSend for TcpStream {}
+
+impl AsyncRecv for TcpStream {}
+
+impl AsyncPeek for TcpStream {}
+
+impl AsyncShutdown for TcpStream {}
+
+impl AsyncClose for TcpStream {}
+
+impl crate::net::Socket for TcpStream {}
+
+impl Stream for TcpStream {}
+
+impl Drop for TcpStream {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().spawn_local(async {
@@ -332,16 +105,20 @@ impl Drop for Stream {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
-    use std::thread;
-    use crate::io::{AsyncAccept, Bind};
+    use std::sync::{Arc, Mutex};
+    use std::{io, thread};
+    use std::time::{Duration, Instant};
+    use crate::io::{AsyncAccept, AsyncBind};
+
     use crate::io::bind::BindConfig;
-    use crate::net::tcp::Listener;
-    use super::*;
+    use crate::net::Socket;
+    use crate::net::tcp::TcpListener;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::sync::{LocalMutex, LocalWaitGroup};
     use crate::sync::cond_var::LocalCondVar;
+    use crate::sync::{LocalMutex, LocalWaitGroup};
+
+    use super::*;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -349,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_client() {
-        const ADDR: &str = "127.0.0.1:8086";
+        const ADDR: &str = "127.0.0.1:6086";
 
         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -383,7 +160,7 @@ mod tests {
                 is_server_ready = condvar.wait(is_server_ready).unwrap();
             }
 
-            let mut stream = Stream::connect(ADDR).await.expect("connect failed");
+            let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
 
             for _ in 0..TIMES {
                 stream.send_all(REQUEST).await.expect("send failed");
@@ -400,14 +177,14 @@ mod tests {
 
     #[test]
     fn test_server() {
-        const ADDR: &str = "127.0.0.1:8081";
+        const ADDR: &str = "127.0.0.1:6081";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
             create_local_executer_for_block_on(async move {
-                let mut listener = Listener::bind(ADDR).expect("bind failed");
+                let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
 
@@ -444,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_stream() {
-        const ADDR: &str = "127.0.0.1:8082";
+        const ADDR: &str = "127.0.0.1:6082";
 
         create_local_executer_for_block_on(async {
             let wg = LocalWaitGroup::new();
@@ -452,7 +229,7 @@ mod tests {
             let wg_clone = wg.clone();
 
             local_executor().spawn_local(async move {
-                let mut listener = Listener::bind(ADDR).expect("bind failed");
+                let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 wg_clone.done();
 
@@ -476,7 +253,7 @@ mod tests {
 
             wg.wait().await;
 
-            let mut stream = Stream::connect_with_timeout(ADDR, Duration::from_secs(2))
+            let mut stream = TcpStream::connect_with_timeout(ADDR, Duration::from_secs(2))
                 .await
                 .expect("connect with timeout failed");
 
@@ -488,17 +265,38 @@ mod tests {
             stream.set_nodelay(false).expect("set_nodelay failed");
             assert_eq!(stream.nodelay().expect("get_nodelay failed"), false);
 
-            stream.set_linger(Some(Duration::from_secs(23))).expect("set_linger failed");
-            assert_eq!(stream.linger().expect("get_linger failed"), Some(Duration::from_secs(23)));
+            stream
+                .set_linger(Some(Duration::from_secs(23)))
+                .expect("set_linger failed");
+            assert_eq!(
+                stream.linger().expect("get_linger failed"),
+                Some(Duration::from_secs(23))
+            );
 
             for _ in 0..TIMES {
-                stream.send_all_with_timeout(REQUEST, Duration::from_secs(2)).await.expect("send with timeout failed");
+                stream.poll_send().await.expect("poll failed");
+                stream
+                    .send_all_with_timeout(REQUEST, Duration::from_secs(2))
+                    .await
+                    .expect("send with timeout failed");
 
-                stream.poll_recv_with_timeout(Duration::from_secs(2)).await.expect("poll with timeout failed");
+                stream
+                    .poll_recv_with_timeout(Duration::from_secs(2))
+                    .await
+                    .expect("poll with timeout failed");
                 let mut buf = vec![0u8; RESPONSE.len()];
-                stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-                stream.peek_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("peek with timeout failed");
-                stream.recv_with_timeout(&mut buf, Duration::from_secs(2)).await.expect("recv with timeout failed");
+                stream
+                    .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("peek with timeout failed");
+                stream
+                    .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("peek with timeout failed");
+                stream
+                    .recv_with_timeout(&mut buf, Duration::from_secs(2))
+                    .await
+                    .expect("recv with timeout failed");
                 assert_eq!(RESPONSE, buf);
             }
         });
@@ -506,8 +304,8 @@ mod tests {
 
     #[test]
     fn test_timeout() {
-        const ADDR: &str = "127.0.0.1:8083";
-        const BACKLOG_SIZE: usize = 256;
+        const ADDR: &str = "127.0.0.1:6083";
+        const BACKLOG_SIZE: isize = 256;
 
         const CONNECT: usize = 0;
         const SEND: usize = 1;
@@ -526,10 +324,10 @@ mod tests {
             let wg_clone = wg.clone();
 
             local_executor().spawn_local(async move {
-                let mut listener = Listener::bind_with_config(
-                    ADDR,
-                    BindConfig::new().backlog_size(BACKLOG_SIZE)
-                ).expect("bind failed");
+                let mut listener =
+                    TcpListener::bind_with_config(ADDR, &BindConfig::new().backlog_size(BACKLOG_SIZE))
+                        .await
+                        .expect("bind failed");
                 let mut expected_state = 0;
                 let mut state = state_clone.lock().await;
 
@@ -547,7 +345,7 @@ mod tests {
                         POLL | PEEK | RECV => {
                             let _ = listener.accept().await.expect("accept failed").0;
                         }
-                        _ => break
+                        _ => break,
                     }
                     expected_state += 1;
                 }
@@ -560,11 +358,11 @@ mod tests {
                 match *state {
                     CONNECT => {
                         for _ in 0..BACKLOG_SIZE + 1 {
-                            let _ = Stream::connect_with_timeout(ADDR, TIMEOUT)
+                            let _ = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                                 .await
                                 .expect("connect with timeout failed");
                         }
-                        let res = Stream::connect_with_timeout(ADDR, TIMEOUT).await;
+                        let res = TcpStream::connect_with_timeout(ADDR, TIMEOUT).await;
                         match res {
                             Ok(_) => panic!("connect with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
@@ -575,27 +373,29 @@ mod tests {
                     }
 
                     SEND => {
-                        let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
+                        let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                             .await
                             .expect("connect with timeout failed");
 
                         let buf = vec![0u8; 1 << 24]; // 1 MB.
-                        // It is impossible to send 1 MB in 1 microsecond (1 TB/s).
-                        let res = stream.send_all_with_deadline(
-                            &buf,
-                            Instant::now() + Duration::from_micros(1)
-                        ).await;
+                                                      // It is impossible to send 1 MB in 1 microsecond (1 TB/s).
+                        let res = stream
+                            .send_all_with_deadline(&buf, Instant::now() + Duration::from_micros(1))
+                            .await;
                         match res {
                             Ok(_) => panic!("send with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("send with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "send with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
                     }
 
                     POLL => {
-                        let stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
+                        let stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                             .await
                             .expect("connect with timeout failed");
 
@@ -603,14 +403,17 @@ mod tests {
                         match res {
                             Ok(_) => panic!("poll with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("poll with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "poll with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
                     }
 
                     RECV => {
-                        let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
+                        let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                             .await
                             .expect("connect with timeout failed");
 
@@ -619,14 +422,17 @@ mod tests {
                         match res {
                             Ok(_) => panic!("recv with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("recv with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "recv with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
                     }
 
                     PEEK => {
-                        let mut stream = Stream::connect_with_timeout(ADDR, TIMEOUT)
+                        let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                             .await
                             .expect("connect with timeout failed");
 
@@ -635,13 +441,16 @@ mod tests {
                         match res {
                             Ok(_) => panic!("peek with timeout should failed"),
                             Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                                panic!("peek with timeout should failed with TimedOut, but got {:?}", err)
+                                panic!(
+                                    "peek with timeout should failed with TimedOut, but got {:?}",
+                                    err
+                                )
                             }
                             Err(_) => {}
                         }
                     }
 
-                    _ => break
+                    _ => break,
                 }
                 *state += 1;
                 state_cond_var.notify_one();

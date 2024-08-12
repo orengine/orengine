@@ -1,37 +1,40 @@
 use std::future::Future;
+use std::io::Result;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::io::Result;
-use std::marker::PhantomData;
-use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use crate::io::AsyncPollFd;
-use crate::io::io_request::{IoRequest};
+use socket2::SockAddr;
+
+use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsFd, Fd, MessageHeader};
-use crate::io::worker::{IoWorker, local_worker};
-use crate::runtime::task::Task;
+use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
+use crate::io::worker::{local_worker, IoWorker};
+use crate::messages::BUG;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PeekFrom<'buf> {
-    fd: Fd,
-    msg_header: MessageHeader<'buf>,
-    io_request: Option<IoRequest>
+pub struct PeekFrom<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
+    io_request: Option<IoRequest>,
 }
 
-impl<'buf> PeekFrom<'buf> {
-    pub fn new(fd: Fd, buf: &'buf mut [u8]) -> Self {
+impl<'fut> PeekFrom<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
             fd,
-            msg_header: MessageHeader::new_for_recv_from(buf),
-            io_request: None
+            msg_header: MessageRecvHeader::new(buf),
+            addr,
+            io_request: None,
         }
     }
 }
 
-impl<'buf> Future for PeekFrom<'buf> {
-    type Output = Result<(usize, SocketAddr)>;
+impl<'fut> Future for PeekFrom<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -39,33 +42,39 @@ impl<'buf> Future for PeekFrom<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.peek_from(this.fd, this.msg_header.get_os_message_header_ptr(), this.io_request.as_ref().unwrap_unchecked()),
-             (ret, this.msg_header.socket_addr().as_socket().expect("Invalid socket address"))
+            worker.peek_from(
+                this.fd,
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PeekFromWithDeadline<'buf> {
-    fd: Fd,
-    msg_header: MessageHeader<'buf>,
+pub struct PeekFromWithDeadline<'fut> {
+    fd: RawFd,
+    msg_header: MessageRecvHeader<'fut>,
+    addr: &'fut mut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
-    io_request: Option<IoRequest>
+    io_request: Option<IoRequest>,
 }
 
-impl<'buf> PeekFromWithDeadline<'buf> {
-    pub fn new(fd: Fd, buf: &'buf mut [u8], deadline: Instant) -> Self {
+impl<'fut> PeekFromWithDeadline<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
-            msg_header: MessageHeader::new_for_recv_from(buf),
+            msg_header: MessageRecvHeader::new(buf),
+            addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-            io_request: None
+            io_request: None,
         }
     }
 }
 
-impl<'buf> Future for PeekFromWithDeadline<'buf> {
-    type Output = Result<(usize, SocketAddr)>;
+impl<'fut> Future for PeekFromWithDeadline<'fut> {
+    type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -73,28 +82,46 @@ impl<'buf> Future for PeekFromWithDeadline<'buf> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-             worker.peek_from(this.fd, this.msg_header.get_os_message_header_ptr(), this.io_request.as_ref().unwrap_unchecked()),
-             (ret, this.msg_header.socket_addr().as_socket().expect("Invalid socket address"))
+            worker.peek_from(
+                this.fd,
+                this.msg_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }
 
-#[macro_export]
-macro_rules! generate_peek_from {
-    () => {
-        #[inline(always)]
-        pub fn peek_from<'buf>(&mut self, buf: &'buf mut [u8]) -> crate::io::PeekFrom<'buf> {
-            crate::io::PeekFrom::new(self.as_raw_fd(), buf)
-        }
+pub trait AsyncPeekFrom: AsRawFd {
+    #[inline(always)]
+    async fn peek_from(
+        &mut self,
+        buf: &mut [u8]
+    ) -> Result<(usize, SocketAddr)> {
+    let mut sock_addr = unsafe { std::mem::zeroed() };
+    let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-        #[inline(always)]
-        pub fn peek_from_with_deadline<'buf>(&mut self, buf: &'buf mut [u8], deadline: Instant) -> crate::io::PeekFromWithDeadline<'buf> {
-            crate::io::PeekFromWithDeadline::new(self.as_raw_fd(), buf, deadline)
-        }
+    Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
 
-        #[inline(always)]
-        pub fn peek_from_with_timeout<'buf>(&mut self, buf: &'buf mut [u8], duration: Duration) -> crate::io::PeekFromWithDeadline<'buf> {
-            self.peek_from_with_deadline(buf, Instant::now() + duration)
-        }
-    };
+    #[inline(always)]
+    async fn peek_from_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant
+    ) -> Result<(usize, SocketAddr)> {
+    let mut sock_addr = unsafe { std::mem::zeroed() };
+    let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+
+    Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
+
+    #[inline(always)]
+    async fn peek_from_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration
+    ) -> Result<(usize, SocketAddr)> {
+        self.peek_from_with_deadline(buf, Instant::now() + timeout).await
+    }
 }

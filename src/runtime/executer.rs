@@ -48,7 +48,7 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     |            or local_executer().spawn_global(your_future)                               |\n\
     |                                                                                        |\n\
     |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
-    |               add async_engine::end_local_thread() in the end of future,               |\n\
+    |               add orengine::end_local_thread() in the end of future,               |\n\
     |               otherwise the local runtime will never be stopped.                       |\n\
     |                                                                                        |\n\
     |    3 - use local_executer().run()                                                      |\n\
@@ -123,7 +123,6 @@ impl Executor {
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
         let waker = create_waker(task_ptr as *const ());
-        // TODO try safe context instead of waker.
         let mut context = Context::from_waker(&waker);
 
         match unsafe { Pin::new_unchecked(future) }.as_mut().poll(&mut context) {
@@ -149,6 +148,12 @@ impl Executor {
             F: Future<Output=()> + 'static,
     {
         let task = Task::from_future(future);
+        unsafe { self.spawn_local_task(task); }
+    }
+
+    #[inline(always)]
+    // unsafe because we can't guarantee that `task` is valid and local.
+    pub unsafe fn spawn_local_task(&mut self, task: Task) {
         self.tasks.push_back(task);
     }
 
@@ -159,6 +164,13 @@ impl Executor {
     where
         F: Future<Output=()> + Send + 'static,
     {
+        todo!()
+    }
+
+    #[inline(always)]
+    // TODO r #[allow(unused)]
+    #[allow(unused)]
+    pub fn spawn_global_task(&mut self, task: Task) {
         todo!()
     }
 

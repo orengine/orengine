@@ -1,27 +1,22 @@
 // TODO maybe async via worker pool?
 
-use std::net::ToSocketAddrs;
 use std::io::Result;
+use std::net::{ToSocketAddrs};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BindConfig {
-    pub backlog_size: usize,
+    pub backlog_size: isize,
     pub only_v6: bool,
     pub reuse_address: bool,
-    pub reuse_port: bool
+    pub reuse_port: bool,
 }
 
 impl BindConfig {
     pub fn new() -> Self {
-        Self {
-            backlog_size: 1024,
-            only_v6: false,
-            reuse_address: false,
-            reuse_port: false
-        }
+        Self::default()
     }
 
-    pub fn backlog_size(mut self, backlog_size: usize) -> Self {
+    pub fn backlog_size(mut self, backlog_size: isize) -> Self {
         self.backlog_size = backlog_size;
         self
     }
@@ -48,16 +43,17 @@ impl Default for BindConfig {
             backlog_size: 1024,
             only_v6: false,
             reuse_address: true,
-            reuse_port: true
+            reuse_port: true,
         }
     }
 }
 
-pub trait Bind: Sized {
-    fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: BindConfig) -> Result<Self>;
+pub trait AsyncBind: Sized {
+    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self>;
 
     #[inline(always)]
-    fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
-        Self::bind_with_config(addrs, BindConfig::default())
+    async fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
+        Self::bind_with_config(addrs, &BindConfig::default()).await
     }
 }
+

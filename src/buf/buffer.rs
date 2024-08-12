@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.cap(), 10);
 
-        let mut v = vec![1, 2, 3];
+        let v = vec![1, 2, 3];
         let buf = Buffer::from(v.into_boxed_slice());
         assert_eq!(buf.as_ref(), &[1, 2, 3]);
         assert_eq!(buf.len(), 3);

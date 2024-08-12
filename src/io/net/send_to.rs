@@ -1,35 +1,39 @@
 use std::future::Future;
+use std::io;
+use std::io::{ErrorKind, Result};
+use std::net::ToSocketAddrs;
 use std::pin::Pin;
-use std::io::{Error, ErrorKind, IoSlice, Result};
-use std::marker::PhantomData;
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+
 use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use crate::runtime::task::Task;
-use crate::io::sys::{AsFd, Fd, MessageHeader};
-use crate::io::io_request::{IoRequest};
+use socket2::SockAddr;
+
+use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::worker::{IoWorker, local_worker};
+use crate::io::sys::{AsRawFd, RawFd, MessageSendHeader};
+use crate::io::worker::{local_worker, IoWorker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct SendTo<'buf> {
-    fd: Fd,
-    message_header: MessageHeader<'buf>,
-    io_request: Option<IoRequest>
+pub struct SendTo<'fut> {
+    fd: RawFd,
+    message_header: MessageSendHeader<'fut>,
+    addr: &'fut SockAddr,
+    io_request: Option<IoRequest>,
 }
 
-impl<'buf> SendTo<'buf> {
-    pub fn new(fd: Fd, buf: &'buf [u8], addr: SocketAddr) -> Self {
+impl<'fut> SendTo<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut [u8], addr: &'fut SockAddr) -> Self {
         Self {
             fd,
-            message_header: MessageHeader::new_for_send_to(buf, addr),
-            io_request: None
+            message_header: MessageSendHeader::new(buf),
+            addr,
+            io_request: None,
         }
     }
 }
 
-impl<'buf> Future for SendTo<'buf> {
+impl<'fut> Future for SendTo<'fut> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -37,32 +41,38 @@ impl<'buf> Future for SendTo<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.send_to(this.fd, this.message_header.get_os_message_header_ptr(), this.io_request.as_ref().unwrap_unchecked()),
-             ret
+            worker.send_to(
+                this.fd,
+                this.message_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct SendToWithDeadline<'buf> {
-    fd: Fd,
-    message_header: MessageHeader<'buf>,
+pub struct SendToWithDeadline<'fut> {
+    fd: RawFd,
+    message_header: MessageSendHeader<'fut>,
+    addr: &'fut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
-    io_request: Option<IoRequest>
+    io_request: Option<IoRequest>,
 }
 
-impl<'a> SendToWithDeadline<'a> {
-    pub fn new(fd: Fd, buf: &'a [u8], addr: SocketAddr, deadline: Instant) -> Self {
+impl<'fut> SendToWithDeadline<'fut> {
+    pub fn new(fd: RawFd, buf: &'fut [u8], addr: &'fut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
-            message_header: MessageHeader::new_for_send_to(buf, addr),
+            message_header: MessageSendHeader::new(buf),
+            addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-            io_request: None
+            io_request: None,
         }
     }
 }
 
-impl<'a> Future for SendToWithDeadline<'a> {
+impl<'fut> Future for SendToWithDeadline<'fut> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -71,29 +81,93 @@ impl<'a> Future for SendToWithDeadline<'a> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-             worker.send_to(this.fd, this.message_header.get_os_message_header_ptr(), this.io_request.as_ref().unwrap_unchecked()),
-             ret
+            worker.send_to(
+                this.fd,
+                this.message_header.get_os_message_header_ptr(this.addr),
+                this.io_request.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }
 
-#[macro_export]
-macro_rules! generate_send_to {
-    () => {
-        #[inline(always)]
-        pub async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
-            crate::io::SendTo::new(self.fd, buf, addr_from_to_socket_addrs(addr)?).await
+#[inline(always)]
+// TODO say     /// It is possible for `addr` to yield multiple addresses, but `send_to`
+//              /// will only send data to the first address yielded by `addr`.
+fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAddr> {
+    match to_addr.to_socket_addrs()?.next() {
+        Some(addr) => Ok(SockAddr::from(addr)),
+        None => {
+            Err(io::Error::new(ErrorKind::InvalidInput, "no addresses to send data to"))
         }
+    }
+}
 
-        #[inline(always)]
-        pub async fn send_to_with_deadline<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, deadline: Instant) -> Result<usize> {
-            crate::io::SendToWithDeadline::new(self.fd, buf, addr_from_to_socket_addrs(addr)?, deadline).await
-        }
+pub trait AsyncSendTo: AsRawFd {
+    #[inline(always)]
+    async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
+        SendTo::new(
+            self.as_raw_fd(),
+            buf,
+            &sock_addr_from_to_socket_addr(addr)?
+        ).await
+    }
 
-        #[inline(always)]
-        pub async fn send_to_with_timeout<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, duration: Duration) -> Result<usize> {
-            let deadline = Instant::now() + duration;
-            self.send_to_with_deadline(buf, addr, deadline).await
+    #[inline(always)]
+    async fn send_to_with_deadline<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, deadline: Instant) -> Result<usize> {
+        SendToWithDeadline::new(
+            self.as_raw_fd(),
+            buf,
+            &sock_addr_from_to_socket_addr(addr)?,
+            deadline
+        ).await
+    }
+
+    #[inline(always)]
+    async fn send_to_with_timeout<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, timeout: Duration) -> Result<usize> {
+        SendToWithDeadline::new(
+            self.as_raw_fd(),
+            buf,
+            &sock_addr_from_to_socket_addr(addr)?,
+            Instant::now() + timeout
+        ).await
+    }
+
+    #[inline(always)]
+    async fn send_all_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
+        let mut sent = 0;
+        let addr = sock_addr_from_to_socket_addr(addr)?;
+        
+        while sent < buf.len() {
+            sent += SendTo::new(
+                self.as_raw_fd(),
+                buf,
+                &addr
+            ).await?;
         }
-    };
+        
+        Ok(sent)
+    }
+
+    #[inline(always)]
+    async fn send_all_to_with_deadline<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, deadline: Instant) -> Result<usize> {
+        let mut sent = 0;
+        let addr = sock_addr_from_to_socket_addr(addr)?;
+        
+        while sent < buf.len() {
+            sent += SendToWithDeadline::new(
+                self.as_raw_fd(),
+                buf,
+                &addr,
+                deadline
+            ).await?;
+        }
+        
+        Ok(sent)
+    }
+
+    #[inline(always)]
+    async fn send_all_to_with_timeout<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, timeout: Duration) -> Result<usize> {
+        self.send_all_to_with_deadline(buf, addr, Instant::now() + timeout).await
+    }
 }

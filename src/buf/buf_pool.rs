@@ -34,9 +34,9 @@ pub fn buffer() -> Buffer {
 /// because [`buffer`] returns empty buffer.
 ///
 /// ```no_run
-/// use async_engine::buf::buf_pool::full_buffer;
-/// use async_engine::io::AsyncPollFd;
-/// use async_engine::net::TcpStream;
+/// use orengine::buf::buf_pool::full_buffer;
+/// use orengine::io::{AsyncPollFd, AsyncRecv};
+/// use orengine::net::TcpStream;
 ///
 /// async fn handle_connection(mut stream: TcpStream) {
 ///     stream.poll_recv().await.expect("Failed to poll stream");
