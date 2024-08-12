@@ -29,13 +29,3 @@ pub async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawFd> {
 pub async fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<RawFd> {
     new_socket(addr, Type::DGRAM).await
 }
-
-#[inline(always)]
-pub async fn new_unix_socket() -> std::io::Result<RawFd> {
-    Socket::new(Domain::UNIX, Type::STREAM).await
-}
-
-#[inline(always)]
-pub async fn new_unix_socket_datagram() -> std::io::Result<RawFd> {
-    Socket::new(Domain::UNIX, Type::DGRAM).await
-}

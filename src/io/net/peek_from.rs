@@ -92,43 +92,36 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
     }
 }
 
-macro_rules! generate_async_peek_from {
-    ($trait_name:ident, $addr_type:ty, $cast_fn: expr) => {
-        pub trait $trait_name: AsRawFd {
-            #[inline(always)]
-            async fn peek_from(
-                &mut self,
-                buf: &mut [u8]
-            ) -> Result<(usize, $addr_type)> {
-                let mut sock_addr = unsafe { std::mem::zeroed() };
-                let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
+pub trait AsyncPeekFrom: AsRawFd {
+    #[inline(always)]
+    async fn peek_from(
+        &mut self,
+        buf: &mut [u8]
+    ) -> Result<(usize, SocketAddr)> {
+    let mut sock_addr = unsafe { std::mem::zeroed() };
+    let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
-            }
+    Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
 
-            #[inline(always)]
-            async fn peek_from_with_deadline(
-                &mut self,
-                buf: &mut [u8],
-                deadline: Instant
-            ) -> Result<(usize, $addr_type)> {
-                let mut sock_addr = unsafe { std::mem::zeroed() };
-                let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+    #[inline(always)]
+    async fn peek_from_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant
+    ) -> Result<(usize, SocketAddr)> {
+    let mut sock_addr = unsafe { std::mem::zeroed() };
+    let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
 
-                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
-            }
+    Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
 
-            #[inline(always)]
-            async fn peek_from_with_timeout(
-                &mut self,
-                buf: &mut [u8],
-                timeout: Duration
-            ) -> Result<(usize, $addr_type)> {
-                self.peek_from_with_deadline(buf, Instant::now() + timeout).await
-            }
-        }
-    };
+    #[inline(always)]
+    async fn peek_from_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration
+    ) -> Result<(usize, SocketAddr)> {
+        self.peek_from_with_deadline(buf, Instant::now() + timeout).await
+    }
 }
-
-generate_async_peek_from!(AsyncPeekFrom, SocketAddr, SockAddr::as_socket);
-generate_async_peek_from!(AsyncPeekFromUnix, std::os::unix::net::SocketAddr, SockAddr::as_unix);

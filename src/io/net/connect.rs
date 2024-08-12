@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -13,7 +13,6 @@ use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd, IntoRawFd, FromRawFd};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::io::AsPath;
 
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Connect<'fut> {
@@ -165,120 +164,5 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     #[inline(always)]
     async fn connect_with_timeout<A: ToSocketAddrs>(self, addr: A, timeout: Duration) -> Result<S> {
         self.connect_with_deadline(addr, Instant::now() + timeout).await
-    }
-}
-
-pub trait AsyncConnectStreamUnix: Sized + AsRawFd {
-    fn unbound() -> Result<Self>;
-
-    #[inline(always)]
-    async fn connect<P: AsPath>(path: P) -> Result<Self> {
-        let stream = Self::unbound()?;
-        Connect::new(stream.as_raw_fd(), &SockAddr::unix(path)?).await?;
-
-        Ok(stream)
-    }
-
-    #[inline(always)]
-    async fn connect_with_deadline<P: AsPath>(path: P, deadline: Instant) -> Result<Self> {
-        let stream = Self::unbound()?;
-        ConnectWithDeadline::new(stream.as_raw_fd(), &SockAddr::unix(path)?, deadline).await?;
-
-        Ok(stream)
-    }
-
-    #[inline(always)]
-    async fn connect_with_timeout<P: AsPath>(path: P, timeout: Duration) -> Result<Self> {
-        Self::connect_with_deadline(path, Instant::now() + timeout).await
-    }
-
-    #[inline(always)]
-    async fn connect_addr(addr: &std::os::unix::net::SocketAddr) -> Result<Self> {
-        let stream = Self::unbound()?;
-        match addr.as_pathname() {
-            Some(path) => {
-                Connect::new(stream.as_raw_fd(), &SockAddr::unix(path)?).await?;
-                Ok(stream)
-            }
-            None => Err(Error::new(ErrorKind::InvalidInput, "Invalid socket address")),
-        }
-    }
-
-    #[inline(always)]
-    async fn connect_addr_with_deadline(addr: &std::os::unix::net::SocketAddr, deadline: Instant) -> Result<Self> {
-        let stream = Self::unbound()?;
-        match addr.as_pathname() {
-            Some(path) => {
-                ConnectWithDeadline::new(stream.as_raw_fd(), &SockAddr::unix(path)?, deadline).await?;
-                Ok(stream)
-            }
-            None => Err(Error::new(ErrorKind::InvalidInput, "Invalid socket address")),
-        }
-    }
-
-    #[inline(always)]
-    async fn connect_addr_with_timeout(addr: &std::os::unix::net::SocketAddr, timeout: Duration) -> Result<Self> {
-        Self::connect_addr_with_deadline(addr, Instant::now() + timeout).await
-    }
-}
-
-pub trait AsyncConnectDatagramUnix<S: FromRawFd + Sized>: IntoRawFd + Sized {
-    #[inline(always)]
-    async fn connect<P: AsPath>(self, path: P) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
-        Connect::new(new_datagram_socket_fd, &SockAddr::unix(path)?).await?;
-
-        Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
-    }
-
-    #[inline(always)]
-    async fn connect_with_deadline<P: AsPath>(self, path: P, deadline: Instant) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
-        ConnectWithDeadline::new(new_datagram_socket_fd, &SockAddr::unix(path)?, deadline).await?;
-
-        Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
-    }
-
-    #[inline(always)]
-    async fn connect_with_timeout<P: AsPath>(self, path: P, timeout: Duration) -> Result<S> {
-        self.connect_with_deadline(path, Instant::now() + timeout).await
-    }
-
-    #[inline(always)]
-    async fn connect_addr(self, addr: &std::os::unix::net::SocketAddr) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
-        match addr.as_pathname() {
-            Some(path) => {
-                Connect::new(
-                    new_datagram_socket_fd,
-                    &SockAddr::unix(path)?
-                ).await?;
-
-                Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
-            }
-            None => Err(Error::new(ErrorKind::InvalidInput, "Invalid socket address")),
-        }
-    }
-
-    #[inline(always)]
-    async fn connect_addr_with_deadline(self, addr: &std::os::unix::net::SocketAddr, deadline: Instant) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
-        match addr.as_pathname() {
-            Some(path) => {
-                ConnectWithDeadline::new(
-                    new_datagram_socket_fd,
-                    &SockAddr::unix(path)?,
-                    deadline
-                ).await?;
-
-                Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
-            }
-            None => Err(Error::new(ErrorKind::InvalidInput, "Invalid socket address")),
-        }
-    }
-
-    #[inline(always)]
-    async fn connect_addr_with_timeout(self, addr: &std::os::unix::net::SocketAddr, timeout: Duration) -> Result<S> {
-        self.connect_addr_with_deadline(addr, Instant::now() + timeout).await
     }
 }

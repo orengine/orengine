@@ -1,10 +1,7 @@
 // TODO maybe async via worker pool?
 
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 use std::net::{ToSocketAddrs};
-use crate::net::creators_of_sockets::new_unix_socket_datagram;
-use crate::io::sys::FromRawFd;
-use crate::io::AsPath;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BindConfig {
@@ -57,34 +54,6 @@ pub trait AsyncBind: Sized {
     #[inline(always)]
     async fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
         Self::bind_with_config(addrs, &BindConfig::default()).await
-    }
-}
-
-pub trait AsyncBindUnix: Sized + FromRawFd {
-    #[inline(always)]
-    async fn unbound() -> Result<Self> {
-        Ok(unsafe {
-            Self::from_raw_fd(new_unix_socket_datagram().await?)
-        })
-    }
-
-    async fn bind_with_backlog_size<P: AsPath>(path: P, backlog_size: isize) -> Result<Self>;
-
-    #[inline(always)]
-    async fn bind<P: AsPath>(path: P) -> Result<Self> {
-        Self::bind_with_backlog_size(path, -1).await
-    }
-
-    async fn bind_addr_with_backlog_size(addr: std::os::unix::net::SocketAddr, backlog_size: isize) -> Result<Self> {
-        match addr.as_pathname() {
-            Some(path) => Self::bind_with_backlog_size(path, backlog_size).await,
-            None => Err(Error::new(ErrorKind::InvalidInput, "Invalid unix socket address")),
-        }
-    }
-
-    #[inline(always)]
-    async fn bind_addr(addr: std::os::unix::net::SocketAddr) -> Result<Self> {
-        Self::bind_addr_with_backlog_size(addr, -1).await
     }
 }
 

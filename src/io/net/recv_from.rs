@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::Result;
+use std::mem;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -92,43 +93,36 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
     }
 }
 
-macro_rules! generate_async_recv_from {
-    ($trait_name:ident, $addr_type:ty, $cast_fn: expr) => {
-        pub trait $trait_name: AsRawFd {
-            #[inline(always)]
-            async fn recv_from(
-                &mut self,
-                buf: &mut [u8]
-            ) -> Result<(usize, $addr_type)> {
-                let mut sock_addr = unsafe { std::mem::zeroed() };
-                let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
+pub trait AsyncRecvFrom: AsRawFd {
+    #[inline(always)]
+    async fn recv_from(
+        &mut self,
+        buf: &mut [u8]
+    ) -> Result<(usize, SocketAddr)> {
+        let mut sock_addr = unsafe { mem::zeroed() };
+        let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
-            }
+        Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
 
-            #[inline(always)]
-            async fn recv_from_with_deadline(
-                &mut self,
-                buf: &mut [u8],
-                deadline: Instant
-            ) -> Result<(usize, $addr_type)> {
-                let mut sock_addr = unsafe { std::mem::zeroed() };
-                let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+    #[inline(always)]
+    async fn recv_from_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant
+    ) -> Result<(usize, SocketAddr)> {
+        let mut sock_addr = unsafe { mem::zeroed() };
+        let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
 
-                Ok((n, $cast_fn(&sock_addr).expect(BUG)))
-            }
+        Ok((n, sock_addr.as_socket().expect(BUG)))
+    }
 
-            #[inline(always)]
-            async fn recv_from_with_timeout(
-                &mut self,
-                buf: &mut [u8],
-                timeout: Duration
-            ) -> Result<(usize, $addr_type)> {
-                self.recv_from_with_deadline(buf, Instant::now() + timeout).await
-            }
-        }
-    };
+    #[inline(always)]
+    async fn recv_from_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration
+    ) -> Result<(usize, SocketAddr)> {
+        self.recv_from_with_deadline(buf, Instant::now() + timeout).await
+    }
 }
-
-generate_async_recv_from!(AsyncRecvFrom, SocketAddr, SockAddr::as_socket);
-generate_async_recv_from!(AsyncRecvFromUnix, std::os::unix::net::SocketAddr, SockAddr::as_unix);

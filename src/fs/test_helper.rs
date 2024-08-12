@@ -19,27 +19,3 @@ pub(crate) fn create_test_dir_if_not_exist() {
         std::fs::DirBuilder::new().mode(0o777).recursive(true).create(TEST_DIR_PATH).unwrap();
     }
 }
-
-#[cfg(test)]
-pub(crate) fn create_file_if_not_exists(path: &str) {
-    if !is_exists(path) {
-        match std::fs::File::create(path) {
-            Ok(_) => { return; }
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => { panic!("{}", e) },
-            _ => {}
-        }
-
-        let dir = Path::new(path).parent().unwrap();
-        std::fs::DirBuilder::new().mode(0o777).recursive(true).create(dir).unwrap();
-        std::fs::File::create(path).unwrap();
-
-        std::fs::File::create(path).expect("create file failed");
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn delete_file_if_exists(path: &str) {
-    if is_exists(path) {
-        std::fs::remove_file(path).unwrap();
-    }
-}

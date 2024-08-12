@@ -5,7 +5,6 @@
 pub(crate) mod creators_of_sockets;
 pub mod tcp;
 pub mod udp;
-pub mod unix;
 pub mod stream;
 pub mod datagram;
 pub mod socket;
@@ -19,4 +18,3 @@ pub use connected_datagram::ConnectedDatagram;
 pub use listener::Listener;
 pub use tcp::{TcpListener, TcpStream};
 pub use udp::{UdpConnectedSocket, UdpSocket};
-pub use unix::{UnixListener, UnixStream};
