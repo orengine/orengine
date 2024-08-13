@@ -1,13 +1,14 @@
 pub mod executer;
 pub mod waker;
 pub mod task;
+mod task_pool;
 
 pub use executer::{
     local_executor,
     Executor,
     local_executor_unchecked,
     local_worker_id,
-    create_local_executer_for_block_on,
     local_core_id
 };
+pub(crate) use executer::{create_local_executer_for_block_on};
 pub use task::{Task};

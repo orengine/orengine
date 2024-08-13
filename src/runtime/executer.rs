@@ -14,6 +14,7 @@ use crate::end_local_thread;
 use crate::io::sys::Worker as IoWorkerSys;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::task::Task;
+use crate::runtime::task_pool::TaskPool;
 use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::utils::{CoreId, get_core_ids};
@@ -35,23 +36,15 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     |    Local executor is not initialized.                                                  |\n\
     |    Please initialize it first.                                                         |\n\
     |                                                                                        |\n\
-    |    First way:                                                                          |\n\
-    |    1 - use local_executor_init()                                                       |\n\
-    |    2 - use local_executer().run_and_block_on(your_future)                              |\n\
-    |                                                                                        |\n\
-    |    Second way:                                                                         |\n\
-    |    1 - use create_local_executer_for_block_on(your_future)                             |\n\
-    |                                                                                        |\n\
-    |    Third way:                                                                          |\n\
-    |    1 - use local_executor_init()                                                       |\n\
-    |    2 - use local_executer().spawn_local(your_future)                                   |\n\
-    |            or local_executer().spawn_global(your_future)                               |\n\
+    |    1 - use let executor = Executor::init();                                            |\n\
+    |    2 - use executer.spawn_local(your_future)                                           |\n\
+    |            or executer.spawn_global(your_future)                                       |\n\
     |                                                                                        |\n\
     |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
-    |               add orengine::end_local_thread() in the end of future,               |\n\
+    |               add orengine::end_local_thread() in the end of future,                   |\n\
     |               otherwise the local runtime will never be stopped.                       |\n\
     |                                                                                        |\n\
-    |    3 - use local_executer().run()                                                      |\n\
+    |    3 - use executer.run()                                                              |\n\
     ------------------------------------------------------------------------------------------";
 
 #[inline(always)]
@@ -89,9 +82,10 @@ pub struct Executor {
 pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Executor {
-    pub fn init_on_core(core_id: CoreId) {
+    pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
         set_was_ended(false);
         BufPool::init_in_local_thread(config_buf_len());
+        TaskPool::init();
         unsafe { init_local_worker() };
 
         let executer = Executor {
@@ -106,12 +100,14 @@ impl Executor {
                 (&mut *executor.get()).replace(executer);
             });
         }
+
+        unsafe { local_executor_unchecked() }
     }
 
-    pub fn init() {
+    pub fn init() -> &'static mut Executor {
         let cores_id = get_core_ids();
         if cores_id.is_some() {
-            Self::init_on_core(cores_id.unwrap()[0]);
+            Self::init_on_core(cores_id.unwrap()[0])
         } else {
             Self::init_on_core(CoreId {id: 0})
         }
@@ -185,7 +181,7 @@ impl Executor {
     }
 
     #[inline(always)]
-    /// Return true, if we need to stop ([`end_local_thread`](crate::end::end_local_thread) was called).
+    /// Return true, if we need to stop ([`end_local_thread`](end_local_thread) was called).
     fn background_task(&mut self, io_worker: &mut IoWorkerSys) -> bool {
         io_worker.must_poll();
 
@@ -199,10 +195,8 @@ impl Executor {
             }
         }
 
-        if unlikely(self.tasks.len() * 3 < self.tasks.capacity()) {
-            if self.tasks.capacity() != 1 {
-                self.tasks.shrink_to(self.tasks.len() * 2 + 1);
-            }
+        if unlikely(self.tasks.capacity() > 512 && self.tasks.len() * 3 < self.tasks.capacity()) {
+            self.tasks.shrink_to(self.tasks.len() * 2 + 1);
         }
 
         was_ended()
@@ -211,7 +205,6 @@ impl Executor {
     pub fn run(&mut self) {
         let mut task_;
         let mut task;
-        let mut exec_times = 0;
         let io_worker = unsafe { local_io_worker() };
 
         loop {
@@ -220,17 +213,7 @@ impl Executor {
                 if unlikely(self.background_task(io_worker)) {
                     break;
                 }
-                exec_times = 0;
                 continue;
-            }
-
-            if unlikely(exec_times == 60) {
-                if unlikely(self.background_task(io_worker)) {
-                    break;
-                }
-                exec_times = 0;
-            } else {
-                exec_times += 1;
             }
 
             task = unsafe { task_.unwrap_unchecked() };
@@ -246,7 +229,8 @@ impl Executor {
         BufPool::uninit_in_local_thread();
     }
 
-    pub fn run_and_block_on<T, F>(&mut self, future: F) -> T
+    // uses only for tests, because double memory usage of a future.
+    pub(crate) fn run_and_block_on<T, F>(&mut self, future: F) -> T
         where
             T: 'static,
             F: Future<Output=T> + 'static,
@@ -278,7 +262,8 @@ pub fn local_worker_id() -> usize {
     local_executor().worker_id
 }
 
-pub fn create_local_executer_for_block_on<T, F>(future: F) -> T
+// uses only for tests, because double memory usage of a future.
+pub(crate) fn create_local_executer_for_block_on<T, F>(future: F) -> T
     where
         T: 'static,
         F: Future<Output=T> + 'static,

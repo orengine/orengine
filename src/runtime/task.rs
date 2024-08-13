@@ -1,20 +1,21 @@
 use std::future::Future;
+use crate::runtime::task_pool::{TASK_POOL, task_pool};
 
 #[derive(Copy, Clone)]
-pub struct Task<T = ()> {
-    pub(crate) future_ptr: *mut dyn Future<Output=T>,
+pub struct Task {
+    pub(crate) future_ptr: *mut dyn Future<Output=()>,
 }
 
-impl<T> Task<T> {
-    pub fn from_future<F: Future<Output=T> + 'static>(future: F) -> Self {
+static A: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+impl Task {
+    pub fn from_future<F: Future<Output=()> + 'static>(future: F) -> Self {
         Self {
-            // TODO should we reuse memory?
-            future_ptr: Box::leak(Box::new(future))
+            future_ptr: unsafe { task_pool().acquire(future) }
         }
     }
 
     pub unsafe fn drop_future(&mut self) {
-        // TODO if we reuse, change it
-        drop(Box::from_raw(self.future_ptr));
+        unsafe { task_pool().put(self.future_ptr) }
     }
 }

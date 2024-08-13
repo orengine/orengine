@@ -8,6 +8,8 @@
 #![feature(async_closure)]
 #![feature(negative_impls)]
 #![feature(trait_alias)]
+#![feature(thread_local)]
+#![feature(const_collections_with_hasher)]
 
 // TODO rename lifetimes
 

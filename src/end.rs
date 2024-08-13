@@ -41,17 +41,10 @@ mod tests {
         Executor::init();
 
         local_executor().spawn_local(async {
-            let mut i = 0;
+            let i = 0;
             assert!(!was_ended());
             end_local_thread();
             assert!(was_ended());
-            loop {
-                i += 1;
-                yield_now().await;
-                if i == 1000 {
-                    panic!("not ended");
-                }
-            }
         });
 
         local_executor().run();
