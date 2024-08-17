@@ -13,20 +13,13 @@
 
 // TODO rename lifetimes
 
-pub use socket2;
-
-pub use end::end_local_thread;
-pub use run::*;
-pub use runtime::Executor;
-pub use yield_now::yield_now;
-
 pub mod buf;
 pub mod cfg;
 pub mod end;
 pub mod fs;
 pub mod io;
 pub mod local;
-mod local_pool;
+pub mod local_pool;
 pub mod net;
 pub mod run;
 pub mod runtime;
@@ -35,3 +28,9 @@ pub mod sync;
 pub mod utils;
 pub mod yield_now;
 mod messages;
+
+pub use socket2;
+pub use end::end_local_thread;
+pub use run::*;
+pub use runtime::Executor;
+pub use yield_now::yield_now;

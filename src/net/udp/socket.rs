@@ -125,6 +125,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::{io, thread};
     use std::time::Duration;
+    use crate::Executor;
 
     use crate::io::AsyncBind;
     use crate::runtime::create_local_executer_for_block_on;
@@ -240,7 +241,7 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         create_local_executer_for_block_on(async move {
-            local_executor().exec_future(async {
+            Executor::exec_future(async {
                 let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
                 {

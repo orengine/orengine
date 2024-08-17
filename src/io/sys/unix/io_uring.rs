@@ -38,7 +38,8 @@ pub(crate) struct IoUringWorker {
     ring: UnsafeCell<IoUring<Entry, cqueue::Entry>>,
     backlog: VecDeque<Entry>,
     probe: Probe,
-    time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>
+    time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
+    number_of_active_tasks: usize
 }
 
 impl IoUringWorker {
@@ -49,7 +50,8 @@ impl IoUringWorker {
             ring: UnsafeCell::new(IoUring::new(1024).unwrap()),
             backlog: VecDeque::with_capacity(64),
             probe: Probe::new(),
-            time_bounded_io_task_queue: BTreeSet::new()
+            time_bounded_io_task_queue: BTreeSet::new(),
+            number_of_active_tasks: 0
         };
 
         let submitter = s.ring.get_mut().submitter();
@@ -65,6 +67,7 @@ impl IoUringWorker {
 
     #[inline(always)]
     fn add_sqe(&mut self, sqe: Entry) {
+        self.number_of_active_tasks += 1;
         let ring = unsafe { &mut *self.ring.get() };
         unsafe {
             if ring.submission().push(&sqe).is_err() {
@@ -154,7 +157,11 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn must_poll(&mut self) {
+    #[must_use]
+    fn must_poll(&mut self) -> bool {
+        if self.number_of_active_tasks == 0 {
+            return false;
+        }
         self.check_deadlines();
         if let Err(err) = self.submit() {
             panic!("IoUringWorker::submit() failed, err: {:?}", err);
@@ -184,8 +191,11 @@ impl IoWorker for IoUringWorker {
                 io_request.set_ret(Ok(ret as _));
             }
 
+            self.number_of_active_tasks -= 1;
             Executor::exec_task(io_request.task());
         }
+
+        true
     }
 
     #[inline(always)]
@@ -233,22 +243,6 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest) {
-        self.register_entry(
-            opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
-                .flags(libc::MSG_PEEK)
-                .build(),
-            request_ptr
-        );
-    }
-
-    #[inline(always)]
-    fn peek_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequest) {
-        let msg_header = unsafe { &mut *msg_header };
-        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).flags(libc::MSG_PEEK as u32).build(), request_ptr);
-    }
-    
-    #[inline(always)]
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest) {
         if self.is_supported(opcode::SendZc::CODE) {
             self.register_entry(opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
@@ -264,6 +258,22 @@ impl IoWorker for IoUringWorker {
             return;
         }
         self.register_entry(opcode::SendMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
+    }
+
+    #[inline(always)]
+    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest) {
+        self.register_entry(
+            opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
+                .flags(libc::MSG_PEEK)
+                .build(),
+            request_ptr
+        );
+    }
+
+    #[inline(always)]
+    fn peek_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequest) {
+        let msg_header = unsafe { &mut *msg_header };
+        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).flags(libc::MSG_PEEK as u32).build(), request_ptr);
     }
 
     #[inline(always)]

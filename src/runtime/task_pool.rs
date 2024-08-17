@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::hash::{BuildHasher, Hasher};
 use std::mem;
 use std::mem::MaybeUninit;
 use ahash::AHashMap;
@@ -31,7 +30,7 @@ impl TaskPool {
         let size = mem::size_of::<F>();
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
-        if let Some(mut slot_ptr) = pool.pop() {
+        if let Some(slot_ptr) = pool.pop() {
             let slot = unsafe {&mut *(slot_ptr as *mut F)};
             //*slot = future; // rewrite, not write
             unsafe { (slot as *mut F).write(future); }

@@ -6,12 +6,12 @@ use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
+use std::thread;
 use std::time::{Instant};
 use crate::buf::BufPool;
 use crate::cfg::{config_buf_len};
 use crate::end::{set_was_ended, was_ended};
 use crate::end_local_thread;
-use crate::io::sys::Worker as IoWorkerSys;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
@@ -130,7 +130,7 @@ impl Executor {
     }
 
     #[inline(always)]
-    pub fn exec_future<F>(&mut self, future: F)
+    pub fn exec_future<F>(future: F)
     where
         F: Future<Output=()> + 'static,
     {
@@ -182,8 +182,18 @@ impl Executor {
 
     #[inline(always)]
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread) was called).
-    fn background_task(&mut self, io_worker: &mut IoWorkerSys) -> bool {
-        io_worker.must_poll();
+    fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
+        if unlikely(!io_worker.must_poll()) { // has no io work
+            if self.sleeping_tasks.is_empty() {
+                return true; // Background task was called, because the queue is empty, and there is no work to do. Therefore, we can stop worker.
+            } else {
+                // sleep until first task will be woken up
+                let sleeping_task = self.sleeping_tasks.first().unwrap();
+                thread::sleep(sleeping_task.time_to_wake() - Instant::now());
+            }
+
+
+        }
 
         let instant = Instant::now();
         while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
@@ -237,7 +247,7 @@ impl Executor {
     {
         let mut res = MaybeUninit::uninit();
         let res_ptr: *mut T = res.as_mut_ptr();
-        self.exec_future(async move {
+        Executor::exec_future(async move {
             unsafe { res_ptr.write(future.await) };
             end_local_thread();
         });
@@ -298,12 +308,11 @@ mod tests {
         });
 
         create_local_executer_for_block_on(async {
-            let executer = local_executor();
             let arr = Local::new(Vec::new());
 
             insert(10, arr.clone()).await;
-            executer.exec_future(insert(20, arr.clone()));
-            executer.exec_future(insert(30, arr.clone()));
+            Executor::exec_future(insert(20, arr.clone()));
+            Executor::exec_future(insert(30, arr.clone()));
 
             assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the queue here
             // (code is executed in this function sequentially)

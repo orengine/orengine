@@ -7,7 +7,7 @@ use crate::local::Local;
 use crate::runtime::task::Task;
 use crate::sync::{LocalMutex, LocalMutexGuard};
 
-enum  State {
+enum State {
     WaitSleep,
     WaitWake,
     WaitLock
@@ -19,7 +19,7 @@ pub struct WaitCondVar<T> {
     local_mutex: LocalMutex<T>
 }
 
-impl <T> WaitCondVar<T> {
+impl<T> WaitCondVar<T> {
     #[inline(always)]
     pub fn new(cond_var: LocalCondVar, local_mutex: LocalMutex<T>) -> WaitCondVar<T> {
         WaitCondVar {

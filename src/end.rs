@@ -33,7 +33,7 @@ pub fn end_local_thread() {
 #[cfg(test)]
 mod tests {
     use crate::runtime::{local_executor};
-    use crate::{Executor, yield_now};
+    use crate::Executor;
     use super::*;
 
     #[test]
@@ -41,7 +41,6 @@ mod tests {
         Executor::init();
 
         local_executor().spawn_local(async {
-            let i = 0;
             assert!(!was_ended());
             end_local_thread();
             assert!(was_ended());

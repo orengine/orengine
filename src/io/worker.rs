@@ -31,7 +31,9 @@ pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
 pub(crate) trait IoWorker {
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask);
     fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask);
-    fn must_poll(&mut self);
+    /// Returns `true` if the worker has polled. The worker doesn't poll only if it has no work to do.
+    #[must_use]
+    fn must_poll(&mut self) -> bool;
     fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequest);
     fn accept(&mut self, listen_fd: RawFd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *mut IoRequest);
     fn connect(&mut self, socket_fd: RawFd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *mut IoRequest);
