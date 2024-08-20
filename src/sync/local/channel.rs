@@ -17,7 +17,6 @@ struct Inner<T> {
 // region futures
 
 pub struct WaitLocalSend<T> {
-    was_called: bool,
     inner: Local<Inner<T>>,
     value: Option<T>
 }
@@ -26,7 +25,6 @@ impl<T> WaitLocalSend<T> {
     #[inline(always)]
     fn new(value: T, inner: Local<Inner<T>>) -> Self {
         Self {
-            was_called: false,
             inner,
             value: Some(value)
         }
@@ -52,23 +50,20 @@ impl<T> Future for WaitLocalSend<T> {
         let this = unsafe { self.get_unchecked_mut() };
         let inner = this.inner.get_mut();
 
-        if inner.is_closed {
+        if unlikely(inner.is_closed) {
             return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
         }
 
-        if !this.was_called {
-            let len = inner.storage.len();
-            if unlikely(len >= inner.capacity) {
-                let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-                inner.senders.push_back(task);
-                return Poll::Pending;
-            }
-
-            if unlikely(inner.receivers.len() > 0) {
-                unsafe { local_executor().spawn_local_task(inner.receivers.pop_front().unwrap_unchecked()); }
-            }
-
+        if unlikely(inner.receivers.len() > 0) {
+            unsafe { local_executor().spawn_local_task(inner.receivers.pop_front().unwrap_unchecked()); }
             return insert_value!(this, inner);
+        }
+
+        let len = inner.storage.len();
+        if unlikely(len >= inner.capacity) {
+            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            inner.senders.push_back(task);
+            return Poll::Pending;
         }
 
         insert_value!(this, inner)
@@ -76,16 +71,14 @@ impl<T> Future for WaitLocalSend<T> {
 }
 
 pub struct WaitLocalRecv<T> {
-    inner: Local<Inner<T>>,
-    was_called: bool
+    inner: Local<Inner<T>>
 }
 
 impl<T> WaitLocalRecv<T> {
     #[inline(always)]
     fn new(inner: Local<Inner<T>>) -> Self {
         Self {
-            inner,
-            was_called: false
+            inner
         }
     }
 }
@@ -104,23 +97,20 @@ impl<T> Future for WaitLocalRecv<T> {
         let this = unsafe { self.get_unchecked_mut() };
         let inner = this.inner.get_mut();
 
-        if inner.is_closed {
+        if unlikely(inner.is_closed) {
             return Poll::Ready(Err(()));
         }
 
-        if !this.was_called {
-            let l = inner.storage.len();
-            if unlikely(l == 0) {
-                let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-                inner.receivers.push_back(task);
-                return Poll::Pending;
-            }
-
-            if unlikely(inner.senders.len() > 0) {
-                unsafe { local_executor().spawn_local_task(inner.senders.pop_front().unwrap_unchecked()); }
-            }
-
+        if unlikely(inner.senders.len() > 0) {
+            unsafe { local_executor().spawn_local_task(inner.senders.pop_front().unwrap_unchecked()); }
             return get_value!(this, inner);
+        }
+
+        let l = inner.storage.len();
+        if unlikely(l == 0) {
+            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            inner.receivers.push_back(task);
+            return Poll::Pending;
         }
 
         get_value!(this, inner)
@@ -347,7 +337,7 @@ mod tests {
     #[test]
     fn test_case2() {
         create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(0);
+            let ch = LocalChannel::new(N);
             let ch2 = ch.clone();
 
             local_executor().spawn_local(async move {
@@ -355,29 +345,22 @@ mod tests {
                     let res = ch.recv().await.expect("closed");
                     assert_eq!(res, i);
                 }
-
-                ch.close();
             });
 
             for i in 0..N {
-                let res = ch2.send(i).await.expect("closed");
+                let _ = ch2.send(i).await.expect("closed");
             }
 
             yield_now().await;
 
-            let res = ch2.send(N).await.expect("closed");
-
-            match ch2.send(2).await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed")
-            };
+            let _ = ch2.send(N).await.expect("closed");
         });
     }
 
     #[test]
     fn test_case3() {
         create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(0);
+            let ch = LocalChannel::new(N);
             let ch2 = ch.clone();
 
             local_executor().spawn_local(async move {
@@ -390,25 +373,18 @@ mod tests {
 
                 let res = ch.recv().await.expect("closed");
                 assert_eq!(res, N);
-
-                ch.close();
             });
 
             for i in 0..=N {
                 ch2.send(i).await.expect("closed");
             }
-
-            match ch2.send(2).await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed")
-            };
         });
     }
 
     #[test]
     fn test_case4() {
         create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(0);
+            let ch = LocalChannel::new(N);
             let ch2 = ch.clone();
 
             local_executor().spawn_local(async move {
@@ -416,18 +392,29 @@ mod tests {
                     let res = ch.recv().await.expect("closed");
                     assert_eq!(res, i);
                 }
-
-                ch.close();
             });
 
             for i in 0..=N {
                 ch2.send(i).await.expect("closed");
             }
+        });
+    }
 
-            match ch2.send(2).await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed")
-            };
+    #[test]
+    fn test_split() {
+        create_local_executer_for_block_on(async {
+            let (tx, rx) = LocalChannel::new(N).split();
+
+            local_executor().spawn_local(async move {
+                for i in 0..=N {
+                    let res = rx.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+            });
+
+            for i in 0..=N {
+                tx.send(i).await.expect("closed");
+            }
         });
     }
 }

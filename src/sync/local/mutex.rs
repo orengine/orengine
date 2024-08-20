@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::intrinsics::unlikely;
-use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -53,8 +52,7 @@ impl<T> Drop for LocalMutexGuard<T> {
 
 pub struct MutexWait<T> {
     need_wait: bool,
-    local_mutex: LocalMutex<T>,
-    phantom_data: PhantomData<T>
+    local_mutex: LocalMutex<T>
 }
 
 impl<T> MutexWait<T> {
@@ -62,8 +60,7 @@ impl<T> MutexWait<T> {
     fn new(need_wait: bool, local_mutex: LocalMutex<T>) -> Self {
         Self {
             need_wait,
-            local_mutex,
-            phantom_data: PhantomData
+            local_mutex
         }
     }
 }

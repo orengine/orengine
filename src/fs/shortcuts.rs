@@ -1,38 +1,38 @@
 use std::io::{Result};
+use std::path::Path;
 use crate::fs::{DirBuilder, File, OpenOptions};
 use crate::io::remove_dir::RemoveDir;
-use crate::io::AsPath;
 use crate::io::sys::OsPath::get_os_path;
 
 #[inline(always)]
-pub async fn open_file<P: AsPath>(path: P, open_options: &OpenOptions) -> Result<File> {
+pub async fn open_file<P: AsRef<Path>>(path: P, open_options: &OpenOptions) -> Result<File> {
     File::open(path, open_options).await
 }
 
 #[inline(always)]
-pub async fn create_dir<P: AsPath>(path: P) -> Result<()> {
+pub async fn create_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     DirBuilder::new().create(path).await
 }
 
 #[inline(always)]
-pub async fn create_dir_all<P: AsPath>(path: P) -> Result<()> {
+pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     DirBuilder::new().recursive(true).create(path).await
 }
 
 #[inline(always)]
-pub async fn remove_dir<P: AsPath>(path: P) -> Result<()> {
+pub async fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = get_os_path(path.as_ref())?;
     RemoveDir::new(path).await
 }
 
 #[inline(always)]
-pub async fn remove_file<P: AsPath>(path: P) -> Result<()> {
+pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     File::remove(path).await
 }
 
 #[inline(always)]
 pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
-    where OldPath: AsPath, NewPath: AsPath
+    where OldPath: AsRef<Path>, NewPath: AsRef<Path>
 {
     File::rename(old_path, new_path).await
 }

@@ -6,14 +6,13 @@ use std::mem;
 
 use socket2::SockAddr;
 
-use crate::{each_addr};
+use crate::{each_addr, Executor};
 use crate::io::bind::BindConfig;
 use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd};
 use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::Listener;
 use crate::net::tcp::TcpStream;
-use crate::runtime::local_executor;
 
 /// A TCP socket server, listening for connections.
 ///
@@ -107,7 +106,7 @@ impl Listener<TcpStream> for TcpListener {}
 impl Drop for TcpListener {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().spawn_local(async {
+        Executor::exec_future(async {
             close_future.await.expect("Failed to close tcp listener");
         });
     }

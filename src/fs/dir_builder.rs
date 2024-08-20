@@ -5,7 +5,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use smallvec::SmallVec;
 use crate::io::create_dir::CreateDir;
-use crate::io::AsPath;
 use crate::io::sys::OsPath::get_os_path;
 
 #[derive(Debug)]
@@ -43,7 +42,7 @@ impl DirBuilder {
     ///
     /// It is considered an error if the directory already exists unless
     /// recursive mode is enabled.
-    pub async fn create<P: AsPath>(&self, path: P) -> io::Result<()> {
+    pub async fn create<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         if self.recursive {
             Self::create_dir_all(path, self.mode).await

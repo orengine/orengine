@@ -184,15 +184,13 @@ impl Executor {
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread) was called).
     fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
         if unlikely(!io_worker.must_poll()) { // has no io work
-            if self.sleeping_tasks.is_empty() {
-                return true; // Background task was called, because the queue is empty, and there is no work to do. Therefore, we can stop worker.
-            } else {
+            if !self.sleeping_tasks.is_empty() {
                 // sleep until first task will be woken up
                 let sleeping_task = self.sleeping_tasks.first().unwrap();
                 thread::sleep(sleeping_task.time_to_wake() - Instant::now());
+            } else {
+                return was_ended();
             }
-
-
         }
 
         let instant = Instant::now();

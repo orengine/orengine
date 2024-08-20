@@ -9,6 +9,7 @@ socket2 = { version="0.5.7", features = ["all"] }
 smallvec = "2.0.0-alpha.7"
 ahash = "0.8.11"
 io-macros = { path = "src/io/io-macros" }
+crossbeam = "0.8.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.6.4"

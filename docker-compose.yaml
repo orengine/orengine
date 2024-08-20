@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  async:
+    build:
+      context: .
+      dockerfile: Dockerfile_server
+    ports:
+      - "8083:8083"
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile_client
+    ports:
+      - "3000:3000"
+    depends_on:
+      - async

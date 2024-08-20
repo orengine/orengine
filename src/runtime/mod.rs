@@ -10,5 +10,7 @@ pub use executer::{
     local_worker_id,
     local_core_id
 };
+
+#[cfg(test)]
 pub(crate) use executer::{create_local_executer_for_block_on};
 pub use task::{Task};

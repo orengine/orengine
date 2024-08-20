@@ -2,14 +2,14 @@ use std::{io, mem};
 use std::path::{Path};
 use std::io::{Error, Result};
 use std::os::unix::ffi::OsStrExt;
+use crate::Executor;
 use crate::fs::{OpenOptions};
-use crate::io::{AsyncClose, AsyncRead, AsyncWrite, AsPath};
+use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
-use crate::runtime::local_executor;
 
 // TODO docs
 pub struct File {
@@ -25,7 +25,7 @@ impl File {
         self.fd
     }
 
-    pub async fn open<P: AsPath>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
@@ -44,7 +44,7 @@ impl File {
 
     #[inline(always)]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
-        where OldPath: AsPath, NewPath: AsPath
+        where OldPath: AsRef<Path>, NewPath: AsRef<Path>
     {
         let old_path = get_os_path(old_path.as_ref())?;
         let new_path = get_os_path(new_path.as_ref())?;
@@ -52,7 +52,7 @@ impl File {
     }
 
     #[inline(always)]
-    pub async fn remove<P: AsPath>(path: P) -> Result<()> {
+    pub async fn remove<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = get_os_path(path.as_ref())?;
         Remove::new(path).await
     }
@@ -96,7 +96,7 @@ impl AsyncClose for File {}
 impl Drop for File {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().spawn_local(async {
+        Executor::exec_future(async {
             close_future.await.expect("Failed to close file");
         });
     }

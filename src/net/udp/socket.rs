@@ -11,8 +11,7 @@ use crate::io::sys::{AsRawFd, RawFd, IntoRawFd, FromRawFd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncSendTo};
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
-use crate::runtime::local_executor;
-use crate::{each_addr};
+use crate::{each_addr, Executor};
 use crate::net::{Datagram, Socket};
 
 pub struct UdpSocket {
@@ -111,7 +110,7 @@ impl Datagram<UdpConnectedSocket> for UdpSocket {}
 impl Drop for UdpSocket {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().spawn_local(async {
+        Executor::exec_future(async {
             close_future.await.expect("Failed to close UDP socket");
         });
     }

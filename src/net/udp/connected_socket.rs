@@ -1,9 +1,9 @@
 use std::mem;
+use crate::Executor;
 
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, AsyncSend};
 use crate::net::{ConnectedDatagram, Socket};
-use crate::runtime::local_executor;
 
 #[derive(Debug)]
 pub struct UdpConnectedSocket {
@@ -74,7 +74,7 @@ impl ConnectedDatagram for UdpConnectedSocket {}
 impl Drop for UdpConnectedSocket {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().spawn_local(async {
+        Executor::exec_future(async {
             close_future
                 .await
                 .expect("Failed to close UDP connected socket");
