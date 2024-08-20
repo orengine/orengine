@@ -1,33 +1,21 @@
 use std::cell::UnsafeCell;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 
-thread_local! {
-    static END: UnsafeCell<bool> = UnsafeCell::new(false);
-}
+static END: AtomicBool = AtomicBool::new(false);
 
 #[inline(always)]
 pub(crate) fn was_ended() -> bool {
-    unsafe {
-        END.with(|end| {
-            *end.get()
-        })
-    }
+    END.load(Relaxed)
 }
 
 pub(crate) fn set_was_ended(was_ended: bool) {
-    unsafe {
-        END.with(|end| {
-            *end.get() = was_ended;
-        })
-    }
+    END.store(was_ended, Relaxed);
 }
 
 #[inline(always)]
 pub fn end_local_thread() {
-    unsafe {
-        END.with(|end| {
-            *end.get() = true;
-        })
-    }
+    set_was_ended(true);
 }
 
 #[cfg(test)]

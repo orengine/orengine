@@ -49,13 +49,8 @@ impl LocalWaitGroup {
     }
 
     #[inline(always)]
-    pub fn sub(&self, count: usize) {
-        self.inner.get_mut().count -= count;
-    }
-
-    #[inline(always)]
     pub fn inc(&self) {
-        self.inner.get_mut().count += 1;
+        self.add(1);
     }
 
     #[inline(always)]

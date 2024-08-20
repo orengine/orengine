@@ -43,7 +43,12 @@ impl TaskPool {
     #[inline(always)]
     pub(crate) fn put(&mut self, ptr: *mut dyn Future<Output=()>) {
         let size = mem::size_of_val(unsafe { &*ptr });
-        let pool = unsafe { self.storage.get_mut(&size).unwrap_unchecked() };
+        if let Some(pool) = self.storage.get_mut(&size) {
+            pool.push(ptr as *mut ());
+            return
+        }
+
+        let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         pool.push(ptr as *mut ());
     }
 }
