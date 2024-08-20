@@ -37,12 +37,12 @@ impl<T> Local<T> {
     }
     
     #[inline(always)]
-    pub fn get<'a>(&self) -> &'a T {
+    pub fn get<'local>(&self) -> &'local T {
         unsafe { &self.inner.as_ref().data }
     }
     
     #[inline(always)]
-    pub fn get_mut<'a>(&self) -> &'a mut T {
+    pub fn get_mut<'local>(&self) -> &'local mut T {
         unsafe { &mut self.inner.as_mut().data }
     }
 }

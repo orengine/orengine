@@ -8,14 +8,14 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct Read<'a> {
+pub struct Read<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     io_request: Option<IoRequest>
 }
 
-impl<'a> Read<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8]) -> Self {
+impl<'buf> Read<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -24,7 +24,7 @@ impl<'a> Read<'a> {
     }
 }
 
-impl<'a> Future for Read<'a> {
+impl<'buf> Future for Read<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -40,15 +40,15 @@ impl<'a> Future for Read<'a> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PositionedRead<'a> {
+pub struct PositionedRead<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     offset: usize,
     io_request: Option<IoRequest>
 }
 
-impl<'a> PositionedRead<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8], offset: usize) -> Self {
+impl<'buf> PositionedRead<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8], offset: usize) -> Self {
         Self {
             fd,
             buf,
@@ -58,7 +58,7 @@ impl<'a> PositionedRead<'a> {
     }
 }
 
-impl<'a> Future for PositionedRead<'a> {
+impl<'buf> Future for PositionedRead<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -75,12 +75,12 @@ impl<'a> Future for PositionedRead<'a> {
 
 pub trait AsyncRead: AsRawFd {
     #[inline(always)]
-    fn read<'a>(&mut self, buf: &'a mut [u8]) -> Read<'a> {
+    fn read<'buf>(&mut self, buf: &'buf mut [u8]) -> Read<'buf> {
         Read::new(self.as_raw_fd(), buf)
     }
 
     #[inline(always)]
-    fn pread<'a>(&mut self, buf: &'a mut [u8], offset: usize) -> PositionedRead<'a> {
+    fn pread<'buf>(&mut self, buf: &'buf mut [u8], offset: usize) -> PositionedRead<'buf> {
         PositionedRead::new(self.as_raw_fd(), buf, offset)
     }
 

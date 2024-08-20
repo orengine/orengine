@@ -9,8 +9,6 @@
 #![feature(thread_local)]
 #![feature(io_error_uncategorized)]
 
-// TODO rename lifetimes
-
 pub mod buf;
 pub mod cfg;
 pub mod end;

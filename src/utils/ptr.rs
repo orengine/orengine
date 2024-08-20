@@ -44,7 +44,7 @@ impl<T> Ptr<T> {
     ///
     /// If the pointer is null.
     #[inline(always)]
-    pub unsafe fn as_ref<'a>(self) -> &'a T {
+    pub unsafe fn as_ref<'pointer>(self) -> &'pointer T {
         if self.ptr.is_null() {
             panic!("ptr is null");
         }
@@ -57,7 +57,7 @@ impl<T> Ptr<T> {
     ///
     /// If the pointer is null.
     #[inline(always)]
-    pub unsafe fn as_mut<'a>(self) -> &'a mut T {
+    pub unsafe fn as_mut<'pointer>(self) -> &'pointer mut T {
         if self.ptr.is_null() {
             panic!("ptr is null");
         }

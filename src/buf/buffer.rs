@@ -191,7 +191,7 @@ impl Buffer {
     }
 }
 
-impl<'a> Deref for Buffer {
+impl Deref for Buffer {
     type Target = [u8];
 
     #[inline(always)]
@@ -200,7 +200,7 @@ impl<'a> Deref for Buffer {
     }
 }
 
-impl<'a> DerefMut for Buffer {
+impl DerefMut for Buffer {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
