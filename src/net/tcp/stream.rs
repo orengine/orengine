@@ -225,7 +225,7 @@ mod tests {
         const ADDR: &str = "127.0.0.1:6082";
 
         create_local_executer_for_block_on(async {
-            let wg = LocalWaitGroup::new();
+            let wg = Rc::new(LocalWaitGroup::new());
             wg.inc();
             let wg_clone = wg.clone();
 
@@ -320,7 +320,7 @@ mod tests {
             let state_cond_var = Rc::new(LocalCondVar::new());
             let state_clone = state.clone();
             let state_cond_var_clone = state_cond_var.clone();
-            let wg = LocalWaitGroup::new();
+            let wg = Rc::new(LocalWaitGroup::new());
             wg.inc();
             let wg_clone = wg.clone();
 

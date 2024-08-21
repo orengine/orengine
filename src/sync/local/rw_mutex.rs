@@ -262,8 +262,8 @@ mod tests {
         create_local_executer_for_block_on(async {
             let start = Instant::now();
             let mutex = Rc::new(LocalRWMutex::new(0));
-            let wg = LocalWaitGroup::new();
-            let read_wg = LocalWaitGroup::new();
+            let wg = Rc::new(LocalWaitGroup::new());
+            let read_wg = Rc::new(LocalWaitGroup::new());
 
             for i in 1..=100 {
                 let mutex = mutex.clone();
@@ -323,8 +323,8 @@ mod tests {
         create_local_executer_for_block_on(async {
             let start = Instant::now();
             let mutex = Rc::new(LocalRWMutex::new(0));
-            let wg = LocalWaitGroup::new();
-            let read_wg = LocalWaitGroup::new();
+            let wg = Rc::new(LocalWaitGroup::new());
+            let read_wg = Rc::new(LocalWaitGroup::new());
 
             for i in 1..=100 {
                 let mutex = mutex.clone();

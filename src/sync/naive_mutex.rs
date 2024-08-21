@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::atomic::AtomicBool;

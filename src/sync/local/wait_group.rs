@@ -1,17 +1,27 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::Executor;
-use crate::local::Local;
 use crate::runtime::task::Task;
 
-pub struct Wait {
+pub struct Wait<'wait_group> {
     need_wait: bool,
-    wait_group: LocalWaitGroup
+    wait_group: &'wait_group LocalWaitGroup
 }
 
-impl Future for Wait {
+impl<'wait_group> Wait<'wait_group> {
+    #[inline(always)]
+    fn new(need_wait: bool, wait_group: &'wait_group LocalWaitGroup) -> Self {
+        Self {
+            need_wait,
+            wait_group
+        }
+    }
+}
+
+impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -21,7 +31,7 @@ impl Future for Wait {
         } else {
             this.need_wait = false;
             let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            this.wait_group.inner.get_mut().waited_tasks.push(task);
+            this.wait_group.get_inner().waited_tasks.push(task);
             Poll::Pending
         }
     }
@@ -33,19 +43,24 @@ struct Inner {
 }
 
 pub struct LocalWaitGroup {
-    inner: Local<Inner>
+    inner: UnsafeCell<Inner>
 }
 
 impl LocalWaitGroup {
     pub fn new() -> Self {
         Self {
-            inner: Local::new(Inner { count: 0, waited_tasks: Vec::new() })
+            inner: UnsafeCell::new(Inner { count: 0, waited_tasks: Vec::new() })
         }
     }
 
     #[inline(always)]
+    fn get_inner(&self) -> &mut Inner {
+        unsafe { &mut *self.inner.get() }
+    }
+
+    #[inline(always)]
     pub fn add(&self, count: usize) {
-        self.inner.get_mut().count += count;
+        self.get_inner().count += count;
     }
 
     #[inline(always)]
@@ -55,7 +70,7 @@ impl LocalWaitGroup {
 
     #[inline(always)]
     pub fn done(&self) {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
         inner.count -= 1;
         if unlikely(inner.count == 0) {
             for task in inner.waited_tasks.iter() {
@@ -68,16 +83,10 @@ impl LocalWaitGroup {
     #[inline(always)]
     #[must_use="Future must be awaited to start the wait"]
     pub fn wait(&self) -> Wait {
-        if unlikely(self.inner.get().count == 0) {
-            return Wait { need_wait: false, wait_group: self.clone() };
+        if unlikely(self.get_inner().count == 0) {
+            return Wait::new(false, self);
         }
-        Wait { need_wait: true, wait_group: self.clone() }
-    }
-}
-
-impl Clone for LocalWaitGroup {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
+        Wait::new(true, self)
     }
 }
 
@@ -85,6 +94,8 @@ unsafe impl Sync for LocalWaitGroup {}
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+    use crate::local::Local;
     use crate::runtime::{create_local_executer_for_block_on, local_executor};
     use crate::yield_now;
     use super::*;
@@ -93,7 +104,7 @@ mod tests {
     fn test_many_wait_one() {
         create_local_executer_for_block_on(async {
             let check_value = Local::new(false);
-            let wait_group = LocalWaitGroup::new();
+            let wait_group = Rc::new(LocalWaitGroup::new());
             wait_group.inc();
 
             for _ in 0..10 {
@@ -118,7 +129,7 @@ mod tests {
     fn test_one_wait_many() {
         create_local_executer_for_block_on(async {
             let check_value = Local::new(10);
-            let wait_group = LocalWaitGroup::new();
+            let wait_group = Rc::new(LocalWaitGroup::new());
             wait_group.add(10);
 
             for _ in 0..10 {

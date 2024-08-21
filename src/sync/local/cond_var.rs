@@ -59,7 +59,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 }
             },
             State::WaitLock => {
-                Poll::Ready(LocalMutexGuard::new(this.local_mutex.clone()))
+                Poll::Ready(LocalMutexGuard::new(this.local_mutex))
             }
         }
     }
@@ -83,11 +83,7 @@ impl LocalCondVar {
         &'cond_var self,
         local_mutex_guard: LocalMutexGuard<'mutex, T>
     ) -> WaitCondVar<'mutex, 'cond_var, T> {
-        WaitCondVar {
-            state: State::WaitSleep,
-            cond_var: self.clone(),
-            local_mutex: local_mutex_guard.into_local_mutex()
-        }
+        WaitCondVar::new(self, local_mutex_guard.into_local_mutex())
     }
 
     #[inline(always)]
@@ -171,7 +167,7 @@ mod tests {
                 cvar.notify_all();
             });
 
-            let wg = LocalWaitGroup::new();
+            let wg = Rc::new(LocalWaitGroup::new());
             for _ in 0..NUMBER_OF_WAITERS {
                 let pair = pair.clone();
                 let wg = wg.clone();
