@@ -138,6 +138,7 @@ impl<T> LocalMutex<T> {
 }
 
 unsafe impl<T> Sync for LocalMutex<T> {}
+impl<T> !Send for LocalMutex<T> {}
 
 #[cfg(test)]
 mod tests {

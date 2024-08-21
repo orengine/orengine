@@ -245,6 +245,7 @@ impl<T> LocalRWMutex<T> {
 }
 
 unsafe impl<T> Sync for LocalRWMutex<T> {}
+impl<T> !Send for LocalRWMutex<T> {}
 
 #[cfg(test)]
 mod tests {

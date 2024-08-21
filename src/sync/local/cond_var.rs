@@ -105,6 +105,7 @@ impl LocalCondVar {
 }
 
 unsafe impl Sync for LocalCondVar {}
+impl !Send for LocalCondVar {}
 
 #[cfg(test)]
 mod tests {

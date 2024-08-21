@@ -167,6 +167,7 @@ impl<T> Clone for LocalSender<T> {
 }
 
 unsafe impl<T> Sync for LocalSender<T> {}
+impl<T> !Send for LocalSender<T> {}
 
 // endregion
 
@@ -205,6 +206,7 @@ impl<T> Clone for LocalReceiver<T> {
 }
 
 unsafe impl<T> Sync for LocalReceiver<T> {}
+impl<T> !Send for LocalReceiver<T> {}
 
 // endregion
 
@@ -260,6 +262,7 @@ impl<T> Clone for LocalChannel<T> {
 }
 
 unsafe impl<T> Sync for LocalChannel<T> {}
+impl<T> !Send for LocalChannel<T> {}
 
 // endregion
 

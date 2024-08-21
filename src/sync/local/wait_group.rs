@@ -91,6 +91,7 @@ impl LocalWaitGroup {
 }
 
 unsafe impl Sync for LocalWaitGroup {}
+impl !Send for LocalWaitGroup {}
 
 #[cfg(test)]
 mod tests {
