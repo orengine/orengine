@@ -1,63 +1,61 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;
-use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::Executor;
-use crate::local::Local;
 use crate::runtime::task::Task;
 
-pub struct LocalMutexGuard<T> {
-    local_mutex: LocalMutex<T>
+pub struct LocalMutexGuard<'mutex, T> {
+    local_mutex: &'mutex LocalMutex<T>
 }
 
-impl<T> LocalMutexGuard<T> {
+impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     #[inline(always)]
-    pub(crate) fn new(local_mutex: LocalMutex<T>) -> Self {
+    pub(crate) fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self { local_mutex }
     }
 
     #[inline(always)]
-    pub fn local_mutex(&self) -> &LocalMutex<T> {
+    pub fn local_mutex(&'mutex self) -> &'mutex LocalMutex<T> {
         &self.local_mutex
     }
 
     #[inline(always)]
-    pub(crate) fn into_local_mutex(self) -> LocalMutex<T> {
-        self.local_mutex.drop_lock();
-        unsafe { (&ManuallyDrop::new(self).local_mutex as *const LocalMutex<T>).read() }
+    pub fn into_local_mutex(self) -> &'mutex LocalMutex<T> {
+        &self.local_mutex
     }
 }
 
-impl<T> Deref for LocalMutexGuard<T> {
+impl<'mutex, T> Deref for LocalMutexGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.local_mutex.inner.get().value
+        unsafe { &*self.local_mutex.value.get() }
     }
 }
 
-impl<T> DerefMut for LocalMutexGuard<T> {
+impl<'mutex, T> DerefMut for LocalMutexGuard<'mutex, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.local_mutex.inner.get_mut().value
+        unsafe { &mut *self.local_mutex.value.get() }
     }
 }
 
-impl<T> Drop for LocalMutexGuard<T> {
+impl<'mutex, T> Drop for LocalMutexGuard<'mutex, T> {
     fn drop(&mut self) {
         self.local_mutex.drop_lock();
     }
 }
 
-pub struct MutexWait<T> {
+pub struct MutexWait<'mutex, T> {
     need_wait: bool,
-    local_mutex: LocalMutex<T>
+    local_mutex: &'mutex LocalMutex<T>
 }
 
-impl<T> MutexWait<T> {
+impl<'mutex, T> MutexWait<'mutex, T> {
     #[inline(always)]
-    fn new(need_wait: bool, local_mutex: LocalMutex<T>) -> Self {
+    fn new(need_wait: bool, local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self {
             need_wait,
             local_mutex
@@ -65,95 +63,76 @@ impl<T> MutexWait<T> {
     }
 }
 
-impl<T> Future for MutexWait<T> {
-    type Output = LocalMutexGuard<T>;
+impl<'mutex, T> Future for MutexWait<'mutex, T> {
+    type Output = LocalMutexGuard<'mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (_cx.waker().as_raw().data() as *const Task).read() };
-            this.local_mutex.inner.get_mut().wait_queue.push(task);
+            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let wait_queue = unsafe { &mut *this.local_mutex.wait_queue.get() };
+            wait_queue.push(task);
             this.need_wait = false;
             Poll::Pending
         } else {
-            Poll::Ready(LocalMutexGuard::new(this.local_mutex.clone()))
+            Poll::Ready(LocalMutexGuard::new(this.local_mutex))
         }
     }
 }
 
-struct Inner<T> {
-    is_locked: bool,
-    wait_queue: Vec<Task>,
-    value: T
-}
-
 pub struct LocalMutex<T> {
-    inner: Local<Inner<T>>
+    is_locked: UnsafeCell<bool>,
+    wait_queue: UnsafeCell<Vec<Task>>,
+    value: UnsafeCell<T>
 }
 
 impl<T> LocalMutex<T> {
     #[inline(always)]
     pub fn new(value: T) -> LocalMutex<T> {
         LocalMutex {
-            inner: Local::new(Inner {
-                is_locked: false,
-                wait_queue: Vec::new(),
-                value
-            })
+            is_locked: UnsafeCell::new(false),
+            wait_queue: UnsafeCell::new(Vec::new()),
+            value: UnsafeCell::new(value)
         }
     }
 
     #[inline(always)]
     pub fn lock(&self) -> MutexWait<T> {
-        let inner = self.inner.get_mut();
-
-        if !inner.is_locked {
-            inner.is_locked = true;
-            MutexWait::new(false, self.clone())
+        let is_locked = unsafe { &mut *self.is_locked.get() };
+        if !*is_locked {
+            *is_locked = true;
+            MutexWait::new(false, self)
         } else {
-            MutexWait::new(true, self.clone())
+            MutexWait::new(true, self)
         }
     }
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<LocalMutexGuard<T>> {
-        let inner = self.inner.get_mut();
-
-        if !inner.is_locked {
-            inner.is_locked = true;
-            Some(LocalMutexGuard::new(self.clone()))
+        let is_locked = unsafe { &mut *self.is_locked.get() };
+        if !*is_locked {
+            *is_locked = true;
+            Some(LocalMutexGuard::new(self))
         } else {
             None
         }
     }
 
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
-        &mut self.inner.get_mut().value
-    }
-
-    #[inline(always)]
     pub(crate) fn subscribe(&self, task: Task) {
-        let inner = self.inner.get_mut();
-        inner.wait_queue.push(task);
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        wait_queue.push(task);
     }
 
     #[inline(always)]
     fn drop_lock(&self) {
-        let inner = self.inner.get_mut();
-        let next = inner.wait_queue.pop();
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        let next = wait_queue.pop();
         if unlikely(next.is_some()) {
             Executor::exec_task(unsafe { next.unwrap_unchecked() });
         } else {
-            inner.is_locked = false;
-        }
-    }
-}
-
-impl<T> Clone for LocalMutex<T> {
-    fn clone(&self) -> Self {
-        LocalMutex {
-            inner: self.inner.clone()
+            let is_locked = unsafe { &mut *self.is_locked.get() };
+            *is_locked = false;
         }
     }
 }
@@ -162,6 +141,7 @@ unsafe impl<T> Sync for LocalMutex<T> {}
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
@@ -173,7 +153,7 @@ mod tests {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         create_local_executer_for_block_on(async move {
-            let mutex = LocalMutex::new(false);
+            let mutex = Rc::new(LocalMutex::new(false));
             let mutex_clone = mutex.clone();
             Executor::exec_task(Task::from_future(async move {
                 let mut value = mutex_clone.lock().await;
@@ -199,7 +179,7 @@ mod tests {
 
         create_local_executer_for_block_on(async move {
             let start = Instant::now();
-            let mutex = LocalMutex::new(false);
+            let mutex = Rc::new(LocalMutex::new(false));
             let mutex_clone = mutex.clone();
             Executor::exec_task(Task::from_future(async move {
                 let mut value = mutex_clone.lock().await;

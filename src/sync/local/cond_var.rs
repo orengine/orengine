@@ -1,9 +1,9 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::likely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::Executor;
-use crate::local::Local;
 use crate::runtime::task::Task;
 use crate::sync::{LocalMutex, LocalMutexGuard};
 
@@ -13,15 +13,18 @@ enum State {
     WaitLock
 }
 
-pub struct WaitCondVar<T> {
+pub struct WaitCondVar<'mutex, 'cond_var, T> {
     state: State,
-    cond_var: LocalCondVar,
-    local_mutex: LocalMutex<T>
+    cond_var: &'cond_var LocalCondVar,
+    local_mutex: &'mutex LocalMutex<T>
 }
 
-impl<T> WaitCondVar<T> {
+impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
     #[inline(always)]
-    pub fn new(cond_var: LocalCondVar, local_mutex: LocalMutex<T>) -> WaitCondVar<T> {
+    pub fn new(
+        cond_var: &'cond_var LocalCondVar,
+        local_mutex: &'mutex LocalMutex<T>
+    ) -> WaitCondVar<'mutex, 'cond_var, T> {
         WaitCondVar {
             state: State::WaitSleep,
             cond_var,
@@ -30,8 +33,8 @@ impl<T> WaitCondVar<T> {
     }
 }
 
-impl<T> Future for WaitCondVar<T> {
-    type Output = LocalMutexGuard<T>;
+impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
+    type Output = LocalMutexGuard<'mutex, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -40,7 +43,8 @@ impl<T> Future for WaitCondVar<T> {
             State::WaitSleep => {
                 this.state = State::WaitWake;
                 let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-                this.cond_var.inner.get_mut().wait_queue.push(task);
+                let wait_queue = unsafe { &mut *this.cond_var.wait_queue.get() };
+                wait_queue.push(task);
                 Poll::Pending
             },
             State::WaitWake => {
@@ -61,25 +65,24 @@ impl<T> Future for WaitCondVar<T> {
     }
 }
 
-struct Inner {
-    wait_queue: Vec<Task>
-}
-
 // TODO: in docs say to drop(guard) before notify
 pub struct LocalCondVar {
-    inner: Local<Inner>
+    wait_queue: UnsafeCell<Vec<Task>>
 }
 
 impl LocalCondVar {
     #[inline(always)]
     pub fn new() -> LocalCondVar {
         LocalCondVar {
-            inner: Local::new(Inner { wait_queue: Vec::new() })
+            wait_queue: UnsafeCell::new(Vec::new())
         }
     }
 
     #[inline(always)]
-    pub fn wait<T>(&self, local_mutex_guard: LocalMutexGuard<T>) -> WaitCondVar<T> {
+    pub fn wait<'mutex, 'cond_var, T>(
+        &'cond_var self,
+        local_mutex_guard: LocalMutexGuard<'mutex, T>
+    ) -> WaitCondVar<'mutex, 'cond_var, T> {
         WaitCondVar {
             state: State::WaitSleep,
             cond_var: self.clone(),
@@ -89,26 +92,18 @@ impl LocalCondVar {
 
     #[inline(always)]
     pub fn notify_one(&self) {
-        let inner = self.inner.get_mut();
-        if likely(!inner.wait_queue.is_empty()) {
-            let task = inner.wait_queue.pop();
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        if likely(!wait_queue.is_empty()) {
+            let task = wait_queue.pop();
             Executor::exec_task(unsafe { task.unwrap_unchecked() });
         }
     }
 
     #[inline(always)]
     pub fn notify_all(&self) {
-        let inner = self.inner.get_mut();
-        while let Some(task) = inner.wait_queue.pop() {
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        while let Some(task) = wait_queue.pop() {
             Executor::exec_task(task);
-        }
-    }
-}
-
-impl Clone for LocalCondVar {
-    fn clone(&self) -> Self {
-        LocalCondVar {
-            inner: self.inner.clone()
         }
     }
 }
@@ -117,6 +112,8 @@ unsafe impl Sync for LocalCondVar {}
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
     use crate::runtime::{create_local_executer_for_block_on, local_executor};
     use crate::sleep::sleep;
@@ -128,11 +125,11 @@ mod tests {
     fn test_one(need_drop: bool) {
         create_local_executer_for_block_on(async move {
             let start = Instant::now();
-            let pair = (LocalMutex::new(false), LocalCondVar::new());
+            let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
             let pair2 = pair.clone();
             // Inside our lock, spawn a new thread, and then wait for it to start.
             local_executor().spawn_local(async move {
-                let (lock, cvar) = pair2;
+                let (lock, cvar) = pair2.deref();
                 let mut started = lock.lock().await;
                 sleep(TIME_TO_SLEEP).await;
                 *started = true;
@@ -144,7 +141,7 @@ mod tests {
             });
 
             // Wait for the thread to start up.
-            let (lock, cvar) = pair;
+            let (lock, cvar) = pair.deref();
             let mut started = lock.lock().await;
             while !*started {
                 started = cvar.wait(started).await;
@@ -159,11 +156,11 @@ mod tests {
             const NUMBER_OF_WAITERS: usize = 10;
 
             let start = Instant::now();
-            let pair = (LocalMutex::new(false), LocalCondVar::new());
+            let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
             let pair2 = pair.clone();
             // Inside our lock, spawn a new thread, and then wait for it to start.
             local_executor().spawn_local(async move {
-                let (lock, cvar) = pair2;
+                let (lock, cvar) = pair2.deref();
                 let mut started = lock.lock().await;
                 sleep(TIME_TO_SLEEP).await;
                 *started = true;
@@ -180,7 +177,7 @@ mod tests {
                 let wg = wg.clone();
                 wg.add(1);
                 local_executor().spawn_local(async move {
-                    let (lock, cvar) = pair;
+                    let (lock, cvar) = pair.deref();
                     let mut started = lock.lock().await;
                     while !*started {
                         started = cvar.wait(started).await;

@@ -108,6 +108,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::{io, thread};
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
     use crate::io::{AsyncAccept, AsyncBind};
 
@@ -315,8 +316,8 @@ mod tests {
         const TIMEOUT: Duration = Duration::from_millis(1);
 
         create_local_executer_for_block_on(async {
-            let state = LocalMutex::new(CONNECT);
-            let state_cond_var = LocalCondVar::new();
+            let state = Rc::new(LocalMutex::new(CONNECT));
+            let state_cond_var = Rc::new(LocalCondVar::new());
             let state_clone = state.clone();
             let state_cond_var_clone = state_cond_var.clone();
             let wg = LocalWaitGroup::new();

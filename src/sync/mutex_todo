@@ -1,0 +1,146 @@
+pub struct MutexGuard<'mutex, T> {
+    mutex: &'mutex Mutex<T>
+}
+
+impl<'mutex, T> MutexGuard<'mutex, T> {
+    #[inline(always)]
+    pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
+        Self { mutex }
+    }
+
+    #[inline(always)]
+    pub fn local_mutex(&self) -> &Mutex<T> {
+        &self.mutex
+    }
+
+    #[inline(always)]
+    pub(crate) fn into_local_mutex(self) -> Mutex<T> {
+        self.mutex.drop_lock();
+        unsafe { (ManuallyDrop::new(self).mutex as *const Mutex<T>).read() }
+    }
+}
+
+impl<'mutex, T> Deref for MutexGuard<'mutex, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.mutex.value.get() }
+    }
+}
+
+impl<'mutex, T> DerefMut for MutexGuard<'mutex, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.mutex.value.get() }
+    }
+}
+
+impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
+    fn drop(&mut self) {
+        self.mutex.drop_lock();
+    }
+}
+
+pub struct MutexWait<'mutex, T> {
+    was_called: bool,
+    mutex: &'mutex Mutex<T>
+}
+
+impl<'mutex, T> MutexWait<'mutex, T> {
+    #[inline(always)]
+    fn new(local_mutex: &'mutex Mutex<T>) -> Self {
+        Self {
+            was_called: false,
+            mutex: local_mutex
+        }
+    }
+}
+
+impl<'mutex, T> Future for MutexWait<'mutex, T> {
+    type Output = MutexGuard<'mutex, T>;
+
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        if likely(!this.was_called) {
+            if this.mutex.counter.fetch_add(1, Acquire) == 0 {
+                return Poll::Ready(MutexGuard::new(&this.mutex));
+            }
+
+            let task = unsafe { (_cx.waker().as_raw().data() as *const Task).read() };
+            this.mutex.wait_queue.push(task);
+            this.was_called = true;
+            Poll::Pending
+        } else {
+            Poll::Ready(MutexGuard::new(&this.mutex))
+        }
+    }
+}
+
+pub struct Mutex<T> {
+    counter: CachePadded<AtomicUsize>,
+    wait_queue: SegQueue<Task>,
+    value: UnsafeCell<T>,
+    expected_count: Cell<usize>
+}
+
+impl<T> Mutex<T> {
+    #[inline(always)]
+    pub fn new(value: T) -> Mutex<T> {
+        Mutex {
+            counter: CachePadded::new(AtomicUsize::new(0)),
+            wait_queue: SegQueue::new(),
+            value: UnsafeCell::new(value),
+            expected_count: Cell::new(1)
+        }
+    }
+
+    #[inline(always)]
+    pub fn lock(&self) -> MutexWait<T> {
+        MutexWait::new(self)
+    }
+
+    #[inline(always)]
+    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+        if self.counter.compare_exchange(0, 1, Acquire, Relaxed).is_ok() {
+            Some(MutexGuard::new(self))
+        } else {
+            None
+        }
+    }
+
+    #[inline(always)]
+    pub fn get_mut(&mut self) -> &mut T {
+        self.value.get_mut()
+    }
+
+    #[inline(always)]
+    pub(crate) fn subscribe(&self, task: Task) {
+        self.wait_queue.push(task);
+    }
+
+    #[inline(always)]
+    fn drop_lock(&self) {
+        // fast path
+        if likely(self.counter.compare_exchange(self.expected_count.get(), 0, Release, Relaxed).is_ok()) {
+            return;
+        }
+
+        self.expected_count.set(self.expected_count.get() + 1);
+        let next = self.wait_queue.pop();
+        if likely(next.is_some()) {
+            Executor::exec_task(unsafe { next.unwrap_unchecked() });
+        } else { // Another task failed to acquire a lock, but it is not yet in the queue
+            let backoff = Backoff::new();
+            loop {
+                backoff.spin();
+                let next = self.wait_queue.pop();
+                if next.is_some() {
+                    Executor::exec_task(unsafe { next.unwrap_unchecked() });
+                    break;
+                }
+            }
+        }
+    }
+}
+
+unsafe impl<T: Send> Sync for Mutex<T> {}
+unsafe impl<T: Send> Send for Mutex<T> {}

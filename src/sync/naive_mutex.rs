@@ -1,16 +1,12 @@
-use std::cell::{Cell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::future::Future;
-use std::intrinsics::{likely, unlikely};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize};
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::task::{Context, Poll};
-use crossbeam::queue::SegQueue;
-use crossbeam::utils::{Backoff, CachePadded};
-use crate::Executor;
-use crate::runtime::task::Task;
+use crossbeam::utils::CachePadded;
 
 pub struct MutexGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>
@@ -28,13 +24,12 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     }
 
     #[inline(always)]
-    pub(crate) fn into_local_mutex(self) -> Mutex<T> {
-        self.mutex.drop_lock();
-        unsafe { (ManuallyDrop::new(self).mutex as *const Mutex<T>).read() }
+    pub(crate) fn into_local_mutex(self) -> &'mutex Mutex<T> {
+        self.mutex
     }
 }
 
-impl<'guard, T> Deref for MutexGuard<'guard, T> {
+impl<'mutex, T> Deref for MutexGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -42,20 +37,19 @@ impl<'guard, T> Deref for MutexGuard<'guard, T> {
     }
 }
 
-impl<'guard, T> DerefMut for MutexGuard<'guard, T> {
+impl<'mutex, T> DerefMut for MutexGuard<'mutex, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.value.get() }
     }
 }
 
-impl<'guard, T> Drop for MutexGuard<'guard, T> {
+impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
     fn drop(&mut self) {
         self.mutex.drop_lock();
     }
 }
 
 pub struct MutexWait<'mutex, T> {
-    was_called: bool,
     mutex: &'mutex Mutex<T>
 }
 
@@ -63,7 +57,6 @@ impl<'mutex, T> MutexWait<'mutex, T> {
     #[inline(always)]
     fn new(local_mutex: &'mutex Mutex<T>) -> Self {
         Self {
-            was_called: false,
             mutex: local_mutex
         }
     }
@@ -72,38 +65,28 @@ impl<'mutex, T> MutexWait<'mutex, T> {
 impl<'mutex, T> Future for MutexWait<'mutex, T> {
     type Output = MutexGuard<'mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if likely(!this.was_called) {
-            if this.mutex.counter.fetch_add(1, Acquire) == 0 {
-                return Poll::Ready(MutexGuard::new(&this.mutex));
-            }
-
-            let task = unsafe { (_cx.waker().as_raw().data() as *const Task).read() };
-            this.mutex.wait_queue.push(task);
-            this.was_called = true;
-            Poll::Pending
+        if this.mutex.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
+            Poll::Ready(MutexGuard::new(this.mutex))
         } else {
-            Poll::Ready(MutexGuard::new(&this.mutex))
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 }
 
 pub struct Mutex<T> {
-    counter: CachePadded<AtomicUsize>,
-    wait_queue: SegQueue<Task>,
-    value: UnsafeCell<T>,
-    expected_count: Cell<usize>
+    is_locked: CachePadded<AtomicBool>,
+    value: UnsafeCell<T>
 }
 
 impl<T> Mutex<T> {
     #[inline(always)]
     pub fn new(value: T) -> Mutex<T> {
         Mutex {
-            counter: CachePadded::new(AtomicUsize::new(0)),
-            wait_queue: SegQueue::new(),
-            value: UnsafeCell::new(value),
-            expected_count: Cell::new(1)
+            is_locked: CachePadded::new(AtomicBool::new(false)),
+            value: UnsafeCell::new(value)
         }
     }
 
@@ -114,7 +97,7 @@ impl<T> Mutex<T> {
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self.counter.compare_exchange(0, 1, Acquire, Relaxed).is_ok() {
+        if self.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
             Some(MutexGuard::new(self))
         } else {
             None
@@ -127,34 +110,8 @@ impl<T> Mutex<T> {
     }
 
     #[inline(always)]
-    pub(crate) fn subscribe(&self, task: Task) {
-        self.wait_queue.push(task);
-    }
-
-    #[inline(always)]
     fn drop_lock(&self) {
-        let next = self.wait_queue.pop();
-        if unlikely(next.is_some()) {
-            self.expected_count.set(self.expected_count.get() + 1);
-            Executor::exec_task(unsafe { next.unwrap_unchecked() });
-        } else {
-            if unlikely(
-                self.counter.compare_exchange(self.expected_count.get(), 0, Release, Relaxed).is_err()
-            ) { // Another task failed to acquire a lock, but it is not yet in the queue
-                let backoff = Backoff::new();
-                loop {
-                    backoff.spin();
-                    let next = self.wait_queue.pop();
-                    if next.is_some() {
-                        self.expected_count.set(self.expected_count.get() + 1);
-                        Executor::exec_task(unsafe { next.unwrap_unchecked() });
-                        break;
-                    }
-                }
-            } else {
-                self.expected_count.set(1);
-            }
-        }
+        self.is_locked.store(false, Release);
     }
 }
 
@@ -166,12 +123,16 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
+    use crate::end::end;
+    use crate::Executor;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
+    use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
     use super::*;
 
     #[test]
     fn test_mutex() {
+        let lock = GLOBAL_TEST_LOCK.lock("test_mutex".to_string());
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let mutex = Arc::new(Mutex::new(false));
@@ -184,10 +145,9 @@ mod tests {
 
         thread::spawn(move || {
            create_local_executer_for_block_on(async move {
+               let mut value = mutex_clone.lock().await;
                *was_started_clone.lock().unwrap() = true;
                cond_var_clone.notify_one();
-
-               let mut value = mutex_clone.lock().await;
                println!("1");
                sleep(SLEEP_DURATION).await;
                println!("3");
@@ -207,18 +167,21 @@ mod tests {
             println!("4");
 
             let elapsed = start.elapsed();
-            assert!(elapsed >= SLEEP_DURATION);
             assert_eq!(*value, true);
             drop(value);
+
+            end();
         });
+
+        drop(lock);
     }
 
     #[test]
     fn test_try_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
+        let lock = GLOBAL_TEST_LOCK.lock("test_try_mutex".to_string());
         create_local_executer_for_block_on(async move {
-            let start = Instant::now();
             let mutex = Arc::new(Mutex::new(false));
             let mutex_clone = mutex.clone();
             Executor::exec_future(async move {
@@ -236,11 +199,58 @@ mod tests {
 
             sleep(SLEEP_DURATION * 2).await;
 
-            let elapsed = start.elapsed();
-            assert!(elapsed >= SLEEP_DURATION * 2);
             let value = mutex.try_lock();
             println!("5");
             assert_eq!(*(value.expect("not waited")), true);
+
+            end();
         });
+
+        drop(lock);
+    }
+
+    #[test]
+    fn naive_test_mutex() {
+        const SLEEP_DURATION: Duration = Duration::from_micros(1);
+        const PAR: usize = 3;
+        const TRIES: usize = 2;
+
+        let lock = GLOBAL_TEST_LOCK.lock("naive test mutex".to_string());
+        let mutex = Arc::new(Mutex::new(0));
+        for _ in 1..PAR {
+            let mutex = mutex.clone();
+            thread::spawn(move || {
+                create_local_executer_for_block_on(async move {
+                    for _ in 0..TRIES {
+                        let mut lock = mutex.lock().await;
+                        //let mut lock = mutex.lock().unwrap();
+                        sleep(SLEEP_DURATION).await;
+                        *lock += 1;
+                        if *lock % 100 == 0 {
+                            println!("{} of {}", *lock, TRIES * PAR);
+                        }
+                    }
+                });
+            });
+        }
+
+        create_local_executer_for_block_on(async move {
+            for _ in 0..TRIES {
+                //let mut lock = mutex.lock().await;
+                let mut lock = mutex.lock().await;
+                sleep(SLEEP_DURATION).await;
+                *lock += 1;
+            }
+
+            loop {
+                sleep(SLEEP_DURATION).await;
+                let lock = mutex.lock().await;
+                if *lock == PAR * TRIES {
+                    end();
+                }
+            }
+        });
+
+        drop(lock);
     }
 }

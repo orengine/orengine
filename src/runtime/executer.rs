@@ -6,11 +6,10 @@ use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
-use std::thread;
-use std::time::{Instant};
+use std::time::{Duration, Instant};
 use crate::buf::BufPool;
 use crate::cfg::{config_buf_len};
-use crate::end::{set_was_ended, was_ended};
+use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
 use crate::end_local_thread;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::task::Task;
@@ -183,23 +182,26 @@ impl Executor {
     #[inline(always)]
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread) was called).
     fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
-        if unlikely(!io_worker.must_poll()) { // has no io work
-            if !self.sleeping_tasks.is_empty() {
-                // sleep until first task will be woken up
-                let sleeping_task = self.sleeping_tasks.first().unwrap();
-                thread::sleep(sleeping_task.time_to_wake() - Instant::now());
-            } else {
-                return was_ended();
-            }
-        }
+        let has_no_work = io_worker.must_poll(Duration::ZERO);
 
         let instant = Instant::now();
         while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
             if sleeping_task.time_to_wake() <= instant {
                 Self::exec_task(sleeping_task.task());
             } else {
+                let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
-                break;
+                if unlikely(has_no_work) {
+                    const MAX_SLEEP: Duration = Duration::from_millis(100);
+                    if need_to_sleep > MAX_SLEEP {
+                        let _ = io_worker.must_poll(MAX_SLEEP);
+                        break;
+                    } else {
+                        let _ = io_worker.must_poll(need_to_sleep);
+                    }
+                } else {
+                    break;
+                }
             }
         }
 
@@ -207,7 +209,7 @@ impl Executor {
             self.tasks.shrink_to(self.tasks.len() * 2 + 1);
         }
 
-        was_ended()
+        was_ended() || global_was_end()
     }
 
     pub fn run(&mut self) {
@@ -229,6 +231,8 @@ impl Executor {
         }
 
         uninit_local_executor();
+        set_global_was_end(false);
+        set_was_ended(false);
         LOCAL_WORKER.with(|local_worker| {
             unsafe {
                 *local_worker.get() = MaybeUninit::uninit();

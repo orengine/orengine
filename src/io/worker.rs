@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::net::Shutdown;
+use std::time::Duration;
 use nix::libc;
 use nix::libc::sockaddr;
 use crate::io::io_request::IoRequest;
@@ -33,7 +34,7 @@ pub(crate) trait IoWorker {
     fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask);
     /// Returns `true` if the worker has polled. The worker doesn't poll only if it has no work to do.
     #[must_use]
-    fn must_poll(&mut self) -> bool;
+    fn must_poll(&mut self, duration: Duration) -> bool;
     fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequest);
     fn accept(&mut self, listen_fd: RawFd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *mut IoRequest);
     fn connect(&mut self, socket_fd: RawFd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *mut IoRequest);

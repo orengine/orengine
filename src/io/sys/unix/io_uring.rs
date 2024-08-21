@@ -1,10 +1,10 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
-use std::intrinsics::{unlikely};
+use std::intrinsics::{likely, unlikely};
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
-use std::time::{Instant};
+use std::time::{Duration, Instant};
 use io_uring::{cqueue, IoUring, opcode, Probe, types};
 use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
@@ -107,7 +107,11 @@ impl IoUringWorker {
     }
 
     #[inline(always)]
-    fn submit(&mut self) -> Result<(), Error> {
+    fn submit(&mut self, duration: Duration) -> Result<bool, Error> {
+        if self.number_of_active_tasks == 0 && Duration::ZERO == duration {
+            return Ok(false);
+        }
+
         let ring = unsafe { &mut *self.ring.get() };
         let mut sq = unsafe { ring.submission_shared() };
         let submitter = ring.submitter();
@@ -130,14 +134,22 @@ impl IoUringWorker {
             }
         }
 
-        match submitter.submit_with_args(1, &self.timeout) {
+        let res = if likely(duration == Duration::ZERO) {
+            submitter.submit_with_args(1, &self.timeout)
+        } else {
+            submitter.submit_with_args(1, &SubmitArgs::new().timespec(&Timespec::from(duration)))
+        };
+
+        match res {
             Ok(_) => (),
             Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => (),
             Err(ref err) if err.raw_os_error() == Some(libc::EBUSY) => (),
             Err(err) => return Err(err.into()),
-        };
+        }
 
-        Ok(())
+
+
+        Ok(true)
     }
 }
 
@@ -158,13 +170,10 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     #[must_use]
-    fn must_poll(&mut self) -> bool {
-        if self.number_of_active_tasks == 0 {
-            return false;
-        }
+    fn must_poll(&mut self, duration: Duration) -> bool {
         self.check_deadlines();
-        if let Err(err) = self.submit() {
-            panic!("IoUringWorker::submit() failed, err: {:?}", err);
+        if !self.submit(duration).expect("IoUringWorker::submit() failed") {
+            return false;
         }
 
         let ring = unsafe { &mut *self.ring.get() };

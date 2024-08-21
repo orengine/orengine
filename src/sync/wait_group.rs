@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Relaxed, Release};
 use std::task::{Context, Poll};
 use crossbeam::queue::SegQueue;
+use crossbeam::utils::Backoff;
 use crate::Executor;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
@@ -82,9 +83,14 @@ impl WaitGroup {
     #[inline(always)]
     pub fn done(&self) {
         let prev = self.count.fetch_sub(1, Release);
-        if unlikely(prev == 0) {
-            while let Some(task) = self.waited_tasks.pop() {
-                Executor::exec_task(task);
+        if unlikely(prev == 1) {
+            let backoff = Backoff::new();
+            loop {
+                if let Some(task) = self.waited_tasks.pop() {
+                    Executor::exec_task(task);
+                    break;
+                }
+                backoff.spin();
             }
         }
     }
@@ -103,14 +109,18 @@ unsafe impl Send for WaitGroup {}
 mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
+    use crate::end::end;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::yield_now;
+    use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
+    use crate::{sleep, yield_now};
     use super::*;
 
     const PAR: usize = 200;
 
     #[test]
     fn test_many_wait_one() {
+        let lock = GLOBAL_TEST_LOCK.lock("wait group: many wait one".to_string());
         create_local_executer_for_block_on(async {
             let check_value = Arc::new(Mutex::new(false));
             let wait_group = Arc::new(WaitGroup::new());
@@ -134,11 +144,18 @@ mod tests {
 
             *check_value.lock().unwrap() = true;
             wait_group.done();
+
+            end();
         });
+
+        drop(lock);
     }
 
     #[test]
-    fn test_one_wait_many() {
+    fn test_one_wait_many_task_finished_after_wait() {
+        let lock = GLOBAL_TEST_LOCK.lock(
+            "wait group: one wait many task finished after wait".to_string()
+        );
         create_local_executer_for_block_on(async {
             let check_value = Arc::new(Mutex::new(PAR));
             let wait_group = Arc::new(WaitGroup::new());
@@ -150,7 +167,7 @@ mod tests {
 
                 thread::spawn(move || {
                     create_local_executer_for_block_on(async move {
-                        yield_now().await;
+                        sleep(Duration::from_millis(1)).await;
                         *check_value.lock().unwrap() -= 1;
                         wait_group.done();
                     });
@@ -161,6 +178,44 @@ mod tests {
             if *check_value.lock().unwrap() != 0 {
                 panic!("not waited");
             }
+
+            end();
         });
+
+        drop(lock);
+    }
+
+    #[test]
+    fn test_one_wait_many_task_finished_before_wait() {
+        let lock = GLOBAL_TEST_LOCK.lock(
+            "wait group: one wait many task finished before wait".to_string()
+        );
+        create_local_executer_for_block_on(async {
+            let check_value = Arc::new(Mutex::new(PAR));
+            let wait_group = Arc::new(WaitGroup::new());
+            wait_group.add(PAR);
+
+            for _ in 0..PAR {
+                let check_value = check_value.clone();
+                let wait_group = wait_group.clone();
+
+                thread::spawn(move || {
+                    create_local_executer_for_block_on(async move {
+                        *check_value.lock().unwrap() -= 1;
+                        wait_group.done();
+                    });
+                });
+            }
+
+            sleep(Duration::from_millis(1)).await;
+            wait_group.wait().await;
+            if *check_value.lock().unwrap() != 0 {
+                panic!("not waited");
+            }
+
+            end();
+        });
+
+        drop(lock);
     }
 }

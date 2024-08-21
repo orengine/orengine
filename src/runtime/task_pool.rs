@@ -48,6 +48,8 @@ impl TaskPool {
             return
         }
 
+        // A task that have been allocated in another thread ended up here
+
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         pool.push(ptr as *mut ());
     }

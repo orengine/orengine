@@ -123,6 +123,8 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::{io, thread};
+    use std::ops::Deref;
+    use std::rc::Rc;
     use std::time::Duration;
     use crate::Executor;
 
@@ -236,15 +238,15 @@ mod tests {
         const CLIENT_ADDR: &str = "127.0.0.1:10091";
         const TIMEOUT: Duration = Duration::from_secs(3);
 
-        let is_server_ready = (LocalMutex::new(false), LocalCondVar::new());
+        let is_server_ready = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
 
         create_local_executer_for_block_on(async move {
-            Executor::exec_future(async {
+            Executor::exec_future(async move {
                 let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
                 {
-                    let (is_ready_mu, condvar) = is_server_ready;
+                    let (is_ready_mu, condvar) = is_server_ready.deref();
                     let mut is_ready = is_ready_mu.lock().await;
                     *is_ready = true;
                     condvar.notify_one();
@@ -269,7 +271,7 @@ mod tests {
                 }
             });
 
-            let (is_server_ready_mu, condvar) = is_server_ready_server_clone;
+            let (is_server_ready_mu, condvar) = is_server_ready_server_clone.deref();
             let mut is_server_ready = is_server_ready_mu.lock().await;
             while *is_server_ready == false {
                 is_server_ready = condvar.wait(is_server_ready).await;
