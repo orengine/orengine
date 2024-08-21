@@ -1,131 +1,126 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::{likely, unlikely};
-use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::Executor;
-use crate::local::Local;
 use crate::runtime::task::Task;
 
-pub struct LocalReadMutexGuard<T> {
-    local_rw_mutex: LocalRWMutex<T>
+pub struct LocalReadMutexGuard<'rw_mutex, T> {
+    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
 }
 
-impl<T> LocalReadMutexGuard<T> {
+impl<'rw_mutex, T> LocalReadMutexGuard<'rw_mutex, T> {
     #[inline(always)]
-    fn new(local_rw_mutex: LocalRWMutex<T>) -> Self {
+    fn new(local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
         Self { local_rw_mutex }
     }
 }
 
-impl<T> Deref for LocalReadMutexGuard<T> {
+impl<'rw_mutex, T> Deref for LocalReadMutexGuard<'rw_mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.local_rw_mutex.inner.get().value
+        &self.local_rw_mutex.get_inner().value
     }
 }
 
-impl<T> Drop for LocalReadMutexGuard<T> {
+impl<'rw_mutex, T> Drop for LocalReadMutexGuard<'rw_mutex, T> {
     fn drop(&mut self) {
         self.local_rw_mutex.drop_read();
     }
 }
 
-pub struct LocalWriteMutexGuard<T> {
-    local_rw_mutex: LocalRWMutex<T>
+pub struct LocalWriteMutexGuard<'rw_mutex, T> {
+    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
 }
 
-impl<T> LocalWriteMutexGuard<T> {
+impl<'rw_mutex, T> LocalWriteMutexGuard<'rw_mutex, T> {
     #[inline(always)]
-    fn new(local_rw_mutex: LocalRWMutex<T>) -> Self {
+    fn new(local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
         Self { local_rw_mutex }
     }
 }
 
-impl<T> Deref for LocalWriteMutexGuard<T> {
+impl<'rw_mutex, T> Deref for LocalWriteMutexGuard<'rw_mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.local_rw_mutex.inner.get().value
+        &self.local_rw_mutex.get_inner().value
     }
 }
 
-impl<T> DerefMut for LocalWriteMutexGuard<T> {
+impl<'rw_mutex, T> DerefMut for LocalWriteMutexGuard<'rw_mutex, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.local_rw_mutex.inner.get_mut().value
+        &mut self.local_rw_mutex.get_inner().value
     }
 }
 
-impl<T> Drop for LocalWriteMutexGuard<T> {
+impl<'rw_mutex, T> Drop for LocalWriteMutexGuard<'rw_mutex, T> {
     fn drop(&mut self) {
         self.local_rw_mutex.drop_write();
     }
 }
 
-pub struct ReadMutexWait<T> {
+pub struct ReadMutexWait<'rw_mutex, T> {
     need_wait: bool,
-    local_rw_mutex: LocalRWMutex<T>,
-    phantom_data: PhantomData<T>
+    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
 }
 
-impl<T> ReadMutexWait<T> {
+impl<'rw_mutex, T> ReadMutexWait<'rw_mutex, T> {
     #[inline(always)]
-    fn new(need_wait: bool, local_rw_mutex: LocalRWMutex<T>) -> Self {
+    fn new(need_wait: bool, local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
         Self {
             need_wait,
-            local_rw_mutex,
-            phantom_data: PhantomData
+            local_rw_mutex
         }
     }
 }
 
-impl<T> Future for ReadMutexWait<T> {
-    type Output = LocalReadMutexGuard<T>;
+impl<'rw_mutex, T> Future for ReadMutexWait<'rw_mutex, T> {
+    type Output = LocalReadMutexGuard<'rw_mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (_cx.waker().as_raw().data() as *const Task).read() };
-            this.local_rw_mutex.inner.get_mut().wait_queue_read.push(task);
+            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            this.local_rw_mutex.get_inner().wait_queue_read.push(task);
             this.need_wait = false;
             Poll::Pending
         } else {
-            Poll::Ready(LocalReadMutexGuard::new(this.local_rw_mutex.clone()))
+            Poll::Ready(LocalReadMutexGuard::new(this.local_rw_mutex))
         }
     }
 }
 
-pub struct WriteMutexWait<T> {
+pub struct WriteMutexWait<'rw_mutex, T> {
     need_wait: bool,
-    local_rw_mutex: LocalRWMutex<T>,
-    phantom_data: PhantomData<T>
+    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
 }
 
-impl<T> WriteMutexWait<T> {
+impl<'rw_mutex, T> WriteMutexWait<'rw_mutex, T> {
     #[inline(always)]
-    fn new(need_wait: bool, local_rw_mutex: LocalRWMutex<T>) -> Self {
+    fn new(need_wait: bool, local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
         Self {
             need_wait,
-            local_rw_mutex,
-            phantom_data: PhantomData
+            local_rw_mutex
         }
     }
 }
 
-impl<T> Future for WriteMutexWait<T> {
-    type Output = LocalWriteMutexGuard<T>;
+impl<'rw_mutex, T> Future for WriteMutexWait<'rw_mutex, T> {
+    type Output = LocalWriteMutexGuard<'rw_mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (_cx.waker().as_raw().data() as *const Task).read() };
-            this.local_rw_mutex.inner.get_mut().wait_queue_write.push(task);
+            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            this.local_rw_mutex.get_inner().wait_queue_write.push(task);
             this.need_wait = false;
             Poll::Pending
         } else {
-            Poll::Ready(LocalWriteMutexGuard::new(this.local_rw_mutex.clone()))
+            Poll::Ready(LocalWriteMutexGuard::new(this.local_rw_mutex))
         }
     }
 }
@@ -138,14 +133,14 @@ struct Inner<T> {
 }
 
 pub struct LocalRWMutex<T> {
-    inner: Local<Inner<T>>
+    inner: UnsafeCell<Inner<T>>
 }
 
 impl<T> LocalRWMutex<T> {
     #[inline(always)]
     pub fn new(value: T) -> LocalRWMutex<T> {
         LocalRWMutex {
-            inner: Local::new(Inner {
+            inner: UnsafeCell::new(Inner {
                 wait_queue_read: Vec::new(),
                 wait_queue_write: Vec::new(),
                 number_of_readers: 0,
@@ -155,40 +150,45 @@ impl<T> LocalRWMutex<T> {
     }
 
     #[inline(always)]
+    fn get_inner(&self) -> &mut Inner<T> {
+        unsafe { &mut *self.inner.get() }
+    }
+
+    #[inline(always)]
     pub fn write(&self) -> WriteMutexWait<T> {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
 
         if unlikely(inner.number_of_readers == 0) {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
-            return WriteMutexWait::new(false, self.clone());
+            return WriteMutexWait::new(false, self);
         }
 
-        WriteMutexWait::new(true, self.clone())
+        WriteMutexWait::new(true, self)
     }
 
     #[inline(always)]
     pub fn read(&self) -> ReadMutexWait<T> {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
 
         if likely(inner.number_of_readers > -1) {
             inner.number_of_readers += 1;
-            ReadMutexWait::new(false, self.clone())
+            ReadMutexWait::new(false, self)
         } else {
-            ReadMutexWait::new(true, self.clone())
+            ReadMutexWait::new(true, self)
         }
     }
 
     #[inline(always)]
     pub fn try_write(&self) -> Option<LocalWriteMutexGuard<T>> {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
 
         if unlikely(inner.number_of_readers == 0) {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
-            Some(LocalWriteMutexGuard::new(self.clone()))
+            Some(LocalWriteMutexGuard::new(self))
         } else {
             None
         }
@@ -196,10 +196,10 @@ impl<T> LocalRWMutex<T> {
 
     #[inline(always)]
     pub fn try_read(&self) -> Option<LocalReadMutexGuard<T>> {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
         if likely(inner.number_of_readers > -1) {
             inner.number_of_readers += 1;
-            Some(LocalReadMutexGuard::new(self.clone()))
+            Some(LocalReadMutexGuard::new(self))
         } else {
             None
         }
@@ -212,7 +212,7 @@ impl<T> LocalRWMutex<T> {
 
     #[inline(always)]
     fn drop_read(&self) {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
         inner.number_of_readers -= 1;
 
         if inner.number_of_readers == 0 {
@@ -227,7 +227,7 @@ impl<T> LocalRWMutex<T> {
 
     #[inline(always)]
     fn drop_write(&self) {
-        let inner = self.inner.get_mut();
+        let inner = self.get_inner();
 
         let task = inner.wait_queue_write.pop();
         if unlikely(task.is_some()) {
@@ -244,18 +244,11 @@ impl<T> LocalRWMutex<T> {
     }
 }
 
-impl<T> Clone for LocalRWMutex<T> {
-    fn clone(&self) -> Self {
-        LocalRWMutex {
-            inner: self.inner.clone()
-        }
-    }
-}
-
 unsafe impl<T> Sync for LocalRWMutex<T> {}
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
@@ -268,7 +261,7 @@ mod tests {
 
         create_local_executer_for_block_on(async {
             let start = Instant::now();
-            let mutex = LocalRWMutex::new(0);
+            let mutex = Rc::new(LocalRWMutex::new(0));
             let wg = LocalWaitGroup::new();
             let read_wg = LocalWaitGroup::new();
 
@@ -276,10 +269,10 @@ mod tests {
                 let mutex = mutex.clone();
                 Executor::exec_future(async move {
                     let value = mutex.read().await;
-                    assert_eq!(mutex.inner.get().number_of_readers, i);
+                    assert_eq!(mutex.get_inner().number_of_readers, i);
                     assert_eq!(*value, 0);
                     sleep(SLEEP_DURATION).await;
-                    assert_eq!(mutex.inner.get().number_of_readers, 101 - i);
+                    assert_eq!(mutex.get_inner().number_of_readers, 101 - i);
                     assert_eq!(*value, 0);
                 });
             }
@@ -290,7 +283,7 @@ mod tests {
                 wg.add(1);
                 let mutex = mutex.clone();
                 Executor::exec_future(async move {
-                    assert_eq!(mutex.inner.get().number_of_readers, 100);
+                    assert_eq!(mutex.get_inner().number_of_readers, 100);
                     let mut value = mutex.write().await;
                     {
                         let read_wg = read_wg.clone();
@@ -298,16 +291,16 @@ mod tests {
                         read_wg.add(1);
 
                         Executor::exec_future(async move {
-                            assert_eq!(mutex.inner.get().number_of_readers, -1);
+                            assert_eq!(mutex.get_inner().number_of_readers, -1);
                             let value = mutex.read().await;
                             assert_ne!(*value, 0);
-                            assert_ne!(mutex.inner.get().number_of_readers, 0);
+                            assert_ne!(mutex.get_inner().number_of_readers, 0);
                             read_wg.done();
                         });
                     }
                     let elapsed = start.elapsed();
                     assert!(elapsed >= SLEEP_DURATION);
-                    assert_eq!(mutex.inner.get().number_of_readers, -1);
+                    assert_eq!(mutex.get_inner().number_of_readers, -1);
                     *value += 1;
 
                     wg.done();
@@ -319,7 +312,7 @@ mod tests {
 
             let value = mutex.read().await;
             assert_eq!(*value, 100);
-            assert_ne!(mutex.inner.get().number_of_readers, 0);
+            assert_ne!(mutex.get_inner().number_of_readers, 0);
         });
     }
 
@@ -329,7 +322,7 @@ mod tests {
 
         create_local_executer_for_block_on(async {
             let start = Instant::now();
-            let mutex = LocalRWMutex::new(0);
+            let mutex = Rc::new(LocalRWMutex::new(0));
             let wg = LocalWaitGroup::new();
             let read_wg = LocalWaitGroup::new();
 
@@ -337,7 +330,7 @@ mod tests {
                 let mutex = mutex.clone();
                 Executor::exec_future(async move {
                     let value = mutex.try_read().expect("try_read failed");
-                    assert_eq!(mutex.inner.get().number_of_readers, i);
+                    assert_eq!(mutex.get_inner().number_of_readers, i);
                     assert_eq!(*value, 0);
                     sleep(SLEEP_DURATION).await;
                 });
@@ -349,7 +342,7 @@ mod tests {
                 wg.add(1);
                 let mutex = mutex.clone();
                 Executor::exec_future(async move {
-                    assert_eq!(mutex.inner.get().number_of_readers, 100);
+                    assert_eq!(mutex.get_inner().number_of_readers, 100);
                     assert!(mutex.try_write().is_none());
                     sleep(2 * SLEEP_DURATION).await;
                     let mut value = mutex.try_write().expect("try_write failed");
@@ -358,18 +351,18 @@ mod tests {
                         let mutex = mutex.clone();
 
                         Executor::exec_future(async move {
-                            assert_eq!(mutex.inner.get().number_of_readers, -1);
+                            assert_eq!(mutex.get_inner().number_of_readers, -1);
                             assert!(mutex.try_read().is_none());
                             sleep(SLEEP_DURATION * 2).await;
                             let value = mutex.try_read().expect("try_read failed");
                             assert_ne!(*value, 0);
-                            assert_ne!(mutex.inner.get().number_of_readers, 0);
+                            assert_ne!(mutex.get_inner().number_of_readers, 0);
                             read_wg.done();
                         });
                     }
                     let elapsed = start.elapsed();
                     assert!(elapsed >= SLEEP_DURATION);
-                    assert_eq!(mutex.inner.get().number_of_readers, -1);
+                    assert_eq!(mutex.get_inner().number_of_readers, -1);
                     *value += 1;
 
                     wg.done();
@@ -381,7 +374,7 @@ mod tests {
 
             let value = mutex.try_read().expect("try_read failed");
             assert_eq!(*value, 100);
-            assert_ne!(mutex.inner.get().number_of_readers, 0);
+            assert_ne!(mutex.get_inner().number_of_readers, 0);
         });
     }
 }
