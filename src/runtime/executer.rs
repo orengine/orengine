@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use crate::buf::BufPool;
 use crate::cfg::{config_buf_len};
 use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
+#[cfg(test)]
 use crate::end_local_thread;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::task::Task;
@@ -242,6 +243,7 @@ impl Executor {
     }
 
     // uses only for tests, because double memory usage of a future.
+    #[cfg(test)]
     pub(crate) fn run_and_block_on<T, F>(&mut self, future: F) -> T
         where
             T: 'static,
@@ -275,6 +277,7 @@ pub fn local_worker_id() -> usize {
 }
 
 // uses only for tests, because double memory usage of a future.
+#[cfg(test)]
 pub(crate) fn create_local_executer_for_block_on<T, F>(future: F) -> T
     where
         T: 'static,

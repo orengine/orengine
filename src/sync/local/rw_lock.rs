@@ -7,120 +7,120 @@ use std::task::{Context, Poll};
 use crate::Executor;
 use crate::runtime::task::Task;
 
-pub struct LocalReadMutexGuard<'rw_mutex, T> {
-    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
+pub struct LocalReadLockGuard<'rw_lock, T> {
+    local_rw_lock: &'rw_lock LocalRWLock<T>
 }
 
-impl<'rw_mutex, T> LocalReadMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     #[inline(always)]
-    fn new(local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
-        Self { local_rw_mutex }
+    fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
+        Self { local_rw_lock }
     }
 }
 
-impl<'rw_mutex, T> Deref for LocalReadMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.local_rw_mutex.get_inner().value
+        &self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_mutex, T> Drop for LocalReadMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_mutex.drop_read();
+        self.local_rw_lock.drop_read();
     }
 }
 
-pub struct LocalWriteMutexGuard<'rw_mutex, T> {
-    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
+pub struct LocalWriteLockGuard<'rw_lock, T> {
+    local_rw_lock: &'rw_lock LocalRWLock<T>
 }
 
-impl<'rw_mutex, T> LocalWriteMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     #[inline(always)]
-    fn new(local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
-        Self { local_rw_mutex }
+    fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
+        Self { local_rw_lock }
     }
 }
 
-impl<'rw_mutex, T> Deref for LocalWriteMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> Deref for LocalWriteLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.local_rw_mutex.get_inner().value
+        &self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_mutex, T> DerefMut for LocalWriteMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.local_rw_mutex.get_inner().value
+        &mut self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_mutex, T> Drop for LocalWriteMutexGuard<'rw_mutex, T> {
+impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_mutex.drop_write();
+        self.local_rw_lock.drop_write();
     }
 }
 
-pub struct ReadMutexWait<'rw_mutex, T> {
+pub struct ReadLockWait<'rw_lock, T> {
     need_wait: bool,
-    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
+    local_rw_lock: &'rw_lock LocalRWLock<T>
 }
 
-impl<'rw_mutex, T> ReadMutexWait<'rw_mutex, T> {
+impl<'rw_lock, T> ReadLockWait<'rw_lock, T> {
     #[inline(always)]
-    fn new(need_wait: bool, local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
+    fn new(need_wait: bool, local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             need_wait,
-            local_rw_mutex
+            local_rw_lock
         }
     }
 }
 
-impl<'rw_mutex, T> Future for ReadMutexWait<'rw_mutex, T> {
-    type Output = LocalReadMutexGuard<'rw_mutex, T>;
+impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
+    type Output = LocalReadLockGuard<'rw_lock, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
             let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            this.local_rw_mutex.get_inner().wait_queue_read.push(task);
+            this.local_rw_lock.get_inner().wait_queue_read.push(task);
             this.need_wait = false;
             Poll::Pending
         } else {
-            Poll::Ready(LocalReadMutexGuard::new(this.local_rw_mutex))
+            Poll::Ready(LocalReadLockGuard::new(this.local_rw_lock))
         }
     }
 }
 
-pub struct WriteMutexWait<'rw_mutex, T> {
+pub struct WriteLockWait<'rw_lock, T> {
     need_wait: bool,
-    local_rw_mutex: &'rw_mutex LocalRWMutex<T>
+    local_rw_lock: &'rw_lock LocalRWLock<T>
 }
 
-impl<'rw_mutex, T> WriteMutexWait<'rw_mutex, T> {
+impl<'rw_lock, T> WriteLockWait<'rw_lock, T> {
     #[inline(always)]
-    fn new(need_wait: bool, local_rw_mutex: &'rw_mutex LocalRWMutex<T>) -> Self {
+    fn new(need_wait: bool, local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             need_wait,
-            local_rw_mutex
+            local_rw_lock
         }
     }
 }
 
-impl<'rw_mutex, T> Future for WriteMutexWait<'rw_mutex, T> {
-    type Output = LocalWriteMutexGuard<'rw_mutex, T>;
+impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
+    type Output = LocalWriteLockGuard<'rw_lock, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
             let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            this.local_rw_mutex.get_inner().wait_queue_write.push(task);
+            this.local_rw_lock.get_inner().wait_queue_write.push(task);
             this.need_wait = false;
             Poll::Pending
         } else {
-            Poll::Ready(LocalWriteMutexGuard::new(this.local_rw_mutex))
+            Poll::Ready(LocalWriteLockGuard::new(this.local_rw_lock))
         }
     }
 }
@@ -132,14 +132,14 @@ struct Inner<T> {
     value: T
 }
 
-pub struct LocalRWMutex<T> {
+pub struct LocalRWLock<T> {
     inner: UnsafeCell<Inner<T>>
 }
 
-impl<T> LocalRWMutex<T> {
+impl<T> LocalRWLock<T> {
     #[inline(always)]
-    pub fn new(value: T) -> LocalRWMutex<T> {
-        LocalRWMutex {
+    pub fn new(value: T) -> LocalRWLock<T> {
+        LocalRWLock {
             inner: UnsafeCell::new(Inner {
                 wait_queue_read: Vec::new(),
                 wait_queue_write: Vec::new(),
@@ -155,51 +155,51 @@ impl<T> LocalRWMutex<T> {
     }
 
     #[inline(always)]
-    pub fn write(&self) -> WriteMutexWait<T> {
+    pub fn write(&self) -> WriteLockWait<T> {
         let inner = self.get_inner();
 
         if unlikely(inner.number_of_readers == 0) {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
-            return WriteMutexWait::new(false, self);
+            return WriteLockWait::new(false, self);
         }
 
-        WriteMutexWait::new(true, self)
+        WriteLockWait::new(true, self)
     }
 
     #[inline(always)]
-    pub fn read(&self) -> ReadMutexWait<T> {
+    pub fn read(&self) -> ReadLockWait<T> {
         let inner = self.get_inner();
 
         if likely(inner.number_of_readers > -1) {
             inner.number_of_readers += 1;
-            ReadMutexWait::new(false, self)
+            ReadLockWait::new(false, self)
         } else {
-            ReadMutexWait::new(true, self)
+            ReadLockWait::new(true, self)
         }
     }
 
     #[inline(always)]
-    pub fn try_write(&self) -> Option<LocalWriteMutexGuard<T>> {
+    pub fn try_write(&self) -> Option<LocalWriteLockGuard<T>> {
         let inner = self.get_inner();
 
         if unlikely(inner.number_of_readers == 0) {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
-            Some(LocalWriteMutexGuard::new(self))
+            Some(LocalWriteLockGuard::new(self))
         } else {
             None
         }
     }
 
     #[inline(always)]
-    pub fn try_read(&self) -> Option<LocalReadMutexGuard<T>> {
+    pub fn try_read(&self) -> Option<LocalReadLockGuard<T>> {
         let inner = self.get_inner();
         if likely(inner.number_of_readers > -1) {
             inner.number_of_readers += 1;
-            Some(LocalReadMutexGuard::new(self))
+            Some(LocalReadLockGuard::new(self))
         } else {
             None
         }
@@ -244,8 +244,8 @@ impl<T> LocalRWMutex<T> {
     }
 }
 
-unsafe impl<T> Sync for LocalRWMutex<T> {}
-impl<T> !Send for LocalRWMutex<T> {}
+unsafe impl<T> Sync for LocalRWLock<T> {}
+impl<T> !Send for LocalRWLock<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -257,12 +257,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rw_mutex() {
+    fn test_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         create_local_executer_for_block_on(async {
             let start = Instant::now();
-            let mutex = Rc::new(LocalRWMutex::new(0));
+            let mutex = Rc::new(LocalRWLock::new(0));
             let wg = Rc::new(LocalWaitGroup::new());
             let read_wg = Rc::new(LocalWaitGroup::new());
 
@@ -318,12 +318,12 @@ mod tests {
     }
 
     #[test]
-    fn test_try_rw_mutex() {
+    fn test_try_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         create_local_executer_for_block_on(async {
             let start = Instant::now();
-            let mutex = Rc::new(LocalRWMutex::new(0));
+            let mutex = Rc::new(LocalRWLock::new(0));
             let wg = Rc::new(LocalWaitGroup::new());
             let read_wg = Rc::new(LocalWaitGroup::new());
 

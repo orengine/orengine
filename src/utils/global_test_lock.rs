@@ -1,7 +1,7 @@
+#[cfg(test)]
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
-
 pub(crate) struct TestLock {
     lock: Mutex<usize>
 }

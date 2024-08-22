@@ -66,11 +66,12 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if this.mutex.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
-            Poll::Ready(MutexGuard::new(this.mutex))
-        } else {
-            cx.waker().wake_by_ref();
-            Poll::Pending
+        match this.mutex.try_lock() {
+            Some(guard) => Poll::Ready(guard),
+            None => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
         }
     }
 }
@@ -123,49 +124,41 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
     use crate::end::end;
-    use crate::Executor;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
+    use crate::sync::WaitGroup;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
     use super::*;
 
     #[test]
     fn test_mutex() {
-        let lock = GLOBAL_TEST_LOCK.lock("test_mutex".to_string());
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
+        let lock = GLOBAL_TEST_LOCK.lock("test_mutex".to_string());
+
         let mutex = Arc::new(Mutex::new(false));
+        let wg = Arc::new(WaitGroup::new());
         let mutex_clone = mutex.clone();
-        let (was_started, cond_var) = (
-            Arc::new(std::sync::Mutex::new(false)),
-            Arc::new(std::sync::Condvar::new())
-        );
-        let (was_started_clone, cond_var_clone) = (was_started.clone(), cond_var.clone());
-
-        thread::spawn(move || {
-           create_local_executer_for_block_on(async move {
-               let mut value = mutex_clone.lock().await;
-               *was_started_clone.lock().unwrap() = true;
-               cond_var_clone.notify_one();
-               println!("1");
-               sleep(SLEEP_DURATION).await;
-               println!("3");
-               *value = true;
-           });
-        });
-
+        let wg_clone = wg.clone();
         create_local_executer_for_block_on(async move {
-            let mut was_started = was_started.lock().unwrap();
-            while !*was_started {
-                was_started = cond_var.wait(was_started).unwrap();
-            }
+            wg.add(1);
+            thread::spawn(move || {
+               create_local_executer_for_block_on(async move {
+                   let mut value = mutex_clone.lock().await;
+                   wg_clone.done();
+                   println!("1");
+                   sleep(SLEEP_DURATION).await;
+                   println!("3");
+                   *value = true;
+               });
+            });
 
+            wg.wait().await;
             let start = Instant::now();
             println!("2");
             let value = mutex.lock().await;
             println!("4");
 
-            let elapsed = start.elapsed();
             assert_eq!(*value, true);
             drop(value);
 
@@ -180,17 +173,26 @@ mod tests {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let lock = GLOBAL_TEST_LOCK.lock("test_try_mutex".to_string());
+
         create_local_executer_for_block_on(async move {
             let mutex = Arc::new(Mutex::new(false));
+            let wg = Arc::new(WaitGroup::new());
             let mutex_clone = mutex.clone();
-            Executor::exec_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                println!("4");
-                *value = true;
+            let wg_clone = wg.clone();
+
+            wg.add(1);
+            thread::spawn(move || {
+               create_local_executer_for_block_on(async move {
+                   let mut value = mutex_clone.lock().await;
+                   wg_clone.done();
+                   println!("1");
+                   sleep(SLEEP_DURATION).await;
+                   println!("4");
+                   *value = true;
+               });
             });
 
+            wg.wait().await;
             println!("2");
             let value = mutex.try_lock();
             println!("3");
@@ -211,8 +213,8 @@ mod tests {
     #[test]
     fn naive_test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_micros(1);
-        const PAR: usize = 3;
-        const TRIES: usize = 2;
+        const PAR: usize = 100;
+        const TRIES: usize = 200;
 
         let lock = GLOBAL_TEST_LOCK.lock("naive test mutex".to_string());
         let mutex = Arc::new(Mutex::new(0));
