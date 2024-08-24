@@ -1,17 +1,17 @@
 use std::cell::UnsafeCell;
-use std::future::Future;
 use std::intrinsics::unlikely;
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
-use std::task::{Context, Poll};
+
 use crossbeam::utils::CachePadded;
+
+use crate::yield_now;
 
 // region guards
 
 pub struct ReadLockGuard<'rw_lock, T> {
-    local_rw_lock: &'rw_lock RWLock<T>
+    local_rw_lock: &'rw_lock RWLock<T>,
 }
 
 impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
@@ -36,7 +36,7 @@ impl<'rw_lock, T> Drop for ReadLockGuard<'rw_lock, T> {
 }
 
 pub struct WriteLockGuard<'rw_lock, T> {
-    local_rw_lock: &'rw_lock RWLock<T>
+    local_rw_lock: &'rw_lock RWLock<T>,
 }
 
 impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
@@ -68,69 +68,9 @@ impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
 
 // endregion
 
-// region futures
-
-pub struct ReadLockWait<'rw_lock, T> {
-    local_rw_lock: &'rw_lock RWLock<T>
-}
-
-impl<'rw_lock, T> ReadLockWait<'rw_lock, T> {
-    #[inline(always)]
-    fn new(local_rw_lock: &'rw_lock RWLock<T>) -> Self {
-        Self {
-            local_rw_lock
-        }
-    }
-}
-
-impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
-    type Output = ReadLockGuard<'rw_lock, T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
-        match this.local_rw_lock.try_read() {
-            Some(guard) => Poll::Ready(guard),
-            None => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-        }
-    }
-}
-
-pub struct WriteLockWait<'rw_lock, T> {
-    local_rw_lock: &'rw_lock RWLock<T>
-}
-
-impl<'rw_lock, T> WriteLockWait<'rw_lock, T> {
-    #[inline(always)]
-    fn new(local_rw_lock: &'rw_lock RWLock<T>) -> Self {
-        Self {
-            local_rw_lock
-        }
-    }
-}
-
-impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
-    type Output = WriteLockGuard<'rw_lock, T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
-        match this.local_rw_lock.try_write() {
-            Some(guard) => Poll::Ready(guard),
-            None => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-        }
-    }
-}
-
-// endregion
-
 pub struct RWLock<T> {
     number_of_readers: CachePadded<AtomicIsize>,
-    value: UnsafeCell<T>
+    value: UnsafeCell<T>,
 }
 
 impl<T> RWLock<T> {
@@ -138,18 +78,27 @@ impl<T> RWLock<T> {
     pub fn new(value: T) -> RWLock<T> {
         RWLock {
             number_of_readers: CachePadded::new(AtomicIsize::new(0)),
-            value: UnsafeCell::new(value)
+            value: UnsafeCell::new(value),
         }
     }
 
     #[inline(always)]
-    pub fn write(&self) -> WriteLockWait<T> {
-        WriteLockWait::new(self)
+    pub async fn write(&self) -> WriteLockGuard<T> {
+        loop {
+            match self.try_write() {
+                Some(guard) => return guard,
+                None => yield_now().await,
+            }
+        }
     }
 
     #[inline(always)]
     pub fn try_write(&self) -> Option<WriteLockGuard<T>> {
-        if unlikely(self.number_of_readers.compare_exchange(0, -1, Acquire, Relaxed).is_ok()) {
+        if unlikely(
+            self.number_of_readers
+                .compare_exchange(0, -1, Acquire, Relaxed)
+                .is_ok(),
+        ) {
             Some(WriteLockGuard::new(self))
         } else {
             None
@@ -157,8 +106,13 @@ impl<T> RWLock<T> {
     }
 
     #[inline(always)]
-    pub fn read(&self) -> ReadLockWait<T> {
-        ReadLockWait::new(self)
+    pub async fn read(&self) -> ReadLockGuard<T> {
+        loop {
+            match self.try_read() {
+                Some(guard) => return guard,
+                None => yield_now().await,
+            }
+        }
     }
 
     #[inline(always)]
@@ -166,14 +120,14 @@ impl<T> RWLock<T> {
         loop {
             let number_of_readers = self.number_of_readers.load(Acquire);
             if unlikely(number_of_readers < 0) {
-                break None
+                break None;
             } else {
                 if self
                     .number_of_readers
                     .compare_exchange(number_of_readers, number_of_readers + 1, Acquire, Relaxed)
                     .is_ok()
                 {
-                    break Some(ReadLockGuard::new(self))
+                    break Some(ReadLockGuard::new(self));
                 }
             }
         }
@@ -200,14 +154,16 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::Ordering::SeqCst;
+    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
-    use crate::Executor;
+
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
+    use crate::Executor;
+
     use super::*;
 
     #[test]

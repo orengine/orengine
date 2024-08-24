@@ -1,14 +1,14 @@
 use std::cell::UnsafeCell;
-use std::future::Future;
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
-use std::task::{Context, Poll};
+
 use crossbeam::utils::CachePadded;
 
+use crate::yield_now;
+
 pub struct MutexGuard<'mutex, T> {
-    mutex: &'mutex Mutex<T>
+    mutex: &'mutex Mutex<T>,
 }
 
 impl<'mutex, T> MutexGuard<'mutex, T> {
@@ -48,37 +48,9 @@ impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
     }
 }
 
-pub struct MutexWait<'mutex, T> {
-    mutex: &'mutex Mutex<T>
-}
-
-impl<'mutex, T> MutexWait<'mutex, T> {
-    #[inline(always)]
-    fn new(local_mutex: &'mutex Mutex<T>) -> Self {
-        Self {
-            mutex: local_mutex
-        }
-    }
-}
-
-impl<'mutex, T> Future for MutexWait<'mutex, T> {
-    type Output = MutexGuard<'mutex, T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
-        match this.mutex.try_lock() {
-            Some(guard) => Poll::Ready(guard),
-            None => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-        }
-    }
-}
-
 pub struct Mutex<T> {
     is_locked: CachePadded<AtomicBool>,
-    value: UnsafeCell<T>
+    value: UnsafeCell<T>,
 }
 
 impl<T> Mutex<T> {
@@ -86,18 +58,27 @@ impl<T> Mutex<T> {
     pub fn new(value: T) -> Mutex<T> {
         Mutex {
             is_locked: CachePadded::new(AtomicBool::new(false)),
-            value: UnsafeCell::new(value)
+            value: UnsafeCell::new(value),
         }
     }
 
     #[inline(always)]
-    pub fn lock(&self) -> MutexWait<T> {
-        MutexWait::new(self)
+    pub async fn lock(&self) -> MutexGuard<T> {
+        loop {
+            match self.try_lock() {
+                Some(guard) => return guard,
+                None => yield_now().await,
+            }
+        }
     }
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
+        if self
+            .is_locked
+            .compare_exchange(false, true, Acquire, Relaxed)
+            .is_ok()
+        {
             Some(MutexGuard::new(self))
         } else {
             None
@@ -122,12 +103,14 @@ unsafe impl<T: Send> Send for Mutex<T> {}
 mod tests {
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+
     use crate::end::end;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
+
     use super::*;
 
     #[test]
@@ -143,18 +126,17 @@ mod tests {
         create_local_executer_for_block_on(async move {
             wg.add(1);
             thread::spawn(move || {
-               create_local_executer_for_block_on(async move {
-                   let mut value = mutex_clone.lock().await;
-                   wg_clone.done();
-                   println!("1");
-                   sleep(SLEEP_DURATION).await;
-                   println!("3");
-                   *value = true;
-               });
+                create_local_executer_for_block_on(async move {
+                    let mut value = mutex_clone.lock().await;
+                    wg_clone.done();
+                    println!("1");
+                    sleep(SLEEP_DURATION).await;
+                    println!("3");
+                    *value = true;
+                });
             });
 
             wg.wait().await;
-            let start = Instant::now();
             println!("2");
             let value = mutex.lock().await;
             println!("4");
@@ -182,14 +164,14 @@ mod tests {
 
             wg.add(1);
             thread::spawn(move || {
-               create_local_executer_for_block_on(async move {
-                   let mut value = mutex_clone.lock().await;
-                   wg_clone.done();
-                   println!("1");
-                   sleep(SLEEP_DURATION).await;
-                   println!("4");
-                   *value = true;
-               });
+                create_local_executer_for_block_on(async move {
+                    let mut value = mutex_clone.lock().await;
+                    wg_clone.done();
+                    println!("1");
+                    sleep(SLEEP_DURATION).await;
+                    println!("4");
+                    *value = true;
+                });
             });
 
             wg.wait().await;

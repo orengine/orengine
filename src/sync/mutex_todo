@@ -16,7 +16,7 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     #[inline(always)]
     pub(crate) fn into_local_mutex(self) -> Mutex<T> {
         self.mutex.drop_lock();
-        unsafe { (ManuallyDrop::new(self).mutex as *const Mutex<T>).read() }
+        unsafe { ptr::read(&ManuallyDrop::new(self).mutex) }
     }
 }
 

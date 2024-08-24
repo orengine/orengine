@@ -1,7 +1,17 @@
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum OnceState {
     NotCalled = 0,
-    Called = 1
+    Called = 1,
+}
+
+impl OnceState {
+    pub const fn not_called() -> isize {
+        0
+    }
+
+    pub const fn called() -> isize {
+        1
+    }
 }
 
 impl Into<isize> for OnceState {
@@ -15,19 +25,19 @@ impl From<isize> for OnceState {
         match state {
             0 => OnceState::NotCalled,
             1 => OnceState::Called,
-            _ => panic!("Invalid once state. It can be 0 (NotCalled) or 1 (Called)")
+            _ => panic!("Invalid once state. It can be 0 (NotCalled) or 1 (Called)"),
         }
     }
 }
 
 pub struct LocalOnce {
-    state: OnceState
+    state: OnceState,
 }
 
 impl LocalOnce {
     pub const fn new() -> LocalOnce {
         LocalOnce {
-            state: OnceState::NotCalled
+            state: OnceState::NotCalled,
         }
     }
 

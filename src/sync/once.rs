@@ -1,26 +1,33 @@
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
+
+use crossbeam::utils::CachePadded;
+
 use crate::sync::local::once::OnceState;
 
 pub struct Once {
-    state: AtomicIsize
+    state: CachePadded<AtomicIsize>,
 }
 
 impl Once {
     pub const fn new() -> Once {
         Once {
-            state: AtomicIsize::new(OnceState::NotCalled.into()),
+            state: CachePadded::new(AtomicIsize::new(OnceState::not_called())),
         }
     }
 
     #[inline(always)]
     pub fn call_once<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
-        if self.state.compare_exchange(
-            OnceState::NotCalled.into(),
-            OnceState::Called.into(),
-            Acquire,
-            Relaxed
-        ).is_ok() {
+        if self
+            .state
+            .compare_exchange(
+                OnceState::NotCalled.into(),
+                OnceState::Called.into(),
+                Acquire,
+                Relaxed,
+            )
+            .is_ok()
+        {
             f();
             Ok(())
         } else {
@@ -30,12 +37,16 @@ impl Once {
 
     #[inline(always)]
     pub fn call_once_force<F: FnOnce(&AtomicIsize)>(&self, f: F) -> Result<(), ()> {
-        if self.state.compare_exchange(
-            OnceState::NotCalled.into(),
-            OnceState::Called.into(),
-            Acquire,
-            Relaxed
-        ).is_ok() {
+        if self
+            .state
+            .compare_exchange(
+                OnceState::NotCalled.into(),
+                OnceState::Called.into(),
+                Acquire,
+                Relaxed,
+            )
+            .is_ok()
+        {
             f(&self.state);
             Ok(())
         } else {
@@ -59,14 +70,16 @@ unsafe impl Send for Once {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::SeqCst;
+    use std::sync::Arc;
     use std::thread;
+
     use crate::end::end;
     use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::WaitGroup;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
+
     use super::*;
 
     #[test]
@@ -76,7 +89,7 @@ mod tests {
         create_local_executer_for_block_on(async {
             let a = Arc::new(AtomicBool::new(false));
             let wg = Arc::new(WaitGroup::new());
-            let mut once = Arc::new(Once::new());
+            let once = Arc::new(Once::new());
             assert_eq!(once.state(), OnceState::NotCalled);
             assert!(!once.is_called());
 
