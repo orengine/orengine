@@ -75,43 +75,33 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
-    use crate::end::end;
-    use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::WaitGroup;
-    use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
 
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_local_once() {
-        let lock = GLOBAL_TEST_LOCK.lock("test_local_once".to_string());
+        let a = Arc::new(AtomicBool::new(false));
+        let wg = Arc::new(WaitGroup::new());
+        let once = Arc::new(Once::new());
+        assert_eq!(once.state(), OnceState::NotCalled);
+        assert!(!once.is_called());
 
-        create_local_executer_for_block_on(async {
-            let a = Arc::new(AtomicBool::new(false));
-            let wg = Arc::new(WaitGroup::new());
-            let once = Arc::new(Once::new());
-            assert_eq!(once.state(), OnceState::NotCalled);
-            assert!(!once.is_called());
-
-            for _ in 0..10 {
-                let a = a.clone();
-                let wg = wg.clone();
-                wg.add(1);
-                let once = once.clone();
-                thread::spawn(move || {
-                    let _ = once.call_once(|| {
-                        assert!(!a.load(SeqCst));
-                        a.store(true, SeqCst);
-                    });
+        for _ in 0..10 {
+            let a = a.clone();
+            let wg = wg.clone();
+            wg.add(1);
+            let once = once.clone();
+            thread::spawn(move || {
+                let _ = once.call_once(|| {
+                    assert!(!a.load(SeqCst));
+                    a.store(true, SeqCst);
                 });
-            }
+            });
+        }
 
-            assert!(once.is_called());
-            assert_eq!(once.call_once(|| ()), Err(()));
-            wg.wait().await;
-            end();
-        });
-
-        drop(lock);
+        assert!(once.is_called());
+        assert_eq!(once.call_once(|| ()), Err(()));
+        wg.wait().await;
     }
 }

@@ -46,37 +46,34 @@ mod tests {
     use std::time::Duration;
     use crate::Executor;
     use crate::local::Local;
-    use crate::runtime::create_local_executer_for_block_on;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_sleep() {
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
             arr.get_mut().push(number);
         }
 
-        create_local_executer_for_block_on(async {
-            let arr = Local::new(Vec::new());
+        let arr = Local::new(Vec::new());
 
-            Executor::exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-            Executor::exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-            Executor::exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-            Executor::exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        Executor::exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        Executor::exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        Executor::exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        Executor::exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
-            sleep(Duration::from_millis(5)).await;
-            assert_eq!(&vec![1, 2, 3, 4], arr.get());
+        sleep(Duration::from_millis(5)).await;
+        assert_eq!(&vec![1, 2, 3, 4], arr.get());
 
-            let arr = Local::new(Vec::new());
+        let arr = Local::new(Vec::new());
 
-            let executer = local_executor();
-            executer.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-            executer.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-            executer.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-            executer.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        let executer = local_executor();
+        executer.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        executer.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        executer.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        executer.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
-            sleep(Duration::from_millis(5)).await;
-            assert_eq!(&vec![1, 2, 3, 4], arr.get());
-        });
+        sleep(Duration::from_millis(5)).await;
+        assert_eq!(&vec![1, 2, 3, 4], arr.get());
     }
 }

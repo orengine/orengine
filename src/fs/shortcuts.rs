@@ -47,23 +47,21 @@ mod tests {
     use std::path::PathBuf;
     use super::*;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
-    use crate::runtime::create_local_executer_for_block_on;
 
-    #[test]
+    #[test_macro::test]
     fn test_remove_dir() {
         create_test_dir_if_not_exist();
-        create_local_executer_for_block_on(async {
-            let mut path = PathBuf::from(TEST_DIR_PATH);
-            path.push("remove_dir");
-            match create_dir(path.clone()).await {
-                Ok(_) => assert!(is_exists(path.clone())),
-                Err(err) => panic!("Can't create dir: {}", err)
-            }
 
-            match remove_dir(path.clone()).await {
-                Ok(_) => assert!(!is_exists(path)),
-                Err(err) => panic!("Can't remove dir: {}", err)
-            }
-        });
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("remove_dir");
+        match create_dir(path.clone()).await {
+            Ok(_) => assert!(is_exists(path.clone())),
+            Err(err) => panic!("Can't create dir: {}", err)
+        }
+
+        match remove_dir(path.clone()).await {
+            Ok(_) => assert!(!is_exists(path)),
+            Err(err) => panic!("Can't remove dir: {}", err)
+        }
     }
 }

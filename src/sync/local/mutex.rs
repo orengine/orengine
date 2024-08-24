@@ -144,64 +144,59 @@ impl<T> !Send for LocalMutex<T> {}
 mod tests {
     use std::rc::Rc;
     use std::time::{Duration, Instant};
-    use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_mutex() {
         let start = Instant::now();
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        create_local_executer_for_block_on(async move {
-            let mutex = Rc::new(LocalMutex::new(false));
-            let mutex_clone = mutex.clone();
-            Executor::exec_task(Task::from_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                println!("3");
-                *value = true;
-            }));
+        let mutex = Rc::new(LocalMutex::new(false));
+        let mutex_clone = mutex.clone();
+        Executor::exec_task(Task::from_future(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            println!("3");
+            *value = true;
+        }));
 
-            println!("2");
-            let value = mutex.lock().await;
-            println!("4");
+        println!("2");
+        let value = mutex.lock().await;
+        println!("4");
 
-            let elapsed = start.elapsed();
-            assert!(elapsed >= SLEEP_DURATION);
-            assert_eq!(*value, true);
-        });
+        let elapsed = start.elapsed();
+        assert!(elapsed >= SLEEP_DURATION);
+        assert_eq!(*value, true);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_try_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        create_local_executer_for_block_on(async move {
-            let start = Instant::now();
-            let mutex = Rc::new(LocalMutex::new(false));
-            let mutex_clone = mutex.clone();
-            Executor::exec_task(Task::from_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                println!("4");
-                *value = true;
-            }));
+        let start = Instant::now();
+        let mutex = Rc::new(LocalMutex::new(false));
+        let mutex_clone = mutex.clone();
+        Executor::exec_task(Task::from_future(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            println!("4");
+            *value = true;
+        }));
 
-            println!("2");
-            let value = mutex.try_lock();
-            println!("3");
-            assert!(value.is_none());
+        println!("2");
+        let value = mutex.try_lock();
+        println!("3");
+        assert!(value.is_none());
 
-            sleep(SLEEP_DURATION * 2).await;
+        sleep(SLEEP_DURATION * 2).await;
 
-            let elapsed = start.elapsed();
-            assert!(elapsed >= SLEEP_DURATION * 2);
-            let value = mutex.try_lock();
-            println!("5");
-            assert_eq!(*(value.expect("not waited")), true);
-        });
+        let elapsed = start.elapsed();
+        assert!(elapsed >= SLEEP_DURATION * 2);
+        let value = mutex.try_lock();
+        println!("5");
+        assert_eq!(*(value.expect("not waited")), true);
     }
 }

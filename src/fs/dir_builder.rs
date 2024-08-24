@@ -141,10 +141,9 @@ impl DirBuilder {
 mod tests {
     use std::path::PathBuf;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
-    use crate::runtime::create_local_executer_for_block_on;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_dir_builder() {
         let dir_builder = DirBuilder::new();
         assert_eq!(dir_builder.mode, 0o666);
@@ -155,30 +154,29 @@ mod tests {
         assert_eq!(dir_builder.recursive, true);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_dir_builder_create() {
         create_test_dir_if_not_exist();
-        create_local_executer_for_block_on(async {
-            let dir_builder = DirBuilder::new().mode(0o777).recursive(false);
-            let mut path = PathBuf::from(TEST_DIR_PATH);
-            path.push("test_dir");
-            match dir_builder.create(path.clone()).await {
-                Ok(_) => assert!(is_exists(path)),
-                Err(err) => panic!("Can't create dir: {}", err)
-            }
 
-           let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
-           let mut path = PathBuf::from(TEST_DIR_PATH);
-           path.push("test_dir");
-           path.push("test_dir2");
-           path.push("test_dir3");
-           path.push("test_dir4");
-           path.push("test_dir5");
-            match dir_builder.create(path.clone()).await {
-                Ok(_) => assert!(is_exists(path)),
-                Err(err) => panic!("Can't create dir all: {}", err)
-            }
-        });
+        let dir_builder = DirBuilder::new().mode(0o777).recursive(false);
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("test_dir");
+        match dir_builder.create(path.clone()).await {
+            Ok(_) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir: {}", err)
+        }
+
+        let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("test_dir");
+        path.push("test_dir2");
+        path.push("test_dir3");
+        path.push("test_dir4");
+        path.push("test_dir5");
+        match dir_builder.create(path.clone()).await {
+            Ok(_) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir all: {}", err)
+        }
 
         let mut path = PathBuf::from(TEST_DIR_PATH);
         path.push("test_dir");

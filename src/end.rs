@@ -50,20 +50,12 @@ pub fn end() {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::{local_executor};
-    use crate::Executor;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_end_local_thread() {
-        Executor::init();
-
-        local_executor().spawn_local(async {
-            assert!(!was_ended());
-            end_local_thread();
-            assert!(was_ended());
-        });
-
-        local_executor().run();
+        assert!(!was_ended());
+        end_local_thread();
+        assert!(was_ended());
     }
 }

@@ -97,58 +97,54 @@ impl !Send for LocalWaitGroup {}
 mod tests {
     use std::rc::Rc;
     use crate::local::Local;
-    use crate::runtime::{create_local_executer_for_block_on, local_executor};
+    use crate::runtime::local_executor;
     use crate::yield_now;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_many_wait_one() {
-        create_local_executer_for_block_on(async {
-            let check_value = Local::new(false);
-            let wait_group = Rc::new(LocalWaitGroup::new());
-            wait_group.inc();
+        let check_value = Local::new(false);
+        let wait_group = Rc::new(LocalWaitGroup::new());
+        wait_group.inc();
 
-            for _ in 0..10 {
-                let check_value = check_value.clone();
-                let wait_group = wait_group.clone();
-                local_executor().spawn_local(async move {
-                    wait_group.wait().await;
-                    if !check_value.get() {
-                        panic!("not waited");
-                    }
-                });
-            }
+        for _ in 0..10 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+            local_executor().spawn_local(async move {
+                wait_group.wait().await;
+                if !check_value.get() {
+                    panic!("not waited");
+                }
+            });
+        }
 
-            yield_now().await;
+        yield_now().await;
 
-            *check_value.get_mut() = true;
-            wait_group.done();
-        });
+        *check_value.get_mut() = true;
+        wait_group.done();
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_one_wait_many() {
-        create_local_executer_for_block_on(async {
-            let check_value = Local::new(10);
-            let wait_group = Rc::new(LocalWaitGroup::new());
-            wait_group.add(10);
+        let check_value = Local::new(10);
+        let wait_group = Rc::new(LocalWaitGroup::new());
+        wait_group.add(10);
 
-            for _ in 0..10 {
-                let check_value = check_value.clone();
-                let wait_group = wait_group.clone();
-                local_executor().spawn_local(async move {
-                    yield_now().await;
-                    *check_value.get_mut() -= 1;
-                    wait_group.done();
-                });
-            }
+        for _ in 0..10 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+            local_executor().spawn_local(async move {
+                yield_now().await;
+                *check_value.get_mut() -= 1;
+                wait_group.done();
+            });
+        }
 
-            yield_now().await;
+        yield_now().await;
 
-            wait_group.wait().await;
-            if *check_value.get() != 0 {
-                panic!("not waited");
-            }
-        });
+        wait_group.wait().await;
+        if *check_value.get() != 0 {
+            panic!("not waited");
+        }
     }
 }

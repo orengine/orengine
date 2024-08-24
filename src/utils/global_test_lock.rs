@@ -1,7 +1,7 @@
-#[cfg(test)]
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
+
 pub(crate) struct TestLock {
     lock: Mutex<usize>
 }
@@ -19,7 +19,8 @@ impl TestLock {
         *guard += 1;
         thread::spawn(move || {
             println!("test {} start", name);
-            for _ in 0..10_000 {
+            for i in 0..10_000 {
+                println!("TODO r i: {i}");
                 thread::sleep(Duration::from_millis(1));
                 let guard = self.lock.try_lock();
                 if guard.is_ok() {
@@ -34,6 +35,5 @@ impl TestLock {
         guard
     }
 }
-
 
 pub(crate) static GLOBAL_TEST_LOCK: TestLock = TestLock::new();

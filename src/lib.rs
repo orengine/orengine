@@ -26,7 +26,7 @@ pub mod yield_now;
 mod messages;
 
 pub use socket2;
-pub use end::end_local_thread;
+pub use end::{end_local_thread, end};
 pub use run::*;
 pub use runtime::Executor;
 pub use yield_now::yield_now;

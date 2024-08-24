@@ -13,7 +13,7 @@ pub(crate) static mut TASK_POOL: MaybeUninit<TaskPool> = MaybeUninit::uninit();
 
 #[inline(always)]
 pub(crate) fn task_pool() -> &'static mut TaskPool {
-    unsafe {TASK_POOL.assume_init_mut()}
+    unsafe { TASK_POOL.assume_init_mut() }
 }
 
 impl TaskPool {

@@ -28,20 +28,18 @@ pub fn yield_now() -> Yield {
 #[cfg(test)]
 mod tests {
     use crate::local::Local;
-    use crate::runtime::{create_local_executer_for_block_on, local_executor};
+    use crate::runtime::local_executor;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_yield_now() {
-        create_local_executer_for_block_on(async move {
-            let i = Local::new(false);
-            let i_clone = i.clone();
-            local_executor().spawn_local(async move {
-                assert_eq!(*i.get(), false);
-                *i.get_mut() = true;
-            });
-            yield_now().await;
-            assert_eq!(*i_clone.get(), true);
+        let i = Local::new(false);
+        let i_clone = i.clone();
+        local_executor().spawn_local(async move {
+            assert_eq!(*i.get(), false);
+            *i.get_mut() = true;
         });
+        yield_now().await;
+        assert_eq!(*i_clone.get(), true);
     }
 }

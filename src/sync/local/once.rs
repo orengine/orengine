@@ -81,7 +81,7 @@ impl !Send for LocalOnce {}
 mod tests {
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_local_once() {
         let mut once = LocalOnce::new();
         assert_eq!(once.state(), OnceState::NotCalled);

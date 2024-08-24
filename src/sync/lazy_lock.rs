@@ -74,8 +74,8 @@ impl<T, F: FnOnce() -> T> LazyLock<T, F> {
     }
 
     #[inline(always)]
-    pub async fn into_inner(this: Self) -> Result<T, F> {
-        let this = ManuallyDrop::new(this);
+    pub async fn into_inner(self) -> Result<T, F> {
+        let this = ManuallyDrop::new(self);
         let data = unsafe { ptr::read(&this.data) }.into_inner();
         match this.state.load(Relaxed).into() {
             LazyLockState::NotCalled => Err(ManuallyDrop::into_inner(unsafe { data.f })),
@@ -89,7 +89,7 @@ impl<T, F: FnOnce() -> T> LazyLock<T, F> {
         loop {
             match self.state.load(Relaxed).into() {
                 LazyLockState::Ready => unsafe {
-                    &*(*self.data.get()).value;
+                    return &*(*self.data.get()).value;
                 },
                 LazyLockState::InProgress => yield_now().await,
                 LazyLockState::NotCalled => {

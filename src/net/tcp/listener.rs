@@ -118,50 +118,44 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
 
-    use crate::runtime::create_local_executer_for_block_on;
-
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_listener() {
-        create_local_executer_for_block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:8080").await.expect("bind call failed");
-            assert_eq!(
-                listener.local_addr().unwrap(),
-                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
-            );
+        let listener = TcpListener::bind("127.0.0.1:8080").await.expect("bind call failed");
+        assert_eq!(
+            listener.local_addr().unwrap(),
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
+        );
 
-            listener.set_ttl(122).expect("set_ttl call failed");
-            assert_eq!(listener.ttl().expect("ttl call failed"), 122);
+        listener.set_ttl(122).expect("set_ttl call failed");
+        assert_eq!(listener.ttl().expect("ttl call failed"), 122);
 
-            match listener.take_error() {
-                Ok(err) => {
-                    assert!(err.is_none());
-                }
-                Err(_) => panic!("take_error call failed"),
+        match listener.take_error() {
+            Ok(err) => {
+                assert!(err.is_none());
             }
-        });
+            Err(_) => panic!("take_error call failed"),
+        }
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_accept() {
-        create_local_executer_for_block_on(async {
-            let mut listener = TcpListener::bind("127.0.0.1:4063").await.expect("bind call failed");
-            match listener.accept_with_timeout(Duration::from_micros(1)).await {
-                Ok(_) => panic!("accept_with_timeout call failed"),
-                Err(err) => {
-                    assert_eq!(err.kind(), io::ErrorKind::TimedOut);
-                }
+        let mut listener = TcpListener::bind("127.0.0.1:4063").await.expect("bind call failed");
+        match listener.accept_with_timeout(Duration::from_micros(1)).await {
+            Ok(_) => panic!("accept_with_timeout call failed"),
+            Err(err) => {
+                assert_eq!(err.kind(), io::ErrorKind::TimedOut);
             }
+        }
 
-            let stream =
-                std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
-            match listener.accept_with_timeout(Duration::from_secs(1)).await {
-                Ok((_, addr)) => {
-                    assert_eq!(addr, stream.local_addr().unwrap())
-                }
-                Err(_) => panic!("accept_with_timeout call failed"),
+        let stream =
+            std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
+        match listener.accept_with_timeout(Duration::from_secs(1)).await {
+            Ok((_, addr)) => {
+                assert_eq!(addr, stream.local_addr().unwrap())
             }
-        });
+            Err(_) => panic!("accept_with_timeout call failed"),
+        }
     }
 }

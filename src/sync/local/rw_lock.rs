@@ -251,131 +251,126 @@ impl<T> !Send for LocalRWLock<T> {}
 mod tests {
     use std::rc::Rc;
     use std::time::{Duration, Instant};
-    use crate::runtime::create_local_executer_for_block_on;
     use crate::sleep::sleep;
     use crate::sync::LocalWaitGroup;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        create_local_executer_for_block_on(async {
-            let start = Instant::now();
-            let mutex = Rc::new(LocalRWLock::new(0));
-            let wg = Rc::new(LocalWaitGroup::new());
-            let read_wg = Rc::new(LocalWaitGroup::new());
+        let start = Instant::now();
+        let mutex = Rc::new(LocalRWLock::new(0));
+        let wg = Rc::new(LocalWaitGroup::new());
+        let read_wg = Rc::new(LocalWaitGroup::new());
 
-            for i in 1..=100 {
-                let mutex = mutex.clone();
-                Executor::exec_future(async move {
-                    let value = mutex.read().await;
-                    assert_eq!(mutex.get_inner().number_of_readers, i);
-                    assert_eq!(*value, 0);
-                    sleep(SLEEP_DURATION).await;
-                    assert_eq!(mutex.get_inner().number_of_readers, 101 - i);
-                    assert_eq!(*value, 0);
-                });
-            }
+        for i in 1..=100 {
+            let mutex = mutex.clone();
+            Executor::exec_future(async move {
+                let value = mutex.read().await;
+                assert_eq!(mutex.get_inner().number_of_readers, i);
+                assert_eq!(*value, 0);
+                sleep(SLEEP_DURATION).await;
+                assert_eq!(mutex.get_inner().number_of_readers, 101 - i);
+                assert_eq!(*value, 0);
+            });
+        }
 
-            for _ in 1..=100 {
-                let wg = wg.clone();
-                let read_wg = read_wg.clone();
-                wg.add(1);
-                let mutex = mutex.clone();
-                Executor::exec_future(async move {
-                    assert_eq!(mutex.get_inner().number_of_readers, 100);
-                    let mut value = mutex.write().await;
-                    {
-                        let read_wg = read_wg.clone();
-                        let mutex = mutex.clone();
-                        read_wg.add(1);
+        for _ in 1..=100 {
+            let wg = wg.clone();
+            let read_wg = read_wg.clone();
+            wg.add(1);
+            let mutex = mutex.clone();
+            Executor::exec_future(async move {
+                assert_eq!(mutex.get_inner().number_of_readers, 100);
+                let mut value = mutex.write().await;
+                {
+                    let read_wg = read_wg.clone();
+                    let mutex = mutex.clone();
+                    read_wg.add(1);
 
-                        Executor::exec_future(async move {
-                            assert_eq!(mutex.get_inner().number_of_readers, -1);
-                            let value = mutex.read().await;
-                            assert_ne!(*value, 0);
-                            assert_ne!(mutex.get_inner().number_of_readers, 0);
-                            read_wg.done();
-                        });
-                    }
-                    let elapsed = start.elapsed();
-                    assert!(elapsed >= SLEEP_DURATION);
-                    assert_eq!(mutex.get_inner().number_of_readers, -1);
-                    *value += 1;
+                    Executor::exec_future(async move {
+                        assert_eq!(mutex.get_inner().number_of_readers, -1);
+                        let value = mutex.read().await;
+                        assert_ne!(*value, 0);
+                        assert_ne!(mutex.get_inner().number_of_readers, 0);
+                        read_wg.done();
+                    });
+                }
+                let elapsed = start.elapsed();
+                assert!(elapsed >= SLEEP_DURATION);
+                assert_eq!(mutex.get_inner().number_of_readers, -1);
+                *value += 1;
 
-                    wg.done();
-                });
-            }
+                wg.done();
+            });
+        }
 
-            wg.wait().await;
-            read_wg.wait().await;
+        wg.wait().await;
+        read_wg.wait().await;
 
-            let value = mutex.read().await;
-            assert_eq!(*value, 100);
-            assert_ne!(mutex.get_inner().number_of_readers, 0);
-        });
+        let value = mutex.read().await;
+        assert_eq!(*value, 100);
+        assert_ne!(mutex.get_inner().number_of_readers, 0);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_try_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        create_local_executer_for_block_on(async {
-            let start = Instant::now();
-            let mutex = Rc::new(LocalRWLock::new(0));
-            let wg = Rc::new(LocalWaitGroup::new());
-            let read_wg = Rc::new(LocalWaitGroup::new());
+        let start = Instant::now();
+        let mutex = Rc::new(LocalRWLock::new(0));
+        let wg = Rc::new(LocalWaitGroup::new());
+        let read_wg = Rc::new(LocalWaitGroup::new());
 
-            for i in 1..=100 {
-                let mutex = mutex.clone();
-                Executor::exec_future(async move {
-                    let value = mutex.try_read().expect("try_read failed");
-                    assert_eq!(mutex.get_inner().number_of_readers, i);
-                    assert_eq!(*value, 0);
-                    sleep(SLEEP_DURATION).await;
-                });
-            }
+        for i in 1..=100 {
+            let mutex = mutex.clone();
+            Executor::exec_future(async move {
+                let value = mutex.try_read().expect("try_read failed");
+                assert_eq!(mutex.get_inner().number_of_readers, i);
+                assert_eq!(*value, 0);
+                sleep(SLEEP_DURATION).await;
+            });
+        }
 
-            for _i in 1..=100 {
-                let wg = wg.clone();
-                let read_wg = read_wg.clone();
-                wg.add(1);
-                let mutex = mutex.clone();
-                Executor::exec_future(async move {
-                    assert_eq!(mutex.get_inner().number_of_readers, 100);
-                    assert!(mutex.try_write().is_none());
-                    sleep(2 * SLEEP_DURATION).await;
-                    let mut value = mutex.try_write().expect("try_write failed");
-                    read_wg.add(1);
-                    {
-                        let mutex = mutex.clone();
+        for _i in 1..=100 {
+            let wg = wg.clone();
+            let read_wg = read_wg.clone();
+            wg.add(1);
+            let mutex = mutex.clone();
+            Executor::exec_future(async move {
+                assert_eq!(mutex.get_inner().number_of_readers, 100);
+                assert!(mutex.try_write().is_none());
+                sleep(2 * SLEEP_DURATION).await;
+                let mut value = mutex.try_write().expect("try_write failed");
+                read_wg.add(1);
+                {
+                    let mutex = mutex.clone();
 
-                        Executor::exec_future(async move {
-                            assert_eq!(mutex.get_inner().number_of_readers, -1);
-                            assert!(mutex.try_read().is_none());
-                            sleep(SLEEP_DURATION * 2).await;
-                            let value = mutex.try_read().expect("try_read failed");
-                            assert_ne!(*value, 0);
-                            assert_ne!(mutex.get_inner().number_of_readers, 0);
-                            read_wg.done();
-                        });
-                    }
-                    let elapsed = start.elapsed();
-                    assert!(elapsed >= SLEEP_DURATION);
-                    assert_eq!(mutex.get_inner().number_of_readers, -1);
-                    *value += 1;
+                    Executor::exec_future(async move {
+                        assert_eq!(mutex.get_inner().number_of_readers, -1);
+                        assert!(mutex.try_read().is_none());
+                        sleep(SLEEP_DURATION * 2).await;
+                        let value = mutex.try_read().expect("try_read failed");
+                        assert_ne!(*value, 0);
+                        assert_ne!(mutex.get_inner().number_of_readers, 0);
+                        read_wg.done();
+                    });
+                }
+                let elapsed = start.elapsed();
+                assert!(elapsed >= SLEEP_DURATION);
+                assert_eq!(mutex.get_inner().number_of_readers, -1);
+                *value += 1;
 
-                    wg.done();
-                });
-            }
+                wg.done();
+            });
+        }
 
-            wg.wait().await;
-            read_wg.wait().await;
+        wg.wait().await;
+        read_wg.wait().await;
 
-            let value = mutex.try_read().expect("try_read failed");
-            assert_eq!(*value, 100);
-            assert_ne!(mutex.get_inner().number_of_readers, 0);
-        });
+        let value = mutex.try_read().expect("try_read failed");
+        assert_eq!(*value, 100);
+        assert_ne!(mutex.get_inner().number_of_readers, 0);
     }
 }

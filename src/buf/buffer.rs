@@ -296,13 +296,13 @@ impl Drop for Buffer {
 mod tests {
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_new() {
         let buf = Buffer::new(1);
         assert_eq!(buf.cap(), 1);
     }
 
-    #[test]
+    #[test_macro::test]
     #[should_panic(expected = "Cannot create Buffer with size 0. Size must be > 0.")]
     fn test_new_panic() {
         Buffer::new(0);
@@ -323,8 +323,8 @@ mod tests {
         assert_eq!(buf.len(), buf.cap());
     }
 
-    #[test]
-    fn test_len_and_cap_() {
+    #[test_macro::test]
+    fn test_len_and_cap() {
         let mut buf = Buffer::new(100);
         assert_eq!(buf.len(), 0);
         assert_eq!(buf.cap(), 100);
@@ -334,7 +334,7 @@ mod tests {
         assert_eq!(buf.cap(), 100);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_resize() {
         let mut buf = Buffer::new(100);
         buf.append(&[1, 2, 3]);
@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(buf.as_ref(), &[1, 2, 3]);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_append_and_clear() {
         let mut buf = Buffer::new(5);
 
@@ -366,7 +366,7 @@ mod tests {
         assert_eq!(buf.cap(), 10);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_is_empty_and_is_full() {
         let mut buf = Buffer::new(5);
         assert!(buf.is_empty());
@@ -383,7 +383,7 @@ mod tests {
         assert!(!buf.is_full());
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_index() {
         let mut buf = Buffer::new(5);
         buf.append(&[1, 2, 3]);
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(&buf[..], &[1, 2, 3]);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_from() {
         let b = Box::new([1, 2, 3]);
         let buf = Buffer::from(b);

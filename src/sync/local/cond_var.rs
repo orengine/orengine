@@ -112,100 +112,96 @@ mod tests {
     use std::ops::Deref;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
-    use crate::runtime::{create_local_executer_for_block_on, local_executor};
+    use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::LocalWaitGroup;
     use super::*;
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
-    fn test_one(need_drop: bool) {
-        create_local_executer_for_block_on(async move {
-            let start = Instant::now();
-            let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
-            let pair2 = pair.clone();
-            // Inside our lock, spawn a new thread, and then wait for it to start.
-            local_executor().spawn_local(async move {
-                let (lock, cvar) = pair2.deref();
-                let mut started = lock.lock().await;
-                sleep(TIME_TO_SLEEP).await;
-                *started = true;
-                if need_drop {
-                    drop(started);
-                }
-                // We notify the condvar that the value has changed.
-                cvar.notify_one();
-            });
-
-            // Wait for the thread to start up.
-            let (lock, cvar) = pair.deref();
+    async fn test_one(need_drop: bool) {
+        let start = Instant::now();
+        let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
+        let pair2 = pair.clone();
+        // Inside our lock, spawn a new thread, and then wait for it to start.
+        local_executor().spawn_local(async move {
+            let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
-            while !*started {
-                started = cvar.wait(started).await;
+            sleep(TIME_TO_SLEEP).await;
+            *started = true;
+            if need_drop {
+                drop(started);
             }
-
-            assert!(start.elapsed() >= TIME_TO_SLEEP);
+            // We notify the condvar that the value has changed.
+            cvar.notify_one();
         });
+
+        // Wait for the thread to start up.
+        let (lock, cvar) = pair.deref();
+        let mut started = lock.lock().await;
+        while !*started {
+            started = cvar.wait(started).await;
+        }
+
+        assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    fn test_all(need_drop: bool) {
-        create_local_executer_for_block_on(async move {
-            const NUMBER_OF_WAITERS: usize = 10;
+    async fn test_all(need_drop: bool) {
+        const NUMBER_OF_WAITERS: usize = 10;
 
-            let start = Instant::now();
-            let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
-            let pair2 = pair.clone();
-            // Inside our lock, spawn a new thread, and then wait for it to start.
+        let start = Instant::now();
+        let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
+        let pair2 = pair.clone();
+        // Inside our lock, spawn a new thread, and then wait for it to start.
+        local_executor().spawn_local(async move {
+            let (lock, cvar) = pair2.deref();
+            let mut started = lock.lock().await;
+            sleep(TIME_TO_SLEEP).await;
+            *started = true;
+            if need_drop {
+                drop(started);
+            }
+            // We notify the condvar that the value has changed.
+            cvar.notify_all();
+        });
+
+        let wg = Rc::new(LocalWaitGroup::new());
+        for _ in 0..NUMBER_OF_WAITERS {
+            let pair = pair.clone();
+            let wg = wg.clone();
+            wg.add(1);
             local_executor().spawn_local(async move {
-                let (lock, cvar) = pair2.deref();
+                let (lock, cvar) = pair.deref();
                 let mut started = lock.lock().await;
-                sleep(TIME_TO_SLEEP).await;
-                *started = true;
-                if need_drop {
-                    drop(started);
+                while !*started {
+                    started = cvar.wait(started).await;
                 }
-                // We notify the condvar that the value has changed.
-                cvar.notify_all();
+                wg.done();
             });
+        }
 
-            let wg = Rc::new(LocalWaitGroup::new());
-            for _ in 0..NUMBER_OF_WAITERS {
-                let pair = pair.clone();
-                let wg = wg.clone();
-                wg.add(1);
-                local_executor().spawn_local(async move {
-                    let (lock, cvar) = pair.deref();
-                    let mut started = lock.lock().await;
-                    while !*started {
-                        started = cvar.wait(started).await;
-                    }
-                    wg.done();
-                });
-            }
+        wg.wait().await;
 
-            wg.wait().await;
-
-            assert!(start.elapsed() >= TIME_TO_SLEEP);
-        });
+        assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_one_with_drop_guard() {
-        test_one(true);
+        test_one(true).await;
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_all_with_drop_guard() {
-        test_all(true);
+        test_all(true).await;
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_one_without_drop_guard() {
-        test_one(false);
+        test_one(false).await;
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_all_without_drop_guard() {
-        test_all(false);
+        test_all(false).await;
     }
 }

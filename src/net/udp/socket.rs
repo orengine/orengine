@@ -139,7 +139,7 @@ mod tests {
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[test]
+    #[test_macro::test]
     fn test_client() {
         const SERVER_ADDR: &str = "127.0.0.1:10086";
 
@@ -166,31 +166,29 @@ mod tests {
             }
         });
 
-        create_local_executer_for_block_on(async move {
-            let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-            let mut is_server_ready = is_server_ready_mu.lock().unwrap();
-            while *is_server_ready == false {
-                is_server_ready = condvar.wait(is_server_ready).unwrap();
-            }
+        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+        let mut is_server_ready = is_server_ready_mu.lock().unwrap();
+        while *is_server_ready == false {
+            is_server_ready = condvar.wait(is_server_ready).unwrap();
+        }
 
-            let mut stream = UdpSocket::bind("127.0.0.1:9081").await.expect("bind failed");
+        let mut stream = UdpSocket::bind("127.0.0.1:9081").await.expect("bind failed");
 
-            for _ in 0..TIMES {
-                stream
-                    .send_to(REQUEST, SERVER_ADDR)
-                    .await
-                    .expect("send failed");
-                let mut buf = vec![0u8; RESPONSE.len()];
+        for _ in 0..TIMES {
+            stream
+                .send_to(REQUEST, SERVER_ADDR)
+                .await
+                .expect("send failed");
+            let mut buf = vec![0u8; RESPONSE.len()];
 
-                stream.recv_from(&mut buf).await.expect("recv failed");
-                assert_eq!(RESPONSE, buf);
-            }
-        });
+            stream.recv_from(&mut buf).await.expect("recv failed");
+            assert_eq!(RESPONSE, buf);
+        }
 
         server_thread.join().expect("server thread join failed");
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_server() {
         const SERVER_ADDR: &str = "127.0.0.1:10082";
 
@@ -232,7 +230,7 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_socket() {
         const SERVER_ADDR: &str = "127.0.0.1:10090";
         const CLIENT_ADDR: &str = "127.0.0.1:10091";
@@ -241,160 +239,156 @@ mod tests {
         let is_server_ready = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
 
-        create_local_executer_for_block_on(async move {
-            Executor::exec_future(async move {
-                let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
+        Executor::exec_future(async move {
+            let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
-                {
-                    let (is_ready_mu, condvar) = is_server_ready.deref();
-                    let mut is_ready = is_ready_mu.lock().await;
-                    *is_ready = true;
-                    condvar.notify_one();
-                }
-
-                for _ in 0..TIMES {
-                    server
-                        .poll_recv_with_timeout(TIMEOUT)
-                        .await
-                        .expect("poll failed");
-                    let mut buf = vec![0u8; REQUEST.len()];
-                    let (n, src) = server
-                        .recv_from_with_timeout(&mut buf, TIMEOUT)
-                        .await
-                        .expect("accept failed");
-                    assert_eq!(REQUEST, &buf[..n]);
-
-                    server
-                        .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
-                        .await
-                        .expect("send failed");
-                }
-            });
-
-            let (is_server_ready_mu, condvar) = is_server_ready_server_clone.deref();
-            let mut is_server_ready = is_server_ready_mu.lock().await;
-            while *is_server_ready == false {
-                is_server_ready = condvar.wait(is_server_ready).await;
-            }
-
-            let mut stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
-
-            assert_eq!(
-                stream.local_addr().expect("Failed to get local addr"),
-                SocketAddr::from_str(CLIENT_ADDR).unwrap()
-            );
-
-            stream
-                .set_broadcast(false)
-                .expect("Failed to set broadcast");
-            assert_eq!(stream.broadcast().expect("Failed to get broadcast"), false);
-            stream.set_broadcast(true).expect("Failed to set broadcast");
-            assert_eq!(stream.broadcast().expect("Failed to get broadcast"), true);
-
-            stream
-                .set_multicast_loop_v4(false)
-                .expect("Failed to set multicast_loop_v4");
-            assert_eq!(
-                stream
-                    .multicast_loop_v4()
-                    .expect("Failed to get multicast_loop_v4"),
-                false
-            );
-            stream
-                .set_multicast_loop_v4(true)
-                .expect("Failed to set multicast_loop_v4");
-            assert_eq!(
-                stream
-                    .multicast_loop_v4()
-                    .expect("Failed to get multicast_loop_v4"),
-                true
-            );
-
-            stream
-                .set_multicast_ttl_v4(124)
-                .expect("Failed to set multicast_ttl_v4");
-            assert_eq!(
-                stream
-                    .multicast_ttl_v4()
-                    .expect("Failed to get multicast_ttl_v4"),
-                124
-            );
-
-            stream.set_ttl(144).expect("Failed to set ttl");
-            assert_eq!(stream.ttl().expect("Failed to get ttl"), 144);
-
-            match stream.take_error() {
-                Ok(err_) => match err_ {
-                    Some(err) => panic!("Take error returned with an error: {err:?}"),
-                    None => {}
-                },
-                Err(err) => panic!("Take error failed: {:?}", err),
+            {
+                let (is_ready_mu, condvar) = is_server_ready.deref();
+                let mut is_ready = is_ready_mu.lock().await;
+                *is_ready = true;
+                condvar.notify_one();
             }
 
             for _ in 0..TIMES {
-                stream
-                    .send_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
-                    .await
-                    .expect("send failed");
-
-                stream
+                server
                     .poll_recv_with_timeout(TIMEOUT)
                     .await
                     .expect("poll failed");
-                let mut buf = vec![0u8; RESPONSE.len()];
-
-                stream
-                    .peek_from_with_timeout(&mut buf, TIMEOUT)
-                    .await
-                    .expect("peek failed");
-                assert_eq!(RESPONSE, buf);
-                stream
-                    .peek_from_with_timeout(&mut buf, TIMEOUT)
-                    .await
-                    .expect("peek failed");
-                assert_eq!(RESPONSE, buf);
-
-                stream
-                    .poll_recv_with_timeout(TIMEOUT)
-                    .await
-                    .expect("poll failed");
-                stream
+                let mut buf = vec![0u8; REQUEST.len()];
+                let (n, src) = server
                     .recv_from_with_timeout(&mut buf, TIMEOUT)
                     .await
-                    .expect("recv failed");
-                assert_eq!(RESPONSE, buf);
+                    .expect("accept failed");
+                assert_eq!(REQUEST, &buf[..n]);
+
+                server
+                    .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
+                    .await
+                    .expect("send failed");
             }
         });
+
+        let (is_server_ready_mu, condvar) = is_server_ready_server_clone.deref();
+        let mut is_server_ready = is_server_ready_mu.lock().await;
+        while *is_server_ready == false {
+            is_server_ready = condvar.wait(is_server_ready).await;
+        }
+
+        let mut stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
+
+        assert_eq!(
+            stream.local_addr().expect("Failed to get local addr"),
+            SocketAddr::from_str(CLIENT_ADDR).unwrap()
+        );
+
+        stream
+            .set_broadcast(false)
+            .expect("Failed to set broadcast");
+        assert_eq!(stream.broadcast().expect("Failed to get broadcast"), false);
+        stream.set_broadcast(true).expect("Failed to set broadcast");
+        assert_eq!(stream.broadcast().expect("Failed to get broadcast"), true);
+
+        stream
+            .set_multicast_loop_v4(false)
+            .expect("Failed to set multicast_loop_v4");
+        assert_eq!(
+            stream
+                .multicast_loop_v4()
+                .expect("Failed to get multicast_loop_v4"),
+            false
+        );
+        stream
+            .set_multicast_loop_v4(true)
+            .expect("Failed to set multicast_loop_v4");
+        assert_eq!(
+            stream
+                .multicast_loop_v4()
+                .expect("Failed to get multicast_loop_v4"),
+            true
+        );
+
+        stream
+            .set_multicast_ttl_v4(124)
+            .expect("Failed to set multicast_ttl_v4");
+        assert_eq!(
+            stream
+                .multicast_ttl_v4()
+                .expect("Failed to get multicast_ttl_v4"),
+            124
+        );
+
+        stream.set_ttl(144).expect("Failed to set ttl");
+        assert_eq!(stream.ttl().expect("Failed to get ttl"), 144);
+
+        match stream.take_error() {
+            Ok(err_) => match err_ {
+                Some(err) => panic!("Take error returned with an error: {err:?}"),
+                None => {}
+            },
+            Err(err) => panic!("Take error failed: {:?}", err),
+        }
+
+        for _ in 0..TIMES {
+            stream
+                .send_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
+                .await
+                .expect("send failed");
+
+            stream
+                .poll_recv_with_timeout(TIMEOUT)
+                .await
+                .expect("poll failed");
+            let mut buf = vec![0u8; RESPONSE.len()];
+
+            stream
+                .peek_from_with_timeout(&mut buf, TIMEOUT)
+                .await
+                .expect("peek failed");
+            assert_eq!(RESPONSE, buf);
+            stream
+                .peek_from_with_timeout(&mut buf, TIMEOUT)
+                .await
+                .expect("peek failed");
+            assert_eq!(RESPONSE, buf);
+
+            stream
+                .poll_recv_with_timeout(TIMEOUT)
+                .await
+                .expect("poll failed");
+            stream
+                .recv_from_with_timeout(&mut buf, TIMEOUT)
+                .await
+                .expect("recv failed");
+            assert_eq!(RESPONSE, buf);
+        }
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_timeout() {
         const ADDR: &str = "127.0.0.1:10141";
         const TIMEOUT: Duration = Duration::from_micros(1);
 
-        create_local_executer_for_block_on(async {
-            let mut socket = UdpSocket::bind(ADDR).await.expect("bind failed");
+        let mut socket = UdpSocket::bind(ADDR).await.expect("bind failed");
 
-            match socket.poll_recv_with_timeout(TIMEOUT).await {
-                Ok(_) => panic!("poll_recv should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
+        match socket.poll_recv_with_timeout(TIMEOUT).await {
+            Ok(_) => panic!("poll_recv should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
 
-            match socket
-                .recv_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-                .await
-            {
-                Ok(_) => panic!("recv_from should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
+        match socket
+            .recv_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .await
+        {
+            Ok(_) => panic!("recv_from should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
 
-            match socket
-                .peek_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-                .await
-            {
-                Ok(_) => panic!("peek_from should timeout"),
-                Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-            }
-        });
+        match socket
+            .peek_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .await
+        {
+            Ok(_) => panic!("peek_from should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
     }
 }

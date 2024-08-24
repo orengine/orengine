@@ -129,29 +129,26 @@ impl BufPool {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::create_local_executer_for_block_on;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_buf_pool() {
-        create_local_executer_for_block_on(async {
-            let pool = buf_pool();
-            assert!(pool.pool.is_empty());
+        let pool = buf_pool();
+        assert!(pool.pool.is_empty());
 
-            let buf = buffer();
-            assert_eq!(buf.len(), 0);
-            assert_eq!(buf.cap(), 4096);
-            drop(buf);
+        let buf = buffer();
+        assert_eq!(buf.len(), 0);
+        assert_eq!(buf.cap(), 4096);
+        drop(buf);
 
-            let buf = full_buffer();
-            assert_eq!(buf.len(), 4096);
-            assert_eq!(buf.cap(), 4096);
-            drop(buf);
+        let buf = full_buffer();
+        assert_eq!(buf.len(), 4096);
+        assert_eq!(buf.cap(), 4096);
+        drop(buf);
 
-            assert_eq!(pool.pool.len(), 1);
+        assert_eq!(pool.pool.len(), 1);
 
-            let _buf = pool.get();
-            assert!(pool.pool.is_empty());
-        });
+        let _buf = pool.get();
+        assert!(pool.pool.is_empty());
     }
 }

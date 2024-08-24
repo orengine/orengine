@@ -84,6 +84,7 @@ pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 impl Executor {
     pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
         set_was_ended(false);
+        set_global_was_end(false);
         BufPool::init_in_local_thread(config_buf_len());
         TaskPool::init();
         unsafe { init_local_worker() };
@@ -293,35 +294,31 @@ mod tests {
     use crate::yield_now;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_spawn_local_and_exec_future() {
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
             arr.get_mut().push(number);
         }
 
-        create_local_executer_for_block_on(async {
-            let executer = local_executor();
-            let arr = Local::new(Vec::new());
+        let executer = local_executor();
+        let arr = Local::new(Vec::new());
 
-            insert(10, arr.clone()).await;
-            executer.spawn_local(insert(20, arr.clone()));
-            executer.spawn_local(insert(30, arr.clone()));
+        insert(10, arr.clone()).await;
+        executer.spawn_local(insert(20, arr.clone()));
+        executer.spawn_local(insert(30, arr.clone()));
 
-            yield_now().await;
+        yield_now().await;
 
-            assert_eq!(&vec![10, 30, 20], arr.get()); // 30, 20 because of LIFO
-        });
+        assert_eq!(&vec![10, 30, 20], arr.get()); // 30, 20 because of LIFO
 
-        create_local_executer_for_block_on(async {
-            let arr = Local::new(Vec::new());
+        let arr = Local::new(Vec::new());
 
-            insert(10, arr.clone()).await;
-            Executor::exec_future(insert(20, arr.clone()));
-            Executor::exec_future(insert(30, arr.clone()));
+        insert(10, arr.clone()).await;
+        Executor::exec_future(insert(20, arr.clone()));
+        Executor::exec_future(insert(30, arr.clone()));
 
-            assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the queue here
-            // (code is executed in this function sequentially)
-        });
+        assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the queue here
+        // (code is executed in this function sequentially)
     }
 
     #[test]

@@ -268,38 +268,35 @@ impl<T> !Send for LocalChannel<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::create_local_executer_for_block_on;
     use crate::yield_now;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_zero_capacity() {
-        create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(0);
-            let ch2 = ch.clone();
-            let is_waiting = Local::new(false);
-            let is_waiting2 = is_waiting.clone();
+        let ch = LocalChannel::new(0);
+        let ch2 = ch.clone();
+        let is_waiting = Local::new(false);
+        let is_waiting2 = is_waiting.clone();
 
-            local_executor().spawn_local(async move {
-                ch.send(1).await.expect("closed");
-                assert!(is_waiting.get());
+        local_executor().spawn_local(async move {
+            ch.send(1).await.expect("closed");
+            assert!(is_waiting.get());
 
-                yield_now().await;
+            yield_now().await;
 
-                ch.close();
-            });
-
-            *is_waiting2.get_mut() = true;
-            let res = ch2.recv().await.expect("closed");
-            assert_eq!(res, 1);
-            assert!(is_waiting2.get());
-            *is_waiting2.get_mut() = false;
-
-            match ch2.send(2).await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed")
-            };
+            ch.close();
         });
+
+        *is_waiting2.get_mut() = true;
+        let res = ch2.recv().await.expect("closed");
+        assert_eq!(res, 1);
+        assert!(is_waiting2.get());
+        *is_waiting2.get_mut() = false;
+
+        match ch2.send(2).await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
+        };
     }
 
     const N: usize = 10_025;
@@ -309,115 +306,105 @@ mod tests {
     // case 3 - send (N + 1) and recv N. Wait for send
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
-    #[test]
+    #[test_macro::test]
     fn test_case1() {
-        create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(N);
-            let ch2 = ch.clone();
+        let ch = LocalChannel::new(N);
+        let ch2 = ch.clone();
 
-            local_executor().spawn_local(async move {
-                for i in 0..N {
-                    ch.send(i).await.expect("closed");
-                }
-
-                yield_now().await;
-
-                ch.close();
-            });
-
+        local_executor().spawn_local(async move {
             for i in 0..N {
-                let res = ch2.recv().await.expect("closed");
-                assert_eq!(res, i);
-            }
-
-            match ch2.recv().await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed")
-            };
-        });
-    }
-
-    #[test]
-    fn test_case2() {
-        create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(N);
-            let ch2 = ch.clone();
-
-            local_executor().spawn_local(async move {
-                for i in 0..=N {
-                    let res = ch.recv().await.expect("closed");
-                    assert_eq!(res, i);
-                }
-            });
-
-            for i in 0..N {
-                let _ = ch2.send(i).await.expect("closed");
+                ch.send(i).await.expect("closed");
             }
 
             yield_now().await;
 
-            let _ = ch2.send(N).await.expect("closed");
+            ch.close();
         });
+
+        for i in 0..N {
+            let res = ch2.recv().await.expect("closed");
+            assert_eq!(res, i);
+        }
+
+        match ch2.recv().await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
+        };
     }
 
-    #[test]
-    fn test_case3() {
-        create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(N);
-            let ch2 = ch.clone();
+    #[test_macro::test]
+    fn test_case2() {
+        let ch = LocalChannel::new(N);
+        let ch2 = ch.clone();
 
-            local_executor().spawn_local(async move {
-                for i in 0..N {
-                    let res = ch.recv().await.expect("closed");
-                    assert_eq!(res, i);
-                }
-
-                yield_now().await;
-
+        local_executor().spawn_local(async move {
+            for i in 0..=N {
                 let res = ch.recv().await.expect("closed");
-                assert_eq!(res, N);
-            });
-
-            for i in 0..=N {
-                ch2.send(i).await.expect("closed");
+                assert_eq!(res, i);
             }
         });
+
+        for i in 0..N {
+            let _ = ch2.send(i).await.expect("closed");
+        }
+
+        yield_now().await;
+
+        let _ = ch2.send(N).await.expect("closed");
     }
 
-    #[test]
+    #[test_macro::test]
+    fn test_case3() {
+        let ch = LocalChannel::new(N);
+        let ch2 = ch.clone();
+
+        local_executor().spawn_local(async move {
+            for i in 0..N {
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
+            }
+
+            yield_now().await;
+
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, N);
+        });
+
+        for i in 0..=N {
+            ch2.send(i).await.expect("closed");
+        }
+    }
+
+    #[test_macro::test]
     fn test_case4() {
-        create_local_executer_for_block_on(async {
-            let ch = LocalChannel::new(N);
-            let ch2 = ch.clone();
+        let ch = LocalChannel::new(N);
+        let ch2 = ch.clone();
 
-            local_executor().spawn_local(async move {
-                for i in 0..=N {
-                    let res = ch.recv().await.expect("closed");
-                    assert_eq!(res, i);
-                }
-            });
-
+        local_executor().spawn_local(async move {
             for i in 0..=N {
-                ch2.send(i).await.expect("closed");
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
             }
         });
+
+        for i in 0..=N {
+            ch2.send(i).await.expect("closed");
+        }
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_split() {
-        create_local_executer_for_block_on(async {
-            let (tx, rx) = LocalChannel::new(N).split();
+        let (tx, rx) = LocalChannel::new(N).split();
 
-            local_executor().spawn_local(async move {
-                for i in 0..=N {
-                    let res = rx.recv().await.expect("closed");
-                    assert_eq!(res, i);
-                }
-            });
-
+        local_executor().spawn_local(async move {
             for i in 0..=N {
-                tx.send(i).await.expect("closed");
+                let res = rx.recv().await.expect("closed");
+                assert_eq!(res, i);
             }
         });
+
+        for i in 0..=N {
+            tx.send(i).await.expect("closed");
+        }
     }
 }

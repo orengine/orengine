@@ -166,73 +166,71 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        create_local_executer_for_block_on(async {
-            let start = Instant::now();
-            let mutex = Arc::new(RWLock::new(0));
-            let wg = Arc::new(WaitGroup::new());
-            let read_wg = Arc::new(WaitGroup::new());
+        let start = Instant::now();
+        let mutex = Arc::new(RWLock::new(0));
+        let wg = Arc::new(WaitGroup::new());
+        let read_wg = Arc::new(WaitGroup::new());
 
-            for _ in 1..=10 {
-                let mutex = mutex.clone();
-                let wg = wg.clone();
-                wg.add(1);
+        for _ in 1..=10 {
+            let mutex = mutex.clone();
+            let wg = wg.clone();
+            wg.add(1);
 
-                thread::spawn(move || {
-                    create_local_executer_for_block_on(async move {
-                        let value = mutex.read().await;
-                        assert_eq!(*value, 0);
-                        wg.done();
-                        sleep(SLEEP_DURATION).await;
-                        assert_eq!(*value, 0);
-                    });
+            thread::spawn(move || {
+                create_local_executer_for_block_on(async move {
+                    let value = mutex.read().await;
+                    assert_eq!(*value, 0);
+                    wg.done();
+                    sleep(SLEEP_DURATION).await;
+                    assert_eq!(*value, 0);
                 });
-            }
+            });
+        }
 
-            wg.wait().await;
+        wg.wait().await;
 
-            for _ in 1..=10 {
-                let wg = wg.clone();
-                let read_wg = read_wg.clone();
-                wg.add(1);
-                let mutex = mutex.clone();
+        for _ in 1..=10 {
+            let wg = wg.clone();
+            let read_wg = read_wg.clone();
+            wg.add(1);
+            let mutex = mutex.clone();
 
-                thread::spawn(move || {
-                    create_local_executer_for_block_on(async move {
-                        assert_eq!(mutex.number_of_readers.load(SeqCst), 10);
-                        let mut value = mutex.write().await;
-                        {
-                            let read_wg = read_wg.clone();
-                            let mutex = mutex.clone();
-                            read_wg.add(1);
+            thread::spawn(move || {
+                create_local_executer_for_block_on(async move {
+                    assert_eq!(mutex.number_of_readers.load(SeqCst), 10);
+                    let mut value = mutex.write().await;
+                    {
+                        let read_wg = read_wg.clone();
+                        let mutex = mutex.clone();
+                        read_wg.add(1);
 
-                            Executor::exec_future(async move {
-                                assert_eq!(mutex.number_of_readers.load(SeqCst), -1);
-                                let value = mutex.read().await;
-                                assert_ne!(*value, 0);
-                                assert_ne!(mutex.number_of_readers.load(SeqCst), 0);
-                                read_wg.done();
-                            });
-                        }
-                        let elapsed = start.elapsed();
-                        assert!(elapsed >= SLEEP_DURATION);
-                        assert_eq!(mutex.number_of_readers.load(SeqCst), -1);
-                        *value += 1;
+                        Executor::exec_future(async move {
+                            assert_eq!(mutex.number_of_readers.load(SeqCst), -1);
+                            let value = mutex.read().await;
+                            assert_ne!(*value, 0);
+                            assert_ne!(mutex.number_of_readers.load(SeqCst), 0);
+                            read_wg.done();
+                        });
+                    }
+                    let elapsed = start.elapsed();
+                    assert!(elapsed >= SLEEP_DURATION);
+                    assert_eq!(mutex.number_of_readers.load(SeqCst), -1);
+                    *value += 1;
 
-                        wg.done();
-                    });
+                    wg.done();
                 });
-            }
+            });
+        }
 
-            wg.wait().await;
-            read_wg.wait().await;
+        wg.wait().await;
+        read_wg.wait().await;
 
-            let value = mutex.read().await;
-            assert_eq!(*value, 10);
-            assert_ne!(mutex.number_of_readers.load(SeqCst), 0);
-        });
+        let value = mutex.read().await;
+        assert_eq!(*value, 10);
+        assert_ne!(mutex.number_of_readers.load(SeqCst), 0);
     }
 }
