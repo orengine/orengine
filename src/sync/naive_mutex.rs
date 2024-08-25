@@ -115,6 +115,8 @@ mod tests {
     fn test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
+
+
         let mutex = Arc::new(Mutex::new(false));
         let wg = Arc::new(WaitGroup::new());
 
@@ -181,29 +183,29 @@ mod tests {
         const PAR: usize = 100;
         const TRIES: usize = 200;
 
+        async fn work_with_lock(mutex: &Mutex<usize>) {
+            let mut lock = mutex.lock().await;
+            sleep(SLEEP_DURATION).await;
+            *lock += 1;
+            if *lock % 5000 == 0 {
+                println!("{} of {}", *lock, TRIES * PAR);
+            }
+        }
+
         let mutex = Arc::new(Mutex::new(0));
         for _ in 1..PAR {
             let mutex = mutex.clone();
             thread::spawn(move || {
                 create_local_executer_for_block_on(async move {
                     for _ in 0..TRIES {
-                        let mut lock = mutex.lock().await;
-                        //let mut lock = mutex.lock().unwrap();
-                        sleep(SLEEP_DURATION).await;
-                        *lock += 1;
-                        if *lock % 100 == 0 {
-                            println!("{} of {}", *lock, TRIES * PAR);
-                        }
+                        work_with_lock(&mutex).await;
                     }
                 });
             });
         }
 
         for _ in 0..TRIES {
-            //let mut lock = mutex.lock().await;
-            let mut lock = mutex.lock().await;
-            sleep(SLEEP_DURATION).await;
-            *lock += 1;
+            work_with_lock(&mutex).await;
         }
 
         loop {

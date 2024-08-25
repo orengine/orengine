@@ -97,6 +97,7 @@ mod tests {
                     assert!(!a.load(SeqCst));
                     a.store(true, SeqCst);
                 });
+                wg.done();
             });
         }
 

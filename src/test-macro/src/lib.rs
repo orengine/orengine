@@ -16,24 +16,44 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
         #[test]
         #(#attrs)*
         #signature {
-            let lock = crate::utils::global_test_lock::GLOBAL_TEST_LOCK.lock(#name.to_string());
+            let lock = crate::utils::global_test_lock::GLOBAL_TEST_LOCK.lock();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            println!("test {} is started!", #name);
 
-            let result = std::panic::catch_unwind(|| {
-                crate::runtime::create_local_executer_for_block_on(async {
-                    #body
-                    crate::end::end();
+            let res = std::thread::spawn(move || {
+                let result = std::panic::catch_unwind(|| {
+                    crate::runtime::create_local_executer_for_block_on(async {
+                        #body
+                        crate::end::end();
+                    });
                 });
+
+                if let Err(err) = result {
+                    crate::end::end();
+                    sender.send(Err(err)).unwrap();
+                } else {
+                    sender.send(Ok(())).unwrap();
+                }
             });
 
-            if let Err(err) = result {
-                crate::end::end();
-                std::thread::sleep(std::time::Duration::from_millis(1));
-                drop(lock);
-                std::panic::resume_unwind(err);
+            match receiver.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(Ok(())) => {
+                    println!("test {} is finished!", #name);
+                    println!();
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    drop(lock);
+                }
+                Ok(Err(err)) => {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    drop(lock);
+                    std::panic::resume_unwind(err);
+                },
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    drop(lock);
+                    panic!("test {} is failed (timeout)", #name)
+                },
             }
-
-            std::thread::sleep(std::time::Duration::from_millis(1));
-            drop(lock);
         }
     };
 

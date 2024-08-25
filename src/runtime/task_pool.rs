@@ -1,25 +1,31 @@
 use std::future::Future;
 use std::mem;
-use std::mem::MaybeUninit;
 use ahash::AHashMap;
+use crate::messages::BUG;
 
 
 pub(crate) struct TaskPool {
-    storage: AHashMap<usize, Vec<*mut ()>> // key is a size
+    /// Key is a size.
+    storage: AHashMap<usize, Vec<*mut ()>>
 }
 
 #[thread_local]
-pub(crate) static mut TASK_POOL: MaybeUninit<TaskPool> = MaybeUninit::uninit();
+pub(crate) static mut TASK_POOL: Option<TaskPool> = None;
 
 #[inline(always)]
+// TODO rewrite LOCAL_EXECUTER and LOCAL_WORKER as it
 pub(crate) fn task_pool() -> &'static mut TaskPool {
-    unsafe { TASK_POOL.assume_init_mut() }
+    #[cfg(debug_assertions)]
+    unsafe { TASK_POOL.as_mut().expect(BUG) }
+
+    #[cfg(not(debug_assertions))]
+    unsafe { crate::runtime::task_pool::TASK_POOL.as_mut().unwrap_unchecked() }
 }
 
 impl TaskPool {
     pub(crate) fn init() {
         unsafe {
-            TASK_POOL = MaybeUninit::new(TaskPool {
+            TASK_POOL = Some(TaskPool {
                 storage: AHashMap::new()
             });
         }
@@ -50,7 +56,6 @@ impl TaskPool {
 
         // A task that have been allocated in another thread ended up here
 
-        let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
-        pool.push(ptr as *mut ());
+        self.storage.insert(size, vec![ptr as *mut ()]);
     }
 }

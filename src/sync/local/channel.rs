@@ -307,7 +307,7 @@ mod tests {
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
     #[test_macro::test]
-    fn test_case1() {
+    fn test_local_channel_case1() {
         let ch = LocalChannel::new(N);
         let ch2 = ch.clone();
 
@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test_macro::test]
-    fn test_case2() {
+    fn test_local_channel_case2() {
         let ch = LocalChannel::new(N);
         let ch2 = ch.clone();
 
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test_macro::test]
-    fn test_case3() {
+    fn test_local_channel_case3() {
         let ch = LocalChannel::new(N);
         let ch2 = ch.clone();
 
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test_macro::test]
-    fn test_case4() {
+    fn test_local_channel_case4() {
         let ch = LocalChannel::new(N);
         let ch2 = ch.clone();
 
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test_macro::test]
-    fn test_split() {
+    fn test_local_channel_split() {
         let (tx, rx) = LocalChannel::new(N).split();
 
         local_executor().spawn_local(async move {
