@@ -24,6 +24,7 @@ pub mod sync;
 pub mod utils;
 pub mod yield_now;
 mod messages;
+pub mod atomic_task_queue;
 
 pub use socket2;
 pub use end::{end_local_thread, end};

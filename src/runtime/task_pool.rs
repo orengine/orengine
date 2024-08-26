@@ -4,17 +4,17 @@ use ahash::AHashMap;
 use crate::messages::BUG;
 
 
-pub(crate) struct TaskPool {
+pub struct TaskPool {
     /// Key is a size.
     storage: AHashMap<usize, Vec<*mut ()>>
 }
 
 #[thread_local]
-pub(crate) static mut TASK_POOL: Option<TaskPool> = None;
+pub static mut TASK_POOL: Option<TaskPool> = None;
 
 #[inline(always)]
 // TODO rewrite LOCAL_EXECUTER and LOCAL_WORKER as it
-pub(crate) fn task_pool() -> &'static mut TaskPool {
+pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
     unsafe { TASK_POOL.as_mut().expect(BUG) }
 
@@ -23,7 +23,7 @@ pub(crate) fn task_pool() -> &'static mut TaskPool {
 }
 
 impl TaskPool {
-    pub(crate) fn init() {
+    pub fn init() {
         unsafe {
             TASK_POOL = Some(TaskPool {
                 storage: AHashMap::new()
@@ -32,13 +32,13 @@ impl TaskPool {
     }
 
     #[inline(always)]
-    pub(crate) fn acquire<F: Future<Output=()> + 'static>(&mut self, future: F) -> *mut dyn Future<Output=()> {
+    pub fn acquire<F: Future<Output=()> + 'static>(&mut self, future: F) -> *mut dyn Future<Output=()> {
         let size = mem::size_of::<F>();
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         if let Some(slot_ptr) = pool.pop() {
             let slot = unsafe {&mut *(slot_ptr as *mut F)};
-            //*slot = future; // rewrite, not write
+            // TODO *slot = future; // rewrite, not write
             unsafe { (slot as *mut F).write(future); }
             slot
         } else {
@@ -47,7 +47,7 @@ impl TaskPool {
     }
 
     #[inline(always)]
-    pub(crate) fn put(&mut self, ptr: *mut dyn Future<Output=()>) {
+    pub fn put(&mut self, ptr: *mut dyn Future<Output=()>) {
         let size = mem::size_of_val(unsafe { &*ptr });
         if let Some(pool) = self.storage.get_mut(&size) {
             pool.push(ptr as *mut ());

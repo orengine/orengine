@@ -13,7 +13,7 @@ impl ExecuterCfg {
     }
 }
 
-/// The configuration of the executer.
+/// The configuration of the executor.
 /// This will be read only on [`run_on_core`](crate::run::run_on_core) and [`run_on_all_cores`](crate::run::run_on_all_cores).
 pub(crate) static mut EXECUTER_CFG: ExecuterCfg = ExecuterCfg::default();
 

@@ -2,12 +2,12 @@
 use std::io::Result;
 use std::mem;
 use socket2::{Domain, Type};
-use crate::Executor;
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, AsRawFd, RawFd, IntoRawFd, FromRawFd, BorrowedFd};
 use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::net::Stream;
+use crate::runtime::local_executor;
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -97,7 +97,7 @@ impl Stream for TcpStream {}
 impl Drop for TcpStream {
     fn drop(&mut self) {
         let close_future = self.close();
-        Executor::exec_future(async {
+        local_executor().exec_future(async {
             close_future.await.expect("Failed to close TCP stream");
         });
     }

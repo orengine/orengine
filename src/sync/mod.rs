@@ -4,6 +4,7 @@ pub mod naive_mutex;
 pub mod naive_rw_lock;
 pub mod once;
 pub mod wait_group;
+mod naive_cond_var;
 
 pub use local::*;
 pub use naive_mutex::*;

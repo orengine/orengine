@@ -2,7 +2,6 @@ use std::{io, mem};
 use std::path::{Path};
 use std::io::{Error, Result};
 use std::os::unix::ffi::OsStrExt;
-use crate::Executor;
 use crate::fs::{OpenOptions};
 use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
 use crate::io::open::Open;
@@ -10,6 +9,7 @@ use crate::io::remove::Remove;
 use crate::io::rename::Rename;
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
+use crate::runtime::local_executor;
 
 // TODO docs
 pub struct File {
@@ -96,7 +96,7 @@ impl AsyncClose for File {}
 impl Drop for File {
     fn drop(&mut self) {
         let close_future = self.close();
-        Executor::exec_future(async {
+        local_executor().exec_future(async {
             close_future.await.expect("Failed to close file");
         });
     }

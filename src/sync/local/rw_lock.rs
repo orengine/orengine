@@ -4,7 +4,7 @@ use std::intrinsics::{likely, unlikely};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::Executor;
+use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 
 pub struct LocalReadLockGuard<'rw_lock, T> {
@@ -220,7 +220,7 @@ impl<T> LocalRWLock<T> {
             let task = inner.wait_queue_write.pop();
             if unlikely(task.is_some()) {
                 inner.number_of_readers = -1;
-                Executor::exec_task(unsafe { task.unwrap_unchecked() });
+                local_executor().exec_task(unsafe { task.unwrap_unchecked() });
             }
         }
     }
@@ -231,13 +231,13 @@ impl<T> LocalRWLock<T> {
 
         let task = inner.wait_queue_write.pop();
         if unlikely(task.is_some()) {
-            Executor::exec_task(task.unwrap());
+            local_executor().exec_task(task.unwrap());
         } else {
             let mut readers_count = inner.wait_queue_read.len();
             inner.number_of_readers = readers_count as isize;
             while readers_count > 0 {
                 let task = inner.wait_queue_read.pop();
-                Executor::exec_task(unsafe { task.unwrap_unchecked() });
+                local_executor().exec_task(unsafe { task.unwrap_unchecked() });
                 readers_count -= 1;
             }
         }
@@ -266,7 +266,7 @@ mod tests {
 
         for i in 1..=100 {
             let mutex = mutex.clone();
-            Executor::exec_future(async move {
+            local_executor().exec_future(async move {
                 let value = mutex.read().await;
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
@@ -281,7 +281,7 @@ mod tests {
             let read_wg = read_wg.clone();
             wg.add(1);
             let mutex = mutex.clone();
-            Executor::exec_future(async move {
+            local_executor().exec_future(async move {
                 assert_eq!(mutex.get_inner().number_of_readers, 100);
                 let mut value = mutex.write().await;
                 {
@@ -289,7 +289,7 @@ mod tests {
                     let mutex = mutex.clone();
                     read_wg.add(1);
 
-                    Executor::exec_future(async move {
+                    local_executor().exec_future(async move {
                         assert_eq!(mutex.get_inner().number_of_readers, -1);
                         let value = mutex.read().await;
                         assert_ne!(*value, 0);
@@ -325,7 +325,7 @@ mod tests {
 
         for i in 1..=100 {
             let mutex = mutex.clone();
-            Executor::exec_future(async move {
+            local_executor().exec_future(async move {
                 let value = mutex.try_read().expect("try_read failed");
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
@@ -338,7 +338,7 @@ mod tests {
             let read_wg = read_wg.clone();
             wg.add(1);
             let mutex = mutex.clone();
-            Executor::exec_future(async move {
+            local_executor().exec_future(async move {
                 assert_eq!(mutex.get_inner().number_of_readers, 100);
                 assert!(mutex.try_write().is_none());
                 sleep(2 * SLEEP_DURATION).await;
@@ -347,7 +347,7 @@ mod tests {
                 {
                     let mutex = mutex.clone();
 
-                    Executor::exec_future(async move {
+                    local_executor().exec_future(async move {
                         assert_eq!(mutex.get_inner().number_of_readers, -1);
                         assert!(mutex.try_read().is_none());
                         sleep(SLEEP_DURATION * 2).await;

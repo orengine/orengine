@@ -115,8 +115,6 @@ mod tests {
     fn test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-
-
         let mutex = Arc::new(Mutex::new(false));
         let wg = Arc::new(WaitGroup::new());
 

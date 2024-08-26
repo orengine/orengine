@@ -44,7 +44,6 @@ pub fn sleep(duration: Duration) -> Sleep {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::Executor;
     use crate::local::Local;
     use super::*;
 
@@ -57,21 +56,21 @@ mod tests {
 
         let arr = Local::new(Vec::new());
 
-        Executor::exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        Executor::exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        Executor::exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        Executor::exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        local_executor().exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        local_executor().exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        local_executor().exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        local_executor().exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.get());
 
         let arr = Local::new(Vec::new());
 
-        let executer = local_executor();
-        executer.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        executer.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        executer.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        executer.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        let executor = local_executor();
+        executor.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        executor.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        executor.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        executor.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.get());

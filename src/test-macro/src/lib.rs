@@ -51,7 +51,7 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 Err(_) => {
                     std::thread::sleep(std::time::Duration::from_millis(1));
                     drop(lock);
-                    panic!("test {} is failed (timeout)", #name)
+                    panic!("test {} is failed (timeout)!", #name)
                 },
             }
         }

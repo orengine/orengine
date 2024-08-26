@@ -159,10 +159,9 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use crate::runtime::create_local_executer_for_block_on;
+    use crate::runtime::{create_local_executer_for_block_on, local_executor};
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::Executor;
 
     use super::*;
 
@@ -208,7 +207,7 @@ mod tests {
                         let mutex = mutex.clone();
                         read_wg.add(1);
 
-                        Executor::exec_future(async move {
+                        local_executor().exec_future(async move {
                             assert_eq!(mutex.number_of_readers.load(SeqCst), -1);
                             let value = mutex.read().await;
                             assert_ne!(*value, 0);

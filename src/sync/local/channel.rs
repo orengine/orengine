@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::intrinsics::{unlikely};
 use std::task::{Context, Poll};
-use crate::Executor;
 use crate::local::Local;
 use crate::runtime::{local_executor, Task};
 
@@ -122,13 +121,14 @@ impl<T> Future for WaitLocalRecv<T> {
 #[inline(always)]
 fn close<T>(inner: &mut Inner<T>) {
     inner.is_closed = true;
+    let executor = local_executor();
 
     for task in inner.senders.drain(..) {
-        Executor::exec_task(task);
+        executor.exec_task(task);
     }
 
     for task in inner.receivers.drain(..) {
-        Executor::exec_task(task);
+        executor.exec_task(task);
     }
 }
 

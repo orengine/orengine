@@ -3,7 +3,7 @@ use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::Executor;
+use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 
 pub struct Wait<'wait_group> {
@@ -73,8 +73,9 @@ impl LocalWaitGroup {
         let inner = self.get_inner();
         inner.count -= 1;
         if unlikely(inner.count == 0) {
+            let executor = local_executor();
             for task in inner.waited_tasks.iter() {
-                Executor::exec_task(*task);
+                executor.exec_task(*task);
             }
             unsafe { inner.waited_tasks.set_len(0) };
         }

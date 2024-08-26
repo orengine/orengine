@@ -2,13 +2,12 @@ use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::{Relaxed, Release};
+use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
-use crossbeam::queue::SegQueue;
-use crossbeam::utils::Backoff;
-use crate::Executor;
+use std::thread;
+use std::time::Duration;
+use crate::atomic_task_queue::AtomicTaskList;
 use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 
 pub struct Wait<'wait_group> {
     wait_group: &'wait_group WaitGroup,
@@ -28,12 +27,10 @@ impl<'wait_group> Wait<'wait_group> {
 impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
             this.was_called = true;
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            this.wait_group.waited_tasks.push(task);
 
             // Here I need to explain this decision.
             //
@@ -44,11 +41,15 @@ impl<'wait_group> Future for Wait<'wait_group> {
             // which means calling out one more atomic operation in each done call.
             //
             // So I queue the task first, and only then do the check.
-            if unlikely(this.wait_group.count.load(Relaxed) == 0) { // all done
-                if let Some(task) = this.wait_group.waited_tasks.pop() {
-                    unsafe  { local_executor().spawn_local_task(task) };
-                }
+            unsafe {
+                local_executor().push_current_task_to_and_remove_it_if_counter_is_zero(
+                    &this.wait_group.waited_tasks,
+                    &this.wait_group.counter,
+                    Release
+                );
             }
+
+            thread::sleep(Duration::from_secs(1));
 
             Poll::Pending
         } else {
@@ -58,21 +59,21 @@ impl<'wait_group> Future for Wait<'wait_group> {
 }
 
 pub struct WaitGroup {
-    count: AtomicUsize,
-    waited_tasks: SegQueue<Task>
+    counter: AtomicUsize,
+    waited_tasks: AtomicTaskList
 }
 
 impl WaitGroup {
     pub fn new() -> Self {
         Self {
-            count: AtomicUsize::new(0),
-            waited_tasks: SegQueue::new()
+            counter: AtomicUsize::new(0),
+            waited_tasks: AtomicTaskList::new()
         }
     }
 
     #[inline(always)]
     pub fn add(&self, count: usize) {
-        self.count.fetch_add(count, Relaxed);
+        self.counter.fetch_add(count, Acquire);
     }
 
     #[inline(always)]
@@ -82,23 +83,23 @@ impl WaitGroup {
 
     #[inline(always)]
     pub fn done(&self) {
-        let prev = self.count.fetch_sub(1, Release);
-        if unlikely(prev == 1) {
-            let backoff = Backoff::new();
-            loop {
-                if let Some(task) = self.waited_tasks.pop() {
-                    Executor::exec_task(task);
-                    break;
-                }
-                backoff.spin();
+        let prev_count = self.counter.fetch_sub(1, Release);
+        if unlikely(prev_count == 0) {
+            panic!("WaitGroup::done called after counter reached 0");
+        }
+
+        if unlikely(prev_count == 1) {
+            let executor = local_executor();
+            while let Some(task) = self.waited_tasks.pop() {
+                executor.exec_task(task);
             }
         }
     }
 
     #[inline(always)]
     #[must_use="Future must be awaited to start the wait"]
-    pub fn wait(&self) -> Wait {
-        Wait::new(self)
+    pub async fn wait(&self) {
+        Wait::new(self).await
     }
 }
 
@@ -186,6 +187,7 @@ mod tests {
         }
 
         sleep(Duration::from_millis(1)).await;
+        println!("TODO r HERE");
         wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");

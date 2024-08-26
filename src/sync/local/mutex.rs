@@ -4,7 +4,7 @@ use std::intrinsics::unlikely;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::Executor;
+use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 
 pub struct LocalMutexGuard<'mutex, T> {
@@ -129,7 +129,7 @@ impl<T> LocalMutex<T> {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         let next = wait_queue.pop();
         if unlikely(next.is_some()) {
-            Executor::exec_task(unsafe { next.unwrap_unchecked() });
+            local_executor().exec_task(unsafe { next.unwrap_unchecked() });
         } else {
             let is_locked = unsafe { &mut *self.is_locked.get() };
             *is_locked = false;
@@ -154,7 +154,7 @@ mod tests {
 
         let mutex = Rc::new(LocalMutex::new(false));
         let mutex_clone = mutex.clone();
-        Executor::exec_task(Task::from_future(async move {
+        local_executor().exec_task(Task::from_future(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             sleep(SLEEP_DURATION).await;
@@ -178,7 +178,7 @@ mod tests {
         let start = Instant::now();
         let mutex = Rc::new(LocalMutex::new(false));
         let mutex_clone = mutex.clone();
-        Executor::exec_task(Task::from_future(async move {
+        local_executor().exec_task(Task::from_future(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             sleep(SLEEP_DURATION).await;

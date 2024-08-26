@@ -3,7 +3,7 @@ use std::future::Future;
 use std::intrinsics::likely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::Executor;
+use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use crate::sync::{LocalMutex, LocalMutexGuard};
 
@@ -91,15 +91,16 @@ impl LocalCondVar {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         if likely(!wait_queue.is_empty()) {
             let task = wait_queue.pop();
-            Executor::exec_task(unsafe { task.unwrap_unchecked() });
+            local_executor().exec_task(unsafe { task.unwrap_unchecked() });
         }
     }
 
     #[inline(always)]
     pub fn notify_all(&self) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        let executor = local_executor();
         while let Some(task) = wait_queue.pop() {
-            Executor::exec_task(task);
+            executor.exec_task(task);
         }
     }
 }

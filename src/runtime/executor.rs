@@ -2,17 +2,20 @@ use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
 use std::intrinsics::{likely, unlikely};
+use std::mem;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use crate::atomic_task_queue::AtomicTaskList;
 use crate::buf::BufPool;
 use crate::cfg::{config_buf_len};
 use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
 #[cfg(test)]
 use crate::end_local_thread;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
+use crate::runtime::call::Call;
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
 use crate::runtime::waker::create_waker;
@@ -37,14 +40,14 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     |    Please initialize it first.                                                         |\n\
     |                                                                                        |\n\
     |    1 - use let executor = Executor::init();                                            |\n\
-    |    2 - use executer.spawn_local(your_future)                                           |\n\
-    |            or executer.spawn_global(your_future)                                       |\n\
+    |    2 - use executor.spawn_local(your_future)                                           |\n\
+    |            or executor.spawn_global(your_future)                                       |\n\
     |                                                                                        |\n\
     |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
     |               add orengine::end_local_thread() in the end of future,                   |\n\
     |               otherwise the local runtime will never be stopped.                       |\n\
     |                                                                                        |\n\
-    |    3 - use executer.run()                                                              |\n\
+    |    3 - use executor.run()                                                              |\n\
     ------------------------------------------------------------------------------------------";
 
 #[inline(always)]
@@ -75,6 +78,8 @@ pub struct Executor {
     core_id: CoreId,
     worker_id: usize,
 
+    current_call: Call,
+
     tasks: VecDeque<Task>,
     sleeping_tasks: BTreeSet<SleepingTask>
 }
@@ -89,16 +94,15 @@ impl Executor {
         TaskPool::init();
         unsafe { init_local_worker() };
 
-        let executer = Executor {
-            core_id,
-            worker_id: FREE_WORKER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            tasks: VecDeque::new(),
-            sleeping_tasks: BTreeSet::new(),
-        };
-
         unsafe {
             LOCAL_EXECUTOR.with(|executor| {
-                (&mut *executor.get()).replace(executer);
+                (&mut *executor.get()).replace(Executor {
+                    core_id,
+                    worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
+                    current_call: Call::default(),
+                    tasks: VecDeque::new(),
+                    sleeping_tasks: BTreeSet::new(),
+                });
             });
         }
 
@@ -114,8 +118,51 @@ impl Executor {
         }
     }
 
+    pub fn worker_id(&self) -> usize {
+        self.worker_id
+    }
+
+    pub fn core_id(&self) -> CoreId {
+        self.core_id
+    }
+
     #[inline(always)]
-    pub fn exec_task(mut task: Task) {
+    /// # Safety
+    ///
+    /// * send_to must be a valid pointer to [`AtomicTaskQueue`](AtomicTaskList)
+    ///
+    /// * the reference must live at least as long as this state of the task
+    ///
+    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    pub unsafe fn push_current_task_to(&mut self, send_to: &AtomicTaskList) {
+        self.current_call = Call::PushCurrentTaskTo(send_to);
+    }
+
+    #[inline(always)]
+    /// # Safety
+    ///
+    /// * send_to must be a valid pointer to [`AtomicTaskQueue`](AtomicTaskList)
+    ///
+    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    ///
+    /// * counter must be a valid pointer to [`AtomicUsize`](AtomicUsize)
+    ///
+    /// * the references must live at least as long as this state of the task
+    pub unsafe fn push_current_task_to_and_remove_it_if_counter_is_zero(
+        &mut self,
+        send_to: &AtomicTaskList,
+        counter: &AtomicUsize,
+        order: Ordering
+    ) {
+        self.current_call = Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+            send_to,
+            counter,
+            order
+        );
+    }
+
+    #[inline(always)]
+    pub fn exec_task(&mut self, mut task: Task) {
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
@@ -126,17 +173,41 @@ impl Executor {
             Poll::Ready(()) => {
                 unsafe { task.drop_future() };
             }
-            Poll::Pending => {}
+            Poll::Pending => {
+                match mem::take(&mut self.current_call) {
+                    Call::None => {}
+                    Call::PushCurrentTaskTo(task_list) => {
+                        unsafe { (&*task_list).push(task) }
+                    }
+                    Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+                        task_list,
+                        counter,
+                        order
+                    ) => {
+                        unsafe {
+                            let list = &*task_list;
+                            list.push(task);
+                            let counter = &*counter;
+
+                            if counter.load(order) == 0 {
+                                if let Some(task) = list.pop() {
+                                    self.exec_task(task);
+                                } // else other thread already executed the task
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     #[inline(always)]
-    pub fn exec_future<F>(future: F)
+    pub fn exec_future<F>(&mut self, future: F)
     where
         F: Future<Output=()> + 'static,
     {
         let task = Task::from_future(future);
-        Self::exec_task(task);
+        self.exec_task(task);
     }
 
     #[inline(always)]
@@ -189,7 +260,7 @@ impl Executor {
         let instant = Instant::now();
         while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
             if sleeping_task.time_to_wake() <= instant {
-                Self::exec_task(sleeping_task.task());
+                self.exec_task(sleeping_task.task());
             } else {
                 let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
@@ -229,7 +300,7 @@ impl Executor {
             }
 
             task = unsafe { task_.unwrap_unchecked() };
-            Self::exec_task(task);
+            self.exec_task(task);
         }
 
         uninit_local_executor();
@@ -252,29 +323,13 @@ impl Executor {
     {
         let mut res = MaybeUninit::uninit();
         let res_ptr: *mut T = res.as_mut_ptr();
-        Executor::exec_future(async move {
+        self.exec_future(async move {
             unsafe { res_ptr.write(future.await) };
             end_local_thread();
         });
         self.run();
         unsafe { res.assume_init() }
     }
-
-    pub fn worker_id(&self) -> usize {
-        self.worker_id
-    }
-
-    pub fn core_id(&self) -> CoreId {
-        self.core_id
-    }
-}
-
-pub fn local_core_id() -> CoreId {
-    local_executor().core_id
-}
-
-pub fn local_worker_id() -> usize {
-    local_executor().worker_id
 }
 
 // uses only for tests, because double memory usage of a future.
@@ -300,12 +355,12 @@ mod tests {
             arr.get_mut().push(number);
         }
 
-        let executer = local_executor();
+        let executor = local_executor();
         let arr = Local::new(Vec::new());
 
         insert(10, arr.clone()).await;
-        executer.spawn_local(insert(20, arr.clone()));
-        executer.spawn_local(insert(30, arr.clone()));
+        executor.spawn_local(insert(20, arr.clone()));
+        executor.spawn_local(insert(30, arr.clone()));
 
         yield_now().await;
 
@@ -314,11 +369,10 @@ mod tests {
         let arr = Local::new(Vec::new());
 
         insert(10, arr.clone()).await;
-        Executor::exec_future(insert(20, arr.clone()));
-        Executor::exec_future(insert(30, arr.clone()));
+        local_executor().exec_future(insert(20, arr.clone()));
+        local_executor().exec_future(insert(30, arr.clone()));
 
         assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the queue here
-        // (code is executed in this function sequentially)
     }
 
     #[test]

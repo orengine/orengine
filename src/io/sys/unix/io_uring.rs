@@ -10,7 +10,6 @@ use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
 use nix::libc;
 use nix::libc::sockaddr;
-use crate::Executor;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
@@ -179,6 +178,7 @@ impl IoWorker for IoUringWorker {
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
         cq.sync();
+        let executor = unsafe { local_executor_unchecked() };
 
         for cqe in &mut cq {
             if unlikely(cqe.user_data() == 0) {
@@ -201,7 +201,7 @@ impl IoWorker for IoUringWorker {
             }
 
             self.number_of_active_tasks -= 1;
-            Executor::exec_task(io_request.task());
+            executor.exec_task(io_request.task());
         }
 
         true
