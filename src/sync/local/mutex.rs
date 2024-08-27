@@ -23,6 +23,16 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     }
 
     #[inline(always)]
+    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
+    /// This was done to improve readability.
+    ///
+    /// # Attention
+    ///
+    /// Even if you doesn't call `guard.unlock()`,
+    /// the mutex will be unlocked after the `guard` is dropped.
+    pub fn unlock(self) {}
+
+    #[inline(always)]
     pub fn into_local_mutex(self) -> &'mutex LocalMutex<T> {
         &self.local_mutex
     }
@@ -44,7 +54,7 @@ impl<'mutex, T> DerefMut for LocalMutexGuard<'mutex, T> {
 
 impl<'mutex, T> Drop for LocalMutexGuard<'mutex, T> {
     fn drop(&mut self) {
-        self.local_mutex.drop_lock();
+        unsafe { self.local_mutex.unlock() };
     }
 }
 
@@ -125,7 +135,7 @@ impl<T> LocalMutex<T> {
     }
 
     #[inline(always)]
-    fn drop_lock(&self) {
+    pub unsafe fn unlock(&self) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         let next = wait_queue.pop();
         if unlikely(next.is_some()) {

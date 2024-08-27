@@ -60,7 +60,7 @@ impl Once {
     }
 
     #[inline(always)]
-    pub fn is_called(&self) -> bool {
+    pub fn was_called(&self) -> bool {
         self.state() == OnceState::Called
     }
 }
@@ -74,7 +74,7 @@ mod tests {
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
     use std::thread;
-
+    use crate::runtime::create_local_executer_for_block_on;
     use crate::sync::WaitGroup;
 
     use super::*;
@@ -85,7 +85,7 @@ mod tests {
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
         assert_eq!(once.state(), OnceState::NotCalled);
-        assert!(!once.is_called());
+        assert!(!once.was_called());
 
         for _ in 0..10 {
             let a = a.clone();
@@ -93,16 +93,18 @@ mod tests {
             wg.add(1);
             let once = once.clone();
             thread::spawn(move || {
-                let _ = once.call_once(|| {
-                    assert!(!a.load(SeqCst));
-                    a.store(true, SeqCst);
+                create_local_executer_for_block_on(async move {
+                    let _ = once.call_once(|| {
+                        assert!(!a.load(SeqCst));
+                        a.store(true, SeqCst);
+                    });
+                    wg.done();
                 });
-                wg.done();
             });
         }
 
-        assert!(once.is_called());
-        assert_eq!(once.call_once(|| ()), Err(()));
         let _ = wg.wait().await;
+        assert!(once.was_called());
+        assert_eq!(once.call_once(|| ()), Err(()));
     }
 }

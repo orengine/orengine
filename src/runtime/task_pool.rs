@@ -1,8 +1,6 @@
 use std::future::Future;
 use std::mem;
 use ahash::AHashMap;
-use crate::messages::BUG;
-
 
 pub struct TaskPool {
     /// Key is a size.
@@ -16,7 +14,7 @@ pub static mut TASK_POOL: Option<TaskPool> = None;
 // TODO rewrite LOCAL_EXECUTER and LOCAL_WORKER as it
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
-    unsafe { TASK_POOL.as_mut().expect(BUG) }
+    unsafe { TASK_POOL.as_mut().expect(crate::messages::BUG) }
 
     #[cfg(not(debug_assertions))]
     unsafe { crate::runtime::task_pool::TASK_POOL.as_mut().unwrap_unchecked() }

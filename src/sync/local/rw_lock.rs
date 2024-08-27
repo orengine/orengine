@@ -16,6 +16,21 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self { local_rw_lock }
     }
+
+    #[inline(always)]
+    pub fn local_rw_lock(&self) -> &LocalRWLock<T> {
+        &self.local_rw_lock
+    }
+
+    #[inline(always)]
+    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
+    /// This was done to improve readability.
+    ///
+    /// # Attention
+    ///
+    /// Even if you doesn't call `guard.unlock()`,
+    /// the mutex will be unlocked after the `guard` is dropped.
+    pub fn unlock(self) {}
 }
 
 impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
@@ -28,7 +43,7 @@ impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_lock.drop_read();
+        unsafe { self.local_rw_lock.read_unlock(); }
     }
 }
 
@@ -41,6 +56,21 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self { local_rw_lock }
     }
+
+    #[inline(always)]
+    pub fn local_rw_lock(&self) -> &LocalRWLock<T> {
+        &self.local_rw_lock
+    }
+
+    #[inline(always)]
+    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
+    /// This was done to improve readability.
+    ///
+    /// # Attention
+    ///
+    /// Even if you doesn't call `guard.unlock()`,
+    /// the mutex will be unlocked after the `guard` is dropped.
+    pub fn unlock(self) {}
 }
 
 impl<'rw_lock, T> Deref for LocalWriteLockGuard<'rw_lock, T> {
@@ -59,7 +89,7 @@ impl<'rw_lock, T> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_lock.drop_write();
+        unsafe { self.local_rw_lock.write_unlock(); }
     }
 }
 
@@ -211,7 +241,7 @@ impl<T> LocalRWLock<T> {
     }
 
     #[inline(always)]
-    fn drop_read(&self) {
+    pub unsafe fn read_unlock(&self) {
         let inner = self.get_inner();
         inner.number_of_readers -= 1;
 
@@ -226,7 +256,7 @@ impl<T> LocalRWLock<T> {
     }
 
     #[inline(always)]
-    fn drop_write(&self) {
+    pub unsafe fn write_unlock(&self) {
         let inner = self.get_inner();
 
         let task = inner.wait_queue_write.pop();

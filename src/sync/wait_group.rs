@@ -78,7 +78,12 @@ impl WaitGroup {
     }
 
     #[inline(always)]
-    pub fn done(&self) {
+    pub fn count(&self) -> usize {
+        self.counter.load(Acquire)
+    }
+
+    #[inline(always)]
+    pub fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
         if unlikely(prev_count == 0) {
             panic!("WaitGroup::done called after counter reached 0");
@@ -90,6 +95,8 @@ impl WaitGroup {
                 executor.exec_task(task);
             }
         }
+
+        prev_count
     }
 
     #[inline(always)]

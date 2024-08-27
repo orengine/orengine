@@ -9,7 +9,7 @@ use crate::sleep::sleeping_task::SleepingTask;
 
 pub struct Sleep {
     was_yielded: bool,
-    duration: Duration
+    sleep_until: Instant
 }
 
 impl Future for Sleep {
@@ -22,13 +22,12 @@ impl Future for Sleep {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            let mut time_to_wake = Instant::now() + this.duration;
             let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            let mut sleeping_task = SleepingTask::new(time_to_wake, task);
+            let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
             while unlikely(!local_executor().sleeping_tasks().insert(sleeping_task)) {
-                time_to_wake += Duration::from_nanos(1);
-                sleeping_task = SleepingTask::new(time_to_wake, task);
+                this.sleep_until += Duration::from_nanos(1);
+                sleeping_task = SleepingTask::new(this.sleep_until, task);
             }
             Poll::Pending
         }
@@ -38,7 +37,7 @@ impl Future for Sleep {
 #[inline(always)]
 #[must_use]
 pub fn sleep(duration: Duration) -> Sleep {
-    Sleep { was_yielded: false, duration }
+    Sleep { was_yielded: false, sleep_until: Instant::now() + duration }
 }
 
 #[cfg(test)]

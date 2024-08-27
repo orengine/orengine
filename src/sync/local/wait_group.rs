@@ -69,7 +69,12 @@ impl LocalWaitGroup {
     }
 
     #[inline(always)]
-    pub fn done(&self) {
+    pub fn count(&self) -> usize {
+        self.get_inner().count
+    }
+
+    #[inline(always)]
+    pub fn done(&self) -> usize {
         let inner = self.get_inner();
         inner.count -= 1;
         if unlikely(inner.count == 0) {
@@ -79,6 +84,8 @@ impl LocalWaitGroup {
             }
             unsafe { inner.waited_tasks.set_len(0) };
         }
+
+        inner.count + 1
     }
 
     #[inline(always)]
