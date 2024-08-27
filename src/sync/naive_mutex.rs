@@ -132,7 +132,7 @@ mod tests {
             });
         });
 
-        wg.wait().await;
+        let _ = wg.wait().await;
         println!("2");
         let value = mutex.lock().await;
         println!("4");
@@ -162,7 +162,7 @@ mod tests {
             });
         });
 
-        wg.wait().await;
+        let _ = wg.wait().await;
         println!("2");
         let value = mutex.try_lock();
         println!("3");

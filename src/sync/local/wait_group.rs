@@ -141,8 +141,6 @@ mod tests {
             });
         }
 
-        yield_now().await;
-
         wait_group.wait().await;
         if *check_value.get() != 0 {
             panic!("not waited");

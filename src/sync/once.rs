@@ -103,6 +103,6 @@ mod tests {
 
         assert!(once.is_called());
         assert_eq!(once.call_once(|| ()), Err(()));
-        wg.wait().await;
+        let _ = wg.wait().await;
     }
 }

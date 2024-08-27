@@ -21,18 +21,21 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
             println!("test {} is started!", #name);
 
             let res = std::thread::spawn(move || {
-                let result = std::panic::catch_unwind(|| {
-                    crate::runtime::create_local_executer_for_block_on(async {
+                let sender = std::sync::Arc::new(sender);
+                let sender2 = sender.clone();
+                let result = std::panic::catch_unwind(move || {
+                    let executor = crate::Executor::init();
+                    executor.spawn_local(async move {
                         #body
                         crate::end::end();
+                        sender2.send(Ok(())).unwrap();
                     });
+                    executor.run();
                 });
 
                 if let Err(err) = result {
                     crate::end::end();
                     sender.send(Err(err)).unwrap();
-                } else {
-                    sender.send(Ok(())).unwrap();
                 }
             });
 

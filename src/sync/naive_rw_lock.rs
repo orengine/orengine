@@ -190,7 +190,7 @@ mod tests {
             });
         }
 
-        wg.wait().await;
+        let _ = wg.wait().await;
 
         for _ in 1..=10 {
             let wg = wg.clone();
@@ -225,8 +225,8 @@ mod tests {
             });
         }
 
-        wg.wait().await;
-        read_wg.wait().await;
+        let _ = wg.wait().await;
+        let _ = read_wg.wait().await;
 
         let value = mutex.read().await;
         assert_eq!(*value, 10);

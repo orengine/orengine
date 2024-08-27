@@ -4,8 +4,6 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
-use std::thread;
-use std::time::Duration;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::runtime::local_executor;
 
@@ -45,11 +43,9 @@ impl<'wait_group> Future for Wait<'wait_group> {
                 local_executor().push_current_task_to_and_remove_it_if_counter_is_zero(
                     &this.wait_group.waited_tasks,
                     &this.wait_group.counter,
-                    Release
+                    Acquire
                 );
             }
-
-            thread::sleep(Duration::from_secs(1));
 
             Poll::Pending
         } else {
@@ -112,7 +108,7 @@ mod tests {
     use std::thread;
     use std::time::Duration;
     use crate::runtime::create_local_executer_for_block_on;
-    use crate::{sleep, yield_now};
+    use crate::{end_local_thread, sleep, yield_now};
     use super::*;
 
     const PAR: usize = 200;
@@ -129,7 +125,7 @@ mod tests {
 
             thread::spawn(move || {
                 create_local_executer_for_block_on(async move {
-                    wait_group.wait().await;
+                    let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
@@ -162,7 +158,7 @@ mod tests {
             });
         }
 
-        wait_group.wait().await;
+        let _ = wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
         }
@@ -182,13 +178,12 @@ mod tests {
                 create_local_executer_for_block_on(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
+                    end_local_thread();
                 });
             });
         }
 
-        sleep(Duration::from_millis(1)).await;
-        println!("TODO r HERE");
-        wait_group.wait().await;
+        let _ = wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
         }

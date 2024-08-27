@@ -216,12 +216,11 @@ impl Executor {
             F: Future<Output=()> + 'static,
     {
         let task = Task::from_future(future);
-        unsafe { self.spawn_local_task(task); }
+        self.spawn_local_task(task);
     }
 
     #[inline(always)]
-    // unsafe because we can't guarantee that `task` is valid and local.
-    pub unsafe fn spawn_local_task(&mut self, task: Task) {
+    pub fn spawn_local_task(&mut self, task: Task) {
         self.tasks.push_back(task);
     }
 
@@ -253,8 +252,13 @@ impl Executor {
     }
 
     #[inline(always)]
-    /// Return true, if we need to stop ([`end_local_thread`](end_local_thread) was called).
+    /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
+    /// was called or [`end`](crate::end::end)).
     fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
+        if unlikely(was_ended() || global_was_end()) {
+            return true;
+        }
+
         let has_no_work = io_worker.must_poll(Duration::ZERO);
 
         let instant = Instant::now();
@@ -282,7 +286,7 @@ impl Executor {
             self.tasks.shrink_to(self.tasks.len() * 2 + 1);
         }
 
-        was_ended() || global_was_end()
+        false
     }
 
     pub fn run(&mut self) {
