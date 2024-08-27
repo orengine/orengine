@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::intrinsics::{unlikely};
+use std::mem::MaybeUninit;
+use std::ptr;
 use std::task::{Context, Poll};
 use crate::local::Local;
 use crate::runtime::{local_executor, Task};
@@ -10,7 +12,7 @@ struct Inner<T> {
     is_closed: bool,
     capacity: usize,
     senders: VecDeque<Task>,
-    receivers: VecDeque<Task>
+    receivers: VecDeque<(Task, *mut T)>
 }
 
 // region futures
@@ -54,8 +56,10 @@ impl<T> Future for WaitLocalSend<T> {
         }
 
         if unlikely(inner.receivers.len() > 0) {
-            unsafe { local_executor().spawn_local_task(inner.receivers.pop_front().unwrap_unchecked()); }
-            return insert_value!(this, inner);
+            let (task, slot) = unsafe { inner.receivers.pop_front().unwrap_unchecked() };
+            unsafe { *slot = this.value.take().unwrap_unchecked() };
+            local_executor().exec_task(task);
+            return Poll::Ready(Ok(()));
         }
 
         let len = inner.storage.len();
@@ -69,27 +73,33 @@ impl<T> Future for WaitLocalSend<T> {
     }
 }
 
-pub struct WaitLocalRecv<T> {
-    inner: Local<Inner<T>>
+pub struct WaitLocalRecv<'slot, T> {
+    inner: Local<Inner<T>>,
+    was_enqueued: bool,
+    slot: &'slot mut T
 }
 
-impl<T> WaitLocalRecv<T> {
+impl<'slot, T> WaitLocalRecv<'slot, T> {
     #[inline(always)]
-    fn new(inner: Local<Inner<T>>) -> Self {
+    fn new(inner: Local<Inner<T>>, slot: &'slot mut T) -> Self {
         Self {
-            inner
+            inner,
+            was_enqueued: false,
+            slot
         }
     }
 }
 
 macro_rules! get_value {
     ($this:expr, $inner:expr) => {
-        Poll::Ready(Ok(unsafe { ($inner.storage.pop_front().unwrap_unchecked()) }))
+        Poll::Ready(Ok(unsafe {
+            ptr::write($this.slot, $inner.storage.pop_front().unwrap_unchecked())
+        }))
     };
 }
 
-impl<T> Future for WaitLocalRecv<T> {
-    type Output = Result<T, ()>;
+impl<'slot, T> Future for WaitLocalRecv<'slot, T> {
+    type Output = Result<(), ()>;
 
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -100,6 +110,10 @@ impl<T> Future for WaitLocalRecv<T> {
             return Poll::Ready(Err(()));
         }
 
+        if unlikely(this.was_enqueued) {
+            return Poll::Ready(Ok(()));
+        }
+
         if unlikely(inner.senders.len() > 0) {
             unsafe { local_executor().spawn_local_task(inner.senders.pop_front().unwrap_unchecked()); }
             return get_value!(this, inner);
@@ -108,7 +122,8 @@ impl<T> Future for WaitLocalRecv<T> {
         let l = inner.storage.len();
         if unlikely(l == 0) {
             let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-            inner.receivers.push_back(task);
+            this.was_enqueued = true;
+            inner.receivers.push_back((task, this.slot));
             return Poll::Pending;
         }
 
@@ -127,7 +142,7 @@ fn close<T>(inner: &mut Inner<T>) {
         executor.exec_task(task);
     }
 
-    for task in inner.receivers.drain(..) {
+    for (task, _) in inner.receivers.drain(..) {
         executor.exec_task(task);
     }
 }
@@ -186,8 +201,19 @@ impl<T> LocalReceiver<T> {
     }
 
     #[inline(always)]
-    pub fn recv(&self) -> WaitLocalRecv<T> {
-        WaitLocalRecv::new(self.inner.clone())
+    pub async fn recv(&self) -> Result<T, ()> {
+        let mut slot = MaybeUninit::uninit();
+        unsafe {
+            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+                Ok(_) => Ok(slot.assume_init()),
+                Err(_) => Err(()),
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub fn recv_in<'slot>(&self, slot: &'slot mut T) -> WaitLocalRecv<'slot, T> {
+        WaitLocalRecv::new(self.inner.clone(), slot)
     }
 
     #[inline(always)]
@@ -219,10 +245,9 @@ pub struct LocalChannel<T> {
 impl<T> LocalChannel<T> {
     #[inline(always)]
     pub fn new(capacity: usize) -> Self {
-        let real_capacity = if capacity == 0 { 1 } else { capacity };
         Self {
             inner: Local::new(Inner {
-                storage: VecDeque::with_capacity(real_capacity),
+                storage: VecDeque::with_capacity(capacity),
                 capacity,
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
@@ -237,8 +262,19 @@ impl<T> LocalChannel<T> {
     }
 
     #[inline(always)]
-    pub fn recv(&self) -> WaitLocalRecv<T> {
-        WaitLocalRecv::new(self.inner.clone())
+    pub async fn recv(&self) -> Result<T, ()> {
+        let mut slot = MaybeUninit::uninit();
+        unsafe {
+            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+                Ok(_) => Ok(slot.assume_init()),
+                Err(_) => Err(()),
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub fn recv_in<'slot>(&self, slot: &'slot mut T) -> WaitLocalRecv<'slot, T> {
+        WaitLocalRecv::new(self.inner.clone(), slot)
     }
 
     #[inline(always)]
@@ -275,23 +311,17 @@ mod tests {
     fn test_zero_capacity() {
         let ch = LocalChannel::new(0);
         let ch2 = ch.clone();
-        let is_waiting = Local::new(false);
-        let is_waiting2 = is_waiting.clone();
 
         local_executor().spawn_local(async move {
             ch.send(1).await.expect("closed");
-            assert!(is_waiting.get());
 
             yield_now().await;
 
             ch.close();
         });
 
-        *is_waiting2.get_mut() = true;
         let res = ch2.recv().await.expect("closed");
         assert_eq!(res, 1);
-        assert!(is_waiting2.get());
-        *is_waiting2.get_mut() = false;
 
         match ch2.send(2).await {
             Err(_) => assert!(true),
