@@ -16,11 +16,12 @@ use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
 use crate::end_local_thread;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::call::Call;
+use crate::runtime::get_core_id_for_executor;
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
 use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
-use crate::utils::{CoreId, get_core_ids};
+use crate::utils::CoreId;
 
 thread_local! {
     static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = UnsafeCell::new(None);
@@ -80,6 +81,7 @@ pub struct Executor {
 
     current_call: Call,
 
+    exec_series: usize,
     tasks: VecDeque<Task>,
     sleeping_tasks: BTreeSet<SleepingTask>
 }
@@ -101,6 +103,7 @@ impl Executor {
                     worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
                     current_call: Call::default(),
                     tasks: VecDeque::new(),
+                    exec_series: 0,
                     sleeping_tasks: BTreeSet::new(),
                 });
             });
@@ -110,12 +113,7 @@ impl Executor {
     }
 
     pub fn init() -> &'static mut Executor {
-        let cores_id = get_core_ids();
-        if cores_id.is_some() {
-            Self::init_on_core(cores_id.unwrap()[0])
-        } else {
-            Self::init_on_core(CoreId {id: 0})
-        }
+        Self::init_on_core(get_core_id_for_executor())
     }
 
     pub fn worker_id(&self) -> usize {
@@ -163,6 +161,12 @@ impl Executor {
 
     #[inline(always)]
     pub fn exec_task(&mut self, mut task: Task) {
+        self.exec_series += 1;
+        if unlikely(self.exec_series == 107) {
+            self.exec_series = 0;
+            self.spawn_local_task(task);
+            return;
+        }
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
@@ -258,6 +262,8 @@ impl Executor {
         if unlikely(was_ended() || global_was_end()) {
             return true;
         }
+
+        self.exec_series = 0;
 
         let has_no_work = io_worker.must_poll(Duration::ZERO);
 
