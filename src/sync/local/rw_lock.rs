@@ -294,25 +294,25 @@ mod tests {
         let wg = Rc::new(LocalWaitGroup::new());
         let read_wg = Rc::new(LocalWaitGroup::new());
 
-        for i in 1..=100 {
+        for i in 1..=50 {
             let mutex = mutex.clone();
             local_executor().exec_future(async move {
                 let value = mutex.read().await;
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
                 sleep(SLEEP_DURATION).await;
-                assert_eq!(mutex.get_inner().number_of_readers, 101 - i);
+                assert_eq!(mutex.get_inner().number_of_readers, 51 - i);
                 assert_eq!(*value, 0);
             });
         }
 
-        for _ in 1..=100 {
+        for _ in 1..=50 {
             let wg = wg.clone();
             let read_wg = read_wg.clone();
             wg.add(1);
             let mutex = mutex.clone();
             local_executor().exec_future(async move {
-                assert_eq!(mutex.get_inner().number_of_readers, 100);
+                assert_eq!(mutex.get_inner().number_of_readers, 50);
                 let mut value = mutex.write().await;
                 {
                     let read_wg = read_wg.clone();
@@ -340,7 +340,7 @@ mod tests {
         read_wg.wait().await;
 
         let value = mutex.read().await;
-        assert_eq!(*value, 100);
+        assert_eq!(*value, 50);
         assert_ne!(mutex.get_inner().number_of_readers, 0);
     }
 

@@ -32,6 +32,7 @@ impl TaskPool {
     #[inline(always)]
     pub fn acquire<F: Future<Output=()> + 'static>(&mut self, future: F) -> *mut dyn Future<Output=()> {
         let size = mem::size_of::<F>();
+        println!("TODO r size = {}", size);
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         if let Some(slot_ptr) = pool.pop() {

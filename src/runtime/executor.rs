@@ -8,12 +8,11 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use crate::end_local_thread;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::buf::BufPool;
 use crate::cfg::{config_buf_len};
 use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
-#[cfg(test)]
-use crate::end_local_thread;
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::call::Call;
 use crate::runtime::get_core_id_for_executor;
@@ -324,30 +323,47 @@ impl Executor {
         BufPool::uninit_in_local_thread();
     }
 
-    // uses only for tests, because double memory usage of a future.
-    #[cfg(test)]
-    pub(crate) fn run_and_block_on<T, F>(&mut self, future: F) -> T
-        where
-            T: 'static,
-            F: Future<Output=T> + 'static,
-    {
-        let mut res = MaybeUninit::uninit();
-        let res_ptr: *mut T = res.as_mut_ptr();
-        self.exec_future(async move {
-            unsafe { res_ptr.write(future.await) };
-            end_local_thread();
-        });
+    pub fn run_and_block_on<T, Fut>(&mut self, mut future: Fut) -> Result<T, ()>
+        where T: 'static, Fut: Future<Output=T> + 'static {
+        // Async block in async block allocates double memory.
+        // But if we use async block in `Future::poll`, it allocates only one memory.
+        // When I say "async block" I mean future that is represented by `async {}`.
+        struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output=R>> {
+            res_ptr: *mut Option<R>,
+            future: Fut
+        }
+
+        impl<R, Fut: Future<Output=R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
+            type Output = ();
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                let this = unsafe { self.get_unchecked_mut() };
+                let mut pinned_fut = unsafe { Pin::new_unchecked(&mut this.future) };
+                match pinned_fut.as_mut().poll(cx) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(res) => {
+                        unsafe { this.res_ptr.write(Some(res)) };
+                        end_local_thread();
+                        Poll::Ready(())
+                    }
+                }
+            }
+        }
+
+        let mut res = None;
+        let static_future = EndLocalThreadAndWriteIntoPtr {
+            res_ptr: &mut res,
+            future
+        };
+        self.exec_future(static_future);
         self.run();
-        unsafe { res.assume_init() }
+        res.ok_or(())
     }
 }
 
-// uses only for tests, because double memory usage of a future.
-#[cfg(test)]
-pub(crate) fn create_local_executer_for_block_on<T, F>(future: F) -> T
-    where
-        T: 'static,
-        F: Future<Output=T> + 'static,
+#[inline(always)]
+pub fn init_local_executer_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, ()>
+    where T: 'static, Fut: Future<Output=T> + 'static,
 {
     Executor::init();
     local_executor().run_and_block_on(future)
@@ -392,6 +408,6 @@ mod tests {
         }
 
         Executor::init();
-        assert_eq!(42, local_executor().run_and_block_on(async_42()));
+        assert_eq!(Ok(42), local_executor().run_and_block_on(async_42()));
     }
 }

@@ -254,7 +254,7 @@ pub mod naive {
         pub async fn lock(&self) -> MutexGuard<T> {
             loop {
                 let backoff = Backoff::new();
-                for _ in 0..6 {
+                while !backoff.is_completed() {
                     if let Some(guard) = self.try_lock() {
                         return guard;
                     }
@@ -295,7 +295,7 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    use crate::runtime::create_local_executer_for_block_on;
+    use crate::runtime::init_local_executer_and_run_it_for_block_on;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
 
@@ -312,7 +312,7 @@ mod tests {
         let wg_clone = wg.clone();
         wg_clone.add(1);
         thread::spawn(move || {
-            create_local_executer_for_block_on(async move {
+            init_local_executer_and_run_it_for_block_on(async move {
                 let mut value = mutex_clone.lock().await;
                 wg_clone.done();
                 println!("1");
@@ -345,7 +345,7 @@ mod tests {
         lock_wg.add(1);
         unlock_wg.add(1);
         thread::spawn(move || {
-            create_local_executer_for_block_on(async move {
+            init_local_executer_and_run_it_for_block_on(async move {
                 let mut value = mutex_clone.lock().await;
                 println!("1");
                 lock_wg_clone.done();
@@ -401,7 +401,7 @@ mod tests {
             let wg = wg.clone();
             let mutex = mutex.clone();
             thread::spawn(move || {
-                create_local_executer_for_block_on(async move {
+                init_local_executer_and_run_it_for_block_on(async move {
                     for _ in 0..TRIES {
                         work_with_lock(&mutex, &wg).await;
                     }

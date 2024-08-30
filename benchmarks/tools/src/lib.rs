@@ -122,7 +122,7 @@ impl Bencher {
     }
 }
 
-pub fn bench<F: FnOnce(Bencher)>(name: &'static str, f: F) {
+pub fn bench<F: FnOnce(Bencher)>(name: &str, f: F) {
     let b = Bencher::new(name);
     f(b);
 }

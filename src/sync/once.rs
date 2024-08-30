@@ -74,7 +74,7 @@ mod tests {
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
     use std::thread;
-    use crate::runtime::create_local_executer_for_block_on;
+    use crate::runtime::init_local_executer_and_run_it_for_block_on;
     use crate::sync::WaitGroup;
 
     use super::*;
@@ -93,7 +93,7 @@ mod tests {
             wg.add(1);
             let once = once.clone();
             thread::spawn(move || {
-                create_local_executer_for_block_on(async move {
+                init_local_executer_and_run_it_for_block_on(async move {
                     let _ = once.call_once(|| {
                         assert!(!a.load(SeqCst));
                         a.store(true, SeqCst);

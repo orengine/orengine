@@ -92,7 +92,7 @@ impl WaitGroup {
         if unlikely(prev_count == 1) {
             let executor = local_executor();
             while let Some(task) = self.waited_tasks.pop() {
-                executor.exec_task(task);
+                executor.spawn_local_task(task);
             }
         }
 
@@ -114,7 +114,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
-    use crate::runtime::create_local_executer_for_block_on;
+    use crate::runtime::init_local_executer_and_run_it_for_block_on;
     use crate::{end_local_thread, sleep, yield_now};
     use super::*;
 
@@ -131,7 +131,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                create_local_executer_for_block_on(async move {
+                init_local_executer_and_run_it_for_block_on(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
@@ -157,7 +157,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                create_local_executer_for_block_on(async move {
+                init_local_executer_and_run_it_for_block_on(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
@@ -182,7 +182,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                create_local_executer_for_block_on(async move {
+                init_local_executer_and_run_it_for_block_on(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
                     end_local_thread();

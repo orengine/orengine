@@ -115,7 +115,7 @@ mod tests {
     use crate::io::bind::BindConfig;
     use crate::net::Socket;
     use crate::net::tcp::TcpListener;
-    use crate::runtime::{create_local_executer_for_block_on, local_executor};
+    use crate::runtime::{init_local_executer_and_run_it_for_block_on, local_executor};
     use crate::sync::cond_var::LocalCondVar;
     use crate::sync::{LocalMutex, LocalWaitGroup};
 
@@ -182,7 +182,7 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            create_local_executer_for_block_on(async move {
+            init_local_executer_and_run_it_for_block_on(async move {
                 let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
