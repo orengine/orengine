@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -28,6 +29,13 @@ impl<'spin_lock, T> SpinLockGuard<'spin_lock, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the spin_lock will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
+
+    pub unsafe fn leak(self) -> *const CachePadded<AtomicBool> {
+        let atomic_ptr = &self.spin_lock.is_locked;
+        mem::forget(self);
+
+        atomic_ptr
+    }
 }
 
 impl<'spin_lock, T> Deref for SpinLockGuard<'spin_lock, T> {
@@ -87,6 +95,12 @@ impl<T> SpinLock<T> {
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_locked(&self) -> &mut T {
+        debug_assert!(self.is_locked.load(Acquire));
+        &mut *self.value.get()
     }
 
     #[inline(always)]

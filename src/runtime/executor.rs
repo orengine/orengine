@@ -5,9 +5,10 @@ use std::intrinsics::{likely, unlikely};
 use std::mem;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use crossbeam::utils::CachePadded;
 use crate::end_local_thread;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::buf::BufPool;
@@ -159,6 +160,10 @@ impl Executor {
         );
     }
 
+    pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
+        self.current_call = Call::ReleaseAtomicBool(atomic_bool);
+    }
+
     #[inline(always)]
     pub fn exec_task(&mut self, mut task: Task) {
         self.exec_series += 1;
@@ -175,6 +180,7 @@ impl Executor {
 
         match unsafe { Pin::new_unchecked(future) }.as_mut().poll(&mut context) {
             Poll::Ready(()) => {
+                debug_assert_eq!(self.current_call, Call::None);
                 unsafe { task.drop_future() };
             }
             Poll::Pending => {
@@ -199,6 +205,10 @@ impl Executor {
                                 } // else other thread already executed the task
                             }
                         }
+                    }
+                    Call::ReleaseAtomicBool(atomic_ptr) => {
+                        let atomic_ref = unsafe { &*atomic_ptr };
+                        atomic_ref.store(false, Ordering::Release);
                     }
                 }
             }
