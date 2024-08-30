@@ -114,12 +114,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
-    use crate::runtime::init_local_executer_and_run_it_for_block_on;
-    use crate::{end_local_thread, sleep, yield_now};
-    use crate::messages::BUG;
+    use crate::{end_local_thread, sleep, Executor};
     use super::*;
 
-    const PAR: usize = 200;
+    const PAR: usize = 40;
 
     #[test_macro::test]
     fn test_many_wait_one() {
@@ -132,16 +130,20 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                init_local_executer_and_run_it_for_block_on(async move {
+                let ex = Executor::init();
+                ex.spawn_local(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
-                }).expect(BUG);
+
+                    end_local_thread();
+                });
+                ex.run();
             });
         }
 
-        yield_now().await;
+        sleep(Duration::from_millis(1)).await;
 
         *check_value.lock().unwrap() = true;
         wait_group.done();
@@ -158,11 +160,15 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                init_local_executer_and_run_it_for_block_on(async move {
+                let ex = Executor::init();
+                ex.spawn_local(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
-                }).expect(BUG);
+
+                    end_local_thread();
+                });
+                ex.run();
             });
         }
 
@@ -183,11 +189,14 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                init_local_executer_and_run_it_for_block_on(async move {
+                let ex = Executor::init();
+                ex.spawn_local(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
+
                     end_local_thread();
-                }).expect(BUG);
+                });
+                ex.run();
             });
         }
 

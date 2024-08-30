@@ -110,13 +110,13 @@ mod tests {
     use std::{io, thread};
     use std::rc::Rc;
     use std::time::{Duration, Instant};
+    use crate::{end_local_thread, Executor};
     use crate::io::{AsyncAccept, AsyncBind};
 
     use crate::io::bind::BindConfig;
-    use crate::messages::BUG;
     use crate::net::Socket;
     use crate::net::tcp::TcpListener;
-    use crate::runtime::{init_local_executer_and_run_it_for_block_on, local_executor};
+    use crate::runtime::local_executor;
     use crate::sync::cond_var::LocalCondVar;
     use crate::sync::{LocalMutex, LocalWaitGroup};
 
@@ -183,7 +183,8 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            init_local_executer_and_run_it_for_block_on(async move {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
                 let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -198,7 +199,10 @@ mod tests {
 
                     stream.send_all(RESPONSE).await.expect("send failed");
                 }
-            }).expect(BUG);
+
+                end_local_thread();
+            });
+            ex.run();
         });
 
         use std::io::{Read, Write};

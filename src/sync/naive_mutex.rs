@@ -294,8 +294,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
-    use crate::messages::BUG;
-    use crate::runtime::init_local_executer_and_run_it_for_block_on;
+    use crate::{end_local_thread, Executor};
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
 
@@ -312,14 +311,18 @@ mod tests {
         let wg_clone = wg.clone();
         wg_clone.add(1);
         thread::spawn(move || {
-            init_local_executer_and_run_it_for_block_on(async move {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
                 let mut value = mutex_clone.lock().await;
                 wg_clone.done();
                 println!("1");
                 sleep(SLEEP_DURATION).await;
                 println!("3");
                 *value = true;
-            }).expect(BUG);
+
+                end_local_thread();
+            });
+            ex.run();
         });
 
         let _ = wg.wait().await;
@@ -345,7 +348,8 @@ mod tests {
         lock_wg.add(1);
         unlock_wg.add(1);
         thread::spawn(move || {
-            init_local_executer_and_run_it_for_block_on(async move {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
                 let mut value = mutex_clone.lock().await;
                 println!("1");
                 lock_wg_clone.done();
@@ -354,7 +358,10 @@ mod tests {
                 *value = true;
                 drop(value);
                 second_lock_clone.done();
-            }).expect(BUG);
+
+                end_local_thread();
+            });
+            ex.run();
         });
 
         let _ = lock_wg.wait().await;
@@ -402,11 +409,15 @@ mod tests {
             let wg = wg.clone();
             let mutex = mutex.clone();
             thread::spawn(move || {
-                init_local_executer_and_run_it_for_block_on(async move {
+                let ex = Executor::init();
+                ex.spawn_local(async move {
                     for _ in 0..TRIES {
                         work_with_lock(&mutex, &wg).await;
                     }
-                }).expect(BUG);
+
+                    end_local_thread();
+                });
+                ex.run();
             });
         }
 

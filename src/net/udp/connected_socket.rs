@@ -89,7 +89,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::{io, thread};
     use std::time::Duration;
-
     use crate::io::{AsyncBind, AsyncConnectDatagram};
     use crate::net::udp::UdpSocket;
 

@@ -43,16 +43,16 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 Ok(Ok(())) => {
                     println!("test {} is finished!", #name);
                     println!();
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                     drop(lock);
                 }
                 Ok(Err(err)) => {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                     drop(lock);
                     std::panic::resume_unwind(err);
                 },
                 Err(_) => {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                     drop(lock);
                     panic!("test {} is failed (timeout)!", #name)
                 },

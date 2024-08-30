@@ -324,7 +324,7 @@ impl Executor {
         BufPool::uninit_in_local_thread();
     }
 
-    pub fn run_and_block_on<T, Fut: Future<Output=T>>(&mut self, future: Fut) -> Result<T, ()> {
+    pub fn run_and_block_on<T, Fut: Future<Output=T>>(&mut self, future: Fut) -> Result<T, &'static str> {
         // Async block in async block allocates double memory.
         // But if we use async block in `Future::poll`, it allocates only one memory.
         // When I say "async block" I mean future that is represented by `async {}`.
@@ -357,12 +357,14 @@ impl Executor {
         };
         self.exec_future(static_future);
         self.run();
-        res.ok_or(())
+        res.ok_or(
+            "The process has been ended by end() or end_local_thread() not in block_on future."
+        )
     }
 }
 
 #[inline(always)]
-pub fn init_local_executer_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, ()>
+pub fn init_local_executor_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, &'static str>
 where
     Fut: Future<Output=T>,
 {

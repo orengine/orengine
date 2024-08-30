@@ -127,10 +127,9 @@ mod tests {
     use std::ops::Deref;
     use std::rc::Rc;
     use std::time::Duration;
-
+    use crate::{end_local_thread, Executor};
     use crate::io::AsyncBind;
-    use crate::messages::BUG;
-    use crate::runtime::{init_local_executer_and_run_it_for_block_on, local_executor};
+    use crate::runtime::local_executor;
     use crate::sync::cond_var::LocalCondVar;
     use crate::sync::LocalMutex;
 
@@ -197,7 +196,8 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            init_local_executer_and_run_it_for_block_on(async move {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
                 let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -210,7 +210,10 @@ mod tests {
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
-            }).expect(BUG);
+
+                end_local_thread();
+            });
+            ex.run();
         });
 
         while is_server_ready.load(std::sync::atomic::Ordering::Relaxed) == false {

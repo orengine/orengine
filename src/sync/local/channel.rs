@@ -114,7 +114,6 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
 
         if unlikely(this.inner.senders.len() > 0) {
             unsafe { local_executor().spawn_local_task(this.inner.senders.pop_front().unwrap_unchecked()); }
-            return get_value!(this);
         }
 
         let l = this.inner.storage.len();
@@ -165,7 +164,7 @@ impl<'channel, T> LocalSender<'channel, T> {
     }
 
     #[inline(always)]
-    pub fn close(self) {
+    pub fn close(&self) {
         let inner = unsafe { &mut * self.inner.get() };
         close(inner);
     }
@@ -272,11 +271,11 @@ impl<T> LocalChannel<T> {
 
     #[inline(always)]
     pub fn recv_in<'future>(&self, slot: &'future mut T) -> WaitLocalRecv<'future, T> {
-        WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
+        WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
     }
 
     #[inline(always)]
-    pub fn close(self) {
+    pub fn close(&self) {
         let inner = unsafe { &mut * self.inner.get() };
         close(inner);
     }
@@ -292,149 +291,172 @@ impl<T> !Send for LocalChannel<T> {}
 
 // endregion
 
-// TODO
-// #[cfg(test)]
-// mod tests {
-//     use crate::sync::WaitGroup;
-//     use crate::yield_now;
-//     use super::*;
-//
-//     #[test_macro::test]
-//     fn test_zero_capacity() {
-//         let ch = LocalChannel::new(0);
-//
-//         local_executor().spawn_local(async move {
-//             ch.send(1).await.expect("closed");
-//
-//             yield_now().await;
-//
-//             ch.close();
-//         });
-//
-//         let res = ch.recv().await.expect("closed");
-//         assert_eq!(res, 1);
-//
-//         match ch.send(2).await {
-//             Err(_) => assert!(true),
-//             _ => panic!("should be closed")
-//         };
-//     }
-//
-//     const N: usize = 10_025;
-//
-//     // case 1 - send N and recv N. No wait
-//     // case 2 - send N and recv (N + 1). Wait for recv
-//     // case 3 - send (N + 1) and recv N. Wait for send
-//     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
-//
-//     #[test_macro::test]
-//     fn test_local_channel_case1() {
-//         let ch = LocalChannel::new(N);
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..N {
-//                 ch.send(i).await.expect("closed");
-//             }
-//
-//             yield_now().await;
-//
-//             ch.close();
-//         });
-//
-//         for i in 0..N {
-//             let res = ch.recv().await.expect("closed");
-//             assert_eq!(res, i);
-//         }
-//
-//         match ch.recv().await {
-//             Err(_) => assert!(true),
-//             _ => panic!("should be closed")
-//         };
-//     }
-//
-//     #[test_macro::test]
-//     fn test_local_channel_case2() {
-//         let ch = LocalChannel::new(N);
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..=N {
-//                 let res = ch.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//         });
-//
-//         for i in 0..N {
-//             let _ = ch.send(i).await.expect("closed");
-//         }
-//
-//         yield_now().await;
-//
-//         let _ = ch.send(N).await.expect("closed");
-//     }
-//
-//     #[test_macro::test]
-//     fn test_local_channel_case3() {
-//         let ch = LocalChannel::new(N);
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..N {
-//                 let res = ch.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//
-//             yield_now().await;
-//
-//             let res = ch.recv().await.expect("closed");
-//             assert_eq!(res, N);
-//         });
-//
-//         for i in 0..=N {
-//             ch.send(i).await.expect("closed");
-//         }
-//     }
-//
-//     #[test_macro::test]
-//     fn test_local_channel_case4() {
-//         let ch = LocalChannel::new(N);
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..=N {
-//                 let res = ch.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//         });
-//
-//         for i in 0..=N {
-//             ch.send(i).await.expect("closed");
-//         }
-//     }
-//
-//     #[test_macro::test]
-//     fn test_local_channel_split() {
-//         let (tx, rx) = LocalChannel::new(N).split();
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..=N*2 {
-//                 let res = rx.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//         });
-//
-//         let wg = WaitGroup::new();
-//         wg.add(1);
-//
-//         local_executor().spawn_local(async move {
-//             for i in 0..N {
-//                 tx.send(i).await.expect("closed");
-//             }
-//
-//             wg.done();
-//         });
-//
-//         wg.wait().await;
-//
-//         for i in N..=N*2 {
-//             tx.send(i).await.expect("closed");
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::sync::{local_scope, WaitGroup};
+    use crate::yield_now;
+    use super::*;
+
+    #[test_macro::test]
+    fn test_zero_capacity() {
+        let ch = LocalChannel::new(0);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move{
+                ch_ref.send(1).await.expect("closed");
+
+                yield_now().await;
+
+                ch_ref.send(2).await.expect("closed");
+                ch_ref.close();
+            });
+
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, 1);
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, 2);
+
+            match ch.send(2).await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed")
+            };
+        }).await;
+    }
+
+    const N: usize = 10_025;
+
+    // case 1 - send N and recv N. No wait
+    // case 2 - send N and recv (N + 1). Wait for recv
+    // case 3 - send (N + 1) and recv N. Wait for send
+    // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
+
+    #[test_macro::test]
+    fn test_local_channel_case1() {
+        let ch = LocalChannel::new(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..N {
+                    ch_ref.send(i).await.expect("closed");
+                }
+
+                yield_now().await;
+
+                ch_ref.close();
+            });
+
+            for i in 0..N {
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
+            }
+
+            match ch.recv().await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed")
+            };
+        }).await;
+    }
+
+    #[test_macro::test]
+    fn test_local_channel_case2() {
+        let ch = LocalChannel::new(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..=N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+
+                ch_ref.close();
+            });
+
+            for i in 0..N {
+                let _ = ch.send(i).await.expect("closed");
+            }
+
+            yield_now().await;
+
+            let _ = ch.send(N).await.expect("closed");
+        }).await;
+    }
+
+    #[test_macro::test]
+    fn test_local_channel_case3() {
+        let ch = LocalChannel::new(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+
+                yield_now().await;
+
+                let res = ch_ref.recv().await.expect("closed");
+                assert_eq!(res, N);
+            });
+
+            for i in 0..=N {
+                ch.send(i).await.expect("closed");
+            }
+        }).await;
+    }
+
+    #[test_macro::test]
+    fn test_local_channel_case4() {
+        let ch = LocalChannel::new(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..=N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+            });
+
+            for i in 0..=N {
+                ch.send(i).await.expect("closed");
+            }
+        }).await;
+    }
+
+    #[test_macro::test]
+    fn test_local_channel_split() {
+        let ch = LocalChannel::new(N);
+        let (tx, rx) = ch.split();
+        let tx_ref = &tx;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..=N*2 {
+                    let res = rx.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+            });
+
+            let wg = WaitGroup::new();
+            wg.add(1);
+
+            scope.spawn(async {
+                for i in 0..N {
+                    tx_ref.send(i).await.expect("closed");
+                }
+
+                wg.done();
+            });
+
+            let _ = wg.wait().await;
+
+            for i in N..=N*2 {
+                tx.send(i).await.expect("closed");
+            }
+        }).await;
+    }
+}

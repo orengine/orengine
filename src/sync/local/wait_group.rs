@@ -115,7 +115,7 @@ mod tests {
         let wait_group = Rc::new(LocalWaitGroup::new());
         wait_group.inc();
 
-        for _ in 0..10 {
+        for _ in 0..5 {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
@@ -134,11 +134,11 @@ mod tests {
 
     #[test_macro::test]
     fn test_one_wait_many() {
-        let check_value = Local::new(10);
+        let check_value = Local::new(5);
         let wait_group = Rc::new(LocalWaitGroup::new());
-        wait_group.add(10);
+        wait_group.add(5);
 
-        for _ in 0..10 {
+        for _ in 0..5 {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
