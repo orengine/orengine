@@ -160,13 +160,13 @@ impl Buffer {
     /// Returns a pointer to the buffer.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const u8 {
-        self.slice.as_ptr().as_mut_ptr()
+        self.slice.as_ptr() as *mut _
     }
 
     /// Returns a mutable pointer to the buffer.
     #[inline(always)]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.slice.as_mut_ptr()
+        self.slice.as_ptr() as *mut _
     }
 
     /// Clears the buffer.
@@ -287,7 +287,12 @@ impl Drop for Buffer {
             };
             unsafe { pool.put_unchecked(buf) };
         } else {
-            unsafe { dealloc(self.slice.as_mut_ptr(), Layout::array::<u8>(self.cap()).unwrap_unchecked())}
+            unsafe {
+                dealloc(
+                    self.slice.as_ptr() as *mut _,
+                    Layout::array::<u8>(self.cap()).unwrap_unchecked()
+                )
+            }
         }
     }
 }

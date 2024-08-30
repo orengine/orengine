@@ -74,6 +74,7 @@ mod tests {
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
     use std::thread;
+    use crate::messages::BUG;
     use crate::runtime::init_local_executer_and_run_it_for_block_on;
     use crate::sync::WaitGroup;
 
@@ -99,7 +100,7 @@ mod tests {
                         a.store(true, SeqCst);
                     });
                     wg.done();
-                });
+                }).expect(BUG);
             });
         }
 

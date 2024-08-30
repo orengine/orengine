@@ -113,6 +113,7 @@ mod tests {
     use crate::io::{AsyncAccept, AsyncBind};
 
     use crate::io::bind::BindConfig;
+    use crate::messages::BUG;
     use crate::net::Socket;
     use crate::net::tcp::TcpListener;
     use crate::runtime::{init_local_executer_and_run_it_for_block_on, local_executor};
@@ -197,7 +198,7 @@ mod tests {
 
                     stream.send_all(RESPONSE).await.expect("send failed");
                 }
-            });
+            }).expect(BUG);
         });
 
         use std::io::{Read, Write};

@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::mem;
 use ahash::AHashMap;
+use crate::runtime::Task;
 
 pub struct TaskPool {
     /// Key is a size.
@@ -30,18 +31,18 @@ impl TaskPool {
     }
 
     #[inline(always)]
-    pub fn acquire<F: Future<Output=()> + 'static>(&mut self, future: F) -> *mut dyn Future<Output=()> {
+    pub fn acquire<F: Future<Output=()>>(&mut self, future: F) -> Task {
         let size = mem::size_of::<F>();
-        println!("TODO r size = {}", size);
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         if let Some(slot_ptr) = pool.pop() {
-            let slot = unsafe {&mut *(slot_ptr as *mut F)};
-            // TODO *slot = future; // rewrite, not write
-            unsafe { (slot as *mut F).write(future); }
-            slot
+            let future_ptr: *mut F = unsafe { &mut *(slot_ptr as *mut F) };
+            // TODO *slot = future; // Maybe rewrite, not write
+            unsafe { future_ptr.write(future); }
+            Task { future_ptr: future_ptr as *mut _ }
         } else {
-            Box::into_raw(Box::new(future))
+            let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
+            Task { future_ptr: future_ptr as *mut _ }
         }
     }
 

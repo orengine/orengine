@@ -129,6 +129,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::io::AsyncBind;
+    use crate::messages::BUG;
     use crate::runtime::{init_local_executer_and_run_it_for_block_on, local_executor};
     use crate::sync::cond_var::LocalCondVar;
     use crate::sync::LocalMutex;
@@ -209,7 +210,7 @@ mod tests {
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
-            });
+            }).expect(BUG);
         });
 
         while is_server_ready.load(std::sync::atomic::Ordering::Relaxed) == false {

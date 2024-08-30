@@ -44,7 +44,9 @@ impl File {
 
     #[inline(always)]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
-        where OldPath: AsRef<Path>, NewPath: AsRef<Path>
+    where
+        OldPath: AsRef<Path>,
+        NewPath: AsRef<Path>
     {
         let old_path = get_os_path(old_path.as_ref())?;
         let new_path = get_os_path(new_path.as_ref())?;

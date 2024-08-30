@@ -294,7 +294,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
-
+    use crate::messages::BUG;
     use crate::runtime::init_local_executer_and_run_it_for_block_on;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
@@ -319,7 +319,7 @@ mod tests {
                 sleep(SLEEP_DURATION).await;
                 println!("3");
                 *value = true;
-            });
+            }).expect(BUG);
         });
 
         let _ = wg.wait().await;
@@ -354,7 +354,7 @@ mod tests {
                 *value = true;
                 drop(value);
                 second_lock_clone.done();
-            });
+            }).expect(BUG);
         });
 
         let _ = lock_wg.wait().await;
@@ -381,7 +381,8 @@ mod tests {
         const PAR: usize = 10;
         const TRIES: usize = 200;
 
-        async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
+        // TODO not naive
+        async fn work_with_lock(mutex: &naive::Mutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
             if *lock % 100 == 0 {
@@ -394,7 +395,7 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(Mutex::new(0));
+        let mutex = Arc::new(naive::Mutex::new(0));
         let wg = Arc::new(WaitGroup::new());
         wg.add(PAR * TRIES);
         for _ in 1..PAR {
@@ -405,7 +406,7 @@ mod tests {
                     for _ in 0..TRIES {
                         work_with_lock(&mutex, &wg).await;
                     }
-                });
+                }).expect(BUG);
             });
         }
 

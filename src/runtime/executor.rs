@@ -87,6 +87,7 @@ pub struct Executor {
 
 pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
+// TODO handle
 impl Executor {
     pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
         set_was_ended(false);
@@ -207,7 +208,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + 'static,
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future);
         self.exec_task(task);
@@ -215,8 +216,8 @@ impl Executor {
 
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
-        where
-            F: Future<Output=()> + 'static,
+    where
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future);
         self.spawn_local_task(task);
@@ -232,7 +233,7 @@ impl Executor {
     #[allow(unused)]
     pub fn spawn_global<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send + 'static,
+        F: Future<Output=()> + Send,
     {
         todo!()
     }
@@ -323,8 +324,7 @@ impl Executor {
         BufPool::uninit_in_local_thread();
     }
 
-    pub fn run_and_block_on<T, Fut>(&mut self, mut future: Fut) -> Result<T, ()>
-        where T: 'static, Fut: Future<Output=T> + 'static {
+    pub fn run_and_block_on<T, Fut: Future<Output=T>>(&mut self, future: Fut) -> Result<T, ()> {
         // Async block in async block allocates double memory.
         // But if we use async block in `Future::poll`, it allocates only one memory.
         // When I say "async block" I mean future that is represented by `async {}`.
@@ -363,7 +363,8 @@ impl Executor {
 
 #[inline(always)]
 pub fn init_local_executer_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, ()>
-    where T: 'static, Fut: Future<Output=T> + 'static,
+where
+    Fut: Future<Output=T>,
 {
     Executor::init();
     local_executor().run_and_block_on(future)

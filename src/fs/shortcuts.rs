@@ -32,7 +32,9 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[inline(always)]
 pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
-    where OldPath: AsRef<Path>, NewPath: AsRef<Path>
+where
+    OldPath: AsRef<Path>,
+    NewPath: AsRef<Path>
 {
     File::rename(old_path, new_path).await
 }

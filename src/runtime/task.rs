@@ -7,10 +7,8 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn from_future<F: Future<Output=()> + 'static>(future: F) -> Self {
-        Self {
-            future_ptr: task_pool().acquire(future)
-        }
+    pub fn from_future<F: Future<Output=()>>(future: F) -> Self {
+        task_pool().acquire(future)
     }
 
     pub unsafe fn drop_future(&mut self) {
