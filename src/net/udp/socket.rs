@@ -322,7 +322,7 @@ mod tests {
 
         match stream.take_error() {
             Ok(err_) => match err_ {
-                Some(err) => panic!("Take error returned with an error: {err:?}"),
+                Some(err) => panic!("Take error returned with an error: {:?}", err),
                 None => {}
             },
             Err(err) => panic!("Take error failed: {:?}", err),
