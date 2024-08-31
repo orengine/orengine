@@ -30,6 +30,7 @@ impl<'spin_lock, T> SpinLockGuard<'spin_lock, T> {
     /// the spin_lock will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
 
+    #[inline(always)]
     pub unsafe fn leak(self) -> *const CachePadded<AtomicBool> {
         let atomic_ptr = &self.spin_lock.is_locked;
         mem::forget(self);
@@ -105,6 +106,7 @@ impl<T> SpinLock<T> {
 
     #[inline(always)]
     pub unsafe fn unlock(&self) {
+        debug_assert!(self.is_locked.load(Acquire));
         self.is_locked.store(false, Release);
     }
 }

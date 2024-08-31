@@ -3,17 +3,115 @@ use std::future::Future;
 use std::intrinsics::unlikely;
 use std::mem::MaybeUninit;
 use std::task::{Context, Poll};
-use std::{mem, ptr};
+use std::ptr;
 
 use crate::runtime::{local_executor, Task};
 use crate::utils::SpinLock;
+
+enum SendCallState<T> {
+    /// Default state.
+    ///
+    /// # Lock note
+    ///
+    /// It has no lock now.
+    FirstCall,
+    /// This task was enqueued, now it is woken to write into queue,
+    /// because a [`WaitRecv`] has read from the queue already.
+    ///
+    /// # Scenario
+    ///
+    /// 1 - sender acquire the lock
+    ///
+    /// 2 - sender can't write into the queue
+    ///
+    /// 3 - sender stand inside the senders queue
+    ///
+    /// 4 - sender drop the lock
+    ///
+    /// 5 - receiver acquire the lock
+    ///
+    /// 6 - receiver read from the queue
+    ///
+    /// 7 - receiver take a sender's task and put [`SendCallState::WokenToWriteIntoQueueWithLock`]
+    ///
+    /// 8 - receiver exec the sender's task
+    ///
+    /// 9 - sender write into the queue
+    ///
+    /// 10 - sender release the lock
+    ///
+    /// 11 - sender do its job
+    ///
+    /// 12 - after sender yield or return, receiver return [`Poll::Ready`].
+    ///
+    /// # Lock note
+    ///
+    /// It has a lock now.
+    WokenToWriteIntoQueueWithLock,
+    /// This task was enqueued, now it is woken to write into the slot,
+    /// because this is a zero-capacity channel and a [`WaitRecv`] is waiting for read.
+    ///
+    /// # Scenario
+    ///
+    /// 1 - sender acquire the lock
+    ///
+    /// 2 - sender can't write into the queue
+    ///
+    /// 3 - sender stand inside the senders queue
+    ///
+    /// 4 - sender drop the lock
+    ///
+    /// 5 - receiver acquire the lock
+    ///
+    /// 6 - receiver can't read from the queue
+    ///
+    /// 7 - receiver take a sender's task and put [`SendCallState::WokenToWriteIntoTheSlot`]
+    ///
+    /// 8 - receiver drop the lock
+    ///
+    /// 9 - receiver exec the sender's task
+    ///
+    /// 10 - sender write into the slot and do its job
+    ///
+    /// 11 - after sender yield or return, receiver return [`Poll::Ready`].
+    ///
+    /// # Lock note
+    ///
+    /// It has no lock now.
+    WokenToWriteIntoTheSlot(*mut T),
+    /// This task was enqueued, now it is woken by close, and it has no lock now.
+    WokenByClose,
+}
+
+#[repr(u8)]
+enum RecvCallState {
+    /// Default state.
+    ///
+    /// # Lock note
+    ///
+    /// It has no lock now.
+    FirstCall,
+    /// This task was enqueued, now it is woken for return [`Poll::Ready`],
+    /// because a [`WaitSend`] has written to the slot already.
+    ///
+    /// # Lock note
+    ///
+    /// And it has no lock now.
+    WokenToReturnReady,
+    /// This task was enqueued, now it is woken by close.
+    ///
+    /// # Lock note
+    ///
+    /// It has no lock now.
+    WokenByClose,
+}
 
 struct Inner<T> {
     storage: VecDeque<T>,
     is_closed: bool,
     capacity: usize,
-    senders: VecDeque<Task>,
-    receivers: VecDeque<(Task, *mut T)>,
+    senders: VecDeque<(Task, *mut SendCallState<T>)>,
+    receivers: VecDeque<(Task, *mut T, *mut RecvCallState)>,
 }
 
 // region futures
@@ -25,16 +123,9 @@ macro_rules! return_pending_and_release_lock {
     };
 }
 
-#[repr(u8)]
-enum CallState {
-    None,
-    WokenForWork,
-    WokenByClose,
-}
-
 pub struct WaitSend<'future, T> {
     inner: &'future SpinLock<Inner<T>>,
-    call_state: CallState,
+    call_state: SendCallState<T>,
     value: Option<T>,
 }
 
@@ -43,21 +134,10 @@ impl<'future, T> WaitSend<'future, T> {
     fn new(value: T, inner: &'future SpinLock<Inner<T>>) -> Self {
         Self {
             inner,
-            call_state: CallState::None,
+            call_state: SendCallState::FirstCall,
             value: Some(value),
         }
     }
-}
-
-macro_rules! insert_value {
-    ($this:expr, $inner_lock:expr) => {{
-        unsafe {
-            $inner_lock
-                .storage
-                .push_back($this.value.take().unwrap_unchecked());
-        }
-        Poll::Ready(Ok(()))
-    }};
 }
 
 impl<'future, T> Future for WaitSend<'future, T> {
@@ -67,60 +147,84 @@ impl<'future, T> Future for WaitSend<'future, T> {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
-        if unlikely(this.was_enqueued) {}
+        match this.call_state {
+            SendCallState::FirstCall => {
+                let ex = local_executor();
+                let mut inner_lock = this.inner.lock();
 
-        let mut inner_lock = this.inner.lock();
-        let ex = local_executor();
+                if unlikely(inner_lock.is_closed) {
+                    return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
+                }
 
-        if unlikely(inner_lock.is_closed) {
-            return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
+                if unlikely(inner_lock.receivers.len() > 0) {
+                    unsafe {
+                        let (task, slot, call_state) = inner_lock
+                            .receivers
+                            .pop_front()
+                            .unwrap_unchecked();
+
+                        inner_lock.unlock();
+
+                        slot.write(this.value.take().unwrap_unchecked());
+                        call_state.write(RecvCallState::WokenToReturnReady);
+                        ex.exec_task(task);
+
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+
+                let len = inner_lock.storage.len();
+                if unlikely(len >= inner_lock.capacity) {
+                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    inner_lock.senders.push_back((task, &mut this.call_state));
+                    return_pending_and_release_lock!(ex, inner_lock);
+                }
+
+                unsafe {
+                    inner_lock
+                        .storage
+                        .push_back(this.value.take().unwrap_unchecked());
+                }
+
+                Poll::Ready(Ok(()))
+            }
+            SendCallState::WokenToWriteIntoQueueWithLock => {
+                let inner_lock = unsafe { this.inner.get_locked() };
+                unsafe {
+                    inner_lock
+                        .storage
+                        .push_back(this.value.take().unwrap_unchecked());
+                    this.inner.unlock();
+                }
+                Poll::Ready(Ok(()))
+            }
+            SendCallState::WokenToWriteIntoTheSlot(slot_ptr) => {
+                unsafe { *slot_ptr = this.value.take().unwrap_unchecked() };
+                Poll::Ready(Ok(()))
+            }
+            SendCallState::WokenByClose => {
+                Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }))
+            }
         }
-
-        if unlikely(inner_lock.receivers.len() > 0) {
-            let (task, slot) = unsafe { inner_lock.receivers.pop_front().unwrap_unchecked() };
-            unsafe { *slot = this.value.take().unwrap_unchecked() };
-            local_executor().exec_task(task); // here we move the lock (by wake the receiver task up)
-            mem::forget(inner_lock); // we have moved to a receiver the lock above
-            return Poll::Ready(Ok(()));
-        }
-
-        let len = inner_lock.storage.len();
-        if unlikely(len >= inner_lock.capacity) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-            inner_lock.senders.push_back(task);
-            return_pending_and_release_lock!(ex, inner_lock);
-        }
-
-        insert_value!(this, inner_lock)
     }
 }
 
 pub struct WaitRecv<'future, T> {
     inner: &'future SpinLock<Inner<T>>,
-    was_enqueued: bool,
-    slot: &'future mut T,
+    call_state: RecvCallState,
+    slot: *mut T,
 }
 
 impl<'future, T> WaitRecv<'future, T> {
     #[inline(always)]
-    fn new(inner: &'future SpinLock<Inner<T>>, slot: &'future mut T) -> Self {
+    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
+    fn new(inner: &'future SpinLock<Inner<T>>, slot: *mut T) -> Self {
         Self {
             inner,
-            was_enqueued: false,
+            call_state: RecvCallState::FirstCall,
             slot,
         }
     }
-}
-
-macro_rules! get_value {
-    ($this:expr, $inner_lock:expr) => {
-        Poll::Ready(Ok(unsafe {
-            ptr::write(
-                $this.slot,
-                $inner_lock.storage.pop_front().unwrap_unchecked(),
-            )
-        }))
-    };
 }
 
 impl<'future, T> Future for WaitRecv<'future, T> {
@@ -129,45 +233,62 @@ impl<'future, T> Future for WaitRecv<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let ex = local_executor();
 
-        if unlikely(this.was_enqueued) {
-            // here we have an ownership of the lock
-            let inner_lock = unsafe { this.inner.get_locked() };
-            if unlikely(inner_lock.is_closed) {
-                // here we don't release the lock, because this task have been woken up by a closing
-                return Poll::Ready(Err(()));
+        match this.call_state {
+            RecvCallState::FirstCall => {
+                let ex = local_executor();
+                let mut inner_lock = this.inner.lock();
+
+                if unlikely(inner_lock.is_closed) {
+                    return Poll::Ready(Err(()));
+                }
+
+                let l = inner_lock.storage.len();
+                if unlikely(l == 0) {
+                    if unlikely(inner_lock.senders.len() > 0) {
+                        unsafe {
+                            let (task, call_state) = inner_lock.senders
+                                .pop_front()
+                                .unwrap_unchecked();
+
+                            inner_lock.unlock();
+
+                            call_state.write(SendCallState::WokenToWriteIntoTheSlot(this.slot));
+                            ex.exec_task(task);
+
+                            return Poll::Ready(Ok(()));
+                        }
+                    }
+
+                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    inner_lock.receivers.push_back((task, this.slot, &mut this.call_state));
+                    return_pending_and_release_lock!(ex, inner_lock);
+                }
+
+                unsafe { this.slot.write(inner_lock.storage.pop_front().unwrap_unchecked()) }
+
+                if unlikely(inner_lock.senders.len() > 0) {
+                    unsafe {
+                        let (task, call_state) = inner_lock.senders
+                            .pop_front()
+                            .unwrap_unchecked();
+                        inner_lock.leak();
+                        call_state.write(SendCallState::WokenToWriteIntoQueueWithLock);
+                        ex.exec_task(task);
+                    }
+                }
+
+                Poll::Ready(Ok(()))
             }
 
-            // here we release the lock, because this task have been woken up by a sender
-            unsafe {
-                this.inner.unlock();
+            RecvCallState::WokenToReturnReady => {
+                Poll::Ready(Ok(()))
             }
 
-            return Poll::Ready(Ok(()));
-        }
-
-        let mut inner_lock = this.inner.lock();
-
-        if unlikely(inner_lock.is_closed) {
-            return Poll::Ready(Err(()));
-        }
-
-        if unlikely(inner_lock.senders.len() > 0) {
-            unsafe {
-                ex.spawn_local_task(inner_lock.senders.pop_front().unwrap_unchecked());
+            RecvCallState::WokenByClose => {
+                Poll::Ready(Err(()))
             }
         }
-
-        let l = inner_lock.storage.len();
-        if unlikely(l == 0) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-            this.was_enqueued = true;
-            inner_lock.receivers.push_back((task, this.slot));
-            return_pending_and_release_lock!(ex, inner_lock);
-        }
-
-        get_value!(this, inner_lock)
     }
 }
 
@@ -179,11 +300,13 @@ fn close<T>(inner: &SpinLock<Inner<T>>) {
     inner_lock.is_closed = true;
     let executor = local_executor();
 
-    for task in inner_lock.senders.drain(..) {
+    for (task, call_state) in inner_lock.senders.drain(..) {
+        unsafe { call_state.write(SendCallState::WokenByClose); }
         executor.exec_task(task);
     }
 
-    for (task, _) in inner_lock.receivers.drain(..) {
+    for (task, _, call_state) in inner_lock.receivers.drain(..) {
+        unsafe { call_state.write(RecvCallState::WokenByClose); }
         executor.exec_task(task);
     }
 }
@@ -246,7 +369,8 @@ impl<'channel, T> Receiver<'channel, T> {
     }
 
     #[inline(always)]
-    pub fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
+    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
+    pub unsafe fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
         WaitRecv::new(self.inner, slot)
     }
 
@@ -304,7 +428,8 @@ impl<T> Channel<T> {
     }
 
     #[inline(always)]
-    pub fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
+    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
+    pub unsafe fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
         WaitRecv::new(&self.inner, slot)
     }
 
