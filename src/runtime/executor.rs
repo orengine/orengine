@@ -26,6 +26,7 @@ fn uninit_local_executor() {
     unsafe { LOCAL_EXECUTOR = None }
 }
 
+// TODO
 pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     ------------------------------------------------------------------------------------------\n\
     |    Local executor is not initialized.                                                  |\n\
