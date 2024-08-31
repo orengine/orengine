@@ -1,5 +1,3 @@
-use std::cell::UnsafeCell;
-use std::mem::MaybeUninit;
 use std::net::Shutdown;
 use std::time::Duration;
 use nix::libc;
@@ -8,24 +6,25 @@ use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
 
-thread_local! {
-    pub(crate) static LOCAL_WORKER: UnsafeCell<MaybeUninit<WorkerSys>> = UnsafeCell::new(MaybeUninit::uninit());
-}
+#[thread_local]
+pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
 
 pub(crate) unsafe fn init_local_worker() {
     unsafe {
-        LOCAL_WORKER.with(|local_worker| {
-            local_worker.get().write(MaybeUninit::new(WorkerSys::new()));
-        })
+        LOCAL_WORKER = Some(WorkerSys::new());
     }
 }
 
 #[inline(always)]
 pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
+    #[cfg(debug_assertions)]
     unsafe {
-        LOCAL_WORKER.with(|local_worker| {
-            (&mut *local_worker.get()).assume_init_mut()
-        })
+        LOCAL_WORKER.as_mut().expect(crate::messages::BUG)
+    }
+
+    #[cfg(not(debug_assertions))]
+    unsafe {
+        LOCAL_WORKER.as_mut().unwrap_unchecked()
     }
 }
 

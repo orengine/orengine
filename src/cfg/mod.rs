@@ -1,6 +1,10 @@
+use crate::buf::buf_pool;
+
+pub const DEFAULT_BUF_LEN: usize = 4096;
+
 /// The configuration of the scheduler.
 pub struct ExecuterCfg {
-    buf_len: usize
+    pub(crate) buf_len: usize
 }
 
 impl ExecuterCfg {
@@ -8,7 +12,7 @@ impl ExecuterCfg {
     /// We can't use [`Default`] trait, because [`Default::default`] is not `const fn`.
     pub const fn default() -> Self {
         Self {
-            buf_len: 4096
+            buf_len: DEFAULT_BUF_LEN
         }
     }
 }
@@ -26,10 +30,12 @@ pub fn config_buf_len() -> usize {
 #[allow(dead_code)]
 pub fn set_buf_len(buf_len: usize) {
     unsafe { EXECUTER_CFG.buf_len = buf_len }
+    buf_pool().tune_buffer_len(buf_len);
 }
 
 /// Setter for [`EXECUTER_CFG`].
 #[allow(dead_code)]
 pub fn set_config(config: ExecuterCfg) {
-    unsafe { EXECUTER_CFG = config }
+    buf_pool().tune_buffer_len(config.buf_len);
+    unsafe { EXECUTER_CFG = config };
 }

@@ -1,9 +1,7 @@
-use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
-use std::intrinsics::{likely, unlikely};
+use std::intrinsics::unlikely;
 use std::mem;
-use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
@@ -11,8 +9,6 @@ use std::time::{Duration, Instant};
 use crossbeam::utils::CachePadded;
 use crate::end_local_thread;
 use crate::atomic_task_queue::AtomicTaskList;
-use crate::buf::BufPool;
-use crate::cfg::{config_buf_len};
 use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
 use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
 use crate::runtime::call::Call;
@@ -23,16 +19,11 @@ use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::utils::CoreId;
 
-thread_local! {
-    static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = UnsafeCell::new(None);
-}
+#[thread_local]
+pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
 
 fn uninit_local_executor() {
-    unsafe {
-        LOCAL_EXECUTOR.with(|executor| {
-            *executor.get() = None;
-        })
-    }
+    unsafe { LOCAL_EXECUTOR = None }
 }
 
 pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
@@ -53,26 +44,12 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
 
 #[inline(always)]
 pub fn local_executor() -> &'static mut Executor {
-    unsafe {
-        LOCAL_EXECUTOR.with(|executor| {
-            let executer_ref = &mut *executor.get();
-            if likely(executer_ref.is_some()) {
-                return executer_ref.as_mut().unwrap_unchecked();
-            } else {
-                panic!("{}", MSG_LOCAL_EXECUTER_IS_NOT_INIT);
-            }
-        })
-    }
+    unsafe { LOCAL_EXECUTOR.as_mut().expect(MSG_LOCAL_EXECUTER_IS_NOT_INIT) }
 }
 
 #[inline(always)]
 pub unsafe fn local_executor_unchecked() -> &'static mut Executor {
-    unsafe {
-        LOCAL_EXECUTOR.with(|executor| {
-            let executer_ref = &mut *executor.get();
-            executer_ref.as_mut().unwrap_unchecked()
-        })
-    }
+    unsafe { LOCAL_EXECUTOR.as_mut().unwrap_unchecked() }
 }
 
 pub struct Executor {
@@ -88,25 +65,21 @@ pub struct Executor {
 
 pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
-// TODO handle
 impl Executor {
     pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
         set_was_ended(false);
         set_global_was_end(false);
-        BufPool::init_in_local_thread(config_buf_len());
         TaskPool::init();
         unsafe { init_local_worker() };
 
         unsafe {
-            LOCAL_EXECUTOR.with(|executor| {
-                (&mut *executor.get()).replace(Executor {
-                    core_id,
-                    worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
-                    current_call: Call::default(),
-                    tasks: VecDeque::new(),
-                    exec_series: 0,
-                    sleeping_tasks: BTreeSet::new(),
-                });
+            LOCAL_EXECUTOR = Some(Executor {
+                core_id,
+                worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
+                current_call: Call::default(),
+                tasks: VecDeque::new(),
+                exec_series: 0,
+                sleeping_tasks: BTreeSet::new(),
             });
         }
 
@@ -326,12 +299,7 @@ impl Executor {
         uninit_local_executor();
         set_global_was_end(false);
         set_was_ended(false);
-        LOCAL_WORKER.with(|local_worker| {
-            unsafe {
-                *local_worker.get() = MaybeUninit::uninit();
-            }
-        });
-        BufPool::uninit_in_local_thread();
+        unsafe { LOCAL_WORKER = None; }
     }
 
     pub fn run_and_block_on<T, Fut: Future<Output=T>>(&mut self, future: Fut) -> Result<T, &'static str> {

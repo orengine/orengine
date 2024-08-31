@@ -1,20 +1,16 @@
-use std::cell::UnsafeCell;
 use std::intrinsics::{likely, unlikely};
-use std::mem::MaybeUninit;
+use std::ptr::addr_of_mut;
 use crate::buf::Buffer;
-use crate::cfg::{set_buf_len};
+use crate::cfg::{set_buf_len, DEFAULT_BUF_LEN};
 
-thread_local! {
-    /// Local [`BufPool`]. So, it is lockless.
-    pub static BUF_POOL: UnsafeCell<MaybeUninit<BufPool>> = UnsafeCell::new(MaybeUninit::uninit());
-}
+/// Local [`BufPool`]. So, it is lockless.
+#[thread_local]
+pub static mut BUF_POOL: BufPool = BufPool::new();
 
 /// Get [`BufPool`] from thread local. So, it is lockless.
 #[inline(always)]
 pub fn buf_pool() -> &'static mut BufPool {
-    BUF_POOL.with(|pool| {
-        unsafe { (&mut *pool.get()).assume_init_mut() }
-    })
+    unsafe { &mut *addr_of_mut!(BUF_POOL) }
 }
 
 /// Get [`Buffer`] from local [`BufPool`].
@@ -67,22 +63,11 @@ pub struct BufPool {
 }
 
 impl BufPool {
-    /// Initialize [`BufPool`] in local thread.
-    pub fn init_in_local_thread(buffer_len: usize) {
-        BUF_POOL.with(|pool| {
-            let pool_ref = unsafe { &mut *pool.get() };
-            *pool_ref = MaybeUninit::new(BufPool {
-                pool: Vec::with_capacity(0),
-                buffer_len
-            });
-        });
-    }
-
-    /// Uninitialize [`BufPool`] in local thread.
-    pub(crate) fn uninit_in_local_thread() {
-        BUF_POOL.with(|pool| {
-            unsafe { (&mut *pool.get()).assume_init_drop()};
-        });
+    const fn new() -> Self {
+        Self {
+            pool: Vec::new(),
+            buffer_len: DEFAULT_BUF_LEN
+        }
     }
 
     /// Get default buffer size.
