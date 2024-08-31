@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::future::Future;
-use std::intrinsics::{unlikely};
+use std::intrinsics::unlikely;
 use std::mem::MaybeUninit;
-use std::{mem, ptr};
 use std::task::{Context, Poll};
+use std::{mem, ptr};
+
 use crate::runtime::{local_executor, Task};
 use crate::utils::SpinLock;
 
@@ -12,7 +13,7 @@ struct Inner<T> {
     is_closed: bool,
     capacity: usize,
     senders: VecDeque<Task>,
-    receivers: VecDeque<(Task, *mut T)>
+    receivers: VecDeque<(Task, *mut T)>,
 }
 
 // region futures
@@ -24,9 +25,17 @@ macro_rules! return_pending_and_release_lock {
     };
 }
 
+#[repr(u8)]
+enum CallState {
+    None,
+    WokenForWork,
+    WokenByClose,
+}
+
 pub struct WaitSend<'future, T> {
     inner: &'future SpinLock<Inner<T>>,
-    value: Option<T>
+    call_state: CallState,
+    value: Option<T>,
 }
 
 impl<'future, T> WaitSend<'future, T> {
@@ -34,20 +43,21 @@ impl<'future, T> WaitSend<'future, T> {
     fn new(value: T, inner: &'future SpinLock<Inner<T>>) -> Self {
         Self {
             inner,
-            value: Some(value)
+            call_state: CallState::None,
+            value: Some(value),
         }
     }
 }
 
 macro_rules! insert_value {
-    ($this:expr, $inner_lock:expr) => {
-        {
-            unsafe {
-                $inner_lock.storage.push_back($this.value.take().unwrap_unchecked());
-            }
-            Poll::Ready(Ok(()))
+    ($this:expr, $inner_lock:expr) => {{
+        unsafe {
+            $inner_lock
+                .storage
+                .push_back($this.value.take().unwrap_unchecked());
         }
-    };
+        Poll::Ready(Ok(()))
+    }};
 }
 
 impl<'future, T> Future for WaitSend<'future, T> {
@@ -56,6 +66,9 @@ impl<'future, T> Future for WaitSend<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+
+        if unlikely(this.was_enqueued) {}
+
         let mut inner_lock = this.inner.lock();
         let ex = local_executor();
 
@@ -64,9 +77,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
         }
 
         if unlikely(inner_lock.receivers.len() > 0) {
-            let (task, slot) = unsafe {
-                inner_lock.receivers.pop_front().unwrap_unchecked()
-            };
+            let (task, slot) = unsafe { inner_lock.receivers.pop_front().unwrap_unchecked() };
             unsafe { *slot = this.value.take().unwrap_unchecked() };
             local_executor().exec_task(task); // here we move the lock (by wake the receiver task up)
             mem::forget(inner_lock); // we have moved to a receiver the lock above
@@ -87,7 +98,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 pub struct WaitRecv<'future, T> {
     inner: &'future SpinLock<Inner<T>>,
     was_enqueued: bool,
-    slot: &'future mut T
+    slot: &'future mut T,
 }
 
 impl<'future, T> WaitRecv<'future, T> {
@@ -96,7 +107,7 @@ impl<'future, T> WaitRecv<'future, T> {
         Self {
             inner,
             was_enqueued: false,
-            slot
+            slot,
         }
     }
 }
@@ -104,7 +115,10 @@ impl<'future, T> WaitRecv<'future, T> {
 macro_rules! get_value {
     ($this:expr, $inner_lock:expr) => {
         Poll::Ready(Ok(unsafe {
-            ptr::write($this.slot, $inner_lock.storage.pop_front().unwrap_unchecked())
+            ptr::write(
+                $this.slot,
+                $inner_lock.storage.pop_front().unwrap_unchecked(),
+            )
         }))
     };
 }
@@ -126,7 +140,9 @@ impl<'future, T> Future for WaitRecv<'future, T> {
             }
 
             // here we release the lock, because this task have been woken up by a sender
-            unsafe { this.inner.unlock(); }
+            unsafe {
+                this.inner.unlock();
+            }
 
             return Poll::Ready(Ok(()));
         }
@@ -175,15 +191,13 @@ fn close<T>(inner: &SpinLock<Inner<T>>) {
 // region sender
 
 pub struct Sender<'channel, T> {
-    inner: &'channel SpinLock<Inner<T>>
+    inner: &'channel SpinLock<Inner<T>>,
 }
 
 impl<'channel, T> Sender<'channel, T> {
     #[inline(always)]
     fn new(inner: &'channel SpinLock<Inner<T>>) -> Self {
-        Self {
-            inner
-        }
+        Self { inner }
     }
 
     #[inline(always)]
@@ -199,9 +213,7 @@ impl<'channel, T> Sender<'channel, T> {
 
 impl<'channel, T> Clone for Sender<'channel, T> {
     fn clone(&self) -> Self {
-        Sender {
-            inner: self.inner
-        }
+        Sender { inner: self.inner }
     }
 }
 
@@ -213,15 +225,13 @@ unsafe impl<'channel, T> Send for Sender<'channel, T> {}
 // region receiver
 
 pub struct Receiver<'channel, T> {
-    inner: &'channel SpinLock<Inner<T>>
+    inner: &'channel SpinLock<Inner<T>>,
 }
 
 impl<'channel, T> Receiver<'channel, T> {
     #[inline(always)]
     fn new(inner: &'channel SpinLock<Inner<T>>) -> Self {
-        Self {
-            inner
-        }
+        Self { inner }
     }
 
     #[inline(always)]
@@ -248,9 +258,7 @@ impl<'channel, T> Receiver<'channel, T> {
 
 impl<'channel, T> Clone for Receiver<'channel, T> {
     fn clone(&self) -> Self {
-        Receiver {
-            inner: self.inner
-        }
+        Receiver { inner: self.inner }
     }
 }
 
@@ -262,7 +270,7 @@ unsafe impl<'channel, T> Send for Receiver<'channel, T> {}
 // region channel
 
 pub struct Channel<T> {
-    inner: SpinLock<Inner<T>>
+    inner: SpinLock<Inner<T>>,
 }
 
 impl<T> Channel<T> {
@@ -274,8 +282,8 @@ impl<T> Channel<T> {
                 capacity,
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
-                receivers: VecDeque::with_capacity(0)
-            })
+                receivers: VecDeque::with_capacity(0),
+            }),
         }
     }
 
@@ -315,3 +323,44 @@ unsafe impl<T> Sync for Channel<T> {}
 unsafe impl<T> Send for Channel<T> {}
 
 // endregion
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::sync::channel::Channel;
+    use crate::{end_local_thread, sleep, Executor};
+
+    #[test_macro::test]
+    fn test_zero_capacity() {
+        let ch = Arc::new(Channel::new(0));
+        let ch_clone = ch.clone();
+
+        thread::spawn(move || {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
+                ch_clone.send(1).await.expect("closed");
+                ch_clone.send(2).await.expect("closed");
+                ch_clone.close();
+
+                end_local_thread();
+            });
+            ex.run();
+        });
+
+        let res = ch.recv().await.expect("closed");
+        assert_eq!(res, 1);
+
+        sleep(Duration::from_millis(1)).await;
+
+        let res = ch.recv().await.expect("closed");
+        assert_eq!(res, 2);
+
+        match ch.send(2).await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed"),
+        };
+    }
+}
