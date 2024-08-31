@@ -456,7 +456,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::sync::channel::Channel;
-    use crate::{end_local_thread, sleep, Executor};
+    use crate::{end_local_thread, sleep, yield_now, Executor};
 
     #[test_macro::test]
     fn test_zero_capacity() {
@@ -486,6 +486,101 @@ mod tests {
         match ch.send(2).await {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
+        };
+    }
+
+    const N: usize = 10_025;
+
+    #[test_macro::test]
+    fn test_channel() {
+        let ch = Arc::new(Channel::new(N));
+        let ch_clone = ch.clone();
+
+        thread::spawn(move || {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
+                for i in 0..N {
+                    ch_clone.send(i).await.expect("closed");
+                }
+
+                sleep(Duration::from_millis(1)).await;
+
+                ch_clone.close();
+
+                end_local_thread();
+            });
+            ex.run();
+        });
+
+        for i in 0..N {
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, i);
+        }
+
+        match ch.recv().await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
+        };
+    }
+
+    #[test_macro::test]
+    fn test_wait_recv() {
+        let ch = Arc::new(Channel::new(1));
+        let ch_clone = ch.clone();
+
+        thread::spawn(move || {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
+                sleep(Duration::from_millis(1)).await;
+                ch_clone.send(1).await.expect("closed");
+
+                ch_clone.close();
+
+                end_local_thread();
+            });
+            ex.run();
+        });
+
+        let res = ch.recv().await.expect("closed");
+        assert_eq!(res, 1);
+
+        match ch.recv().await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
+        };
+    }
+
+    #[test_macro::test]
+    fn test_wait_send() {
+        let ch = Arc::new(Channel::new(1));
+        let ch_clone = ch.clone();
+
+        thread::spawn(move || {
+            let ex = Executor::init();
+            ex.spawn_local(async move {
+                ch_clone.send(1).await.expect("closed");
+                ch_clone.send(2).await.expect("closed");
+
+                sleep(Duration::from_millis(1)).await;
+
+                ch_clone.close();
+
+                end_local_thread();
+            });
+            ex.run();
+        });
+
+        sleep(Duration::from_millis(1)).await;
+
+        let res = ch.recv().await.expect("closed");
+        assert_eq!(res, 1);
+        let res = ch.recv().await.expect("closed");
+        assert_eq!(res, 2);
+
+        let _ = ch.send(3).await;
+        match ch.send(4).await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
         };
     }
 }
