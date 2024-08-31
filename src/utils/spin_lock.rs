@@ -74,6 +74,7 @@ impl<T> SpinLock<T> {
     }
 
     #[inline(always)]
+    #[cfg(not(debug_assertions))]
     pub fn lock(&self) -> SpinLockGuard<T> {
         let backoff = Backoff::new();
         loop {
@@ -81,6 +82,27 @@ impl<T> SpinLock<T> {
                 return guard;
             }
             backoff.spin();
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(debug_assertions)]
+    pub fn lock(&self) -> SpinLockGuard<T> {
+        let backoff = Backoff::new();
+        let start = std::time::Instant::now();
+        let mut was_println = false;
+        loop {
+            if let Some(guard) = self.try_lock() {
+                return guard;
+            }
+            backoff.spin();
+            if backoff.is_completed() && !was_println {
+                let elapsed = start.elapsed();
+                if elapsed > std::time::Duration::from_nanos(200) {
+                    was_println = true;
+                    println!("SpinLock is locked for too long. Use Mutex instead.");
+                }
+            }
         }
     }
 
