@@ -3,7 +3,6 @@ use std::future::Future;
 use std::intrinsics::unlikely;
 use std::mem::MaybeUninit;
 use std::task::{Context, Poll};
-use std::ptr;
 
 use crate::runtime::{local_executor, Task};
 use crate::utils::SpinLock;
@@ -456,7 +455,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::sync::channel::Channel;
-    use crate::{end_local_thread, sleep, yield_now, Executor};
+    use crate::{end_local_thread, sleep, Executor};
 
     #[test_macro::test]
     fn test_zero_capacity() {
