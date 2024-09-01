@@ -1,19 +1,20 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::intrinsics::likely;
-use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::ptr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::task::{Context, Poll};
+
 use crossbeam::utils::{Backoff, CachePadded};
+
 use crate::atomic_task_queue::AtomicTaskList;
-use crate::runtime::{local_executor, local_executor_unchecked, Task};
+use crate::Executor;
+use crate::runtime::{local_executor, local_executor_unchecked};
 
 pub struct MutexGuard<'mutex, T> {
-    mutex: &'mutex Mutex<T>
+    mutex: &'mutex Mutex<T>,
 }
 
 impl<'mutex, T> MutexGuard<'mutex, T> {
@@ -38,11 +39,11 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     pub fn unlock(self) {}
 
     #[inline(always)]
-    pub(crate) fn into_local_mutex(self) -> Mutex<T> {
+    pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
         unsafe {
             self.mutex.unlock();
-            ptr::read(ManuallyDrop::new(self).mutex)
         }
+        self.mutex
     }
 }
 
@@ -68,7 +69,7 @@ impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
 
 pub struct MutexWait<'mutex, T> {
     was_called: bool,
-    mutex: &'mutex Mutex<T>
+    mutex: &'mutex Mutex<T>,
 }
 
 impl<'mutex, T> MutexWait<'mutex, T> {
@@ -76,7 +77,7 @@ impl<'mutex, T> MutexWait<'mutex, T> {
     fn new(local_mutex: &'mutex Mutex<T>) -> Self {
         Self {
             was_called: false,
-            mutex: local_mutex
+            mutex: local_mutex,
         }
     }
 }
@@ -105,7 +106,7 @@ pub struct Mutex<T> {
     counter: CachePadded<AtomicUsize>,
     wait_queue: AtomicTaskList,
     value: UnsafeCell<T>,
-    expected_count: Cell<usize>
+    expected_count: Cell<usize>,
 }
 
 impl<T> Mutex<T> {
@@ -115,7 +116,7 @@ impl<T> Mutex<T> {
             counter: CachePadded::new(AtomicUsize::new(0)),
             wait_queue: AtomicTaskList::new(),
             value: UnsafeCell::new(value),
-            expected_count: Cell::new(1)
+            expected_count: Cell::new(1),
         }
     }
 
@@ -126,7 +127,11 @@ impl<T> Mutex<T> {
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self.counter.compare_exchange(0, 1, Acquire, Relaxed).is_ok() {
+        if self
+            .counter
+            .compare_exchange(0, 1, Acquire, Relaxed)
+            .is_ok()
+        {
             Some(MutexGuard::new(self))
         } else {
             None
@@ -139,14 +144,21 @@ impl<T> Mutex<T> {
     }
 
     #[inline(always)]
-    pub(crate) fn subscribe(&self, task: Task) {
-        unsafe { self.wait_queue.push(task) };
+    /// # Safety
+    ///
+    /// Current task must return [`Poll::Pending`] immediately after calling this function.
+    pub(crate) unsafe fn subscribe(&self, executor: &mut Executor) {
+        unsafe { executor.push_current_task_to(&self.wait_queue) };
     }
 
     #[inline(always)]
     pub unsafe fn unlock(&self) {
         // fast path
-        if likely(self.counter.compare_exchange(self.expected_count.get(), 0, Release, Relaxed).is_ok()) {
+        if likely(
+            self.counter
+                .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
+                .is_ok(),
+        ) {
             self.expected_count.set(1);
             return;
         }
@@ -155,7 +167,8 @@ impl<T> Mutex<T> {
         let next = self.wait_queue.pop();
         if likely(next.is_some()) {
             unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
-        } else { // Another task failed to acquire a lock, but it is not yet in the queue
+        } else {
+            // Another task failed to acquire a lock, but it is not yet in the queue
             let backoff = Backoff::new();
             loop {
                 backoff.spin();
@@ -179,11 +192,13 @@ pub mod naive {
     use std::ptr;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+
     use crossbeam::utils::{Backoff, CachePadded};
+
     use crate::yield_now;
 
     pub struct MutexGuard<'mutex, T> {
-        mutex: &'mutex Mutex<T>
+        mutex: &'mutex Mutex<T>,
     }
 
     impl<'mutex, T> MutexGuard<'mutex, T> {
@@ -267,7 +282,11 @@ pub mod naive {
 
         #[inline(always)]
         pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-            if self.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
+            if self
+                .is_locked
+                .compare_exchange(false, true, Acquire, Relaxed)
+                .is_ok()
+            {
                 Some(MutexGuard::new(self))
             } else {
                 None
@@ -294,6 +313,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
     use crate::{end_local_thread, Executor};
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;

@@ -3,13 +3,14 @@ use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use crate::sleep::sleeping_task::SleepingTask;
 
 pub struct Sleep {
     was_yielded: bool,
-    sleep_until: Instant
+    sleep_until: Instant,
 }
 
 impl Future for Sleep {
@@ -18,7 +19,7 @@ impl Future for Sleep {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if this.was_yielded {
-            // [`Executer::background`] will wake this future up when it should be woken up.
+            // [`Executor::background`] will wake this future up when it should be woken up.
             Poll::Ready(())
         } else {
             this.was_yielded = true;
@@ -37,13 +38,18 @@ impl Future for Sleep {
 #[inline(always)]
 #[must_use]
 pub fn sleep(duration: Duration) -> Sleep {
-    Sleep { was_yielded: false, sleep_until: Instant::now() + duration }
+    Sleep {
+        was_yielded: false,
+        sleep_until: Instant::now() + duration,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
     use crate::local::Local;
+
     use super::*;
 
     #[test_macro::test]

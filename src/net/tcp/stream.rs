@@ -1,11 +1,12 @@
 //! This module contains [`TcpStream`].
 use std::io::Result;
 use std::mem;
+
 use socket2::{Domain, Type};
 
-use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, RawFd, IntoRawFd, FromRawFd, BorrowedFd};
 use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
+use crate::io::shutdown::AsyncShutdown;
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
 use crate::net::Stream;
 use crate::runtime::local_executor;
 
@@ -67,13 +68,13 @@ impl FromRawFd for TcpStream {
 impl AsyncConnectStream for TcpStream {
     async fn new_ip4() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM).await?
+            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM).await?,
         })
     }
 
     async fn new_ip6() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM).await?
+            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM).await?,
         })
     }
 }
@@ -105,20 +106,19 @@ impl Drop for TcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
     use std::{io, thread};
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::AtomicBool;
     use std::time::{Duration, Instant};
+
     use crate::{end_local_thread, Executor};
     use crate::io::{AsyncAccept, AsyncBind};
-
     use crate::io::bind::BindConfig;
     use crate::net::Socket;
     use crate::net::tcp::TcpListener;
     use crate::runtime::local_executor;
-    use crate::sync::cond_var::LocalCondVar;
-    use crate::sync::{LocalMutex, LocalWaitGroup};
+    use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
 
     use super::*;
 
@@ -367,7 +367,10 @@ mod tests {
                     match res {
                         Ok(_) => panic!("connect with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!("connect with timeout should failed with TimedOut, but got {:?}", err)
+                            panic!(
+                                "connect with timeout should failed with TimedOut, but got {:?}",
+                                err
+                            )
                         }
                         Err(_) => {}
                     }

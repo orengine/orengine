@@ -1,18 +1,20 @@
-use std::io::{Result};
-use std::net::ToSocketAddrs;
+use std::io::Result;
 use std::mem;
+use std::net::ToSocketAddrs;
 use std::os::fd::{AsFd, BorrowedFd};
 
 use socket2::SockAddr;
 
+use crate::each_addr;
+use crate::io::{
+    AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
+};
 use crate::io::bind::BindConfig;
 use crate::io::recv_from::AsyncRecvFrom;
-use crate::io::sys::{AsRawFd, RawFd, IntoRawFd, FromRawFd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncSendTo};
+use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use crate::net::{Datagram, Socket};
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
-use crate::each_addr;
-use crate::net::{Datagram, Socket};
 use crate::runtime::local_executor;
 
 pub struct UdpSocket {
@@ -85,9 +87,7 @@ impl AsyncBind for UdpSocket {
 
             socket_ref.bind(&SockAddr::from(addr))?;
 
-            Ok(Self {
-                fd
-            })
+            Ok(Self { fd })
         })
     }
 }
@@ -119,19 +119,19 @@ impl Drop for UdpSocket {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
-    use std::str::FromStr;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
     use std::{io, thread};
+    use std::net::SocketAddr;
     use std::ops::Deref;
     use std::rc::Rc;
+    use std::str::FromStr;
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
+
     use crate::{end_local_thread, Executor};
     use crate::io::AsyncBind;
     use crate::runtime::local_executor;
-    use crate::sync::cond_var::LocalCondVar;
-    use crate::sync::LocalMutex;
+    use crate::sync::{LocalCondVar, LocalMutex};
 
     use super::*;
 
@@ -172,7 +172,9 @@ mod tests {
             is_server_ready = condvar.wait(is_server_ready).unwrap();
         }
 
-        let mut stream = UdpSocket::bind("127.0.0.1:9081").await.expect("bind failed");
+        let mut stream = UdpSocket::bind("127.0.0.1:9081")
+            .await
+            .expect("bind failed");
 
         for _ in 0..TIMES {
             stream

@@ -6,11 +6,15 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+
 use crossbeam::utils::CachePadded;
-use crate::end_local_thread;
+
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
-use crate::io::worker::{init_local_worker, local_worker as local_io_worker, IoWorker, LOCAL_WORKER};
+use crate::end_local_thread;
+use crate::io::worker::{
+    init_local_worker, IoWorker, local_worker as local_io_worker, LOCAL_WORKER,
+};
 use crate::runtime::call::Call;
 use crate::runtime::get_core_id_for_executor;
 use crate::runtime::task::Task;
@@ -27,7 +31,7 @@ fn uninit_local_executor() {
 }
 
 // TODO
-pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
+pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
     ------------------------------------------------------------------------------------------\n\
     |    Local executor is not initialized.                                                  |\n\
     |    Please initialize it first.                                                         |\n\
@@ -37,7 +41,7 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
     |            or executor.spawn_global(your_future)                                       |\n\
     |                                                                                        |\n\
     |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
-    |               add orengine::end_local_thread() in the end of future,                   |\n\
+    |               add orengine::end_local_thread() in the end of the future,               |\n\
     |               otherwise the local runtime will never be stopped.                       |\n\
     |                                                                                        |\n\
     |    3 - use executor.run()                                                              |\n\
@@ -45,7 +49,11 @@ pub(crate) const MSG_LOCAL_EXECUTER_IS_NOT_INIT: &str ="\
 
 #[inline(always)]
 pub fn local_executor() -> &'static mut Executor {
-    unsafe { LOCAL_EXECUTOR.as_mut().expect(MSG_LOCAL_EXECUTER_IS_NOT_INIT) }
+    unsafe {
+        LOCAL_EXECUTOR
+            .as_mut()
+            .expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
+    }
 }
 
 #[inline(always)]
@@ -61,13 +69,14 @@ pub struct Executor {
 
     exec_series: usize,
     tasks: VecDeque<Task>,
-    sleeping_tasks: BTreeSet<SleepingTask>
+    sleeping_tasks: BTreeSet<SleepingTask>,
 }
 
 pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Executor {
     pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
+        crate::utils::core::set_for_current(core_id);
         set_was_ended(false);
         set_global_was_end(false);
         TaskPool::init();
@@ -125,15 +134,13 @@ impl Executor {
         &mut self,
         send_to: &AtomicTaskList,
         counter: &AtomicUsize,
-        order: Ordering
+        order: Ordering,
     ) {
-        self.current_call = Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-            send_to,
-            counter,
-            order
-        );
+        self.current_call =
+            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
     }
 
+    #[inline(always)]
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
         self.current_call = Call::ReleaseAtomicBool(atomic_bool);
     }
@@ -152,7 +159,10 @@ impl Executor {
         let waker = create_waker(task_ptr as *const ());
         let mut context = Context::from_waker(&waker);
 
-        match unsafe { Pin::new_unchecked(future) }.as_mut().poll(&mut context) {
+        match unsafe { Pin::new_unchecked(future) }
+            .as_mut()
+            .poll(&mut context)
+        {
             Poll::Ready(()) => {
                 debug_assert_eq!(self.current_call, Call::None);
                 unsafe { task.drop_future() };
@@ -160,13 +170,11 @@ impl Executor {
             Poll::Pending => {
                 match mem::take(&mut self.current_call) {
                     Call::None => {}
-                    Call::PushCurrentTaskTo(task_list) => {
-                        unsafe { (&*task_list).push(task) }
-                    }
+                    Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
                     Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
                         task_list,
                         counter,
-                        order
+                        order,
                     ) => {
                         unsafe {
                             let list = &*task_list;
@@ -192,7 +200,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future);
         self.exec_task(task);
@@ -201,7 +209,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future);
         self.spawn_local_task(task);
@@ -217,7 +225,7 @@ impl Executor {
     #[allow(unused)]
     pub fn spawn_global<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send,
+        F: Future<Output = ()> + Send,
     {
         todo!()
     }
@@ -260,6 +268,7 @@ impl Executor {
                 self.sleeping_tasks.insert(sleeping_task);
                 if unlikely(has_no_work) {
                     const MAX_SLEEP: Duration = Duration::from_millis(100);
+
                     if need_to_sleep > MAX_SLEEP {
                         let _ = io_worker.must_poll(MAX_SLEEP);
                         break;
@@ -300,19 +309,24 @@ impl Executor {
         uninit_local_executor();
         set_global_was_end(false);
         set_was_ended(false);
-        unsafe { LOCAL_WORKER = None; }
+        unsafe {
+            LOCAL_WORKER = None;
+        }
     }
 
-    pub fn run_and_block_on<T, Fut: Future<Output=T>>(&mut self, future: Fut) -> Result<T, &'static str> {
+    pub fn run_and_block_on<T, Fut: Future<Output = T>>(
+        &mut self,
+        future: Fut,
+    ) -> Result<T, &'static str> {
         // Async block in async block allocates double memory.
         // But if we use async block in `Future::poll`, it allocates only one memory.
         // When I say "async block" I mean future that is represented by `async {}`.
-        struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output=R>> {
+        struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
             res_ptr: *mut Option<R>,
-            future: Fut
+            future: Fut,
         }
 
-        impl<R, Fut: Future<Output=R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
+        impl<R, Fut: Future<Output = R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
             type Output = ();
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -332,12 +346,12 @@ impl Executor {
         let mut res = None;
         let static_future = EndLocalThreadAndWriteIntoPtr {
             res_ptr: &mut res,
-            future
+            future,
         };
         self.exec_future(static_future);
         self.run();
         res.ok_or(
-            "The process has been ended by end() or end_local_thread() not in block_on future."
+            "The process has been ended by end() or end_local_thread() not in block_on future.",
         )
     }
 }
@@ -345,7 +359,7 @@ impl Executor {
 #[inline(always)]
 pub fn init_local_executor_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, &'static str>
 where
-    Fut: Future<Output=T>,
+    Fut: Future<Output = T>,
 {
     Executor::init();
     local_executor().run_and_block_on(future)
@@ -355,6 +369,7 @@ where
 mod tests {
     use crate::local::Local;
     use crate::yield_now;
+
     use super::*;
 
     #[test_macro::test]
