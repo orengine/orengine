@@ -11,7 +11,7 @@ use crossbeam::utils::{Backoff, CachePadded};
 
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::Executor;
-use crate::runtime::{local_executor, local_executor_unchecked};
+use crate::runtime::{local_executor, local_executor_unchecked, Task};
 
 pub struct MutexGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
@@ -40,9 +40,6 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
 
     #[inline(always)]
     pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
-        unsafe {
-            self.mutex.unlock();
-        }
         self.mutex
     }
 }
@@ -146,9 +143,14 @@ impl<T> Mutex<T> {
     #[inline(always)]
     /// # Safety
     ///
-    /// Current task must return [`Poll::Pending`] immediately after calling this function.
-    pub(crate) unsafe fn subscribe(&self, executor: &mut Executor) {
-        unsafe { executor.push_current_task_to(&self.wait_queue) };
+    /// Lock is acquired.
+    pub(crate) unsafe fn subscribe(&self, task: Task) {
+        debug_assert!(
+            self.counter.load(Acquire) != 0,
+            "Mutex is unlocked, but for subscription it must be locked"
+        );
+        self.expected_count.set(self.expected_count.get() - 1);
+        unsafe { self.wait_queue.push(task); }
     }
 
     #[inline(always)]
@@ -168,6 +170,7 @@ impl<T> Mutex<T> {
         if likely(next.is_some()) {
             unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
         } else {
+            debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
             // Another task failed to acquire a lock, but it is not yet in the queue
             let backoff = Backoff::new();
             loop {

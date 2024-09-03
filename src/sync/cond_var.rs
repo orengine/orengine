@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::atomic_task_queue::AtomicTaskList;
-use crate::runtime::local_executor;
+use crate::runtime::{local_executor, Task};
 use crate::sync::{Mutex, MutexGuard};
 
 enum State {
@@ -35,7 +35,7 @@ impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
 impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
     type Output = MutexGuard<'mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
         match this.state {
@@ -48,9 +48,8 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 Some(guard) => Poll::Ready(guard),
                 None => {
                     this.state = State::WaitLock;
-                    unsafe {
-                        this.mutex.subscribe(local_executor());
-                    }
+                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    unsafe { this.mutex.subscribe(task); }
                     Poll::Pending
                 }
             },
@@ -119,7 +118,6 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        // Inside our lock, spawn a new thread, and then wait for it to start.
         thread::spawn(move || {
             let ex = Executor::init();
             ex.spawn_local(async move {
@@ -130,7 +128,6 @@ mod tests {
                 if need_drop {
                     drop(started);
                 }
-                // We notify the condvar that the value has changed.
                 cvar.notify_one();
 
                 end_local_thread();
@@ -138,7 +135,6 @@ mod tests {
             ex.run();
         });
 
-        // Wait for the thread to start up.
         let (lock, cvar) = pair.deref();
         let mut started = lock.lock().await;
         while !*started {
@@ -154,7 +150,6 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        // Inside our lock, spawn a new thread, and then wait for it to start.
         local_executor().spawn_local(async move {
             let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
@@ -163,7 +158,6 @@ mod tests {
             if need_drop {
                 drop(started);
             }
-            // We notify the condvar that the value has changed.
             cvar.notify_all();
         });
 
