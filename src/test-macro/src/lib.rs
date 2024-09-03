@@ -39,8 +39,7 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             });
 
-            // TODO 1 sec
-            match receiver.recv_timeout(std::time::Duration::from_secs(1000)) {
+            match receiver.recv_timeout(std::time::Duration::from_secs(1)) {
                 Ok(Ok(())) => {
                     println!("test {} is finished!", #name);
                     println!();
