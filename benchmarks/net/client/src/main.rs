@@ -1,13 +1,13 @@
-use std::sync::atomic::AtomicUsize;
-use std::{mem, thread};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{thread};
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::sync::atomic::Ordering::SeqCst;
 use std::time::{Duration, Instant};
 use smol::future;
 use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
-use orengine::{Executor, run_on_all_cores, sleep};
+use orengine::{Executor, sleep, end};
 use orengine::buf::buffer;
+use orengine::local::Local;
 use orengine::runtime::local_executor;
 use orengine::sync::LocalWaitGroup;
 use orengine::utils::get_core_ids;
@@ -214,16 +214,17 @@ fn bench_throughput() {
 
     fn orengine() {
         #[inline(always)]
-        async fn start_client(number_of_cores: usize, tx: flume::Sender<()>, rx: flume::Receiver<()>) {
+        async fn start_client(number_of_cores: usize, counter: Arc<AtomicUsize>) {
             let count = COUNT / number_of_cores;
             let par = PAR / number_of_cores;
+            let mut total_rps = 0;
 
-            loop {
-                rx.recv_async().await.unwrap();
-                let wg = LocalWaitGroup::new();
+            for _ in 0..TRIES {
+                let wg = Local::new(LocalWaitGroup::new());
+                let start = Instant::now();
 
                 for _ in 0..par {
-                    wg.add(1);
+                    wg.get_mut().add(1);
                     let wg = wg.clone();
                     local_executor().spawn_local(async move {
                         for _ in 0..count {
@@ -235,72 +236,42 @@ fn bench_throughput() {
                             stream.recv(&mut buf).await.unwrap();
                         }
 
-                        wg.done();
+                        wg.get_mut().done();
                     });
                 }
 
-                wg.wait().await;
-                tx.send_async(()).await.unwrap();
+                wg.get_mut().wait().await;
+
+                let elapsed_ms = start.elapsed().as_millis();
+                let rps = N as u128 / elapsed_ms;
+                total_rps += rps;
+                let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if current % number_of_cores == 0 {
+                    println!("orengine took {elapsed_ms} milliseconds, rps: {rps}");
+                    if current == number_of_cores * TRIES {
+                        println!("Average orengine rps: {}", total_rps / TRIES as u128);
+                        end();
+                    }
+                }
+                sleep(Duration::from_secs(1)).await;
             }
         }
 
         let cores = get_core_ids().unwrap();
         let number_of_cores = cores.len();
+        let counter = Arc::new(AtomicUsize::new(0));
 
-        let channels = Arc::new((0..number_of_cores)
-            .map(|_| -> ((flume::Sender<()>, flume::Receiver<()>), (flume::Sender<()>, flume::Receiver<()>)) {
-                let channel1 = flume::bounded(1);
-                let channel2 = flume::bounded(1);
-                (channel1, channel2)
-            })
-            .collect::<Vec<_>>());
-
-
-        for i in 1..cores.len() {
-            let channels = channels.clone();
+        for i in 1..number_of_cores {
             let core = cores[i];
-            let tx = channels[i].0.0.clone();
-            let rx = channels[i].1.1.clone();
-
+            let counter = counter.clone();
             thread::spawn(move || {
                 let ex = Executor::init_on_core(core);
-                ex.spawn_local(async move {
-                    start_client(number_of_cores, tx, rx).await;
-                });
-
-                ex.run();
+                ex.run_and_block_on(start_client(number_of_cores, counter)).unwrap();
             });
         }
 
         let ex = Executor::init_on_core(cores[0]);
-        let tx = channels[0].0.0.clone();
-        let rx = channels[0].1.1.clone();
-        ex.spawn_local(async move {
-            start_client(number_of_cores, tx, rx).await;
-        });
-
-        ex.spawn_local(async move {
-            let mut rps = 0;
-            for _ in 0..TRIES {
-                sleep(Duration::from_secs(1)).await;
-                let start = Instant::now();
-                for ((_, _), (tx, _)) in channels.iter() {
-                    tx.send_async(()).await.unwrap();
-                }
-
-                for ((_, rx), (_, _)) in channels.iter().rev() {
-                    println!("start recv");
-                    rx.recv_async().await.unwrap();
-                    println!("end recv");
-                }
-                let end = Instant::now();
-                rps = (COUNT * PAR) / (end - start).as_millis() as usize;
-                println!("orengine rps: {}", rps);
-            }
-
-            println!("Average orengine rps: {}", rps);
-        });
-
+        ex.spawn_local(start_client(number_of_cores, counter));
         ex.run();
     }
 
