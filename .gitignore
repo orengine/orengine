@@ -6,6 +6,5 @@
 /dev/
 /test/
 /.idea/
-Dockerfile
 /src/test-macro/target/
 /src/io/io-macros/target/
