@@ -1,5 +1,3 @@
-// TODO fsync, fsync_data
-
 pub use create_dir::CreateDir;
 pub use open::Open;
 pub use fallocate::Fallocate;
