@@ -16,6 +16,7 @@ use crate::io::worker::{
     init_local_worker, IoWorker, local_worker as local_io_worker, LOCAL_WORKER,
 };
 use crate::runtime::call::Call;
+use crate::runtime::config::Config;
 use crate::runtime::get_core_id_for_executor;
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
@@ -65,6 +66,8 @@ pub struct Executor {
     core_id: CoreId,
     worker_id: usize,
 
+    config: Config,
+
     current_call: Call,
 
     exec_series: usize,
@@ -75,15 +78,16 @@ pub struct Executor {
 pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Executor {
-    pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
+    pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
         crate::utils::core::set_for_current(core_id);
         set_was_ended(false);
         set_global_was_end(false);
         TaskPool::init();
-        unsafe { init_local_worker() };
+        unsafe { init_local_worker(config.number_of_entries) };
 
         unsafe {
             LOCAL_EXECUTOR = Some(Executor {
+                config,
                 core_id,
                 worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
                 current_call: Call::default(),
@@ -96,6 +100,14 @@ impl Executor {
         unsafe { local_executor_unchecked() }
     }
 
+    pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
+        Self::init_on_core_with_config(core_id, Config::default())
+    }
+
+    pub fn init_with_config(config: Config) -> &'static mut Executor {
+        Self::init_on_core_with_config(get_core_id_for_executor(), config)
+    }
+
     pub fn init() -> &'static mut Executor {
         Self::init_on_core(get_core_id_for_executor())
     }
@@ -106,6 +118,14 @@ impl Executor {
 
     pub fn core_id(&self) -> CoreId {
         self.core_id
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
+        self.config.buffer_len = buffer_len;
     }
 
     #[inline(always)]

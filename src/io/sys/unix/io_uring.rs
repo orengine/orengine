@@ -42,11 +42,11 @@ pub(crate) struct IoUringWorker {
 }
 
 impl IoUringWorker {
-    pub fn new() -> Self {
+    pub fn new(number_of_entries: u32) -> Self {
         let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
             // TODO cfg entries
-            ring: UnsafeCell::new(IoUring::new(1024).unwrap()),
+            ring: UnsafeCell::new(IoUring::new(number_of_entries).unwrap()),
             backlog: VecDeque::with_capacity(64),
             probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new(),

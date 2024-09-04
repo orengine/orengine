@@ -1,7 +1,8 @@
 use std::intrinsics::{likely, unlikely};
 use std::ptr::addr_of_mut;
 use crate::buf::Buffer;
-use crate::cfg::{set_buf_len, DEFAULT_BUF_LEN};
+use crate::local_executor;
+use crate::runtime::config::DEFAULT_BUF_LEN;
 
 /// Local [`BufPool`]. So, it is lockless.
 #[thread_local]
@@ -80,7 +81,7 @@ impl BufPool {
         if self.buffer_len == buffer_len {
             return;
         }
-        set_buf_len(buffer_len);
+        local_executor().set_config_buffer_len(self.buffer_len);
         self.buffer_len = buffer_len;
         self.pool = Vec::with_capacity(0);
     }

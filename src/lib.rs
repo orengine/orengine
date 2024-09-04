@@ -8,7 +8,6 @@
 #![feature(io_error_uncategorized)]
 
 pub mod buf;
-pub mod cfg;
 pub mod end;
 pub mod fs;
 pub mod io;

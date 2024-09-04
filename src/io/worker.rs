@@ -9,9 +9,9 @@ use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
 #[thread_local]
 pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
 
-pub(crate) unsafe fn init_local_worker() {
+pub(crate) unsafe fn init_local_worker(number_of_entries: u32) {
     unsafe {
-        LOCAL_WORKER = Some(WorkerSys::new());
+        LOCAL_WORKER = Some(WorkerSys::new(number_of_entries));
     }
 }
 

@@ -7,7 +7,6 @@ use std::ptr::{NonNull, slice_from_raw_parts_mut};
 use std::slice::SliceIndex;
 use crate::buf::buf_pool::buf_pool;
 use crate::buf::buffer;
-use crate::cfg::config_buf_len;
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
@@ -133,7 +132,7 @@ impl Buffer {
             self.len = new_size;
         }
 
-        let mut new_buf = if config_buf_len() == new_size {
+        let mut new_buf = if buf_pool().buffer_len() == new_size {
             buffer()
         } else {
             Buffer::new(new_size)
