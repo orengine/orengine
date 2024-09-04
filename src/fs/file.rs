@@ -8,6 +8,8 @@ use crate::io::fallocate::AsyncFallocate;
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
+use crate::io::sync_all::AsyncSyncAll;
+use crate::io::sync_data::AsyncSyncData;
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
 use crate::runtime::local_executor;
@@ -91,6 +93,10 @@ impl AsRawFd for File {
 }
 
 impl AsyncFallocate for File {}
+
+impl AsyncSyncAll for File {}
+
+impl AsyncSyncData for File {}
 
 impl AsyncRead for File {}
 

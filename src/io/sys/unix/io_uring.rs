@@ -300,8 +300,29 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn fallocate(&mut self, fd: RawFd, len: u64, request_ptr: *mut IoRequest) {
-        self.register_entry(opcode::Fallocate::new(types::Fd(fd), len).build(), request_ptr);
+    fn fallocate(&mut self, fd: RawFd, offset:u64, len: u64, flags: i32, request_ptr: *mut IoRequest) {
+        self.register_entry(
+            opcode::Fallocate::new(types::Fd(fd), len)
+                .offset(offset)
+                .mode(flags)
+                .build(),
+            request_ptr
+        );
+    }
+
+    #[inline(always)]
+    fn sync_all(&mut self, fd: RawFd, request_ptr: *mut IoRequest) {
+        self.register_entry(opcode::Fsync::new(types::Fd(fd)).build(), request_ptr);
+    }
+
+    #[inline(always)]
+    fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequest) {
+        self.register_entry(
+            opcode::Fsync::new(types::Fd(fd))
+                .flags(types::FsyncFlags::DATASYNC)
+                .build(),
+            request_ptr
+        );
     }
     
     #[inline(always)]

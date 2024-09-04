@@ -47,7 +47,9 @@ pub(crate) trait IoWorker {
     fn peek_from(&mut self, fd: RawFd, msg: *mut OsMessageHeader, request_ptr: *mut IoRequest);
     fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequest);
     fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *mut IoRequest);
-    fn fallocate(&mut self, fd: RawFd, len: u64, request_ptr: *mut IoRequest);
+    fn fallocate(&mut self, fd: RawFd, offset:u64, len: u64, flags: i32, request_ptr: *mut IoRequest);
+    fn sync_all(&mut self, fd: RawFd, request_ptr: *mut IoRequest);
+    fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequest);
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest);
     fn pread(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, offset: usize, request_ptr: *mut IoRequest);
     fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest);
