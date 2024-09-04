@@ -19,7 +19,7 @@ COPY . .
 RUN --mount=type=cache,target=/app/benchmarks/net/server/target/,id=rust-cache-${APP_NAME}-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    <<EOF
+     <<EOF
 set -e
 cd /app/benchmarks/net/server
 xx-cargo build --locked --release --target-dir /app/benchmarks/net/server/target

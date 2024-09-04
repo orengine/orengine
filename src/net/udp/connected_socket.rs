@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::mem;
 
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd};
@@ -5,7 +6,6 @@ use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, As
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 
-#[derive(Debug)]
 pub struct UdpConnectedSocket {
     fd: RawFd,
 }
@@ -70,6 +70,23 @@ impl AsyncClose for UdpConnectedSocket {}
 impl Socket for UdpConnectedSocket {}
 
 impl ConnectedDatagram for UdpConnectedSocket {}
+
+impl Debug for UdpConnectedSocket {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut res = f.debug_struct("UdpConnectedSocket");
+
+        if let Ok(addr) = self.local_addr() {
+            res.field("addr", &addr);
+        }
+
+        if let Ok(peer) = self.peer_addr() {
+            res.field("peer", &peer);
+        }
+
+        let name = if cfg!(windows) { "socket" } else { "fd" };
+        res.field(name, &self.as_raw_fd()).finish()
+    }
+}
 
 impl Drop for UdpConnectedSocket {
     fn drop(&mut self) {

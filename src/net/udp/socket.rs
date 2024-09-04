@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
 use std::net::ToSocketAddrs;
@@ -107,6 +108,19 @@ impl AsyncClose for UdpSocket {}
 impl Socket for UdpSocket {}
 
 impl Datagram<UdpConnectedSocket> for UdpSocket {}
+
+impl Debug for UdpSocket {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut res = f.debug_struct("UdpSocket");
+
+        if let Ok(addr) = self.local_addr() {
+            res.field("local addr", &addr);
+        }
+
+        let name = if cfg!(windows) { "socket" } else { "fd" };
+        res.field(name, &self.as_raw_fd()).finish()
+    }
+}
 
 impl Drop for UdpSocket {
     fn drop(&mut self) {

@@ -1,5 +1,6 @@
 //! This module contains [`TcpListener`].
 use std::ffi::c_int;
+use std::fmt::{Debug, Formatter};
 use std::io::{Result};
 use std::net::ToSocketAddrs;
 use std::mem;
@@ -103,6 +104,19 @@ impl FromRawFd for TcpListener {
 impl AsyncClose for TcpListener {}
 
 impl Listener<TcpStream> for TcpListener {}
+
+impl Debug for TcpListener {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut res = f.debug_struct("TcpListener");
+
+        if let Ok(addr) = self.local_addr() {
+            res.field("local addr", &addr);
+        }
+
+        let name = if cfg!(windows) { "socket" } else { "fd" };
+        res.field(name, &self.as_raw_fd()).finish()
+    }
+}
 
 impl Drop for TcpListener {
     fn drop(&mut self) {

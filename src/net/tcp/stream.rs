@@ -1,4 +1,6 @@
 //! This module contains [`TcpStream`].
+
+use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
 
@@ -7,7 +9,7 @@ use socket2::{Domain, Type};
 use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
-use crate::net::Stream;
+use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
 /// A TCP stream between a local and a remote socket.
@@ -91,9 +93,26 @@ impl AsyncShutdown for TcpStream {}
 
 impl AsyncClose for TcpStream {}
 
-impl crate::net::Socket for TcpStream {}
+impl Socket for TcpStream {}
 
 impl Stream for TcpStream {}
+
+impl Debug for TcpStream {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut res = f.debug_struct("TcpStream");
+
+        if let Ok(addr) = self.local_addr() {
+            res.field("addr", &addr);
+        }
+
+        if let Ok(peer) = self.peer_addr() {
+            res.field("peer", &peer);
+        }
+
+        let name = if cfg!(windows) { "socket" } else { "fd" };
+        res.field(name, &self.as_raw_fd()).finish()
+    }
+}
 
 impl Drop for TcpStream {
     fn drop(&mut self) {
