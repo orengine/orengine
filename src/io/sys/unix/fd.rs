@@ -5,3 +5,5 @@ pub use std::os::unix::io::IntoRawFd as IntoRawFd;
 
 pub use std::os::fd::BorrowedFd as BorrowedFd;
 pub use std::os::unix::io::AsFd as AsFd;
+
+pub use std::os::fd::OwnedFd as OwnedFd;

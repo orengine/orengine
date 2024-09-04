@@ -4,12 +4,11 @@ use std::fmt::{Debug, Formatter};
 use std::io::{Result};
 use std::net::ToSocketAddrs;
 use std::mem;
-
 use socket2::SockAddr;
 
 use crate::each_addr;
 use crate::io::bind::BindConfig;
-use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd};
+use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
 use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::Listener;
@@ -61,6 +60,18 @@ impl AsRawFd for TcpListener {
 impl AsFd for TcpListener {
     fn as_fd(&self) -> BorrowedFd<'_> {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
+
+impl From<OwnedFd> for TcpListener {
+    fn from(fd: OwnedFd) -> Self {
+        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+    }
+}
+
+impl Into<OwnedFd> for TcpListener {
+    fn into(self) -> OwnedFd {
+        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
     }
 }
 

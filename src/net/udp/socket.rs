@@ -2,7 +2,6 @@ use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
 use std::net::ToSocketAddrs;
-use std::os::fd::{AsFd, BorrowedFd};
 
 use socket2::SockAddr;
 
@@ -12,7 +11,7 @@ use crate::io::{
 };
 use crate::io::bind::BindConfig;
 use crate::io::recv_from::AsyncRecvFrom;
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd, AsFd, BorrowedFd, OwnedFd};
 use crate::net::{Datagram, Socket};
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
@@ -64,6 +63,18 @@ impl AsRawFd for UdpSocket {
     #[inline(always)]
     fn as_raw_fd(&self) -> RawFd {
         self.fd
+    }
+}
+
+impl From<OwnedFd> for UdpSocket {
+    fn from(fd: OwnedFd) -> Self {
+        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+    }
+}
+
+impl Into<OwnedFd> for UdpSocket {
+    fn into(self) -> OwnedFd {
+        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
     }
 }
 

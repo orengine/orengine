@@ -3,12 +3,11 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
-
 use socket2::{Domain, Type};
 
 use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd, OwnedFd};
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
@@ -64,6 +63,18 @@ impl IntoRawFd for TcpStream {
 impl FromRawFd for TcpStream {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd }
+    }
+}
+
+impl From<OwnedFd> for TcpStream {
+    fn from(fd: OwnedFd) -> Self {
+        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+    }
+}
+
+impl Into<OwnedFd> for TcpStream {
+    fn into(self) -> OwnedFd {
+        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
     }
 }
 

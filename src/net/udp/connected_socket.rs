@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::mem;
 
-use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd};
+use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd, OwnedFd};
 use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, AsyncSend};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
@@ -52,6 +52,18 @@ impl AsRawFd for UdpConnectedSocket {
 impl AsFd for UdpConnectedSocket {
     fn as_fd(&self) -> BorrowedFd<'_> {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
+
+impl From<OwnedFd> for UdpConnectedSocket {
+    fn from(fd: OwnedFd) -> Self {
+        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+    }
+}
+
+impl Into<OwnedFd> for UdpConnectedSocket {
+    fn into(self) -> OwnedFd {
+        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
     }
 }
 
