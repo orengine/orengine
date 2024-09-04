@@ -14,7 +14,6 @@ pub struct TaskPool {
 pub static mut TASK_POOL: Option<TaskPool> = None;
 
 #[inline(always)]
-// TODO rewrite LOCAL_Executor and LOCAL_WORKER as it
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
     unsafe {

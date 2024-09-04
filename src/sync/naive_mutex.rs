@@ -154,6 +154,7 @@ impl<T> Mutex<T> {
 
     #[inline(always)]
     pub unsafe fn unlock(&self) {
+        debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
         if likely(
             self.counter
@@ -169,7 +170,6 @@ impl<T> Mutex<T> {
         if likely(next.is_some()) {
             unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
         } else {
-            debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
             // Another task failed to acquire a lock, but it is not yet in the queue
             let backoff = Backoff::new();
             loop {
@@ -394,14 +394,12 @@ mod tests {
     }
 
     #[test_macro::test]
-    // TODO
     fn stress_test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_micros(1);
         const PAR: usize = 10;
         const TRIES: usize = 200;
 
-        // TODO not naive
-        async fn work_with_lock(mutex: &naive::Mutex<usize>, wg: &WaitGroup) {
+        async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
             if *lock % 100 == 0 {
@@ -414,7 +412,7 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(naive::Mutex::new(0));
+        let mutex = Arc::new(Mutex::new(0));
         let wg = Arc::new(WaitGroup::new());
         wg.add(PAR * TRIES);
         for _ in 1..PAR {

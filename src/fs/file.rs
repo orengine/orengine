@@ -4,6 +4,7 @@ use std::io::{Error, Result};
 use std::os::unix::ffi::OsStrExt;
 use crate::fs::{OpenOptions};
 use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
+use crate::io::fallocate::AsyncFallocate;
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
@@ -88,6 +89,8 @@ impl AsRawFd for File {
         self.fd
     }
 }
+
+impl AsyncFallocate for File {}
 
 impl AsyncRead for File {}
 

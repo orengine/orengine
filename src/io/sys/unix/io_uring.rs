@@ -45,7 +45,6 @@ impl IoUringWorker {
     pub fn new(number_of_entries: u32) -> Self {
         let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
-            // TODO cfg entries
             ring: UnsafeCell::new(IoUring::new(number_of_entries).unwrap()),
             backlog: VecDeque::with_capacity(64),
             probe: Probe::new(),
@@ -298,6 +297,11 @@ impl IoWorker for IoUringWorker {
     #[inline(always)]
     fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *mut IoRequest) {
         self.register_entry(opcode::OpenAt2::new(types::Fd(libc::AT_FDCWD), path, open_how).build(), request_ptr);
+    }
+
+    #[inline(always)]
+    fn fallocate(&mut self, fd: RawFd, len: u64, request_ptr: *mut IoRequest) {
+        self.register_entry(opcode::Fallocate::new(types::Fd(fd), len).build(), request_ptr);
     }
     
     #[inline(always)]

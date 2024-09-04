@@ -8,7 +8,6 @@ pub fn run_on_all_cores<Fut: Future<Output=()> + Sync + 'static, F: 'static + Cl
         let core = cores[i];
         let creator = creator.clone();
         std::thread::Builder::new()
-            // TODO worker with id in panic and check worker id code
             .name(format!("worker on core: {}", i))
             .spawn(move || {
                 Executor::init_on_core(core);
