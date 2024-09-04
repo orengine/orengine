@@ -27,6 +27,6 @@ pub mod atomic_task_queue;
 pub use socket2;
 pub use end::{end_local_thread, end};
 pub use run::*;
-pub use runtime::Executor;
+pub use runtime::{Executor, local_executor};
 pub use yield_now::yield_now;
 pub use sleep::sleep;
