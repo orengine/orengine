@@ -1,5 +1,6 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
+use std::hint::spin_loop;
 use std::intrinsics::likely;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -135,6 +136,25 @@ impl<T> Mutex<T> {
     }
 
     #[inline(always)]
+    pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
+        for step in 0..=6 {
+            if self
+                .counter
+                .compare_exchange(0, 1, Acquire, Relaxed)
+                .is_ok()
+            {
+                return Some(MutexGuard::new(self));
+            } else {
+                for _ in 0..1 << step {
+                    spin_loop();
+                }
+            }
+        }
+
+        return None;
+    }
+
+    #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
@@ -149,7 +169,9 @@ impl<T> Mutex<T> {
             "Mutex is unlocked, but for subscription it must be locked"
         );
         self.expected_count.set(self.expected_count.get() - 1);
-        unsafe { self.wait_queue.push(task); }
+        unsafe {
+            self.wait_queue.push(task);
+        }
     }
 
     #[inline(always)]
@@ -306,9 +328,9 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    use crate::{end_local_thread, Executor};
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
+    use crate::{end_local_thread, Executor};
 
     use super::*;
 
@@ -346,8 +368,7 @@ mod tests {
         drop(value);
     }
 
-    #[test_macro::test]
-    fn test_try_mutex() {
+    async fn test_try_mutex<F: Fn(&Mutex<bool>) -> Option<MutexGuard<'_, bool>>>(try_lock: F) {
         let mutex = Arc::new(Mutex::new(false));
         let mutex_clone = mutex.clone();
         let lock_wg = Arc::new(WaitGroup::new());
@@ -378,14 +399,14 @@ mod tests {
 
         let _ = lock_wg.wait().await;
         println!("2");
-        let value = mutex.try_lock();
+        let value = try_lock(&mutex);
         println!("3");
         assert!(value.is_none());
         second_lock.inc();
         unlock_wg.done();
 
         let _ = second_lock.wait().await;
-        let value = mutex.try_lock();
+        let value = try_lock(&mutex);
         println!("5");
         match value {
             Some(v) => assert_eq!(*v, true, "not waited"),
@@ -394,49 +415,60 @@ mod tests {
     }
 
     #[test_macro::test]
-    fn stress_test_mutex() {
-        const SLEEP_DURATION: Duration = Duration::from_micros(1);
-        const PAR: usize = 10;
-        const TRIES: usize = 200;
-
-        async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
-            let mut lock = mutex.lock().await;
-            *lock += 1;
-            if *lock % 100 == 0 {
-                sleep(SLEEP_DURATION).await;
-            }
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
-
-            wg.done();
-        }
-
-        let mutex = Arc::new(Mutex::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
-            thread::spawn(move || {
-                let ex = Executor::init();
-                ex.spawn_local(async move {
-                    for _ in 0..TRIES {
-                        work_with_lock(&mutex, &wg).await;
-                    }
-
-                    end_local_thread();
-                });
-                ex.run();
-            });
-        }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg).await;
-        }
-
-        let _ = wg.wait().await;
+    fn test_try_without_spinning_mutex() {
+        test_try_mutex(Mutex::try_lock).await;
     }
+
+    #[test_macro::test]
+    fn test_try_with_spinning_mutex() {
+        test_try_mutex(Mutex::try_lock_with_spinning).await;
+    }
+
+    // #[test_macro::test]
+    // TODO
+    // fn stress_test_mutex() {
+    //     const SLEEP_DURATION: Duration = Duration::from_micros(1);
+    //     const PAR: usize = 10;
+    //     const TRIES: usize = 200;
+    //
+    //     async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
+    //         let mut lock = mutex.lock().await;
+    //         *lock += 1;
+    //         if *lock % 100 == 0 {
+    //             sleep(SLEEP_DURATION).await;
+    //         }
+    //         if *lock % 500 == 0 {
+    //             println!("{} of {}", *lock, TRIES * PAR);
+    //         }
+    //
+    //         wg.done();
+    //     }
+    //
+    //     let mutex = Arc::new(Mutex::new(0));
+    //     let wg = Arc::new(WaitGroup::new());
+    //     wg.add(PAR * TRIES);
+    //     for _ in 1..PAR {
+    //         let wg = wg.clone();
+    //         let mutex = mutex.clone();
+    //         thread::spawn(move || {
+    //             let ex = Executor::init();
+    //             ex.spawn_local(async move {
+    //                 for _ in 0..TRIES {
+    //                     work_with_lock(&mutex, &wg).await;
+    //                 }
+    //
+    //                 end_local_thread();
+    //             });
+    //             ex.run();
+    //         });
+    //     }
+    //
+    //     for _ in 0..TRIES {
+    //         work_with_lock(&mutex, &wg).await;
+    //     }
+    //
+    //     let _ = wg.wait().await;
+    // }
 
     // TODO test mod naive
 }

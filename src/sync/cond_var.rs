@@ -44,12 +44,14 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 unsafe { local_executor().push_current_task_to(&this.cond_var.wait_queue) };
                 Poll::Pending
             }
-            State::WaitWake => match this.mutex.try_lock() {
+            State::WaitWake => match this.mutex.try_lock_with_spinning() {
                 Some(guard) => Poll::Ready(guard),
                 None => {
                     this.state = State::WaitLock;
                     let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
-                    unsafe { this.mutex.subscribe(task); }
+                    unsafe {
+                        this.mutex.subscribe(task);
+                    }
                     Poll::Pending
                 }
             },
@@ -105,10 +107,10 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use crate::{end_local_thread, Executor};
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
+    use crate::{end_local_thread, Executor};
 
     use super::*;
 
