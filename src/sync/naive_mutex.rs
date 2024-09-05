@@ -1,7 +1,7 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::hint::spin_loop;
-use std::intrinsics::likely;
+use std::intrinsics::{likely, unlikely};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
@@ -85,7 +85,11 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
     fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if likely(!this.was_called) {
-            if this.mutex.counter.fetch_add(1, Acquire) == 0 {
+            if let Some(guard) = this.mutex.try_lock_with_spinning() {
+                return Poll::Ready(guard);
+            }
+
+            if unlikely(this.mutex.counter.fetch_add(1, Acquire) == 0) {
                 return Poll::Ready(MutexGuard::new(&this.mutex));
             }
 
@@ -138,20 +142,20 @@ impl<T> Mutex<T> {
     #[inline(always)]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
-            if self
-                .counter
-                .compare_exchange(0, 1, Acquire, Relaxed)
-                .is_ok()
-            {
-                return Some(MutexGuard::new(self));
-            } else {
-                for _ in 0..1 << step {
-                    spin_loop();
+            let lock_res = self.counter
+                .compare_exchange(0, 1, Acquire, Acquire);
+            match lock_res {
+                Ok(_) => return Some(MutexGuard::new(self)),
+                Err(count) if count == 1 => {
+                    for _ in 0..1 << step {
+                        spin_loop();
+                    }
                 }
+                Err(_) => return None,
             }
         }
 
-        return None;
+        None
     }
 
     #[inline(always)]
