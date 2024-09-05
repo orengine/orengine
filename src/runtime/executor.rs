@@ -285,7 +285,7 @@ impl Executor {
                 let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
                 if unlikely(has_no_work) {
-                    const MAX_SLEEP: Duration = Duration::from_millis(100);
+                    const MAX_SLEEP: Duration = Duration::from_millis(10);
 
                     if need_to_sleep > MAX_SLEEP {
                         let _ = io_worker.must_poll(MAX_SLEEP);
@@ -307,27 +307,42 @@ impl Executor {
     }
 
     pub fn run(&mut self) {
-        let mut task_;
         let mut task;
+        // A round is a number of tasks that must be completed before the next background_work call.
+        // It is needed to avoid case like:
+        //   Task with yield -> repeat this task -> repeat this task -> ...
+        //
+        // So it works like:
+        //   Round 1 -> background work -> round 2  -> ...
+        let mut number_of_tasks_in_this_round = self.tasks.len();
         let io_worker = unsafe { local_io_worker() };
 
         loop {
-            task_ = self.tasks.pop_back();
-            if unlikely(task_.is_none()) {
-                if unlikely(self.background_task(io_worker)) {
-                    break;
-                }
-                continue;
+            for _ in 0..number_of_tasks_in_this_round {
+                task = unsafe { self.tasks.pop_back().unwrap_unchecked() };
+                self.exec_task(task);
             }
 
-            task = unsafe { task_.unwrap_unchecked() };
-            self.exec_task(task);
+            if unlikely(self.background_task(io_worker)) {
+                break;
+            }
+
+            number_of_tasks_in_this_round = self.tasks.len();
         }
 
         uninit_local_executor();
         unsafe {
             LOCAL_WORKER = None;
         }
+    }
+
+    #[inline(always)]
+    pub fn run_with_future<Fut: Future<Output = ()>>(
+        &mut self,
+        future: Fut,
+    ) {
+        self.spawn_local(future);
+        self.run();
     }
 
     pub fn run_and_block_on<T, Fut: Future<Output = T>>(

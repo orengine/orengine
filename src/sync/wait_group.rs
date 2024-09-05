@@ -92,7 +92,7 @@ impl WaitGroup {
         if unlikely(prev_count == 1) {
             let executor = local_executor();
             while let Some(task) = self.waited_tasks.pop() {
-                executor.spawn_local_task(task);
+                executor.exec_task(task);
             }
         }
 
