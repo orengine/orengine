@@ -142,7 +142,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, Instant};
 
-    use crate::{end_local_thread, Executor};
+    use crate::{Executor};
     use crate::io::{AsyncAccept, AsyncBind};
     use crate::io::bind::BindConfig;
     use crate::net::Socket;
@@ -214,7 +214,7 @@ mod tests {
 
         let server_thread = thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -229,10 +229,7 @@ mod tests {
 
                     stream.send_all(RESPONSE).await.expect("send failed");
                 }
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         use std::io::{Read, Write};

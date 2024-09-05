@@ -110,7 +110,7 @@ mod tests {
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::{end_local_thread, Executor};
+    use crate::{Executor};
 
     use super::*;
 
@@ -122,7 +122,7 @@ mod tests {
         let pair2 = pair.clone();
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 let (lock, cvar) = pair2.deref();
                 let mut started = lock.lock().await;
                 sleep(TIME_TO_SLEEP).await;
@@ -131,10 +131,7 @@ mod tests {
                     drop(started);
                 }
                 cvar.notify_one();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         let (lock, cvar) = pair.deref();
@@ -170,16 +167,14 @@ mod tests {
             wg.add(1);
             thread::spawn(move || {
                 let executor = Executor::init();
-                executor.spawn_local(async move {
+                let _ = executor.run_and_block_on(async move {
                     let (lock, cvar) = pair.deref();
                     let mut started = lock.lock().await;
                     while !*started {
                         started = cvar.wait(started).await;
                     }
                     wg.done();
-                    end_local_thread();
                 });
-                executor.run();
             });
         }
 

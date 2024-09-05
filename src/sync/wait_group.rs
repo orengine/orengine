@@ -114,7 +114,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
-    use crate::{end_local_thread, sleep, Executor};
+    use crate::{sleep, Executor};
     use super::*;
 
     const PAR: usize = 40;
@@ -131,15 +131,12 @@ mod tests {
 
             thread::spawn(move || {
                 let ex = Executor::init();
-                ex.spawn_local(async move {
+                let _ = ex.run_and_block_on(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
-
-                    end_local_thread();
                 });
-                ex.run();
             });
         }
 
@@ -161,14 +158,11 @@ mod tests {
 
             thread::spawn(move || {
                 let ex = Executor::init();
-                ex.spawn_local(async move {
+                let _ = ex.run_and_block_on(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
-
-                    end_local_thread();
                 });
-                ex.run();
             });
         }
 
@@ -190,13 +184,10 @@ mod tests {
 
             thread::spawn(move || {
                 let ex = Executor::init();
-                ex.spawn_local(async move {
+                let _ = ex.run_and_block_on(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
-
-                    end_local_thread();
                 });
-                ex.run();
             });
         }
 

@@ -74,7 +74,7 @@ mod tests {
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
     use std::thread;
-    use crate::{end_local_thread, Executor};
+    use crate::{Executor};
     use crate::sync::WaitGroup;
 
     use super::*;
@@ -94,16 +94,13 @@ mod tests {
             let once = once.clone();
             thread::spawn(move || {
                 let ex = Executor::init();
-                ex.spawn_local(async move {
+                let _ = ex.run_and_block_on(async move {
                     let _ = once.call_once(|| {
                         assert!(!a.load(SeqCst));
                         a.store(true, SeqCst);
                     });
                     wg.done();
-
-                    end_local_thread();
                 });
-                ex.run();
             });
         }
 

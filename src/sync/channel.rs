@@ -455,7 +455,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::sync::channel::Channel;
-    use crate::{end_local_thread, sleep, Executor};
+    use crate::{sleep, Executor};
 
     #[test_macro::test]
     fn test_zero_capacity() {
@@ -464,14 +464,11 @@ mod tests {
 
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 ch_clone.send(1).await.expect("closed");
                 ch_clone.send(2).await.expect("closed");
                 ch_clone.close();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         let res = ch.recv().await.expect("closed");
@@ -497,7 +494,7 @@ mod tests {
 
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 for i in 0..N {
                     ch_clone.send(i).await.expect("closed");
                 }
@@ -505,10 +502,7 @@ mod tests {
                 sleep(Duration::from_millis(1)).await;
 
                 ch_clone.close();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         for i in 0..N {
@@ -529,15 +523,12 @@ mod tests {
 
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 sleep(Duration::from_millis(1)).await;
                 ch_clone.send(1).await.expect("closed");
 
                 ch_clone.close();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         let res = ch.recv().await.expect("closed");
@@ -556,17 +547,14 @@ mod tests {
 
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 ch_clone.send(1).await.expect("closed");
                 ch_clone.send(2).await.expect("closed");
 
                 sleep(Duration::from_millis(1)).await;
 
                 ch_clone.close();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         sleep(Duration::from_millis(1)).await;

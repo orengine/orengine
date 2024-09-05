@@ -1,14 +1,14 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{thread};
+use std::thread;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use smol::future;
 use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
-use orengine::{Executor, sleep, end};
+use orengine::{sleep, Executor};
 use orengine::buf::buffer;
 use orengine::local::Local;
-use orengine::runtime::local_executor;
+use orengine::runtime::{end, local_executor};
 use orengine::sync::LocalWaitGroup;
 use orengine::utils::get_core_ids;
 

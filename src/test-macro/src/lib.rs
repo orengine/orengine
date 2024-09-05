@@ -25,21 +25,21 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 let sender2 = sender.clone();
                 let result = std::panic::catch_unwind(move || {
                     let executor = crate::Executor::init();
-                    executor.spawn_local(async move {
+                    let _ = executor.run_and_block_on(async move {
                         #body
-                        crate::end::end();
                         sender2.send(Ok(())).unwrap();
                     });
-                    executor.run();
                 });
 
                 if let Err(err) = result {
-                    crate::end::end();
                     sender.send(Err(err)).unwrap();
                 }
             });
 
-            match receiver.recv_timeout(std::time::Duration::from_secs(1)) {
+            // TODO 1 sec
+            let res = receiver.recv_timeout(std::time::Duration::from_secs(5));
+            unsafe { crate::runtime::end_all_workers() };
+            match res {
                 Ok(Ok(())) => {
                     println!("test {} is finished!", #name);
                     println!();

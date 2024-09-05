@@ -10,14 +10,12 @@ use std::time::{Duration, Instant};
 use crossbeam::utils::CachePadded;
 
 use crate::atomic_task_queue::AtomicTaskList;
-use crate::end::{global_was_end, set_global_was_end, set_was_ended, was_ended};
-use crate::end_local_thread;
 use crate::io::worker::{
     init_local_worker, IoWorker, local_worker as local_io_worker, LOCAL_WORKER,
 };
 use crate::runtime::call::Call;
 use crate::runtime::config::Config;
-use crate::runtime::get_core_id_for_executor;
+use crate::runtime::{end_worker_by_id, get_core_id_for_executor, init_new_worker_end, is_ended_by_id};
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
 use crate::runtime::waker::create_waker;
@@ -80,8 +78,8 @@ pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 impl Executor {
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
         crate::utils::core::set_for_current(core_id);
-        set_was_ended(false);
-        set_global_was_end(false);
+        let worker_id = FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed);
+        init_new_worker_end(worker_id);
         TaskPool::init();
         unsafe { init_local_worker(config.number_of_entries) };
 
@@ -89,7 +87,7 @@ impl Executor {
             LOCAL_EXECUTOR = Some(Executor {
                 config,
                 core_id,
-                worker_id: FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed),
+                worker_id,
                 current_call: Call::default(),
                 tasks: VecDeque::new(),
                 exec_series: 0,
@@ -269,9 +267,9 @@ impl Executor {
 
     #[inline(always)]
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
-    /// was called or [`end`](crate::end::end)).
+    /// was called or [`end`](crate::runtime::end::end)).
     fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
-        if unlikely(was_ended() || global_was_end()) {
+        if unlikely(is_ended_by_id(self.worker_id())) {
             return true;
         }
 
@@ -327,8 +325,6 @@ impl Executor {
         }
 
         uninit_local_executor();
-        set_global_was_end(false);
-        set_was_ended(false);
         unsafe {
             LOCAL_WORKER = None;
         }
@@ -344,6 +340,7 @@ impl Executor {
         struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
             res_ptr: *mut Option<R>,
             future: Fut,
+            worker_id: usize
         }
 
         impl<R, Fut: Future<Output = R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
@@ -356,7 +353,7 @@ impl Executor {
                     Poll::Pending => Poll::Pending,
                     Poll::Ready(res) => {
                         unsafe { this.res_ptr.write(Some(res)) };
-                        end_local_thread();
+                        unsafe { end_worker_by_id(this.worker_id) };
                         Poll::Ready(())
                     }
                 }
@@ -367,6 +364,7 @@ impl Executor {
         let static_future = EndLocalThreadAndWriteIntoPtr {
             res_ptr: &mut res,
             future,
+            worker_id: self.worker_id()
         };
         self.exec_future(static_future);
         self.run();

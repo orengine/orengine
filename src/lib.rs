@@ -8,7 +8,6 @@
 #![feature(io_error_uncategorized)]
 
 pub mod buf;
-pub mod end;
 pub mod fs;
 pub mod io;
 pub mod local;
@@ -24,8 +23,7 @@ mod messages;
 pub mod atomic_task_queue;
 
 pub use socket2;
-pub use end::{end_local_thread, end};
 pub use run::*;
-pub use runtime::{Executor, local_executor};
+pub use runtime::{local_executor, Executor};
 pub use yield_now::yield_now;
 pub use sleep::sleep;

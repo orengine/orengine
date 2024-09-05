@@ -334,7 +334,7 @@ mod tests {
 
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::{end_local_thread, Executor};
+    use crate::{Executor};
 
     use super::*;
 
@@ -350,17 +350,14 @@ mod tests {
         wg_clone.add(1);
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 let mut value = mutex_clone.lock().await;
                 wg_clone.done();
                 println!("1");
                 sleep(SLEEP_DURATION).await;
                 println!("3");
                 *value = true;
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         let _ = wg.wait().await;
@@ -386,7 +383,7 @@ mod tests {
         unlock_wg.add(1);
         thread::spawn(move || {
             let ex = Executor::init();
-            ex.spawn_local(async move {
+            let _ = ex.run_and_block_on(async move {
                 let mut value = mutex_clone.lock().await;
                 println!("1");
                 lock_wg_clone.done();
@@ -395,10 +392,7 @@ mod tests {
                 *value = true;
                 drop(value);
                 second_lock_clone.done();
-
-                end_local_thread();
             });
-            ex.run();
         });
 
         let _ = lock_wg.wait().await;
@@ -456,14 +450,11 @@ mod tests {
     //         let mutex = mutex.clone();
     //         thread::spawn(move || {
     //             let ex = Executor::init();
-    //             ex.spawn_local(async move {
+    //             let _ = ex.run_and_block_on(async move {
     //                 for _ in 0..TRIES {
     //                     work_with_lock(&mutex, &wg).await;
     //                 }
-    //
-    //                 end_local_thread();
     //             });
-    //             ex.run();
     //         });
     //     }
     //
