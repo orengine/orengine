@@ -422,48 +422,43 @@ mod tests {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
-    // #[test_macro::test]
-    // TODO
-    // fn stress_test_mutex() {
-    //     const SLEEP_DURATION: Duration = Duration::from_micros(1);
-    //     const PAR: usize = 10;
-    //     const TRIES: usize = 200;
-    //
-    //     async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
-    //         let mut lock = mutex.lock().await;
-    //         *lock += 1;
-    //         if *lock % 100 == 0 {
-    //             sleep(SLEEP_DURATION).await;
-    //         }
-    //         if *lock % 500 == 0 {
-    //             println!("{} of {}", *lock, TRIES * PAR);
-    //         }
-    //
-    //         wg.done();
-    //     }
-    //
-    //     let mutex = Arc::new(Mutex::new(0));
-    //     let wg = Arc::new(WaitGroup::new());
-    //     wg.add(PAR * TRIES);
-    //     for _ in 1..PAR {
-    //         let wg = wg.clone();
-    //         let mutex = mutex.clone();
-    //         thread::spawn(move || {
-    //             let ex = Executor::init();
-    //             let _ = ex.run_and_block_on(async move {
-    //                 for _ in 0..TRIES {
-    //                     work_with_lock(&mutex, &wg).await;
-    //                 }
-    //             });
-    //         });
-    //     }
-    //
-    //     for _ in 0..TRIES {
-    //         work_with_lock(&mutex, &wg).await;
-    //     }
-    //
-    //     let _ = wg.wait().await;
-    // }
+    #[test_macro::test]
+    fn stress_test_mutex() {
+        const PAR: usize = 50;
+        const TRIES: usize = 100;
+
+        async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
+            let mut lock = mutex.lock().await;
+            *lock += 1;
+            if *lock % 500 == 0 {
+                println!("{} of {}", *lock, TRIES * PAR);
+            }
+
+            wg.done();
+        }
+
+        let mutex = Arc::new(Mutex::new(0));
+        let wg = Arc::new(WaitGroup::new());
+        wg.add(PAR * TRIES);
+        for _ in 1..PAR {
+            let wg = wg.clone();
+            let mutex = mutex.clone();
+            thread::spawn(move || {
+                let ex = Executor::init();
+                let _ = ex.run_and_block_on(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg).await;
+                    }
+                });
+            });
+        }
+
+        for _ in 0..TRIES {
+            work_with_lock(&mutex, &wg).await;
+        }
+
+        let _ = wg.wait().await;
+    }
 
     // TODO test mod naive
 }
