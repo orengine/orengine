@@ -398,11 +398,24 @@ pub struct Channel<T> {
 
 impl<T> Channel<T> {
     #[inline(always)]
-    pub fn new(capacity: usize) -> Self {
+    pub fn bounded(capacity: usize) -> Self {
         Self {
             inner: SpinLock::new(Inner {
                 storage: VecDeque::with_capacity(capacity),
                 capacity,
+                is_closed: false,
+                senders: VecDeque::with_capacity(0),
+                receivers: VecDeque::with_capacity(0),
+            }),
+        }
+    }
+
+    #[inline(always)]
+    pub fn unbounded() -> Self {
+        Self {
+            inner: SpinLock::new(Inner {
+                storage: VecDeque::with_capacity(0),
+                capacity: 2 << 32,
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
                 receivers: VecDeque::with_capacity(0),
@@ -459,7 +472,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_zero_capacity() {
-        let ch = Arc::new(Channel::new(0));
+        let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
@@ -489,7 +502,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_channel() {
-        let ch = Arc::new(Channel::new(N));
+        let ch = Arc::new(Channel::bounded(N));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
@@ -518,7 +531,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_wait_recv() {
-        let ch = Arc::new(Channel::new(1));
+        let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
@@ -542,7 +555,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_wait_send() {
-        let ch = Arc::new(Channel::new(1));
+        let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
@@ -566,6 +579,35 @@ mod tests {
 
         let _ = ch.send(3).await;
         match ch.send(4).await {
+            Err(_) => assert!(true),
+            _ => panic!("should be closed")
+        };
+    }
+
+    #[test_macro::test]
+    fn test_unbounded_channel() {
+        let ch = Arc::new(Channel::unbounded());
+        let ch_clone = ch.clone();
+
+        thread::spawn(move || {
+            let ex = Executor::init();
+            let _ = ex.run_and_block_on(async move {
+                for i in 0..N {
+                    ch_clone.send(i).await.expect("closed");
+                }
+
+                sleep(Duration::from_millis(1)).await;
+
+                ch_clone.close();
+            });
+        });
+
+        for i in 0..N {
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, i);
+        }
+
+        match ch.recv().await {
             Err(_) => assert!(true),
             _ => panic!("should be closed")
         };

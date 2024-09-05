@@ -241,11 +241,24 @@ pub struct LocalChannel<T> {
 
 impl<T> LocalChannel<T> {
     #[inline(always)]
-    pub fn new(capacity: usize) -> Self {
+    pub fn bounded(capacity: usize) -> Self {
         Self {
             inner: UnsafeCell::new(Inner {
                 storage: VecDeque::with_capacity(capacity),
                 capacity,
+                is_closed: false,
+                senders: VecDeque::with_capacity(0),
+                receivers: VecDeque::with_capacity(0)
+            })
+        }
+    }
+
+    #[inline(always)]
+    pub fn unbounded() -> Self {
+        Self {
+            inner: UnsafeCell::new(Inner {
+                storage: VecDeque::with_capacity(0),
+                capacity: 2 << 32,
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
                 receivers: VecDeque::with_capacity(0)
@@ -299,7 +312,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_zero_capacity() {
-        let ch = LocalChannel::new(0);
+        let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
 
         local_scope(|scope| async {
@@ -324,6 +337,35 @@ mod tests {
         }).await;
     }
 
+    #[test_macro::test]
+    fn test_unbounded() {
+        let ch = LocalChannel::unbounded();
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move{
+                ch_ref.send(1).await.expect("closed");
+
+                yield_now().await;
+
+                for i in 2..100 {
+                    ch_ref.send(i).await.expect("closed");
+                }
+                ch_ref.close();
+            });
+
+            for i in 1..100 {
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
+            }
+
+            match ch.recv().await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed")
+            };
+        }).await;
+    }
+
     const N: usize = 10_025;
 
     // case 1 - send N and recv N. No wait
@@ -333,7 +375,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_local_channel_case1() {
-        let ch = LocalChannel::new(N);
+        let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
 
         local_scope(|scope| async {
@@ -361,7 +403,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_local_channel_case2() {
-        let ch = LocalChannel::new(N);
+        let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
 
         local_scope(|scope| async {
@@ -386,7 +428,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_local_channel_case3() {
-        let ch = LocalChannel::new(N);
+        let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
 
         local_scope(|scope| async {
@@ -410,7 +452,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_local_channel_case4() {
-        let ch = LocalChannel::new(N);
+        let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
 
         local_scope(|scope| async {
@@ -429,7 +471,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_local_channel_split() {
-        let ch = LocalChannel::new(N);
+        let ch = LocalChannel::bounded(N);
         let (tx, rx) = ch.split();
         let tx_ref = &tx;
 
