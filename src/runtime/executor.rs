@@ -14,7 +14,7 @@ use crate::io::worker::{
     init_local_worker, IoWorker, local_worker as local_io_worker, LOCAL_WORKER,
 };
 use crate::runtime::call::Call;
-use crate::runtime::config::Config;
+use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::{end_worker_by_id, get_core_id_for_executor, init_new_worker_end, is_ended_by_id};
 use crate::runtime::task::Task;
 use crate::runtime::task_pool::TaskPool;
@@ -64,7 +64,7 @@ pub struct Executor {
     core_id: CoreId,
     worker_id: usize,
 
-    config: Config,
+    config: ValidConfig,
 
     current_call: Call,
 
@@ -77,15 +77,19 @@ pub(crate) static FREE_WORKER_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Executor {
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
+        let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let worker_id = FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed);
         init_new_worker_end(worker_id);
         TaskPool::init();
-        unsafe { init_local_worker(config.number_of_entries) };
 
         unsafe {
+            if let Some(io_config) = valid_config.io_worker_config {
+                init_local_worker(io_config);
+            }
+
             LOCAL_EXECUTOR = Some(Executor {
-                config,
+                config: valid_config,
                 core_id,
                 worker_id,
                 current_call: Call::default(),
@@ -93,9 +97,8 @@ impl Executor {
                 exec_series: 0,
                 sleeping_tasks: BTreeSet::new(),
             });
+            local_executor_unchecked()
         }
-
-        unsafe { local_executor_unchecked() }
     }
 
     pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
@@ -118,8 +121,8 @@ impl Executor {
         self.core_id
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> Config {
+        Config::from(&self.config)
     }
 
     pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
@@ -331,9 +334,7 @@ impl Executor {
         }
 
         uninit_local_executor();
-        unsafe {
-            LOCAL_WORKER = None;
-        }
+        unsafe { LOCAL_WORKER = None; }
     }
 
     #[inline(always)]

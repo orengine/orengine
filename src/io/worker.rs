@@ -2,6 +2,7 @@ use std::net::Shutdown;
 use std::time::Duration;
 use nix::libc;
 use nix::libc::sockaddr;
+use crate::io::config::IoWorkerConfig;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
@@ -9,9 +10,9 @@ use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
 #[thread_local]
 pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
 
-pub(crate) unsafe fn init_local_worker(number_of_entries: u32) {
+pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     unsafe {
-        LOCAL_WORKER = Some(WorkerSys::new(number_of_entries));
+        LOCAL_WORKER = Some(WorkerSys::new(config));
     }
 }
 
@@ -29,6 +30,7 @@ pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
 }
 
 pub(crate) trait IoWorker {
+    fn new(config: IoWorkerConfig) -> Self;
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask);
     fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask);
     /// Returns `true` if the worker has polled. The worker doesn't poll only if it has no work to do.

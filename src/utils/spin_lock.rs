@@ -66,7 +66,7 @@ pub struct SpinLock<T> {
 
 impl<T> SpinLock<T> {
     #[inline(always)]
-    pub fn new(value: T) -> SpinLock<T> {
+    pub const fn new(value: T) -> SpinLock<T> {
         SpinLock {
             is_locked: CachePadded::new(AtomicBool::new(false)),
             value: UnsafeCell::new(value),

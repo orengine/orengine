@@ -5,7 +5,7 @@ use std::mem::MaybeUninit;
 use std::task::{Context, Poll};
 
 use crate::runtime::{local_executor, Task};
-use crate::utils::SpinLock;
+use crate::sync::naive::NaiveMutex;
 
 enum SendCallState<T> {
     /// Default state.
@@ -117,20 +117,29 @@ struct Inner<T> {
 
 macro_rules! return_pending_and_release_lock {
     ($ex:expr, $lock:expr) => {
-        unsafe { $ex.release_atomic_bool($lock.leak()) };
+        unsafe { $ex.release_atomic_bool($lock.leak_to_atomic()) };
         return Poll::Pending;
     };
 }
 
+macro_rules! acquire_lock {
+    ($mutex:expr) => {
+        match $mutex.try_lock() {
+            Some(lock) => lock,
+            None => return Poll::Pending
+        }
+    }
+}
+
 pub struct WaitSend<'future, T> {
-    inner: &'future SpinLock<Inner<T>>,
+    inner: &'future NaiveMutex<Inner<T>>,
     call_state: SendCallState<T>,
     value: Option<T>,
 }
 
 impl<'future, T> WaitSend<'future, T> {
     #[inline(always)]
-    fn new(value: T, inner: &'future SpinLock<Inner<T>>) -> Self {
+    fn new(value: T, inner: &'future NaiveMutex<Inner<T>>) -> Self {
         Self {
             inner,
             call_state: SendCallState::FirstCall,
@@ -149,7 +158,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
         match this.call_state {
             SendCallState::FirstCall => {
                 let ex = local_executor();
-                let mut inner_lock = this.inner.lock();
+                let mut inner_lock = acquire_lock!(this.inner);
 
                 if unlikely(inner_lock.is_closed) {
                     return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
@@ -209,7 +218,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 }
 
 pub struct WaitRecv<'future, T> {
-    inner: &'future SpinLock<Inner<T>>,
+    inner: &'future NaiveMutex<Inner<T>>,
     call_state: RecvCallState,
     slot: *mut T,
 }
@@ -217,7 +226,7 @@ pub struct WaitRecv<'future, T> {
 impl<'future, T> WaitRecv<'future, T> {
     #[inline(always)]
     /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
-    fn new(inner: &'future SpinLock<Inner<T>>, slot: *mut T) -> Self {
+    fn new(inner: &'future NaiveMutex<Inner<T>>, slot: *mut T) -> Self {
         Self {
             inner,
             call_state: RecvCallState::FirstCall,
@@ -236,7 +245,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
         match this.call_state {
             RecvCallState::FirstCall => {
                 let ex = local_executor();
-                let mut inner_lock = this.inner.lock();
+                let mut inner_lock = acquire_lock!(this.inner);
 
                 if unlikely(inner_lock.is_closed) {
                     return Poll::Ready(Err(()));
@@ -294,8 +303,8 @@ impl<'future, T> Future for WaitRecv<'future, T> {
 // endregion
 
 #[inline(always)]
-fn close<T>(inner: &SpinLock<Inner<T>>) {
-    let mut inner_lock = inner.lock();
+async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
+    let mut inner_lock = inner.lock().await;
     inner_lock.is_closed = true;
     let executor = local_executor();
 
@@ -313,12 +322,12 @@ fn close<T>(inner: &SpinLock<Inner<T>>) {
 // region sender
 
 pub struct Sender<'channel, T> {
-    inner: &'channel SpinLock<Inner<T>>,
+    inner: &'channel NaiveMutex<Inner<T>>,
 }
 
 impl<'channel, T> Sender<'channel, T> {
     #[inline(always)]
-    fn new(inner: &'channel SpinLock<Inner<T>>) -> Self {
+    fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
         Self { inner }
     }
 
@@ -328,8 +337,8 @@ impl<'channel, T> Sender<'channel, T> {
     }
 
     #[inline(always)]
-    pub fn close(&self) {
-        close(self.inner);
+    pub async fn close(&self) {
+        close(self.inner).await;
     }
 }
 
@@ -347,12 +356,12 @@ unsafe impl<'channel, T> Send for Sender<'channel, T> {}
 // region receiver
 
 pub struct Receiver<'channel, T> {
-    inner: &'channel SpinLock<Inner<T>>,
+    inner: &'channel NaiveMutex<Inner<T>>,
 }
 
 impl<'channel, T> Receiver<'channel, T> {
     #[inline(always)]
-    fn new(inner: &'channel SpinLock<Inner<T>>) -> Self {
+    fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
         Self { inner }
     }
 
@@ -374,8 +383,8 @@ impl<'channel, T> Receiver<'channel, T> {
     }
 
     #[inline(always)]
-    pub fn close(self) {
-        close(self.inner);
+    pub async fn close(self) {
+        close(self.inner).await;
     }
 }
 
@@ -393,14 +402,14 @@ unsafe impl<'channel, T> Send for Receiver<'channel, T> {}
 // region channel
 
 pub struct Channel<T> {
-    inner: SpinLock<Inner<T>>,
+    inner: NaiveMutex<Inner<T>>,
 }
 
 impl<T> Channel<T> {
     #[inline(always)]
     pub fn bounded(capacity: usize) -> Self {
         Self {
-            inner: SpinLock::new(Inner {
+            inner: NaiveMutex::new(Inner {
                 storage: VecDeque::with_capacity(capacity),
                 capacity,
                 is_closed: false,
@@ -413,7 +422,7 @@ impl<T> Channel<T> {
     #[inline(always)]
     pub fn unbounded() -> Self {
         Self {
-            inner: SpinLock::new(Inner {
+            inner: NaiveMutex::new(Inner {
                 storage: VecDeque::with_capacity(0),
                 capacity: 2 << 32,
                 is_closed: false,
@@ -446,8 +455,8 @@ impl<T> Channel<T> {
     }
 
     #[inline(always)]
-    pub fn close(&self) {
-        close(&self.inner);
+    pub async fn close(&self) {
+        close(&self.inner).await;
     }
 
     #[inline(always)]
@@ -480,7 +489,7 @@ mod tests {
             let _ = ex.run_and_block_on(async move {
                 ch_clone.send(1).await.expect("closed");
                 ch_clone.send(2).await.expect("closed");
-                ch_clone.close();
+                ch_clone.close().await;
             });
         });
 
@@ -514,7 +523,7 @@ mod tests {
 
                 sleep(Duration::from_millis(1)).await;
 
-                ch_clone.close();
+                ch_clone.close().await;
             });
         });
 
@@ -540,7 +549,7 @@ mod tests {
                 sleep(Duration::from_millis(1)).await;
                 ch_clone.send(1).await.expect("closed");
 
-                ch_clone.close();
+                ch_clone.close().await;
             });
         });
 
@@ -566,7 +575,7 @@ mod tests {
 
                 sleep(Duration::from_millis(1)).await;
 
-                ch_clone.close();
+                ch_clone.close().await;
             });
         });
 
@@ -598,7 +607,7 @@ mod tests {
 
                 sleep(Duration::from_millis(1)).await;
 
-                ch_clone.close();
+                ch_clone.close().await;
             });
         });
 

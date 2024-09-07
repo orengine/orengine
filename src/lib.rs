@@ -21,6 +21,7 @@ pub mod utils;
 pub mod yield_now;
 mod messages;
 pub mod atomic_task_queue;
+pub(crate) mod thread_pool;
 
 pub use socket2;
 pub use run::*;

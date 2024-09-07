@@ -2,6 +2,7 @@ use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::hint::spin_loop;
 use std::intrinsics::{likely, unlikely};
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
@@ -41,6 +42,14 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     #[inline(always)]
     pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
         self.mutex
+    }
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'static Mutex<T> {
+        let static_mutex = unsafe { mem::transmute(self.mutex) };
+        mem::forget(self);
+
+        static_mutex
     }
 }
 
@@ -208,6 +217,16 @@ impl<T> Mutex<T> {
             }
         }
     }
+
+    #[inline(always)]
+    pub unsafe fn get_locked(&self) -> &T {
+        debug_assert!(
+            self.counter.load(Acquire) != 0,
+            "Mutex is unlocked, but calling get_locked it must be locked"
+        );
+
+        &*self.value.get()
+    }
 }
 
 unsafe impl<T: Send> Sync for Mutex<T> {}
@@ -216,6 +235,7 @@ unsafe impl<T: Send> Send for Mutex<T> {}
 pub mod naive {
     use std::cell::UnsafeCell;
     use std::hint::spin_loop;
+    use std::mem;
     use std::ops::{Deref, DerefMut};
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -224,18 +244,18 @@ pub mod naive {
 
     use crate::yield_now;
 
-    pub struct MutexGuard<'mutex, T> {
-        mutex: &'mutex Mutex<T>,
+    pub struct NaiveMutexGuard<'mutex, T> {
+        mutex: &'mutex NaiveMutex<T>,
     }
 
-    impl<'mutex, T> MutexGuard<'mutex, T> {
+    impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
         #[inline(always)]
-        pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
+        pub(crate) fn new(mutex: &'mutex NaiveMutex<T>) -> Self {
             Self { mutex }
         }
 
         #[inline(always)]
-        pub fn mutex(&self) -> &Mutex<T> {
+        pub fn mutex(&self) -> &NaiveMutex<T> {
             &self.mutex
         }
 
@@ -248,9 +268,25 @@ pub mod naive {
         /// Even if you doesn't call `guard.unlock()`,
         /// the mutex will be unlocked after the `guard` is dropped.
         pub fn unlock(self) {}
+
+        #[inline(always)]
+        pub unsafe fn leak(self) -> &'mutex T {
+            let static_mutex = unsafe { mem::transmute(self.mutex) };
+            mem::forget(self);
+
+            static_mutex
+        }
+
+        #[inline(always)]
+        pub(crate) unsafe fn leak_to_atomic(self) -> &'mutex CachePadded<AtomicBool> {
+            let static_mutex = unsafe { mem::transmute(&self.mutex.is_locked) };
+            mem::forget(self);
+
+            static_mutex
+        }
     }
 
-    impl<'mutex, T> Deref for MutexGuard<'mutex, T> {
+    impl<'mutex, T> Deref for NaiveMutexGuard<'mutex, T> {
         type Target = T;
 
         fn deref(&self) -> &Self::Target {
@@ -258,34 +294,34 @@ pub mod naive {
         }
     }
 
-    impl<'mutex, T> DerefMut for MutexGuard<'mutex, T> {
+    impl<'mutex, T> DerefMut for NaiveMutexGuard<'mutex, T> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             unsafe { &mut *self.mutex.value.get() }
         }
     }
 
-    impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
+    impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
         fn drop(&mut self) {
             unsafe { self.mutex.unlock() };
         }
     }
 
-    pub struct Mutex<T> {
+    pub struct NaiveMutex<T> {
         is_locked: CachePadded<AtomicBool>,
         value: UnsafeCell<T>,
     }
 
-    impl<T> Mutex<T> {
+    impl<T> NaiveMutex<T> {
         #[inline(always)]
-        pub fn new(value: T) -> Mutex<T> {
-            Mutex {
+        pub fn new(value: T) -> NaiveMutex<T> {
+            NaiveMutex {
                 is_locked: CachePadded::new(AtomicBool::new(false)),
                 value: UnsafeCell::new(value),
             }
         }
 
         #[inline(always)]
-        pub async fn lock(&self) -> MutexGuard<T> {
+        pub async fn lock(&self) -> NaiveMutexGuard<T> {
             loop {
                 for step in 0..=6 {
                     if let Some(guard) = self.try_lock() {
@@ -301,13 +337,13 @@ pub mod naive {
         }
 
         #[inline(always)]
-        pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+        pub fn try_lock(&self) -> Option<NaiveMutexGuard<T>> {
             if self
                 .is_locked
                 .compare_exchange(false, true, Acquire, Relaxed)
                 .is_ok()
             {
-                Some(MutexGuard::new(self))
+                Some(NaiveMutexGuard::new(self))
             } else {
                 None
             }
@@ -320,12 +356,27 @@ pub mod naive {
 
         #[inline(always)]
         pub unsafe fn unlock(&self) {
+            debug_assert!(
+                self.is_locked.load(Acquire),
+                "NaiveMutex is unlocked, but calling unlock it must be locked"
+            );
+
             self.is_locked.store(false, Release);
+        }
+
+        #[inline(always)]
+        pub unsafe fn get_locked(&self) -> &mut T {
+            debug_assert!(
+                self.is_locked.load(Acquire),
+                "Mutex is unlocked, but calling get_locked it must be locked"
+            );
+
+            &mut *self.value.get()
         }
     }
 
-    unsafe impl<T: Send> Sync for Mutex<T> {}
-    unsafe impl<T: Send> Send for Mutex<T> {}
+    unsafe impl<T: Send> Sync for NaiveMutex<T> {}
+    unsafe impl<T: Send> Send for NaiveMutex<T> {}
 }
 
 #[cfg(test)]
@@ -467,7 +518,7 @@ mod tests {
     fn test_naive_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
-        let mutex = Arc::new(naive::Mutex::new(false));
+        let mutex = Arc::new(naive::NaiveMutex::new(false));
         let wg = Arc::new(WaitGroup::new());
 
         let mutex_clone = mutex.clone();
@@ -496,7 +547,7 @@ mod tests {
 
     #[test_macro::test]
     fn test_try_naive_mutex() {
-        let mutex = Arc::new(naive::Mutex::new(false));
+        let mutex = Arc::new(naive::NaiveMutex::new(false));
         let mutex_clone = mutex.clone();
         let lock_wg = Arc::new(WaitGroup::new());
         let lock_wg_clone = lock_wg.clone();
@@ -543,7 +594,7 @@ mod tests {
         const PAR: usize = 50;
         const TRIES: usize = 100;
 
-        async fn work_with_lock(mutex: &naive::Mutex<usize>, wg: &WaitGroup) {
+        async fn work_with_lock(mutex: &naive::NaiveMutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
             if *lock % 500 == 0 {
@@ -553,7 +604,7 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(naive::Mutex::new(0));
+        let mutex = Arc::new(naive::NaiveMutex::new(0));
         let wg = Arc::new(WaitGroup::new());
         wg.add(PAR * TRIES);
         for _ in 1..PAR {

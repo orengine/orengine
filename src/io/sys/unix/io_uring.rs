@@ -10,12 +10,32 @@ use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
 use nix::libc;
 use nix::libc::sockaddr;
+use crate::io::config::IoWorkerConfig;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
 use crate::io::worker::{IoWorker};
 use crate::messages::BUG;
 use crate::runtime::local_executor_unchecked;
+
+#[derive(Clone, Copy)]
+pub struct IoUringConfig {
+    number_of_entries: u32
+}
+
+impl IoUringConfig {
+    pub const fn default() -> Self {
+        Self { number_of_entries: 1024 }
+    }
+
+    pub const fn validate(&self) -> Result<(), &'static str> {
+        if self.number_of_entries > 0 {
+            Ok(())
+        } else {
+            Err("io_uring: number_of_entries must be greater than 0")
+        }
+    }
+}
 
 const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
 
@@ -42,22 +62,6 @@ pub(crate) struct IoUringWorker {
 }
 
 impl IoUringWorker {
-    pub fn new(number_of_entries: u32) -> Self {
-        let mut s = Self {
-            timeout: SubmitArgs::new().timespec(&TIMEOUT),
-            ring: UnsafeCell::new(IoUring::new(number_of_entries).unwrap()),
-            backlog: VecDeque::with_capacity(64),
-            probe: Probe::new(),
-            time_bounded_io_task_queue: BTreeSet::new(),
-            number_of_active_tasks: 0
-        };
-
-        let submitter = s.ring.get_mut().submitter();
-        submitter.register_probe(&mut s.probe).expect(BUG);
-
-        s
-    }
-
     #[inline(always)]
     fn is_supported(&self, opcode: u8) -> bool {
         self.probe.is_supported(opcode)
@@ -154,6 +158,22 @@ impl IoUringWorker {
 // TODO opcode::ProvideBuffers. Read tokio-uring::io::pool for more information
 
 impl IoWorker for IoUringWorker {
+    fn new(config: IoWorkerConfig) -> Self {
+        let mut s = Self {
+            timeout: SubmitArgs::new().timespec(&TIMEOUT),
+            ring: UnsafeCell::new(IoUring::new(config.io_uring.number_of_entries).unwrap()),
+            backlog: VecDeque::with_capacity(64),
+            probe: Probe::new(),
+            time_bounded_io_task_queue: BTreeSet::new(),
+            number_of_active_tasks: 0
+        };
+
+        let submitter = s.ring.get_mut().submitter();
+        submitter.register_probe(&mut s.probe).expect(BUG);
+
+        s
+    }
+
     #[inline(always)]
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask) {
         while unlikely(!self.time_bounded_io_task_queue.insert(time_bounded_io_task.clone())) {

@@ -769,6 +769,7 @@ dependencies = [
  "core_affinity",
  "crossbeam",
  "dashmap",
+ "flume",
  "io-macros",
  "io-uring",
  "nix",

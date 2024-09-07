@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -35,6 +36,14 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     #[inline(always)]
     pub fn into_local_mutex(self) -> &'mutex LocalMutex<T> {
         &self.local_mutex
+    }
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'static LocalMutex<T> {
+        let static_local_mutex = unsafe { mem::transmute(self.local_mutex) };
+        mem::forget(self);
+
+        static_local_mutex
     }
 }
 
@@ -136,6 +145,8 @@ impl<T> LocalMutex<T> {
 
     #[inline(always)]
     pub unsafe fn unlock(&self) {
+        debug_assert!(self.is_locked.get().read());
+
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         let next = wait_queue.pop();
         if unlikely(next.is_some()) {
@@ -144,6 +155,16 @@ impl<T> LocalMutex<T> {
             let is_locked = unsafe { &mut *self.is_locked.get() };
             *is_locked = false;
         }
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_locked(&self) -> &mut T {
+        debug_assert!(
+            self.is_locked.get().read(),
+            "LocalMutex is unlocked, but calling get_locked it must be locked"
+        );
+
+        &mut *self.value.get()
     }
 }
 

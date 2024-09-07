@@ -9,13 +9,13 @@ use crate::io::io_request::{IoRequest};
 use crate::io::worker::{IoWorker, local_worker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]     
-pub struct Write<'buf> {         
+pub struct Write<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
     io_request: Option<IoRequest>
 }     
 
-impl<'buf> Write<'buf> {      
+impl<'buf> Write<'buf> {
     pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
         Self {               
             fd,              
@@ -25,7 +25,7 @@ impl<'buf> Write<'buf> {
     }  
 }   
 
-impl<'buf> Future for Write<'buf> {  
+impl<'buf> Future for Write<'buf> {
     type Output = Result<usize>; 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
