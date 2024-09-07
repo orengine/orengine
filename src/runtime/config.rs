@@ -157,9 +157,9 @@ impl Config {
                 true => {
                     if global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker != 0 {
                         panic!(
-                            "An attempt to create an Executor with work sharing and with an \
+                            "An attempt to create an Executor with task sharing and with an \
                             IO worker has failed because another Executor was created with \
-                            work sharing enabled and without an IO worker enabled. \
+                            task sharing enabled and without an IO worker enabled. \
                             This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
@@ -170,9 +170,9 @@ impl Config {
                 false => {
                     if !global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing != 0 {
                         panic!(
-                            "An attempt to create an Executor with work sharing and without an \
+                            "An attempt to create an Executor with task sharing and without an \
                             IO worker has failed because another Executor was created with \
-                            an IO worker and work sharing enabled. \
+                            an IO worker and task sharing enabled. \
                             This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
@@ -186,9 +186,9 @@ impl Config {
                 true => {
                     if global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool != 0 {
                         panic!(
-                            "An attempt to create an Executor with work sharing and with a \
+                            "An attempt to create an Executor with task sharing and with a \
                             thread pool enabled has failed because another Executor was created with \
-                            work sharing enabled and without a thread pool enabled. \
+                            task sharing enabled and without a thread pool enabled. \
                             This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
@@ -199,9 +199,9 @@ impl Config {
                 false => {
                     if !global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing != 0 {
                         panic!(
-                            "An attempt to create an Executor with work sharing and without a \
+                            "An attempt to create an Executor with task sharing and without a \
                             thread pool enabled has failed because another Executor was created with \
-                            both a thread pool and work sharing enabled. \
+                            both a thread pool and task sharing enabled. \
                             This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
@@ -262,15 +262,15 @@ mod tests {
     }
 
     // 4 cases for panic
-    // 1 - first config with io worker and work sharing, next with work sharing and without io worker
-    // 2 - first config with work sharing and without io worker, next with io worker and work sharing
-    // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
-    // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
+    // 1 - first config with io worker and task, next with task sharing and without io worker
+    // 2 - first config with task sharing and without io worker, next with io worker and task sharing
+    // 3 - first config with task sharing and without thread pool, next with thread pool and task sharing
+    // 4 - first config with thread pool and task sharing, next with task sharing and without thread pool
 
     #[test_macro::test]
     #[should_panic]
     fn test_first_case_panic() {
-        // with io worker and work sharing
+        // with io worker and task sharing
         let first_config = Config::new().validate();
         let second_config = Config::new()
             .set_io_worker_config(None).unwrap()
@@ -284,7 +284,7 @@ mod tests {
     #[test_macro::test]
     #[should_panic]
     fn test_second_case_panic() {
-        // with work sharing and without io worker
+        // with task sharing and without io worker
         let first_config = Config::new()
             .set_io_worker_config(None).unwrap()
             .set_work_sharing_enabled(true)
@@ -298,7 +298,7 @@ mod tests {
     #[test_macro::test]
     #[should_panic]
     fn test_third_case_panic() {
-        // with work sharing and without thread pool
+        // with task sharing and without thread pool
         let first_config = Config::new()
             .set_thread_pool_enabled(false)
             .set_work_sharing_enabled(true)
@@ -312,7 +312,7 @@ mod tests {
     #[test_macro::test]
     #[should_panic]
     fn test_fourth_case_panic() {
-        // with thread pool and work sharing
+        // with thread pool and task sharing
         let first_config = Config::new().validate();
         let second_config = Config::new()
             .set_thread_pool_enabled(false)
