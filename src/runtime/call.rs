@@ -11,6 +11,13 @@ pub enum Call {
     ReleaseAtomicBool(*const CachePadded<AtomicBool>)
 }
 
+impl Call {
+    #[inline(always)]
+    pub fn is_none(&self) -> bool {
+        matches!(self, Call::None)
+    }
+}
+
 impl Default for Call {
     fn default() -> Self {
         Call::None

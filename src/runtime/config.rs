@@ -157,10 +157,10 @@ impl Config {
                 true => {
                     if global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker != 0 {
                         panic!(
-                            "An attempt to create an executor with work sharing and with an \
-                            IO worker has failed because another executor was created with \
+                            "An attempt to create an Executor with work sharing and with an \
+                            IO worker has failed because another Executor was created with \
                             work sharing enabled and without an IO worker enabled. \
-                            This is unacceptable because an executor who does not have an \
+                            This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
                     }
@@ -170,10 +170,10 @@ impl Config {
                 false => {
                     if !global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing != 0 {
                         panic!(
-                            "An attempt to create an executor with work sharing and without an \
-                            IO worker has failed because another executor was created with \
+                            "An attempt to create an Executor with work sharing and without an \
+                            IO worker has failed because another Executor was created with \
                             an IO worker and work sharing enabled. \
-                            This is unacceptable because an executor who does not have an \
+                            This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
                     }
@@ -186,10 +186,10 @@ impl Config {
                 true => {
                     if global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool != 0 {
                         panic!(
-                            "An attempt to create an executor with work sharing and with a \
-                            thread pool enabled has failed because another executor was created with \
+                            "An attempt to create an Executor with work sharing and with a \
+                            thread pool enabled has failed because another Executor was created with \
                             work sharing enabled and without a thread pool enabled. \
-                            This is unacceptable because an executor who does not have a \
+                            This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
                     }
@@ -199,10 +199,10 @@ impl Config {
                 false => {
                     if !global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing != 0 {
                         panic!(
-                            "An attempt to create an executor with work sharing and without a \
-                            thread pool enabled has failed because another executor was created with \
+                            "An attempt to create an Executor with work sharing and without a \
+                            thread pool enabled has failed because another Executor was created with \
                             both a thread pool and work sharing enabled. \
-                            This is unacceptable because an executor who does not have a \
+                            This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
                     }

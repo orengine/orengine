@@ -1,11 +1,14 @@
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::{likely, unlikely};
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
+
+// region guards
 
 pub struct LocalReadLockGuard<'rw_lock, T> {
     local_rw_lock: &'rw_lock LocalRWLock<T>
@@ -31,6 +34,14 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'static LocalRWLock<T> {
+        let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
+        mem::forget(self);
+
+        static_local_rw_lock
+    }
 }
 
 impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
@@ -71,6 +82,14 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'static LocalRWLock<T> {
+        let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
+        mem::forget(self);
+
+        static_local_rw_lock
+    }
 }
 
 impl<'rw_lock, T> Deref for LocalWriteLockGuard<'rw_lock, T> {
@@ -92,6 +111,10 @@ impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
         unsafe { self.local_rw_lock.write_unlock(); }
     }
 }
+
+// endregion
+
+// region futures
 
 pub struct ReadLockWait<'rw_lock, T> {
     need_wait: bool,
@@ -154,6 +177,8 @@ impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
         }
     }
 }
+
+// endregion
 
 struct Inner<T> {
     wait_queue_read: Vec<Task>,
@@ -242,6 +267,16 @@ impl<T> LocalRWLock<T> {
 
     #[inline(always)]
     pub unsafe fn read_unlock(&self) {
+        if cfg!(debug_assertions) {
+            if self.get_inner().number_of_readers == -1 {
+                panic!("LocalRWLock is locked for write");
+            }
+
+            if self.get_inner().number_of_readers == 0 {
+                panic!("LocalRWLock is already unlocked");
+            }
+        }
+
         let inner = self.get_inner();
         inner.number_of_readers -= 1;
 
@@ -257,6 +292,16 @@ impl<T> LocalRWLock<T> {
 
     #[inline(always)]
     pub unsafe fn write_unlock(&self) {
+        if cfg!(debug_assertions) {
+            if self.get_inner().number_of_readers == 0 {
+                panic!("LocalRWLock is already unlocked");
+            }
+
+            if self.get_inner().number_of_readers > 0 {
+                panic!("LocalRWLock is locked for read");
+            }
+        }
+
         let inner = self.get_inner();
 
         let task = inner.wait_queue_write.pop();
@@ -271,6 +316,36 @@ impl<T> LocalRWLock<T> {
                 readers_count -= 1;
             }
         }
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_read_locked(&self) -> &T {
+        if cfg!(debug_assertions) {
+            if self.get_inner().number_of_readers == -1 {
+                panic!("LocalRWLock is locked for write");
+            }
+
+            if self.get_inner().number_of_readers == 0 {
+                panic!("LocalRWLock is unlocked, but get_read_locked is called");
+            }
+        }
+
+        &self.get_inner().value
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_write_locked(&self) -> &T {
+        if cfg!(debug_assertions) {
+            if self.get_inner().number_of_readers == 0 {
+                panic!("LocalRWLock is unlocked, but get_write_locked is called");
+            }
+
+            if self.get_inner().number_of_readers > 0 {
+                panic!("LocalRWLock is locked for read");
+            }
+        }
+
+        &self.get_inner().value
     }
 }
 

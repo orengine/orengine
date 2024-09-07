@@ -5,7 +5,7 @@ use std::mem::MaybeUninit;
 use std::task::{Context, Poll};
 
 use crate::runtime::{local_executor, Task};
-use crate::sync::naive::NaiveMutex;
+use crate::sync::naive_mutex::NaiveMutex;
 
 enum SendCallState<T> {
     /// Default state.

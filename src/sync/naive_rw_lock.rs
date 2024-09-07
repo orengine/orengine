@@ -1,5 +1,6 @@
 use std::cell::UnsafeCell;
 use std::intrinsics::unlikely;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -29,6 +30,14 @@ impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'rw_lock T {
+        let static_mutex = unsafe { mem::transmute(self.local_rw_lock) };
+        mem::forget(self);
+
+        static_mutex
+    }
 }
 
 impl<'rw_lock, T> Deref for ReadLockGuard<'rw_lock, T> {
@@ -41,7 +50,7 @@ impl<'rw_lock, T> Deref for ReadLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for ReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_lock.drop_read();
+        unsafe { self.local_rw_lock.unlock_read(); }
     }
 }
 
@@ -64,6 +73,14 @@ impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
+
+    #[inline(always)]
+    pub unsafe fn leak(self) -> &'rw_lock T {
+        let static_mutex = unsafe { mem::transmute(self.local_rw_lock) };
+        mem::forget(self);
+
+        static_mutex
+    }
 }
 
 impl<'rw_lock, T> Deref for WriteLockGuard<'rw_lock, T> {
@@ -82,7 +99,7 @@ impl<'rw_lock, T> DerefMut for WriteLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        self.local_rw_lock.drop_write();
+        unsafe { self.local_rw_lock.unlock_write(); }
     }
 }
 
@@ -159,13 +176,67 @@ impl<T> RWLock<T> {
     }
 
     #[inline(always)]
-    fn drop_read(&self) {
+    pub unsafe fn unlock_read(&self) {
+        if cfg!(debug_assertions) {
+            let current = self.number_of_readers.load(Acquire);
+            if current < 0 {
+                panic!("NaiveRWLock is locked for write");
+            }
+
+            if current == 0 {
+                panic!("NaiveRWLock is already unlocked");
+            }
+        }
+
         self.number_of_readers.fetch_sub(1, Release);
     }
 
     #[inline(always)]
-    fn drop_write(&self) {
+    pub unsafe fn unlock_write(&self) {
+        if cfg!(debug_assertions) {
+            let current = self.number_of_readers.load(Acquire);
+            if current == 0 {
+                panic!("NaiveRWLock is already unlocked");
+            }
+
+            if current > 0 {
+                panic!("NaiveRWLock is locked for read");
+            }
+        }
+
         self.number_of_readers.store(0, Release);
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_read_locked(&self) -> &T {
+        if cfg!(debug_assertions) {
+            let current = self.number_of_readers.load(Acquire);
+            if current < 0 {
+                panic!("NaiveRWLock is locked for write");
+            }
+
+            if current == 0 {
+                panic!("NaiveRWLock is unlocked but get_read_locked is called");
+            }
+        }
+
+        &*self.value.get()
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_write_locked(&self) -> &mut T {
+        if cfg!(debug_assertions) {
+            let current = self.number_of_readers.load(Acquire);
+            if current == 0 {
+                panic!("NaiveRWLock is unlocked but get_write_locked is called");
+            }
+
+            if current > 0 {
+                panic!("NaiveRWLock is locked for read");
+            }
+        }
+
+        &mut *self.value.get()
     }
 }
 

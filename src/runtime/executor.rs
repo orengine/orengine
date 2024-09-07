@@ -138,6 +138,7 @@ impl Executor {
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     pub unsafe fn push_current_task_to(&mut self, send_to: &AtomicTaskList) {
+        debug_assert!(self.current_call.is_none());
         self.current_call = Call::PushCurrentTaskTo(send_to);
     }
 
@@ -157,12 +158,14 @@ impl Executor {
         counter: &AtomicUsize,
         order: Ordering,
     ) {
+        debug_assert!(self.current_call.is_none());
         self.current_call =
             Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
     }
 
     #[inline(always)]
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
+        debug_assert!(self.current_call.is_none());
         self.current_call = Call::ReleaseAtomicBool(atomic_bool);
     }
 
