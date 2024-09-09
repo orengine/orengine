@@ -1,11 +1,11 @@
 pub mod executor;
 pub mod waker;
 pub mod task;
-pub mod task_pool;
 pub mod call;
 pub mod executors_on_cores_table;
 pub mod config;
-pub mod end;
+mod engine;
+mod notification;
 
 pub use executor::{
     local_executor,
@@ -13,8 +13,7 @@ pub use executor::{
     Executor
 };
 
-pub use task::Task;
 pub use config::Config;
-pub use task_pool::*;
+pub(crate) use task::*;
+pub use engine::{stop_executor, stop_all_executors};
 pub use executors_on_cores_table::get_core_id_for_executor;
-pub use end::*;

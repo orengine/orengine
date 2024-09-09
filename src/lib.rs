@@ -25,6 +25,6 @@ pub(crate) mod thread_pool;
 
 pub use socket2;
 pub use run::*;
-pub use runtime::{local_executor, Executor};
+pub use runtime::{local_executor, Executor, stop_all_executors, stop_executor};
 pub use yield_now::yield_now;
 pub use sleep::sleep;

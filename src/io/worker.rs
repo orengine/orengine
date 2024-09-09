@@ -1,11 +1,12 @@
 use std::net::Shutdown;
+use std::ptr::addr_of_mut;
 use std::time::Duration;
 use nix::libc;
 use nix::libc::sockaddr;
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
+use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
 use crate::local_executor;
 
 #[thread_local]
@@ -17,12 +18,16 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     }
 }
 
+pub(crate) fn local_worker_option() -> &'static mut Option<WorkerSys> {
+    unsafe { &mut *addr_of_mut!(LOCAL_WORKER) }
+}
+
 #[inline(always)]
 pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
     unsafe {
         if local_executor().config().io_worker_config().is_none() {
-            panic!("An attempt to call io-operation has failed,\
+            panic!("An attempt to call io-operation has failed, \
              because an Executor has no io-worker. Look at the config of the Executor.");
         }
 

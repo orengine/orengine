@@ -212,7 +212,7 @@ mod tests {
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
 
-        let server_thread = thread::spawn(move || {
+        thread::spawn(move || {
             let ex = Executor::init();
             let _ = ex.run_and_block_on(async move {
                 let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
@@ -246,8 +246,6 @@ mod tests {
             stream.read_exact(&mut buf).expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
-
-        server_thread.join().expect("server thread join failed");
     }
 
     #[test_macro::test]

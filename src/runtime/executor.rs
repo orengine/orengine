@@ -1,7 +1,8 @@
+use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
 use std::intrinsics::unlikely;
-use std::mem;
+use std::{mem, thread};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
@@ -10,23 +11,24 @@ use std::time::{Duration, Instant};
 use crossbeam::utils::CachePadded;
 
 use crate::atomic_task_queue::AtomicTaskList;
-use crate::io::worker::{
-    init_local_worker, IoWorker, local_worker as local_io_worker, LOCAL_WORKER,
-};
+use crate::io::sys::WorkerSys;
+use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_option};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
-use crate::runtime::{end_worker_by_id, get_core_id_for_executor, init_new_worker_end, is_ended_by_id};
-use crate::runtime::task::Task;
-use crate::runtime::task_pool::TaskPool;
+use crate::runtime::engine::{acknowledge_stop, register_executor, stop_executor};
+use crate::runtime::get_core_id_for_executor;
+use crate::runtime::notification::Notification;
+use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
-use crate::utils::CoreId;
+use crate::utils::{CoreId, SpinLock};
 
 #[thread_local]
 pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
 
 fn uninit_local_executor() {
     unsafe { LOCAL_EXECUTOR = None }
+    unsafe { LOCAL_WORKER = None; }
 }
 
 // TODO
@@ -63,13 +65,19 @@ pub unsafe fn local_executor_unchecked() -> &'static mut Executor {
 pub struct Executor {
     core_id: CoreId,
     worker_id: usize,
-
     config: ValidConfig,
 
-    current_call: Call,
+    local_tasks: VecDeque<Task>,
+    global_tasks: VecDeque<Task>,
+
+    notifications: SpinLock<VecDeque<Notification>>,
+    /// This is unsafe because you need to check notifications before using it
+    other_executors: UnsafeCell<Vec<&'static Executor>>,
+    shared_tasks: SpinLock<VecDeque<Task>>,
 
     exec_series: usize,
-    tasks: VecDeque<Task>,
+    local_worker: &'static mut Option<WorkerSys>,
+    current_call: Call,
     sleeping_tasks: BTreeSet<SleepingTask>,
 }
 
@@ -80,7 +88,6 @@ impl Executor {
         let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let worker_id = FREE_WORKER_ID.fetch_add(1, Ordering::Relaxed);
-        init_new_worker_end(worker_id);
         TaskPool::init();
 
         unsafe {
@@ -89,14 +96,26 @@ impl Executor {
             }
 
             LOCAL_EXECUTOR = Some(Executor {
-                config: valid_config,
                 core_id,
                 worker_id,
+                config: valid_config,
+
+                local_tasks: VecDeque::new(),
+                global_tasks: VecDeque::new(),
+
+                notifications: SpinLock::new(VecDeque::new()),
+                other_executors: UnsafeCell::new(Vec::new()),
+                shared_tasks: SpinLock::new(VecDeque::new()),
+
                 current_call: Call::default(),
-                tasks: VecDeque::new(),
                 exec_series: 0,
+                local_worker: local_worker_option(),
                 sleeping_tasks: BTreeSet::new(),
             });
+
+            let other_executors = register_executor(local_executor_unchecked());
+            local_executor_unchecked().other_executors.get().write(other_executors);
+
             local_executor_unchecked()
         }
     }
@@ -127,6 +146,44 @@ impl Executor {
 
     pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
         self.config.buffer_len = buffer_len;
+    }
+
+    pub(crate) fn notify(&self, notification: Notification) {
+        self.notifications.lock().push_back(notification);
+    }
+
+    /// Returns (is_stopped, other_executors)
+    #[inline(always)]
+    fn process_notifications(&mut self) -> (bool, &Vec<&'static Executor>) {
+        // we need to process all notifications, because we need to acknowledge stop.
+        // Therefore, we can't just `return false` when we handle `StoppedCurrentExecutor`.
+        let mut is_stopped = false;
+
+        let mut notifications = self.notifications.lock();
+        for notification in notifications.drain(..) {
+            match notification {
+                Notification::StoppedCurrentExecutor => {
+                    is_stopped = true;
+                }
+                Notification::RegisteredExecutor(executor) => {
+                    self.other_executors.get_mut().push(executor);
+                }
+                Notification::StoppedExecutor(stopped_executor) => {
+                    self.other_executors.get_mut().retain(|&registered_executor| {
+                        let registered_executor_ptr = registered_executor as *const Executor;
+                        let stopped_executor_ptr = stopped_executor as *const Executor;
+                        if registered_executor_ptr != stopped_executor_ptr {
+                            true
+                        } else {
+                            acknowledge_stop(stopped_executor);
+                            false
+                        }
+                    });
+                }
+            }
+        }
+
+        (is_stopped, self.other_executors.get_mut())
     }
 
     #[inline(always)]
@@ -241,29 +298,37 @@ impl Executor {
 
     #[inline(always)]
     pub fn spawn_local_task(&mut self, task: Task) {
-        self.tasks.push_back(task);
+        self.local_tasks.push_back(task);
     }
 
     #[inline(always)]
-    // TODO r #[allow(unused)]
-    #[allow(unused)]
     pub fn spawn_global<F>(&mut self, future: F)
     where
         F: Future<Output = ()> + Send,
     {
-        todo!()
+        let task = Task::from_future(future);
+        self.spawn_global_task(task);
     }
 
     #[inline(always)]
-    // TODO r #[allow(unused)]
-    #[allow(unused)]
     pub fn spawn_global_task(&mut self, task: Task) {
-        todo!()
+        match self.config.is_work_sharing_enabled() {
+            true => {
+                if self.global_tasks.len() > self.config.work_sharing_level {
+                    self.shared_tasks.lock().push_back(task);
+                } else {
+                    self.global_tasks.push_back(task);
+                }
+            }
+            false => {
+                self.global_tasks.push_back(task);
+            }
+        }
     }
 
     #[inline(always)]
     pub fn local_queue(&mut self) -> &mut VecDeque<Task> {
-        &mut self.tasks
+        &mut self.local_tasks
     }
 
     #[inline(always)]
@@ -274,14 +339,18 @@ impl Executor {
     #[inline(always)]
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
     /// was called or [`end`](crate::runtime::end::end)).
-    fn background_task<W: IoWorker>(&mut self, io_worker: &mut W) -> bool {
-        if unlikely(is_ended_by_id(self.worker_id())) {
+    fn background_task(&mut self) -> bool {
+        let (is_stopped, _other_executors) = self.process_notifications();
+        if unlikely(is_stopped) {
             return true;
         }
 
         self.exec_series = 0;
 
-        let has_no_work = io_worker.must_poll(Duration::ZERO);
+        let has_no_work = match self.local_worker {
+            Some(io_worker) => io_worker.must_poll(Duration::ZERO),
+            None => true,
+        };
 
         let instant = Instant::now();
         while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
@@ -291,13 +360,13 @@ impl Executor {
                 let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
                 if unlikely(has_no_work) {
-                    const MAX_SLEEP: Duration = Duration::from_millis(10);
+                    const MAX_SLEEP: Duration = Duration::from_millis(1);
 
                     if need_to_sleep > MAX_SLEEP {
-                        let _ = io_worker.must_poll(MAX_SLEEP);
+                        let _ = thread::sleep(MAX_SLEEP);
                         break;
                     } else {
-                        let _ = io_worker.must_poll(need_to_sleep);
+                        let _ = thread::sleep(need_to_sleep);
                     }
                 } else {
                     break;
@@ -305,8 +374,8 @@ impl Executor {
             }
         }
 
-        if unlikely(self.tasks.capacity() > 512 && self.tasks.len() * 3 < self.tasks.capacity()) {
-            self.tasks.shrink_to(self.tasks.len() * 2 + 1);
+        if unlikely(self.local_tasks.capacity() > 512 && self.local_tasks.len() * 3 < self.local_tasks.capacity()) {
+            self.local_tasks.shrink_to(self.local_tasks.len() * 2 + 1);
         }
 
         false
@@ -320,24 +389,22 @@ impl Executor {
         //
         // So it works like:
         //   Round 1 -> background work -> round 2  -> ...
-        let mut number_of_tasks_in_this_round = self.tasks.len();
-        let io_worker = unsafe { local_io_worker() };
+        let mut number_of_tasks_in_this_round = self.local_tasks.len();
 
         loop {
             for _ in 0..number_of_tasks_in_this_round {
-                task = unsafe { self.tasks.pop_back().unwrap_unchecked() };
+                task = unsafe { self.local_tasks.pop_back().unwrap_unchecked() };
                 self.exec_task(task);
             }
 
-            if unlikely(self.background_task(io_worker)) {
+            if unlikely(self.background_task()) {
                 break;
             }
 
-            number_of_tasks_in_this_round = self.tasks.len();
+            number_of_tasks_in_this_round = self.local_tasks.len();
         }
 
         uninit_local_executor();
-        unsafe { LOCAL_WORKER = None; }
     }
 
     #[inline(always)]
@@ -350,7 +417,7 @@ impl Executor {
     }
 
     pub fn run_and_block_on<T, Fut: Future<Output = T>>(
-        &mut self,
+        &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
         // Async block in async block allocates double memory.
@@ -359,7 +426,7 @@ impl Executor {
         struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
             res_ptr: *mut Option<R>,
             future: Fut,
-            worker_id: usize
+            local_executor_ptr: *const Executor
         }
 
         impl<R, Fut: Future<Output = R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
@@ -372,7 +439,7 @@ impl Executor {
                     Poll::Pending => Poll::Pending,
                     Poll::Ready(res) => {
                         unsafe { this.res_ptr.write(Some(res)) };
-                        unsafe { end_worker_by_id(this.worker_id) };
+                        stop_executor(this.local_executor_ptr);
                         Poll::Ready(())
                     }
                 }
@@ -383,12 +450,12 @@ impl Executor {
         let static_future = EndLocalThreadAndWriteIntoPtr {
             res_ptr: &mut res,
             future,
-            worker_id: self.worker_id()
+            local_executor_ptr: self
         };
         self.exec_future(static_future);
         self.run();
         res.ok_or(
-            "The process has been ended by end() or end_local_thread() not in block_on future.",
+            "The process has been ended by end() or end_local_thread() not in block_on future."
         )
     }
 }
@@ -432,7 +499,7 @@ mod tests {
         local_executor().exec_future(insert(20, arr.clone()));
         local_executor().exec_future(insert(30, arr.clone()));
 
-        assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the queue here
+        assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the list here
     }
 
     #[test]

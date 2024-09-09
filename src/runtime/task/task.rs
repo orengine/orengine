@@ -1,5 +1,5 @@
 use std::future::Future;
-use crate::runtime::task_pool::task_pool;
+use crate::runtime::task_pool;
 
 #[derive(Copy, Clone)]
 pub struct Task {

@@ -29,12 +29,18 @@ pub(crate) struct ValidConfig {
     pub(crate) buffer_len: usize,
     pub(crate) io_worker_config: Option<IoWorkerConfig>,
     pub(crate) is_thread_pool_enabled: bool,
-    pub(crate) is_work_sharing_enabled: bool
+    pub(crate) work_sharing_level: usize,
+}
+
+impl ValidConfig {
+    pub const fn is_work_sharing_enabled(&self) -> bool {
+        self.work_sharing_level != usize::MAX
+    }
 }
 
 impl Drop for ValidConfig {
     fn drop(&mut self) {
-        if self.is_work_sharing_enabled {
+        if self.work_sharing_level != usize::MAX {
             let mut guard;
             if self.io_worker_config.is_some() {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
@@ -72,7 +78,7 @@ pub struct Config {
     buffer_len: usize,
     io_worker_config: Option<IoWorkerConfig>,
     is_thread_pool_enabled: bool,
-    is_work_sharing_enabled: bool
+    work_sharing_level: usize
 }
 
 impl Config {
@@ -81,7 +87,7 @@ impl Config {
             buffer_len: DEFAULT_BUF_LEN,
             io_worker_config: Some(IoWorkerConfig::default()),
             is_thread_pool_enabled: true,
-            is_work_sharing_enabled: true
+            work_sharing_level: 7
         }
     }
 
@@ -140,17 +146,34 @@ impl Config {
     }
 
     pub const fn is_work_sharing_enabled(&self) -> bool {
-        self.is_work_sharing_enabled
+        self.work_sharing_level != usize::MAX
+    }
+    
+    pub const fn enable_work_sharing(mut self) -> Self {
+        if self.work_sharing_level == usize::MAX {
+            self.work_sharing_level = 7;
+        }
+        
+        self
+    }
+    
+    pub const fn disable_work_sharing(mut self) -> Self {
+        self.work_sharing_level = usize::MAX;
+        
+        self
     }
 
-    pub const fn set_work_sharing_enabled(mut self, is_work_sharing_enabled: bool) -> Self {
-        self.is_work_sharing_enabled = is_work_sharing_enabled;
+    pub const fn set_work_sharing_level(mut self, work_sharing_level: usize) -> Self {
+        if work_sharing_level > 1_000_000 {
+            panic!("The work_sharing_level must be less than 1,000,000");
+        }
+        self.work_sharing_level = work_sharing_level;
 
         self
     }
 
     pub(crate) fn validate(self) -> ValidConfig {
-        if self.is_work_sharing_enabled {
+        if self.work_sharing_level != usize::MAX {
             let mut global_config_stats = GLOBAL_CONFIG_STATS.lock();
 
             match self.io_worker_config.is_some() {
@@ -216,7 +239,7 @@ impl Config {
             buffer_len: self.buffer_len,
             io_worker_config: self.io_worker_config,
             is_thread_pool_enabled: self.is_thread_pool_enabled,
-            is_work_sharing_enabled: self.is_work_sharing_enabled
+            work_sharing_level: self.work_sharing_level
         }
     }
 }
@@ -227,7 +250,7 @@ impl From<&ValidConfig> for Config {
             buffer_len: config.buffer_len,
             io_worker_config: config.io_worker_config,
             is_thread_pool_enabled: config.is_thread_pool_enabled,
-            is_work_sharing_enabled: config.is_work_sharing_enabled
+            work_sharing_level: config.work_sharing_level
         }
     }
 }
@@ -243,7 +266,7 @@ mod tests {
         assert_eq!(config.buffer_len, DEFAULT_BUF_LEN);
         assert!(config.io_worker_config.is_some());
         assert!(config.is_thread_pool_enabled);
-        assert!(config.is_work_sharing_enabled);
+        assert_ne!(config.work_sharing_level, usize::MAX);
     }
 
     #[test_macro::test]
@@ -252,13 +275,14 @@ mod tests {
             .set_buffer_len(1024)
             .set_io_worker_config(None).unwrap()
             .set_thread_pool_enabled(false)
-            .set_work_sharing_enabled(false);
+            .disable_work_sharing();
 
         let config = config.validate();
         assert_eq!(config.buffer_len, 1024);
         assert!(config.io_worker_config.is_none());
         assert!(!config.is_thread_pool_enabled);
-        assert!(!config.is_work_sharing_enabled);
+        assert_eq!(config.work_sharing_level, usize::MAX);
+        assert!(!config.is_work_sharing_enabled());
     }
 
     // 4 cases for panic
@@ -274,7 +298,7 @@ mod tests {
         let first_config = Config::new().validate();
         let second_config = Config::new()
             .set_io_worker_config(None).unwrap()
-            .set_work_sharing_enabled(true)
+            .enable_work_sharing()
             .validate();
 
         black_box(first_config);
@@ -287,7 +311,7 @@ mod tests {
         // with task sharing and without io worker
         let first_config = Config::new()
             .set_io_worker_config(None).unwrap()
-            .set_work_sharing_enabled(true)
+            .enable_work_sharing()
             .validate();
         let second_config = Config::new().validate();
 
@@ -301,7 +325,7 @@ mod tests {
         // with task sharing and without thread pool
         let first_config = Config::new()
             .set_thread_pool_enabled(false)
-            .set_work_sharing_enabled(true)
+            .enable_work_sharing()
             .validate();
         let second_config = Config::new().validate();
 
@@ -316,7 +340,7 @@ mod tests {
         let first_config = Config::new().validate();
         let second_config = Config::new()
             .set_thread_pool_enabled(false)
-            .set_work_sharing_enabled(true)
+            .enable_work_sharing()
             .validate();
 
         black_box(first_config);
