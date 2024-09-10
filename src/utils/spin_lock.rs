@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use crossbeam::utils::{Backoff, CachePadded};
@@ -93,6 +94,7 @@ impl<T> SpinLock<T> {
         let mut was_println = false;
         loop {
             if let Some(guard) = self.try_lock() {
+                atomic::fence(Acquire);
                 return guard;
             }
             backoff.spin();
@@ -108,7 +110,7 @@ impl<T> SpinLock<T> {
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        if self.is_locked.compare_exchange(false, true, Acquire, Relaxed).is_ok() {
+        if self.is_locked.compare_exchange_weak(false, true, Relaxed, Relaxed).is_ok() {
             Some(SpinLockGuard::new(self))
         } else {
             None
@@ -135,3 +137,132 @@ impl<T> SpinLock<T> {
 
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 unsafe impl<T: Send> Send for SpinLock<T> {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::sleep::sleep;
+    use crate::sync::WaitGroup;
+    use crate::{Executor};
+
+    use super::*;
+
+    #[test_macro::test]
+    fn test_mutex() {
+        const SLEEP_DURATION: Duration = Duration::from_millis(1);
+
+        let mutex = Arc::new(SpinLock::new(false));
+        let wg = Arc::new(WaitGroup::new());
+
+        let mutex_clone = mutex.clone();
+        let wg_clone = wg.clone();
+        wg_clone.add(1);
+        thread::spawn(move || {
+            let ex = Executor::init();
+            let _ = ex.run_and_block_on(async move {
+                let mut value = mutex_clone.lock();
+                wg_clone.done();
+                println!("1");
+                sleep(SLEEP_DURATION).await;
+                println!("3");
+                *value = true;
+            });
+        });
+
+        let _ = wg.wait().await;
+        println!("2");
+        let value = mutex.lock();
+        println!("4");
+
+        assert_eq!(*value, true);
+        drop(value);
+    }
+
+    #[test_macro::test]
+    fn test_try_mutex() {
+        let mutex = Arc::new(SpinLock::new(false));
+        let mutex_clone = mutex.clone();
+        let lock_wg = Arc::new(WaitGroup::new());
+        let lock_wg_clone = lock_wg.clone();
+        let unlock_wg = Arc::new(WaitGroup::new());
+        let unlock_wg_clone = unlock_wg.clone();
+        let second_lock = Arc::new(WaitGroup::new());
+        let second_lock_clone = second_lock.clone();
+
+        lock_wg.add(1);
+        unlock_wg.add(1);
+        thread::spawn(move || {
+            let ex = Executor::init();
+            let _ = ex.run_and_block_on(async move {
+                let mut value = mutex_clone.lock();
+                println!("1");
+                lock_wg_clone.done();
+                let _ = unlock_wg_clone.wait().await;
+                println!("4");
+                *value = true;
+                drop(value);
+                second_lock_clone.done();
+                println!("5");
+            });
+        });
+
+        let _ = lock_wg.wait().await;
+        println!("2");
+        let value = mutex.try_lock();
+        println!("3");
+        assert!(value.is_none());
+        second_lock.inc();
+        unlock_wg.done();
+
+        let _ = second_lock.wait().await;
+        let value = mutex.try_lock();
+        println!("6");
+        match value {
+            Some(v) => assert_eq!(*v, true, "not waited"),
+            None => panic!("can't acquire lock"),
+        }
+    }
+
+    #[test_macro::test]
+    fn stress_test_mutex() {
+        const PAR: usize = 50;
+        const TRIES: usize = 100;
+
+        async fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
+            let mut lock = mutex.lock();
+            *lock += 1;
+            if *lock % 500 == 0 {
+                println!("{} of {}", *lock, TRIES * PAR);
+            }
+
+            wg.done();
+        }
+
+        let mutex = Arc::new(SpinLock::new(0));
+        let wg = Arc::new(WaitGroup::new());
+        wg.add(PAR * TRIES);
+        for _ in 1..PAR {
+            let wg = wg.clone();
+            let mutex = mutex.clone();
+            thread::spawn(move || {
+                let ex = Executor::init();
+                let _ = ex.run_and_block_on(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg).await;
+                    }
+                });
+            });
+        }
+
+        for _ in 0..TRIES {
+            work_with_lock(&mutex, &wg).await;
+        }
+
+        let _ = wg.wait().await;
+
+        assert_eq!(*mutex.lock(), TRIES * PAR);
+    }
+}

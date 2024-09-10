@@ -365,5 +365,7 @@ mod tests {
         }
 
         let _ = wg.wait().await;
+
+        assert_eq!(*mutex.lock().await, TRIES * PAR);
     }
 }
