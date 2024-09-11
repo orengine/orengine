@@ -320,11 +320,15 @@ impl Executor {
             return;
         }
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
-            if shared_task_list.is_empty() {
+            if !shared_task_list.is_empty() {
                 return;
             }
 
             let lists = unsafe { self.subscribed_state.tasks_lists() };
+            if lists.is_empty() {
+                return;
+            }
+
             let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
 
             for i in 0..max_number_of_tries {
@@ -416,7 +420,6 @@ impl Executor {
             }
 
             for _ in 0..number_of_global_tasks_in_this_round {
-                println!("TODO r here");
                 task = unsafe { self.global_tasks.pop_back().unwrap_unchecked() };
                 self.exec_task(task);
             }
@@ -513,8 +516,8 @@ where
 mod tests {
     use crate::local::Local;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
-    use crate::yield_now;
-
+    use crate::{stop_all_executors, yield_now};
+    use crate::sync::Mutex;
     use super::*;
 
     #[test_macro::test]
@@ -552,6 +555,38 @@ mod tests {
 
         Executor::init();
         assert_eq!(Ok(42), local_executor().run_and_block_on(async_42()));
+        drop(lock);
+    }
+
+    #[test]
+    fn work_sharing() {
+        let lock = GLOBAL_TEST_LOCK.lock();
+
+        let ids = Arc::new(Mutex::new(vec![]));
+        let ids_clone = ids.clone();
+
+        thread::spawn(|| {
+            let ex = Executor::init();
+            ex.run();
+        });
+
+        let ex = Executor::init_with_config(Config::default().set_work_sharing_level(0));
+        ex.spawn_global(async move {
+            println!("first executor id: {}", local_executor().id());
+        });
+        ex.spawn_global(async move {
+            ids_clone.lock().await.push(local_executor().id());
+            println!("second executor id: {}", local_executor().id());
+            stop_all_executors();
+        });
+
+        let _ = ex.run_and_block_on(async move {
+            ids.lock().await.push(local_executor().id());
+            println!("first executor id: {}", local_executor().id());
+            thread::sleep(Duration::from_millis(500));
+            assert_eq!(ids.lock().await.len(), 2);
+        });
+
         drop(lock);
     }
 }

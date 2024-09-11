@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use crossbeam::utils::CachePadded;
 use crate::local_executor;
-use crate::messages::BUG;
 use crate::runtime::SharedTaskList;
 use crate::utils::{SpinLock, SpinLockGuard};
 
@@ -136,8 +135,12 @@ impl GlobalState {
 
     #[inline(always)]
     pub(crate) fn stop_executor(&mut self, id: usize) {
+        let subscribed_state = match self.states_of_alive_executors.remove(&id) {
+            Some(state) => state,
+            None => return
+        };
+
         self.version += 1;
-        let subscribed_state = self.states_of_alive_executors.remove(&id).expect(BUG);
 
         self.lists.retain(|list| list.executor_id() != id);
 
