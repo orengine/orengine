@@ -1,20 +1,36 @@
-use std::intrinsics::likely;
+use std::collections::VecDeque;
 use crate::runtime::Task;
-use crate::utils::SpinLock;
+use crate::utils::{SpinLock, SpinLockGuard};
 
 pub(crate) struct SharedTaskList {
+    executor_id: usize,
     list: SpinLock<Vec<Task>>
 }
 
 impl SharedTaskList {
-    pub(crate)  const fn new() -> Self {
+    pub(crate) const fn new(executor_id: usize) -> Self {
         Self {
+            executor_id,
             list: SpinLock::new(Vec::new())
         }
     }
 
     #[inline(always)]
-    pub(crate)  fn push(&self, task: Task) {
+    pub(crate) fn executor_id(&self) -> usize {
+        self.executor_id
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.list.lock().is_empty()
+    }
+
+    pub(crate) fn as_vec(&self) -> SpinLockGuard<Vec<Task>> {
+        self.list.lock()
+    }
+
+    #[inline(always)]
+    pub(crate) fn push(&self, task: Task) {
         self.list.lock().push(task);
     }
 
@@ -22,28 +38,13 @@ impl SharedTaskList {
     /// # Safety
     ///
     /// other_list must have at least `limit` reserved capacity
-    pub(crate)  unsafe fn take_batch(&self, other_list: &mut Vec<Task>, limit: usize) {
+    pub(crate) unsafe fn take_batch(&self, other_list: &mut VecDeque<Task>, limit: usize) {
+        assert!(other_list.len() + limit <= other_list.capacity());
         let mut guard = self.list.lock();
 
-        if likely(guard.len() <= limit) {
-            let src = guard.as_mut_ptr();
-            let dst = unsafe { other_list.as_mut_ptr().add(other_list.len()) };
-
-            unsafe {
-                other_list.set_len(other_list.len() + guard.len());
-                std::ptr::copy_nonoverlapping(src, dst, guard.len());
-                guard.set_len(0);
-            }
-        } else {
-            let src = unsafe { guard.as_mut_ptr().add(guard.len() - limit) };
-            let dst = unsafe { other_list.as_mut_ptr().add(other_list.len()) };
-
-            unsafe {
-                other_list.set_len(other_list.len() + limit);
-                std::ptr::copy_nonoverlapping(src, dst, limit);
-                let len = guard.len() - limit;
-                guard.set_len(len);
-            }
+        let number_of_elems = guard.len().min(limit);
+        for elem in guard.drain(..number_of_elems) {
+            other_list.push_back(elem);
         }
     }
 }

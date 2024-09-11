@@ -92,7 +92,7 @@ impl WaitGroup {
         if unlikely(prev_count == 1) {
             let executor = local_executor();
             while let Some(task) = self.waited_tasks.pop() {
-                executor.exec_task(task);
+                executor.spawn_global_task(task);
             }
         }
 
@@ -131,12 +131,13 @@ mod tests {
 
             thread::spawn(move || {
                 let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                ex.spawn_global(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
                 });
+                ex.run();
             });
         }
 

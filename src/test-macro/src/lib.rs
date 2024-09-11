@@ -1,12 +1,37 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-
-use quote::quote;
-use syn::parse_macro_input;
+use std::ops::Deref;
+use quote::{quote, ToTokens};
+use syn::{parse_macro_input, Expr, Lit};
 
 #[proc_macro_attribute]
 // TODO takes timeout in params
-pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
+pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
+    fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
+        let mut timeout = quote! { core::time::Duration::from_secs(1) };
+        match syn::parse::<syn::ExprAssign>(attr) {
+            Ok(syntax_tree) => {
+                if syntax_tree.left.into_token_stream().to_string() == "timeout_secs" {
+                    match syntax_tree.right.deref() {
+                        Expr::Lit(lit) => {
+                            if let Lit::Str(expr) = lit.lit.clone() {
+                                let token_stream: u64 = expr.value().parse().unwrap();
+                                timeout = quote! { core::time::Duration::from_secs(#token_stream) };
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+            },
+            Err(_err) => {},
+        }
+
+
+        timeout
+    }
+
+    let timeout = get_timeout_name(args);
     let input = parse_macro_input!(input as syn::ItemFn);
     let body = &input.block;
     let attrs = &input.attrs;
@@ -37,7 +62,7 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             });
 
-            let res = receiver.recv_timeout(std::time::Duration::from_secs(1));
+            let res = receiver.recv_timeout(#timeout);
             unsafe { crate::runtime::stop_all_executors() };
             match res {
                 Ok(Ok(())) => {

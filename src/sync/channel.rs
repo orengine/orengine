@@ -310,12 +310,12 @@ async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
 
     for (task, call_state) in inner_lock.senders.drain(..) {
         unsafe { call_state.write(SendCallState::WokenByClose); }
-        executor.exec_task(task);
+        executor.spawn_global_task(task);
     }
 
     for (task, _, call_state) in inner_lock.receivers.drain(..) {
         unsafe { call_state.write(RecvCallState::WokenByClose); }
-        executor.exec_task(task);
+        executor.spawn_global_task(task);
     }
 }
 

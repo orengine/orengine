@@ -163,7 +163,7 @@ mod tests {
         unlock_wg.add(1);
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.spawn_global(async move {
                 let mut value = mutex_clone.lock();
                 println!("1");
                 lock_wg_clone.done();
@@ -174,6 +174,7 @@ mod tests {
                 second_lock_clone.done();
                 println!("5");
             });
+            ex.run();
         });
 
         let _ = lock_wg.wait().await;

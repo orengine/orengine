@@ -192,6 +192,8 @@ impl<T> Mutex<T> {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
         if likely(
+            // Here compare_exchange is used instead of compare_exchange_weak
+            // because we need to have a guarantee of failure.
             self.counter
                 .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
                 .is_ok(),
@@ -289,7 +291,7 @@ mod tests {
         unlock_wg.add(1);
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.spawn_global(async move {
                 let mut value = mutex_clone.lock().await;
                 println!("1");
                 lock_wg_clone.done();
@@ -300,6 +302,7 @@ mod tests {
                 second_lock_clone.done();
                 println!("5");
             });
+            ex.run();
         });
 
         let _ = lock_wg.wait().await;

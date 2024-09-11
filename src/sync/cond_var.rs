@@ -84,7 +84,7 @@ impl CondVar {
     #[inline(always)]
     pub fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
-            local_executor().exec_task(task)
+            local_executor().spawn_global_task(task)
         }
     }
 
@@ -92,7 +92,7 @@ impl CondVar {
     pub fn notify_all(&self) {
         let executor = local_executor();
         while let Some(task) = self.wait_queue.pop() {
-            executor.exec_task(task);
+            executor.spawn_global_task(task);
         }
     }
 }

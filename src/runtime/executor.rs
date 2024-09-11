@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use crossbeam::utils::CachePadded;
-
+use fastrand::Rng;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_option};
@@ -66,10 +66,11 @@ pub struct Executor {
     executor_id: usize,
     config: ValidConfig,
     subscribed_state: SubscribedState,
+    rng: Rng,
 
     local_tasks: VecDeque<Task>,
     global_tasks: VecDeque<Task>,
-    shared_tasks: Option<Arc<SharedTaskList>>,
+    shared_tasks_list: Option<Arc<SharedTaskList>>,
 
     exec_series: usize,
     local_worker: &'static mut Option<WorkerSys>,
@@ -79,15 +80,20 @@ pub struct Executor {
 
 pub(crate) static FREE_EXECUTOR_ID: AtomicUsize = AtomicUsize::new(0);
 
+const MAX_NUMBER_OF_TASKS_TAKEN: usize = 16;
+
 impl Executor {
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
         let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
         TaskPool::init();
-        let shared_tasks = match valid_config.is_work_sharing_enabled() {
-            true => Some(Arc::new(SharedTaskList::new())),
-            false => None
+        let (
+            shared_tasks,
+            global_tasks_list_cap
+        ) = match valid_config.is_work_sharing_enabled() {
+            true => (Some(Arc::new(SharedTaskList::new(executor_id))), MAX_NUMBER_OF_TASKS_TAKEN),
+            false => (None, 0)
         };
 
         unsafe {
@@ -100,10 +106,11 @@ impl Executor {
                 executor_id,
                 config: valid_config,
                 subscribed_state: SubscribedState::new(),
+                rng: Rng::new(),
 
                 local_tasks: VecDeque::new(),
-                global_tasks: VecDeque::new(),
-                shared_tasks,
+                global_tasks: VecDeque::with_capacity(global_tasks_list_cap),
+                shared_tasks_list: shared_tasks,
 
                 current_call: Call::default(),
                 exec_series: 0,
@@ -129,7 +136,7 @@ impl Executor {
         Self::init_on_core(get_core_id_for_executor())
     }
 
-    pub fn executor_id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.executor_id
     }
 
@@ -150,7 +157,7 @@ impl Executor {
     }
 
     pub(crate) fn shared_task_list(&self) -> Option<&Arc<SharedTaskList>> {
-        self.shared_tasks.as_ref()
+        self.shared_tasks_list.as_ref()
     }
 
     pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
@@ -286,7 +293,7 @@ impl Executor {
         match self.config.is_work_sharing_enabled() {
             true => {
                 if self.global_tasks.len() > self.config.work_sharing_level {
-                    unsafe { self.shared_tasks.as_ref().unwrap_unchecked().push(task); }
+                    unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().push(task); }
                 } else {
                     self.global_tasks.push_back(task);
                 }
@@ -308,6 +315,31 @@ impl Executor {
     }
 
     #[inline(always)]
+    fn take_work_if_needed(&mut self) {
+        if self.global_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
+            return;
+        }
+        if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
+            if shared_task_list.is_empty() {
+                return;
+            }
+
+            let lists = unsafe { self.subscribed_state.tasks_lists() };
+            let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
+
+            for i in 0..max_number_of_tries {
+                let list = unsafe { lists.get_unchecked(i) };
+                let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.global_tasks.len();
+                if limit == 0 {
+                   return;
+                }
+
+                unsafe { list.take_batch(&mut self.global_tasks, limit) };
+            }
+        }
+    }
+
+    #[inline(always)]
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
     /// was called or [`end`](crate::runtime::end::end)).
     fn background_task(&mut self) -> bool {
@@ -317,8 +349,8 @@ impl Executor {
         }
 
         self.exec_series = 0;
-
-        let has_no_work = match self.local_worker {
+        self.take_work_if_needed();
+        let has_no_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(Duration::ZERO),
             None => true,
         };
@@ -330,7 +362,7 @@ impl Executor {
             } else {
                 let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
-                if unlikely(has_no_work) {
+                if unlikely(has_no_io_work) {
                     const MAX_SLEEP: Duration = Duration::from_millis(1);
 
                     if need_to_sleep > MAX_SLEEP {
@@ -345,8 +377,22 @@ impl Executor {
             }
         }
 
-        if unlikely(self.local_tasks.capacity() > 512 && self.local_tasks.len() * 3 < self.local_tasks.capacity()) {
-            self.local_tasks.shrink_to(self.local_tasks.len() * 2 + 1);
+        macro_rules! shrink {
+            ($list:expr) => {
+                if unlikely($list.capacity() > 512 && $list.len() * 3 < $list.capacity()) {
+                    $list.shrink_to(self.local_tasks.len() * 2 + 1);
+                }
+            };
+        }
+
+        shrink!(self.local_tasks);
+        shrink!(self.global_tasks);
+        if self.shared_tasks_list.is_some() {
+            let mut shared_tasks_list = unsafe {
+                self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec()
+            };
+
+            shrink!(shared_tasks_list);
         }
 
         false
@@ -360,19 +406,42 @@ impl Executor {
         //
         // So it works like:
         //   Round 1 -> background work -> round 2  -> ...
-        let mut number_of_tasks_in_this_round = self.local_tasks.len();
+        let mut number_of_local_tasks_in_this_round = self.local_tasks.len();
+        let mut number_of_global_tasks_in_this_round = self.global_tasks.len();
 
         loop {
-            for _ in 0..number_of_tasks_in_this_round {
+            for _ in 0..number_of_local_tasks_in_this_round {
                 task = unsafe { self.local_tasks.pop_back().unwrap_unchecked() };
                 self.exec_task(task);
+            }
+
+            for _ in 0..number_of_global_tasks_in_this_round {
+                println!("TODO r here");
+                task = unsafe { self.global_tasks.pop_back().unwrap_unchecked() };
+                self.exec_task(task);
+            }
+
+            if let Some(shared_tasks_list) = self.shared_tasks_list.as_ref() {
+                if self.global_tasks.len() < self.config.work_sharing_level {
+                    let prev_len = self.global_tasks.len();
+                    let to_take = (self.config.work_sharing_level - prev_len)
+                        .min(MAX_NUMBER_OF_TASKS_TAKEN);
+                    unsafe { shared_tasks_list.take_batch(&mut self.global_tasks, to_take) };
+
+                    let taken = self.global_tasks.len() - prev_len;
+                    for _ in 0..taken {
+                        let task = unsafe { self.global_tasks.pop_back().unwrap_unchecked() };
+                        self.exec_task(task);
+                    }
+                }
             }
 
             if unlikely(self.background_task()) {
                 break;
             }
 
-            number_of_tasks_in_this_round = self.local_tasks.len();
+            number_of_local_tasks_in_this_round = self.local_tasks.len();
+            number_of_global_tasks_in_this_round = self.global_tasks.len();
         }
 
         uninit_local_executor();
@@ -421,7 +490,7 @@ impl Executor {
         let static_future = EndLocalThreadAndWriteIntoPtr {
             res_ptr: &mut res,
             future,
-            local_executor_id: self.executor_id()
+            local_executor_id: self.id()
         };
         self.exec_future(static_future);
         self.run();

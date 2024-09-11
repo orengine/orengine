@@ -29,7 +29,7 @@ pub(crate) struct ValidConfig {
     pub(crate) buffer_len: usize,
     pub(crate) io_worker_config: Option<IoWorkerConfig>,
     pub(crate) is_thread_pool_enabled: bool,
-    /// If it is `usize::MAX`, it means that work sharing is disabled
+    /// If it is `usize::MAX`, it means that work sharing is disabled.
     pub(crate) work_sharing_level: usize,
 }
 

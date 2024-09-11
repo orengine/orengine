@@ -13,7 +13,7 @@ pub(crate) struct SubscribedState {
     current_version: CachePadded<AtomicUsize>,
     processed_version: usize,
     is_stopped: bool,
-    lists: Option<Vec<Arc<SharedTaskList>>>
+    tasks_lists: Option<Vec<Arc<SharedTaskList>>>
 }
 
 impl SubscribedState {
@@ -28,14 +28,41 @@ impl SubscribedState {
         self.processed_version = current_version;
         let global_state = global_state();
 
-        if !global_state.alive_executors.contains_key(&executor_id) {
+        if !global_state.states_of_alive_executors.contains_key(&executor_id) {
             self.is_stopped = true;
             return;
         }
 
-        if self.lists.is_some() {
-            self.lists = Some(global_state.lists.clone());
+        if self.tasks_lists.is_some() {
+            self.tasks_lists = Some(global_state.lists.clone());
+            self.validate_tasks_lists(executor_id);
         }
+    }
+
+    /// Removes the list of the executor
+    /// and moves all the lists that are after it to the beginning.
+    fn validate_tasks_lists(&mut self, executor_id: usize) {
+        if self.tasks_lists.is_none() {
+            return;
+        }
+
+        let tasks_lists = self.tasks_lists.as_ref().unwrap();
+        let index = tasks_lists
+            .iter()
+            .position(|list| list.executor_id() == executor_id)
+            .unwrap();
+
+        let len = self.tasks_lists.as_ref().unwrap().len() - 1;
+        if len == 0 {
+            self.tasks_lists = Some(vec![]);
+            return;
+        }
+
+        let mut new_list = tasks_lists.clone();
+        new_list.remove(index);
+        new_list.rotate_left(index);
+
+        self.tasks_lists = Some(new_list);
     }
 }
 
@@ -45,19 +72,26 @@ impl SubscribedState {
             current_version: CachePadded::new(AtomicUsize::new(1)),
             processed_version: 0,
             is_stopped: false,
-            lists: None
+            tasks_lists: None
         }
     }
 
     pub(crate) fn is_stopped(&self) -> bool {
         self.is_stopped
     }
+
+    /// # Safety
+    ///
+    /// Tasks list must be not None
+    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<SharedTaskList>> {
+        unsafe { self.tasks_lists.as_ref().unwrap_unchecked() }
+    }
 }
 
 struct GlobalState {
     version: usize,
     /// key is a worker id
-    alive_executors: BTreeMap<usize, (Option<Arc<SharedTaskList>>, &'static SubscribedState)>,
+    states_of_alive_executors: BTreeMap<usize, &'static SubscribedState>,
     lists: Vec<Arc<SharedTaskList>>
 }
 
@@ -65,13 +99,13 @@ impl GlobalState {
     const fn new() -> Self {
         Self {
             version: 0,
-            alive_executors: BTreeMap::new(),
+            states_of_alive_executors: BTreeMap::new(),
             lists: Vec::new()
         }
     }
 
     fn notify_all(&self) {
-        for (_, (_, state)) in self.alive_executors.iter() {
+        for (_, state) in self.states_of_alive_executors.iter() {
             state.current_version.store(self.version, Release);
         }
     }
@@ -81,22 +115,20 @@ impl GlobalState {
         self.version += 1;
         let executor = local_executor();
 
-        executor.subscribed_state_mut().lists = if let Some(shared_task_list) = executor.shared_task_list() {
-            let old_lists = Some(self.lists.clone());
+        if let Some(shared_task_list) = executor.shared_task_list() {
             self.lists.push(shared_task_list.clone());
-
-            old_lists
-        } else {
-            None
-        };
+            executor.subscribed_state_mut().tasks_lists = Some(self.lists.clone());
+            let executor_id = executor.id();
+            executor.subscribed_state_mut().validate_tasks_lists(executor_id);
+        }
 
         // No need `executor.subscribed_state_mut().current_version.store(self.version, Relaxed)`
         // because notify_all() will set the version
         executor.subscribed_state_mut().processed_version = self.version;
 
-        self.alive_executors.insert(
-            executor.executor_id(),
-            (executor.shared_task_list().cloned(), executor.subscribed_state())
+        self.states_of_alive_executors.insert(
+            executor.id(),
+            executor.subscribed_state()
         );
 
         self.notify_all();
@@ -105,14 +137,9 @@ impl GlobalState {
     #[inline(always)]
     pub(crate) fn stop_executor(&mut self, id: usize) {
         self.version += 1;
-        let (
-            task_list_,
-            subscribed_state
-        ) = self.alive_executors.remove(&id).expect(BUG);
+        let subscribed_state = self.states_of_alive_executors.remove(&id).expect(BUG);
 
-        if let Some(task_list) = task_list_ {
-            self.lists.retain(|list| !Arc::ptr_eq(list, &task_list));
-        }
+        self.lists.retain(|list| list.executor_id() != id);
 
         subscribed_state.current_version.store(self.version, Release);
         self.notify_all();
@@ -121,7 +148,7 @@ impl GlobalState {
     #[inline(always)]
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
-        self.alive_executors.retain(|_, (_, state)| {
+        self.states_of_alive_executors.retain(|_, state| {
             state.current_version.store(self.version, Release);
             false
         });
@@ -166,7 +193,7 @@ mod tests {
             );
             ex.spawn_local(async  {
                 println!("2");
-                stop_executor(local_executor().executor_id());
+                stop_executor(local_executor().id());
             });
             println!("1");
             ex.run();

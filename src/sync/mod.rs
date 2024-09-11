@@ -1,6 +1,5 @@
 pub use lazy_lock::*;
 pub use local::*;
-pub use naive_cond_var::*;
 pub use mutex::*;
 pub use naive_rw_lock::*;
 pub use once::*;
@@ -11,7 +10,6 @@ pub mod channel;
 pub mod cond_var;
 pub mod lazy_lock;
 pub mod local;
-pub mod naive_cond_var;
 pub mod mutex;
 pub mod naive_rw_lock;
 pub mod once;

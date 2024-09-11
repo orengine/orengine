@@ -2,6 +2,29 @@ use std::future::{Future};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+pub struct LocalYield {
+    was_yielded: bool,
+}
+
+impl Future for LocalYield {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        if this.was_yielded {
+            Poll::Ready(())
+        } else {
+            this.was_yielded = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+
+pub fn local_yield_now() -> LocalYield {
+    LocalYield { was_yielded: false }
+}
+
 pub struct Yield {
     was_yielded: bool,
 }
