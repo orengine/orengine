@@ -15,7 +15,7 @@ use crate::io::sys::WorkerSys;
 use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_option};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
-use crate::runtime::global_state::{check_subscription, register_executor, stop_executor, SubscribedState};
+use crate::runtime::global_state::{register_local_executor, stop_executor, SubscribedState};
 use crate::runtime::{get_core_id_for_executor, SharedTaskList};
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
@@ -111,7 +111,7 @@ impl Executor {
                 sleeping_tasks: BTreeSet::new(),
             });
 
-            register_executor(local_executor_unchecked());
+            register_local_executor();
 
             local_executor_unchecked()
         }
@@ -133,6 +133,14 @@ impl Executor {
         self.executor_id
     }
 
+    pub(crate) fn subscribed_state(&self) -> &SubscribedState {
+        &self.subscribed_state
+    }
+
+    pub(crate) fn subscribed_state_mut(&mut self) -> &mut SubscribedState {
+        &mut self.subscribed_state
+    }
+
     pub fn core_id(&self) -> CoreId {
         self.core_id
     }
@@ -143,10 +151,6 @@ impl Executor {
 
     pub(crate) fn shared_task_list(&self) -> Option<&Arc<SharedTaskList>> {
         self.shared_tasks.as_ref()
-    }
-
-    pub(crate) fn set_subscribed_state(&mut self, subscribed_state: SubscribedState) {
-        self.subscribed_state = subscribed_state;
     }
 
     pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
@@ -307,7 +311,7 @@ impl Executor {
     /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
     /// was called or [`end`](crate::runtime::end::end)).
     fn background_task(&mut self) -> bool {
-        check_subscription(self.executor_id, &mut self.subscribed_state);
+        self.subscribed_state.check_subscription(self.executor_id);
         if unlikely(self.subscribed_state.is_stopped()) {
             return true;
         }

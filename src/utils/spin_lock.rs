@@ -144,7 +144,7 @@ mod tests {
     use std::thread;
 
     use crate::sync::WaitGroup;
-    use crate::{Executor};
+    use crate::Executor;
 
     use super::*;
 

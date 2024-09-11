@@ -4,21 +4,46 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use crossbeam::utils::CachePadded;
-use crate::Executor;
+use crate::local_executor;
 use crate::messages::BUG;
 use crate::runtime::SharedTaskList;
-use crate::utils::SpinLock;
+use crate::utils::{SpinLock, SpinLockGuard};
 
 pub(crate) struct SubscribedState {
-    version: usize,
+    current_version: CachePadded<AtomicUsize>,
+    processed_version: usize,
     is_stopped: bool,
     lists: Option<Vec<Arc<SharedTaskList>>>
 }
 
 impl SubscribedState {
+    #[inline(always)]
+    pub(crate) fn check_subscription(&mut self, executor_id: usize) {
+        let current_version = self.current_version.load(Acquire);
+        if likely(self.processed_version == current_version) {
+            // The subscription has valid data
+            return;
+        }
+
+        self.processed_version = current_version;
+        let global_state = global_state();
+
+        if !global_state.alive_executors.contains_key(&executor_id) {
+            self.is_stopped = true;
+            return;
+        }
+
+        if self.lists.is_some() {
+            self.lists = Some(global_state.lists.clone());
+        }
+    }
+}
+
+impl SubscribedState {
     pub(crate) const fn new() -> Self {
         Self {
-            version: 0,
+            current_version: CachePadded::new(AtomicUsize::new(1)),
+            processed_version: 0,
             is_stopped: false,
             lists: None
         }
@@ -30,125 +55,103 @@ impl SubscribedState {
 }
 
 struct GlobalState {
-    version: CachePadded<AtomicUsize>,
+    version: usize,
     /// key is a worker id
-    alive_executors: SpinLock<BTreeMap<usize, Option<Arc<SharedTaskList>>>>,
-    lists: SpinLock<Vec<Arc<SharedTaskList>>>
+    alive_executors: BTreeMap<usize, (Option<Arc<SharedTaskList>>, &'static SubscribedState)>,
+    lists: Vec<Arc<SharedTaskList>>
 }
 
 impl GlobalState {
     const fn new() -> Self {
         Self {
-            version: CachePadded::new(AtomicUsize::new(1)),
-            alive_executors: SpinLock::new(BTreeMap::new()),
-            lists: SpinLock::new(Vec::new())
+            version: 0,
+            alive_executors: BTreeMap::new(),
+            lists: Vec::new()
+        }
+    }
+
+    fn notify_all(&self) {
+        for (_, (_, state)) in self.alive_executors.iter() {
+            state.current_version.store(self.version, Release);
         }
     }
 
     #[inline(always)]
-    pub(crate) fn register_executor(
-        &self,
-        executor: &mut Executor
-    ) {
-        let mut alive_executors = self.alive_executors.lock();
-        alive_executors.insert(executor.executor_id(), executor.shared_task_list().cloned());
-        alive_executors.unlock();
+    pub(crate) fn register_local_executor(&mut self) {
+        self.version += 1;
+        let executor = local_executor();
 
-        let mut subscribed_state = SubscribedState {
-            version: 0,
-            is_stopped: false,
-            lists: None
+        executor.subscribed_state_mut().lists = if let Some(shared_task_list) = executor.shared_task_list() {
+            let old_lists = Some(self.lists.clone());
+            self.lists.push(shared_task_list.clone());
+
+            old_lists
+        } else {
+            None
         };
 
-        if let Some(shared_task_list) = executor.shared_task_list() {
-            let mut lists = self.lists.lock();
-            let old_lists = lists.clone();
-            lists.push(shared_task_list.clone());
-            lists.unlock();
+        // No need `executor.subscribed_state_mut().current_version.store(self.version, Relaxed)`
+        // because notify_all() will set the version
+        executor.subscribed_state_mut().processed_version = self.version;
 
-            subscribed_state.lists = Some(old_lists);
-        }
+        self.alive_executors.insert(
+            executor.executor_id(),
+            (executor.shared_task_list().cloned(), executor.subscribed_state())
+        );
 
-        subscribed_state.version = self.version.fetch_add(1, Release) + 1;
-
-        executor.set_subscribed_state(subscribed_state)
+        self.notify_all();
     }
 
     #[inline(always)]
-    pub(crate) fn stop_executor(&self, id: usize) {
-        let mut alive_executors = self.alive_executors.lock();
-        let task_list_ = alive_executors.remove(&id).expect(BUG);
-        alive_executors.unlock();
+    pub(crate) fn stop_executor(&mut self, id: usize) {
+        self.version += 1;
+        let (
+            task_list_,
+            subscribed_state
+        ) = self.alive_executors.remove(&id).expect(BUG);
 
         if let Some(task_list) = task_list_ {
-            let mut lists = self.lists.lock();
-            lists.retain(|list| !Arc::ptr_eq(list, &task_list));
-            lists.unlock();
+            self.lists.retain(|list| !Arc::ptr_eq(list, &task_list));
         }
 
-        self.version.fetch_add(1, Release);
+        subscribed_state.current_version.store(self.version, Release);
+        self.notify_all();
     }
 
     #[inline(always)]
-    pub(crate) fn stop_all_executors(&self) {
-        let mut alive_executors = self.alive_executors.lock();
-        alive_executors.clear();
-        alive_executors.unlock();
-
-        let mut lists = self.lists.lock();
-        lists.clear();
-        lists.unlock();
-
-        self.version.fetch_add(1, Release);
-    }
-
-    #[inline(always)]
-    pub(crate) fn check_subscription(&self, executor_id: usize, subscribed_state: &mut SubscribedState) {
-        let current_version = self.version.load(Acquire);
-        if likely(subscribed_state.version == current_version) {
-            // The subscription has valid data
-            return;
-        }
-
-        subscribed_state.version = current_version;
-
-        let executors = self.alive_executors.lock();
-        if !executors.contains_key(&executor_id) {
-            subscribed_state.is_stopped = true;
-            return;
-        }
-
-        executors.unlock();
-
-         if subscribed_state.lists.is_some() {
-             subscribed_state.lists = Some(self.lists.lock().clone());
-         }
+    pub(crate) fn stop_all_executors(&mut self) {
+        self.version += 1;
+        self.alive_executors.retain(|_, (_, state)| {
+            state.current_version.store(self.version, Release);
+            false
+        });
+        self.lists.clear();
     }
 }
 
-static GLOBAL_STATE: GlobalState = GlobalState::new();
+static GLOBAL_STATE: SpinLock<GlobalState> = SpinLock::new(GlobalState::new());
 
-pub(crate) fn register_executor(executor_ref: &mut Executor) {
-    GLOBAL_STATE.register_executor(executor_ref)
+fn global_state() -> SpinLockGuard<'static, GlobalState> {
+    GLOBAL_STATE.lock()
 }
 
-pub(crate) fn check_subscription(executor_id: usize, subscribed_state: &mut SubscribedState) {
-    GLOBAL_STATE.check_subscription(executor_id, subscribed_state);
+pub(crate) fn register_local_executor() {
+    global_state().register_local_executor()
 }
 
 pub fn stop_executor(executor_id: usize) {
-    GLOBAL_STATE.stop_executor(executor_id);
+    global_state().stop_executor(executor_id);
 }
 
 pub fn stop_all_executors() {
-    GLOBAL_STATE.stop_all_executors();
+    global_state().stop_all_executors();
 }
 
 #[cfg(test)]
 mod tests {
     use std::thread;
     use std::time::Duration;
-    use crate::{local_executor, sleep};
+    use crate::{local_executor, sleep, Executor};
     use crate::runtime::Config;
     use super::*;
 
