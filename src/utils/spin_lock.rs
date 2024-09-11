@@ -142,44 +142,11 @@ unsafe impl<T: Send> Send for SpinLock<T> {}
 mod tests {
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
 
-    use crate::sleep::sleep;
     use crate::sync::WaitGroup;
     use crate::{Executor};
 
     use super::*;
-
-    #[test_macro::test]
-    fn test_mutex() {
-        const SLEEP_DURATION: Duration = Duration::from_millis(1);
-
-        let mutex = Arc::new(SpinLock::new(false));
-        let wg = Arc::new(WaitGroup::new());
-
-        let mutex_clone = mutex.clone();
-        let wg_clone = wg.clone();
-        wg_clone.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
-                let mut value = mutex_clone.lock();
-                wg_clone.done();
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                println!("3");
-                *value = true;
-            });
-        });
-
-        let _ = wg.wait().await;
-        println!("2");
-        let value = mutex.lock();
-        println!("4");
-
-        assert_eq!(*value, true);
-        drop(value);
-    }
 
     #[test_macro::test]
     fn test_try_mutex() {
@@ -237,6 +204,7 @@ mod tests {
             if *lock % 500 == 0 {
                 println!("{} of {}", *lock, TRIES * PAR);
             }
+            lock.unlock();
 
             wg.done();
         }

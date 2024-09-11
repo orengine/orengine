@@ -37,8 +37,7 @@ pub fn test(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             });
 
-            // TODO 1 sec
-            let res = receiver.recv_timeout(std::time::Duration::from_secs(100));
+            let res = receiver.recv_timeout(std::time::Duration::from_secs(1));
             unsafe { crate::runtime::stop_all_executors() };
             match res {
                 Ok(Ok(())) => {
