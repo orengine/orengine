@@ -6,8 +6,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-syn = { version = "2.0.71", features = ["proc-macro", "clone-impls", "extra-traits", "parsing", "full"] }
-quote = "1.0.36"
+syn = { version = "2.0.76", features = ["proc-macro", "clone-impls", "extra-traits", "parsing", "full"] }
+quote = "1.0"
 proc-macro2 = "1.0.86"
 
 [lib]

@@ -12,14 +12,14 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct Send<'a> {
+pub struct Send<'buf> {
     fd: RawFd,
-    buf: &'a [u8],
+    buf: &'buf [u8],
     io_request: Option<IoRequest>,
 }
 
-impl<'a> Send<'a> {
-    pub fn new(fd: RawFd, buf: &'a [u8]) -> Self {
+impl<'buf> Send<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -28,7 +28,7 @@ impl<'a> Send<'a> {
     }
 }
 
-impl<'a> Future for Send<'a> {
+impl<'buf> Future for Send<'buf> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -48,15 +48,15 @@ impl<'a> Future for Send<'a> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct SendWithDeadline<'a> {
+pub struct SendWithDeadline<'buf> {
     fd: RawFd,
-    buf: &'a [u8],
+    buf: &'buf [u8],
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
-impl<'a> SendWithDeadline<'a> {
-    pub fn new(fd: RawFd, buf: &'a [u8], deadline: Instant) -> Self {
+impl<'buf> SendWithDeadline<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf [u8], deadline: Instant) -> Self {
         Self {
             fd,
             buf,
@@ -66,7 +66,7 @@ impl<'a> SendWithDeadline<'a> {
     }
 }
 
-impl<'a> Future for SendWithDeadline<'a> {
+impl<'buf> Future for SendWithDeadline<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

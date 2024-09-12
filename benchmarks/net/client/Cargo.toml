@@ -1,0 +1,12 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+orengine = { path = "../../../" }
+tools = { path = "../../tools" }
+tokio = { version = "1", features = ["full"] }
+smol = "2.0.0"
+async-std = "1.12.0"
+flume = { version = "0.11.0", features = ["async"] }

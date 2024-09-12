@@ -3,10 +3,13 @@ use std::path::{Path};
 use std::io::{Error, Result};
 use std::os::unix::ffi::OsStrExt;
 use crate::fs::{OpenOptions};
-use crate::io::{AsyncClose, AsyncRead, AsyncWrite, AsPath};
+use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
+use crate::io::fallocate::AsyncFallocate;
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
+use crate::io::sync_all::AsyncSyncAll;
+use crate::io::sync_data::AsyncSyncData;
 use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
 use crate::runtime::local_executor;
@@ -25,7 +28,7 @@ impl File {
         self.fd
     }
 
-    pub async fn open<P: AsPath>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
@@ -44,7 +47,9 @@ impl File {
 
     #[inline(always)]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
-        where OldPath: AsPath, NewPath: AsPath
+    where
+        OldPath: AsRef<Path>,
+        NewPath: AsRef<Path>
     {
         let old_path = get_os_path(old_path.as_ref())?;
         let new_path = get_os_path(new_path.as_ref())?;
@@ -52,7 +57,7 @@ impl File {
     }
 
     #[inline(always)]
-    pub async fn remove<P: AsPath>(path: P) -> Result<()> {
+    pub async fn remove<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = get_os_path(path.as_ref())?;
         Remove::new(path).await
     }
@@ -87,6 +92,12 @@ impl AsRawFd for File {
     }
 }
 
+impl AsyncFallocate for File {}
+
+impl AsyncSyncAll for File {}
+
+impl AsyncSyncData for File {}
+
 impl AsyncRead for File {}
 
 impl AsyncWrite for File {}
@@ -96,7 +107,7 @@ impl AsyncClose for File {}
 impl Drop for File {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().spawn_local(async {
+        local_executor().exec_future(async {
             close_future.await.expect("Failed to close file");
         });
     }
@@ -110,70 +121,69 @@ mod tests {
     use crate::buf::buffer;
     use super::*;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
-    use crate::runtime::create_local_executer_for_block_on;
 
-    #[test]
+    #[test_macro::test]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
         let test_file_dir_path_: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
-        let test_file_dir_path = unsafe {mem::transmute::<&str, &'static str>(test_file_dir_path_)};
+        let test_file_dir_path = unsafe { mem::transmute::<&str, &'static str>(test_file_dir_path_) };
+
         create_test_dir_if_not_exist();
-        create_local_executer_for_block_on(async move {
-            let file_path = {
-                let mut file_path_ = PathBuf::from(test_file_dir_path);
-                let _ = create_dir(test_file_dir_path);
-                file_path_.push("test.txt");
-                file_path_
-            };
-            let options = OpenOptions::new().write(true).read(true).truncate(true).create(true);
-            let mut file = match File::open(file_path.clone(), &options).await {
-                Ok(file) => file,
-                Err(err) => panic!("Can't open (create) file: {}", err)
-            };
 
-            assert!(is_exists(file_path.clone()));
+        let file_path = {
+            let mut file_path_ = PathBuf::from(test_file_dir_path);
+            let _ = create_dir(test_file_dir_path);
+            file_path_.push("test.txt");
+            file_path_
+        };
+        let options = OpenOptions::new().write(true).read(true).truncate(true).create(true);
+        let mut file = match File::open(file_path.clone(), &options).await {
+            Ok(file) => file,
+            Err(err) => panic!("Can't open (create) file: {}", err)
+        };
 
-            let mut buf = buffer();
-            const MSG: &[u8] = b"Hello, world!";
-            buf.append(MSG);
+        assert!(is_exists(file_path.clone()));
 
-            match file.write_all(buf.as_ref()).await {
-                Ok(_) => (),
-                Err(err) => panic!("Can't write file: {}", err)
-            }
+        let mut buf = buffer();
+        const MSG: &[u8] = b"Hello, world!";
+        buf.append(MSG);
 
-            match file.read_exact(buf.as_mut()).await {
-                Ok(_) => assert_eq!(buf.as_ref(), MSG),
-                Err(err) => panic!("Can't read file: {}", err)
-            }
+        match file.write_all(buf.as_ref()).await {
+            Ok(_) => (),
+            Err(err) => panic!("Can't write file: {}", err)
+        }
 
-            buf.clear();
-            buf.append("great World!".as_bytes());
-            match file.pwrite_all(buf.as_ref(), 7).await {
-                Ok(_) => (),
-                Err(err) => panic!("Can't pwrite file: {}", err)
-            }
+        match file.read_exact(buf.as_mut()).await {
+            Ok(_) => assert_eq!(buf.as_ref(), MSG),
+            Err(err) => panic!("Can't read file: {}", err)
+        }
 
-            buf.clear();
-            buf.set_len(MSG.len() + 6);
-            match file.read_exact(buf.as_mut()).await {
-                Ok(_) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
-                Err(err) => panic!("Can't read file: {}", err)
-            }
+        buf.clear();
+        buf.append("great World!".as_bytes());
+        match file.pwrite_all(buf.as_ref(), 7).await {
+            Ok(_) => (),
+            Err(err) => panic!("Can't pwrite file: {}", err)
+        }
 
-            match File::rename(
-                test_file_dir_path.to_string() + "test.txt",
-                test_file_dir_path.to_string() + "test2.txt"
-            ).await {
-                Ok(_) => assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt")),
-                Err(err) => panic!("Can't rename file: {}", err)
-            }
+        buf.clear();
+        buf.set_len(MSG.len() + 6);
+        match file.read_exact(buf.as_mut()).await {
+            Ok(_) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
+            Err(err) => panic!("Can't read file: {}", err)
+        }
 
-            match File::remove(test_file_dir_path.to_string() + "/test2.txt").await {
-                Ok(_) => assert!(!is_exists(file_path)),
-                Err(err) => panic!("Can't remove file: {}", err)
-            }
+        match File::rename(
+            test_file_dir_path.to_string() + "test.txt",
+            test_file_dir_path.to_string() + "test2.txt"
+        ).await {
+            Ok(_) => assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt")),
+            Err(err) => panic!("Can't rename file: {}", err)
+        }
 
-            std::fs::remove_dir("./test/test_file").expect("failed to remove test file dir");
-        });
+        match File::remove(test_file_dir_path.to_string() + "/test2.txt").await {
+            Ok(_) => assert!(!is_exists(file_path)),
+            Err(err) => panic!("Can't remove file: {}", err)
+        }
+
+        std::fs::remove_dir("./test/test_file").expect("failed to remove test file dir");
     }
 }

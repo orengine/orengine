@@ -7,7 +7,6 @@ use std::ptr::{NonNull, slice_from_raw_parts_mut};
 use std::slice::SliceIndex;
 use crate::buf::buf_pool::buf_pool;
 use crate::buf::buffer;
-use crate::cfg::config_buf_len;
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
@@ -133,7 +132,7 @@ impl Buffer {
             self.len = new_size;
         }
 
-        let mut new_buf = if config_buf_len() == new_size {
+        let mut new_buf = if buf_pool().buffer_len() == new_size {
             buffer()
         } else {
             Buffer::new(new_size)
@@ -160,13 +159,13 @@ impl Buffer {
     /// Returns a pointer to the buffer.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const u8 {
-        self.slice.as_ptr().as_mut_ptr()
+        self.slice.as_ptr() as *mut _
     }
 
     /// Returns a mutable pointer to the buffer.
     #[inline(always)]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.slice.as_mut_ptr()
+        self.slice.as_ptr() as *mut _
     }
 
     /// Clears the buffer.
@@ -191,7 +190,7 @@ impl Buffer {
     }
 }
 
-impl<'a> Deref for Buffer {
+impl Deref for Buffer {
     type Target = [u8];
 
     #[inline(always)]
@@ -200,7 +199,7 @@ impl<'a> Deref for Buffer {
     }
 }
 
-impl<'a> DerefMut for Buffer {
+impl DerefMut for Buffer {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
@@ -287,7 +286,12 @@ impl Drop for Buffer {
             };
             unsafe { pool.put_unchecked(buf) };
         } else {
-            unsafe { dealloc(self.slice.as_mut_ptr(), Layout::array::<u8>(self.cap()).unwrap_unchecked())}
+            unsafe {
+                dealloc(
+                    self.slice.as_ptr() as *mut _,
+                    Layout::array::<u8>(self.cap()).unwrap_unchecked()
+                )
+            }
         }
     }
 }
@@ -296,13 +300,13 @@ impl Drop for Buffer {
 mod tests {
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_new() {
         let buf = Buffer::new(1);
         assert_eq!(buf.cap(), 1);
     }
 
-    #[test]
+    #[test_macro::test]
     #[should_panic(expected = "Cannot create Buffer with size 0. Size must be > 0.")]
     fn test_new_panic() {
         Buffer::new(0);
@@ -323,8 +327,8 @@ mod tests {
         assert_eq!(buf.len(), buf.cap());
     }
 
-    #[test]
-    fn test_len_and_cap_() {
+    #[test_macro::test]
+    fn test_len_and_cap() {
         let mut buf = Buffer::new(100);
         assert_eq!(buf.len(), 0);
         assert_eq!(buf.cap(), 100);
@@ -334,7 +338,7 @@ mod tests {
         assert_eq!(buf.cap(), 100);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_resize() {
         let mut buf = Buffer::new(100);
         buf.append(&[1, 2, 3]);
@@ -348,7 +352,7 @@ mod tests {
         assert_eq!(buf.as_ref(), &[1, 2, 3]);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_append_and_clear() {
         let mut buf = Buffer::new(5);
 
@@ -366,7 +370,7 @@ mod tests {
         assert_eq!(buf.cap(), 10);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_is_empty_and_is_full() {
         let mut buf = Buffer::new(5);
         assert!(buf.is_empty());
@@ -383,7 +387,7 @@ mod tests {
         assert!(!buf.is_full());
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_index() {
         let mut buf = Buffer::new(5);
         buf.append(&[1, 2, 3]);
@@ -396,7 +400,7 @@ mod tests {
         assert_eq!(&buf[..], &[1, 2, 3]);
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_from() {
         let b = Box::new([1, 2, 3]);
         let buf = Buffer::from(b);

@@ -1,5 +1,10 @@
 /target
+/benchmarks/net/client/target/
+/benchmarks/net/server/target/
+/benchmarks/cpu_bounded/target/
+/benchmarks/tools/target/
 /dev/
 /test/
 /.idea/
-Dockerfile
+/src/test-macro/target/
+/src/io/io-macros/target/

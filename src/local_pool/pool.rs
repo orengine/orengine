@@ -9,65 +9,65 @@ macro_rules! new_local_pool {
         $new: block
     ) => {
         $vis struct $guard_name {
-            index: usize
+            value: std::mem::ManuallyDrop<$value_type>
+        }
+
+        impl $guard_name {
+            #[inline(always)]
+            $vis fn into_inner(self) -> $value_type {
+                std::mem::ManuallyDrop::into_inner(self.value)
+            }
         }
 
         impl core::ops::Deref for $guard_name {
             type Target = $value_type;
 
             fn deref(&self) -> &$value_type {
-                $pool_thread_static_name.with(|pool_cell| -> &$value_type {
-                    let pool = unsafe {&mut *pool_cell.get()};
-                    unsafe { pool.storage.get_unchecked(self.index) }
-                })
+                &self.value
             }
         }
 
         impl core::ops::DerefMut for $guard_name {
             fn deref_mut(&mut self) -> &mut $value_type {
-                $pool_thread_static_name.with(|pool_cell| -> &mut $value_type {
-                    let pool = unsafe {&mut *pool_cell.get()};
-                    unsafe { pool.storage.get_unchecked_mut(self.index) }
-                })
+                &mut self.value
             }
         }
 
         impl Drop for $guard_name {
             fn drop(&mut self) {
                 $pool_thread_static_name.with(|pool_cell| {
-                    let pool = unsafe {&mut *pool_cell.get()};
-                    pool.vacant.push(self.index);
+                    let pool = unsafe { &mut *pool_cell.get() };
+                    let value = unsafe { std::mem::ManuallyDrop::take(&mut self.value) };
+                    pool.storage.push(value);
                 });
             }
         }
 
         $vis struct $pool_struct_name {
-            storage: Vec<$value_type>,
-            vacant: Vec<usize>
+            storage: Vec<$value_type>
         }
 
         thread_local! {
-            static $pool_thread_static_name: std::cell::UnsafeCell<$pool_struct_name> = std::cell::UnsafeCell::new($pool_struct_name {
-                storage: Vec::new(),
-                vacant: Vec::new()
-            });
+            static $pool_thread_static_name: std::cell::UnsafeCell<$pool_struct_name> = std::cell::UnsafeCell::new(
+                $pool_struct_name {
+                    storage: Vec::new()
+                }
+            );
         }
 
         impl $pool_struct_name {
             #[inline(always)]
             $vis fn acquire() -> $guard_name {
                 $pool_thread_static_name.with(|pool_cell| -> $guard_name {
-                    let pool = unsafe {&mut *pool_cell.get()};
+                    let pool = unsafe { &mut *pool_cell.get() };
 
-                    if let Some(index) = pool.vacant.pop() {
+                    if let Some(value) = pool.storage.pop() {
                         $guard_name {
-                            index
+                            value: std::mem::ManuallyDrop::new(value)
                         }
                     } else {
-                        let index = pool.storage.len();
-                        pool.storage.push($new);
                         $guard_name {
-                            index
+                            value: std::mem::ManuallyDrop::new($new)
                         }
                     }
                 })
@@ -88,7 +88,7 @@ mod tests {
         { 0 }
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_new_local_pool() {
         let mut guard = TestPool::acquire();
         assert_eq!(*guard.deref(), 0);
@@ -101,6 +101,6 @@ mod tests {
         assert_eq!(*guard.deref(), 1);
 
         let guard2 = TestPool::acquire();
-        assert_eq!(*guard2.deref(), 0);
+        assert_eq!(guard2.into_inner(), 0);
     }
 }

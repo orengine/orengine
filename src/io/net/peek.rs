@@ -12,14 +12,14 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct Peek<'a> {
+pub struct Peek<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     io_request: Option<IoRequest>,
 }
 
-impl<'a> Peek<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8]) -> Self {
+impl<'buf> Peek<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -28,7 +28,7 @@ impl<'a> Peek<'a> {
     }
 }
 
-impl<'a> Future for Peek<'a> {
+impl<'buf> Future for Peek<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -49,15 +49,15 @@ impl<'a> Future for Peek<'a> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PeekWithDeadline<'a> {
+pub struct PeekWithDeadline<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
-impl<'a> PeekWithDeadline<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8], deadline: Instant) -> Self {
+impl<'buf> PeekWithDeadline<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
             fd,
             buf,
@@ -67,7 +67,7 @@ impl<'a> PeekWithDeadline<'a> {
     }
 }
 
-impl<'a> Future for PeekWithDeadline<'a> {
+impl<'buf> Future for PeekWithDeadline<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

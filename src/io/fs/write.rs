@@ -9,14 +9,14 @@ use crate::io::io_request::{IoRequest};
 use crate::io::worker::{IoWorker, local_worker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]     
-pub struct Write<'a> {         
+pub struct Write<'buf> {
     fd: RawFd,
-    buf: &'a [u8],
+    buf: &'buf [u8],
     io_request: Option<IoRequest>
 }     
 
-impl<'a> Write<'a> {      
-    pub fn new(fd: RawFd, buf: &'a [u8]) -> Self {
+impl<'buf> Write<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
         Self {               
             fd,              
             buf,
@@ -25,7 +25,7 @@ impl<'a> Write<'a> {
     }  
 }   
 
-impl<'a> Future for Write<'a> {  
+impl<'buf> Future for Write<'buf> {
     type Output = Result<usize>; 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -40,15 +40,15 @@ impl<'a> Future for Write<'a> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct PositionedWrite<'a> {
+pub struct PositionedWrite<'buf> {
     fd: RawFd,
-    buf: &'a [u8],
+    buf: &'buf [u8],
     offset: usize,
     io_request: Option<IoRequest>
 }
 
-impl<'a> PositionedWrite<'a> {
-    pub fn new(fd: RawFd, buf: &'a [u8], offset: usize) -> Self {
+impl<'buf> PositionedWrite<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf [u8], offset: usize) -> Self {
         Self {
             fd,
             buf,
@@ -58,7 +58,7 @@ impl<'a> PositionedWrite<'a> {
     }
 }
 
-impl<'a> Future for PositionedWrite<'a> {
+impl<'buf> Future for PositionedWrite<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -75,12 +75,12 @@ impl<'a> Future for PositionedWrite<'a> {
 
 pub trait AsyncWrite: AsRawFd {
     #[inline(always)]
-    fn write<'a>(&mut self, buf: &'a [u8]) -> Write<'a> {
+    fn write<'buf>(&mut self, buf: &'buf [u8]) -> Write<'buf> {
         Write::new(self.as_raw_fd(), buf)
     }
 
     #[inline(always)]
-    fn pwrite<'a>(&mut self, buf: &'a [u8], offset: usize) -> PositionedWrite<'a> {
+    fn pwrite<'buf>(&mut self, buf: &'buf [u8], offset: usize) -> PositionedWrite<'buf> {
         PositionedWrite::new(self.as_raw_fd(), buf, offset)
     }
 

@@ -1,30 +1,17 @@
 #![allow(internal_features)]
+#![allow(async_fn_in_trait)]
 #![feature(core_intrinsics)]
 #![feature(waker_getters)]
-#![feature(slice_ptr_get)]
-#![feature(ptr_as_ref_unchecked)]
-#![feature(io_error_uncategorized)]
-#![allow(async_fn_in_trait)]
 #![feature(async_closure)]
 #![feature(negative_impls)]
-#![feature(trait_alias)]
-
-// TODO rename lifetimes
-
-pub use socket2;
-
-pub use end::end_local_thread;
-pub use run::*;
-pub use runtime::Executor;
-pub use yield_now::yield_now;
+#![feature(thread_local)]
+#![feature(io_error_uncategorized)]
 
 pub mod buf;
-pub mod cfg;
-pub mod end;
 pub mod fs;
 pub mod io;
 pub mod local;
-mod local_pool;
+pub mod local_pool;
 pub mod net;
 pub mod run;
 pub mod runtime;
@@ -33,3 +20,10 @@ pub mod sync;
 pub mod utils;
 pub mod yield_now;
 mod messages;
+pub mod atomic_task_queue;
+
+pub use socket2;
+pub use run::*;
+pub use runtime::{local_executor, Executor, stop_all_executors, stop_executor, asyncify};
+pub use yield_now::yield_now;
+pub use sleep::sleep;

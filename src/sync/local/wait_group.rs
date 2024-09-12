@@ -1,17 +1,27 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::Executor;
-use crate::local::Local;
+use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 
-pub struct Wait {
+pub struct Wait<'wait_group> {
     need_wait: bool,
-    wait_group: LocalWaitGroup
+    wait_group: &'wait_group LocalWaitGroup
 }
 
-impl Future for Wait {
+impl<'wait_group> Wait<'wait_group> {
+    #[inline(always)]
+    fn new(need_wait: bool, wait_group: &'wait_group LocalWaitGroup) -> Self {
+        Self {
+            need_wait,
+            wait_group
+        }
+    }
+}
+
+impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -21,7 +31,7 @@ impl Future for Wait {
         } else {
             this.need_wait = false;
             let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
-            this.wait_group.inner.get_mut().waited_tasks.push(task);
+            this.wait_group.get_inner().waited_tasks.push(task);
             Poll::Pending
         }
     }
@@ -33,115 +43,114 @@ struct Inner {
 }
 
 pub struct LocalWaitGroup {
-    inner: Local<Inner>
+    inner: UnsafeCell<Inner>
 }
 
 impl LocalWaitGroup {
     pub fn new() -> Self {
         Self {
-            inner: Local::new(Inner { count: 0, waited_tasks: Vec::new() })
+            inner: UnsafeCell::new(Inner { count: 0, waited_tasks: Vec::new() })
         }
+    }
+
+    #[inline(always)]
+    fn get_inner(&self) -> &mut Inner {
+        unsafe { &mut *self.inner.get() }
     }
 
     #[inline(always)]
     pub fn add(&self, count: usize) {
-        self.inner.get_mut().count += count;
-    }
-
-    #[inline(always)]
-    pub fn sub(&self, count: usize) {
-        self.inner.get_mut().count -= count;
+        self.get_inner().count += count;
     }
 
     #[inline(always)]
     pub fn inc(&self) {
-        self.inner.get_mut().count += 1;
+        self.add(1);
     }
 
     #[inline(always)]
-    pub fn done(&self) {
-        let inner = self.inner.get_mut();
+    pub fn count(&self) -> usize {
+        self.get_inner().count
+    }
+
+    #[inline(always)]
+    pub fn done(&self) -> usize {
+        let inner = self.get_inner();
         inner.count -= 1;
         if unlikely(inner.count == 0) {
+            let executor = local_executor();
             for task in inner.waited_tasks.iter() {
-                Executor::exec_task(*task);
+                executor.exec_task(*task);
             }
             unsafe { inner.waited_tasks.set_len(0) };
         }
+
+        inner.count + 1
     }
 
     #[inline(always)]
     #[must_use="Future must be awaited to start the wait"]
     pub fn wait(&self) -> Wait {
-        if unlikely(self.inner.get().count == 0) {
-            return Wait { need_wait: false, wait_group: self.clone() };
+        if unlikely(self.get_inner().count == 0) {
+            return Wait::new(false, self);
         }
-        Wait { need_wait: true, wait_group: self.clone() }
-    }
-}
-
-impl Clone for LocalWaitGroup {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
+        Wait::new(true, self)
     }
 }
 
 unsafe impl Sync for LocalWaitGroup {}
+impl !Send for LocalWaitGroup {}
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::{create_local_executer_for_block_on, local_executor};
+    use std::rc::Rc;
+    use crate::local::Local;
+    use crate::runtime::local_executor;
     use crate::yield_now;
     use super::*;
 
-    #[test]
+    #[test_macro::test]
     fn test_many_wait_one() {
-        create_local_executer_for_block_on(async {
-            let check_value = Local::new(false);
-            let wait_group = LocalWaitGroup::new();
-            wait_group.inc();
+        let check_value = Local::new(false);
+        let wait_group = Rc::new(LocalWaitGroup::new());
+        wait_group.inc();
 
-            for _ in 0..10 {
-                let check_value = check_value.clone();
-                let wait_group = wait_group.clone();
-                local_executor().spawn_local(async move {
-                    wait_group.wait().await;
-                    if !check_value.get() {
-                        panic!("not waited");
-                    }
-                });
-            }
+        for _ in 0..5 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+            local_executor().spawn_local(async move {
+                wait_group.wait().await;
+                if !check_value.get() {
+                    panic!("not waited");
+                }
+            });
+        }
 
-            yield_now().await;
+        yield_now().await;
 
-            *check_value.get_mut() = true;
-            wait_group.done();
-        });
+        *check_value.get_mut() = true;
+        wait_group.done();
     }
 
-    #[test]
+    #[test_macro::test]
     fn test_one_wait_many() {
-        create_local_executer_for_block_on(async {
-            let check_value = Local::new(10);
-            let wait_group = LocalWaitGroup::new();
-            wait_group.add(10);
+        let check_value = Local::new(5);
+        let wait_group = Rc::new(LocalWaitGroup::new());
+        wait_group.add(5);
 
-            for _ in 0..10 {
-                let check_value = check_value.clone();
-                let wait_group = wait_group.clone();
-                local_executor().spawn_local(async move {
-                    yield_now().await;
-                    *check_value.get_mut() -= 1;
-                    wait_group.done();
-                });
-            }
+        for _ in 0..5 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+            local_executor().spawn_local(async move {
+                yield_now().await;
+                *check_value.get_mut() -= 1;
+                wait_group.done();
+            });
+        }
 
-            yield_now().await;
-
-            wait_group.wait().await;
-            if *check_value.get() != 0 {
-                panic!("not waited");
-            }
-        });
+        wait_group.wait().await;
+        if *check_value.get() != 0 {
+            panic!("not waited");
+        }
     }
 }

@@ -1,0 +1,38 @@
+ARG APP_NAME=server
+
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.3.0 AS xx
+
+FROM --platform=$BUILDPLATFORM rustlang/rust:nightly-bullseye-slim AS build
+ARG APP_NAME
+WORKDIR /app
+
+COPY --from=xx / /
+
+RUN apt-get update && apt-get install -y clang lld musl-dev git file gcc
+
+ARG TARGETPLATFORM
+
+# Copy the whole project directory to the container
+COPY . .
+
+# Install dependencies and build the project
+RUN --mount=type=cache,target=/app/benchmarks/net/server/target/,id=rust-cache-${APP_NAME}-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    --mount=type=cache,target=/usr/local/cargo/registry/ \
+     <<EOF
+set -e
+cd /app/benchmarks/net/server
+xx-cargo build --locked --release --target-dir /app/benchmarks/net/server/target
+cp /app/benchmarks/net/server/target/$(xx-cargo --print-target-triple)/release/$APP_NAME /bin/app
+xx-verify /bin/app
+EOF
+
+FROM debian:bullseye-slim AS final
+
+USER root
+
+COPY --from=build /bin/app /bin/
+
+EXPOSE 8081
+
+CMD ["/bin/app"]

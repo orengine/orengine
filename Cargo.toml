@@ -7,7 +7,12 @@ edition = "2021"
 core_affinity = "0.8.1"
 socket2 = { version="0.5.7", features = ["all"] }
 smallvec = "2.0.0-alpha.7"
+ahash = "0.8.11"
+fastrand = "2.1.1"
 io-macros = { path = "src/io/io-macros" }
+test-macro = { path = "src/test-macro" }
+crossbeam = "0.8.4"
+flume = "0.11.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.6.4"

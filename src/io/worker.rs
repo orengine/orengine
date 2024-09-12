@@ -1,37 +1,51 @@
-use std::cell::UnsafeCell;
-use std::mem::MaybeUninit;
 use std::net::Shutdown;
+use std::ptr::addr_of_mut;
+use std::time::Duration;
 use nix::libc;
 use nix::libc::sockaddr;
+use crate::io::config::IoWorkerConfig;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{RawFd, Worker as WorkerSys, OpenHow, OsMessageHeader};
+use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
 
-thread_local! {
-    pub(crate) static LOCAL_WORKER: UnsafeCell<MaybeUninit<WorkerSys>> = UnsafeCell::new(MaybeUninit::uninit());
+#[thread_local]
+pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
+
+pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
+    unsafe {
+        LOCAL_WORKER = Some(WorkerSys::new(config));
+    }
 }
 
-pub(crate) unsafe fn init_local_worker() {
-    unsafe {
-        LOCAL_WORKER.with(|local_worker| {
-            local_worker.get().write(MaybeUninit::new(WorkerSys::new()));
-        })
-    }
+pub(crate) fn local_worker_option() -> &'static mut Option<WorkerSys> {
+    unsafe { &mut *addr_of_mut!(LOCAL_WORKER) }
 }
 
 #[inline(always)]
 pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
+    #[cfg(debug_assertions)]
     unsafe {
-        LOCAL_WORKER.with(|local_worker| {
-            (&mut *local_worker.get()).assume_init_mut()
-        })
+        if crate::local_executor().config().io_worker_config().is_none() {
+            panic!("An attempt to call io-operation has failed, \
+             because an Executor has no io-worker. Look at the config of the Executor.");
+        }
+
+        LOCAL_WORKER.as_mut().expect(crate::messages::BUG)
+    }
+
+    #[cfg(not(debug_assertions))]
+    unsafe {
+        LOCAL_WORKER.as_mut().unwrap_unchecked()
     }
 }
 
 pub(crate) trait IoWorker {
+    fn new(config: IoWorkerConfig) -> Self;
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask);
     fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask);
-    fn must_poll(&mut self);
+    /// Returns `true` if the worker has polled. The worker doesn't poll only if it has no work to do.
+    #[must_use]
+    fn must_poll(&mut self, duration: Duration) -> bool;
     fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequest);
     fn accept(&mut self, listen_fd: RawFd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *mut IoRequest);
     fn connect(&mut self, socket_fd: RawFd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *mut IoRequest);
@@ -45,6 +59,9 @@ pub(crate) trait IoWorker {
     fn peek_from(&mut self, fd: RawFd, msg: *mut OsMessageHeader, request_ptr: *mut IoRequest);
     fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequest);
     fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *mut IoRequest);
+    fn fallocate(&mut self, fd: RawFd, offset:u64, len: u64, flags: i32, request_ptr: *mut IoRequest);
+    fn sync_all(&mut self, fd: RawFd, request_ptr: *mut IoRequest);
+    fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequest);
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequest);
     fn pread(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, offset: usize, request_ptr: *mut IoRequest);
     fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequest);

@@ -12,14 +12,14 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct Recv<'a> {
+pub struct Recv<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     io_request: Option<IoRequest>,
 }
 
-impl<'a> Recv<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8]) -> Self {
+impl<'buf> Recv<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
             fd,
             buf,
@@ -28,7 +28,7 @@ impl<'a> Recv<'a> {
     }
 }
 
-impl<'a> Future for Recv<'a> {
+impl<'buf> Future for Recv<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -49,15 +49,15 @@ impl<'a> Future for Recv<'a> {
 }
 
 #[must_use = "Future must be awaited to drive the IO operation"]
-pub struct RecvWithDeadline<'a> {
+pub struct RecvWithDeadline<'buf> {
     fd: RawFd,
-    buf: &'a mut [u8],
+    buf: &'buf mut [u8],
     time_bounded_io_task: TimeBoundedIoTask,
     io_request: Option<IoRequest>,
 }
 
-impl<'a> RecvWithDeadline<'a> {
-    pub fn new(fd: RawFd, buf: &'a mut [u8], deadline: Instant) -> Self {
+impl<'buf> RecvWithDeadline<'buf> {
+    pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
             fd,
             buf,
@@ -67,7 +67,7 @@ impl<'a> RecvWithDeadline<'a> {
     }
 }
 
-impl<'a> Future for RecvWithDeadline<'a> {
+impl<'buf> Future for RecvWithDeadline<'buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
