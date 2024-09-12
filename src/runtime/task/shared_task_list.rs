@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use crate::runtime::Task;
 use crate::utils::{SpinLock, SpinLockGuard};
 
-pub(crate) struct SharedTaskList {
+pub(crate) struct SharedExecutorTaskList {
     executor_id: usize,
     list: SpinLock<Vec<Task>>
 }
 
-impl SharedTaskList {
+impl SharedExecutorTaskList {
     pub(crate) const fn new(executor_id: usize) -> Self {
         Self {
             executor_id,
@@ -49,5 +49,5 @@ impl SharedTaskList {
     }
 }
 
-unsafe impl Send for SharedTaskList {}
-unsafe impl Sync for SharedTaskList {}
+unsafe impl Send for SharedExecutorTaskList {}
+unsafe impl Sync for SharedExecutorTaskList {}

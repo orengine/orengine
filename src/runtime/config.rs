@@ -28,7 +28,7 @@ pub const DEFAULT_BUF_LEN: usize = 4096;
 pub(crate) struct ValidConfig {
     pub(crate) buffer_len: usize,
     pub(crate) io_worker_config: Option<IoWorkerConfig>,
-    pub(crate) is_thread_pool_enabled: bool,
+    pub(crate) number_of_thread_workers: usize,
     /// If it is `usize::MAX`, it means that work sharing is disabled.
     pub(crate) work_sharing_level: usize,
 }
@@ -36,6 +36,10 @@ pub(crate) struct ValidConfig {
 impl ValidConfig {
     pub const fn is_work_sharing_enabled(&self) -> bool {
         self.work_sharing_level != usize::MAX
+    }
+
+    pub const fn is_thread_pool_enabled(&self) -> bool {
+        self.number_of_thread_workers != 0
     }
 }
 
@@ -55,7 +59,7 @@ impl Drop for ValidConfig {
                 global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -= 1;
             }
 
-            if self.is_thread_pool_enabled {
+            if self.is_thread_pool_enabled() {
                 if guard.is_none() {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
@@ -78,7 +82,7 @@ impl Drop for ValidConfig {
 pub struct Config {
     buffer_len: usize,
     io_worker_config: Option<IoWorkerConfig>,
-    is_thread_pool_enabled: bool,
+    number_of_thread_workers: usize,
     work_sharing_level: usize
 }
 
@@ -87,7 +91,7 @@ impl Config {
         Self {
             buffer_len: DEFAULT_BUF_LEN,
             io_worker_config: Some(IoWorkerConfig::default()),
-            is_thread_pool_enabled: true,
+            number_of_thread_workers: 1,
             work_sharing_level: 7
         }
     }
@@ -136,12 +140,16 @@ impl Config {
         self
     }
 
-    pub const fn is_thread_pool_enabled(&self) -> bool {
-        self.is_thread_pool_enabled
+    pub const fn number_of_thread_workers(&self) -> usize {
+        self.number_of_thread_workers
     }
 
-    pub const fn set_thread_pool_enabled(mut self, is_thread_pool_enabled: bool) -> Self {
-        self.is_thread_pool_enabled = is_thread_pool_enabled;
+    pub const fn is_thread_pool_enabled(&self) -> bool {
+        self.number_of_thread_workers != 0
+    }
+
+    pub const fn set_numbers_of_thread_workers(mut self, number_of_thread_workers: usize) -> Self {
+        self.number_of_thread_workers = number_of_thread_workers;
 
         self
     }
@@ -206,7 +214,7 @@ impl Config {
                 }
             }
 
-            match self.is_thread_pool_enabled {
+            match self.is_thread_pool_enabled() {
                 true => {
                     if global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool != 0 {
                         panic!(
@@ -239,7 +247,7 @@ impl Config {
         ValidConfig {
             buffer_len: self.buffer_len,
             io_worker_config: self.io_worker_config,
-            is_thread_pool_enabled: self.is_thread_pool_enabled,
+            number_of_thread_workers: self.number_of_thread_workers,
             work_sharing_level: self.work_sharing_level
         }
     }
@@ -250,7 +258,7 @@ impl From<&ValidConfig> for Config {
         Config {
             buffer_len: config.buffer_len,
             io_worker_config: config.io_worker_config,
-            is_thread_pool_enabled: config.is_thread_pool_enabled,
+            number_of_thread_workers: config.number_of_thread_workers,
             work_sharing_level: config.work_sharing_level
         }
     }
@@ -266,7 +274,7 @@ mod tests {
         let config = Config::new().validate();
         assert_eq!(config.buffer_len, DEFAULT_BUF_LEN);
         assert!(config.io_worker_config.is_some());
-        assert!(config.is_thread_pool_enabled);
+        assert!(config.is_thread_pool_enabled());
         assert_ne!(config.work_sharing_level, usize::MAX);
     }
 
@@ -275,13 +283,13 @@ mod tests {
         let config = Config::new()
             .set_buffer_len(1024)
             .set_io_worker_config(None).unwrap()
-            .set_thread_pool_enabled(false)
+            .set_numbers_of_thread_workers(0)
             .disable_work_sharing();
 
         let config = config.validate();
         assert_eq!(config.buffer_len, 1024);
         assert!(config.io_worker_config.is_none());
-        assert!(!config.is_thread_pool_enabled);
+        assert!(!config.is_thread_pool_enabled());
         assert_eq!(config.work_sharing_level, usize::MAX);
         assert!(!config.is_work_sharing_enabled());
     }
@@ -325,7 +333,7 @@ mod tests {
     fn test_third_case_panic() {
         // with task sharing and without thread pool
         let first_config = Config::new()
-            .set_thread_pool_enabled(false)
+            .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
         let second_config = Config::new().validate();
@@ -340,7 +348,7 @@ mod tests {
         // with thread pool and task sharing
         let first_config = Config::new().validate();
         let second_config = Config::new()
-            .set_thread_pool_enabled(false)
+            .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
 

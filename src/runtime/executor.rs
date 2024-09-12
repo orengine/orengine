@@ -16,7 +16,8 @@ use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::global_state::{register_local_executor, stop_executor, SubscribedState};
-use crate::runtime::{get_core_id_for_executor, SharedTaskList};
+use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
+use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
@@ -70,10 +71,11 @@ pub struct Executor {
 
     local_tasks: VecDeque<Task>,
     global_tasks: VecDeque<Task>,
-    shared_tasks_list: Option<Arc<SharedTaskList>>,
+    shared_tasks_list: Option<Arc<SharedExecutorTaskList>>,
 
     exec_series: usize,
     local_worker: &'static mut Option<WorkerSys>,
+    thread_pool: LocalThreadWorkerPool,
     current_call: Call,
     sleeping_tasks: BTreeSet<SleepingTask>,
 }
@@ -92,9 +94,10 @@ impl Executor {
             shared_tasks,
             global_tasks_list_cap
         ) = match valid_config.is_work_sharing_enabled() {
-            true => (Some(Arc::new(SharedTaskList::new(executor_id))), MAX_NUMBER_OF_TASKS_TAKEN),
+            true => (Some(Arc::new(SharedExecutorTaskList::new(executor_id))), MAX_NUMBER_OF_TASKS_TAKEN),
             false => (None, 0)
         };
+        let number_of_thread_workers = valid_config.number_of_thread_workers;
 
         unsafe {
             if let Some(io_config) = valid_config.io_worker_config {
@@ -115,6 +118,7 @@ impl Executor {
                 current_call: Call::default(),
                 exec_series: 0,
                 local_worker: local_worker_option(),
+                thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
                 sleeping_tasks: BTreeSet::new(),
             });
 
@@ -156,7 +160,7 @@ impl Executor {
         Config::from(&self.config)
     }
 
-    pub(crate) fn shared_task_list(&self) -> Option<&Arc<SharedTaskList>> {
+    pub(crate) fn shared_task_list(&self) -> Option<&Arc<SharedExecutorTaskList>> {
         self.shared_tasks_list.as_ref()
     }
 
@@ -202,6 +206,12 @@ impl Executor {
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
         debug_assert!(self.current_call.is_none());
         self.current_call = Call::ReleaseAtomicBool(atomic_bool);
+    }
+
+    #[inline(always)]
+    pub unsafe fn push_fn_to_thread_pool(&mut self, f: &'static mut dyn Fn()) {
+        debug_assert!(self.current_call.is_none());
+        self.current_call = Call::PushFnToThreadPool(f)
     }
 
     #[inline(always)]
@@ -251,6 +261,15 @@ impl Executor {
                         let atomic_ref = unsafe { &*atomic_ptr };
                         atomic_ref.store(false, Ordering::Release);
                     }
+                    Call::PushFnToThreadPool(f) => {
+                        debug_assert_ne!(
+                            self.config.number_of_thread_workers,
+                            0,
+                            "try to use thread pool with 0 workers"
+                        );
+
+                        self.thread_pool.push(task, f);
+                    },
                 }
             }
         }
@@ -354,6 +373,7 @@ impl Executor {
 
         self.exec_series = 0;
         self.take_work_if_needed();
+        self.thread_pool.poll(&mut self.local_tasks);
         let has_no_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(Duration::ZERO),
             None => true,

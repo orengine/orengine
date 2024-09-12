@@ -5,14 +5,14 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use crossbeam::utils::CachePadded;
 use crate::local_executor;
-use crate::runtime::SharedTaskList;
+use crate::runtime::SharedExecutorTaskList;
 use crate::utils::{SpinLock, SpinLockGuard};
 
 pub(crate) struct SubscribedState {
     current_version: CachePadded<AtomicUsize>,
     processed_version: usize,
     is_stopped: bool,
-    tasks_lists: Option<Vec<Arc<SharedTaskList>>>
+    tasks_lists: Option<Vec<Arc<SharedExecutorTaskList>>>
 }
 
 impl SubscribedState {
@@ -82,7 +82,7 @@ impl SubscribedState {
     /// # Safety
     ///
     /// Tasks list must be not None
-    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<SharedTaskList>> {
+    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<SharedExecutorTaskList>> {
         unsafe { self.tasks_lists.as_ref().unwrap_unchecked() }
     }
 }
@@ -91,7 +91,7 @@ struct GlobalState {
     version: usize,
     /// key is a worker id
     states_of_alive_executors: BTreeMap<usize, &'static SubscribedState>,
-    lists: Vec<Arc<SharedTaskList>>
+    lists: Vec<Arc<SharedExecutorTaskList>>
 }
 
 impl GlobalState {
