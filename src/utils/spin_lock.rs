@@ -80,6 +80,7 @@ impl<T> SpinLock<T> {
         let backoff = Backoff::new();
         loop {
             if let Some(guard) = self.try_lock() {
+                atomic::fence(Acquire);
                 return guard;
             }
             backoff.spin();

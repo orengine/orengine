@@ -7,7 +7,6 @@ use crate::io::config::IoWorkerConfig;
 use crate::io::io_request::IoRequest;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
-use crate::local_executor;
 
 #[thread_local]
 pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
@@ -26,7 +25,7 @@ pub(crate) fn local_worker_option() -> &'static mut Option<WorkerSys> {
 pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
     unsafe {
-        if local_executor().config().io_worker_config().is_none() {
+        if crate::local_executor().config().io_worker_config().is_none() {
             panic!("An attempt to call io-operation has failed, \
              because an Executor has no io-worker. Look at the config of the Executor.");
         }
