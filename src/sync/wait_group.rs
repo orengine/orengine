@@ -119,7 +119,7 @@ mod tests {
 
     const PAR: usize = 40;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_many_wait_one() {
         let check_value = Arc::new(Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
@@ -147,7 +147,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -173,7 +173,7 @@ mod tests {
         }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());

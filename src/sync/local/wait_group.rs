@@ -109,7 +109,7 @@ mod tests {
     use crate::yield_now;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_many_wait_one() {
         let check_value = Local::new(false);
         let wait_group = Rc::new(LocalWaitGroup::new());
@@ -132,7 +132,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_wait_many() {
         let check_value = Local::new(5);
         let wait_group = Rc::new(LocalWaitGroup::new());

@@ -360,7 +360,7 @@ mod tests {
     use crate::sync::LocalWaitGroup;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -419,7 +419,7 @@ mod tests {
         assert_ne!(mutex.get_inner().number_of_readers, 0);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_rw_lock() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 

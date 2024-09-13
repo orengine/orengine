@@ -168,15 +168,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
-name = "io-macros"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "io-uring"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,12 +264,20 @@ dependencies = [
  "crossbeam",
  "fastrand",
  "flume",
- "io-macros",
  "io-uring",
  "nix",
+ "orengine-macros",
  "smallvec",
  "socket2",
- "test-macro",
+]
+
+[[package]]
+name = "orengine-macros"
+version = "1.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -339,15 +338,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "test-macro"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

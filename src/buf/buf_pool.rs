@@ -117,7 +117,7 @@ impl BufPool {
 mod tests {
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_buf_pool() {
         let pool = buf_pool();
         assert!(pool.pool.is_empty());

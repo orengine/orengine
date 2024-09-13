@@ -146,7 +146,7 @@ mod tests {
 
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_listener() {
         let listener = TcpListener::bind("127.0.0.1:8080").await.expect("bind call failed");
         assert_eq!(
@@ -165,7 +165,7 @@ mod tests {
         }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_accept() {
         let mut listener = TcpListener::bind("127.0.0.1:4063").await.expect("bind call failed");
         match listener.accept_with_timeout(Duration::from_micros(1)).await {

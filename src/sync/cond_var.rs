@@ -183,22 +183,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_with_drop_guard() {
         test_one(true).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_all_with_drop_guard() {
         test_all(true).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_without_drop_guard() {
         test_one(false).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_all_without_drop_guard() {
         test_all(false).await;
     }

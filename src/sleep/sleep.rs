@@ -52,7 +52,7 @@ mod tests {
 
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_sleep() {
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;

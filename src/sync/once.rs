@@ -79,7 +79,7 @@ mod tests {
 
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());

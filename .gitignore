@@ -6,5 +6,4 @@
 /dev/
 /test/
 /.idea/
-/src/test-macro/target/
-/src/io/io-macros/target/
+/orengine-macros/target/

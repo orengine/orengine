@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-use io_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
+use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use crate::io::io_request::{IoRequest};
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};

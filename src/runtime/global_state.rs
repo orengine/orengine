@@ -185,7 +185,7 @@ mod tests {
     use crate::runtime::Config;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_stop_executor() {
         thread::spawn(move || {
             let ex = Executor::init_with_config(

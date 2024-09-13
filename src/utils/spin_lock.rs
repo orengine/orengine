@@ -149,7 +149,7 @@ mod tests {
 
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_mutex() {
         let mutex = Arc::new(SpinLock::new(false));
         let mutex_clone = mutex.clone();
@@ -195,7 +195,7 @@ mod tests {
         }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn stress_test_mutex() {
         const PAR: usize = 50;
         const TRIES: usize = 100;

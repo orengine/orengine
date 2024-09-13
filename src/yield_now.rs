@@ -54,7 +54,7 @@ mod tests {
     use crate::runtime::local_executor;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_yield_now() {
         let i = Local::new(false);
         let i_clone = i.clone();

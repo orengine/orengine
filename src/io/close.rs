@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use io_macros::{poll_for_io_request};
+use orengine_macros::poll_for_io_request;
 use std::io::Result;
 use crate::io::io_request::{IoRequest};
 use crate::io::sys::{AsRawFd, RawFd};

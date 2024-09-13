@@ -246,7 +246,7 @@ mod tests {
 
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -322,17 +322,17 @@ mod tests {
         }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_without_spinning_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_with_spinning_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn stress_test_mutex() {
         const PAR: usize = 50;
         const TRIES: usize = 100;

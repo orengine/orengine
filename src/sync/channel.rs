@@ -479,7 +479,7 @@ mod tests {
     use crate::sync::channel::Channel;
     use crate::{sleep, Executor};
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_zero_capacity() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
@@ -509,7 +509,7 @@ mod tests {
 
     const N: usize = 10_025;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let ch_clone = ch.clone();
@@ -538,7 +538,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -562,7 +562,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -593,7 +593,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_unbounded_channel() {
         let ch = Arc::new(Channel::unbounded());
         let ch_clone = ch.clone();

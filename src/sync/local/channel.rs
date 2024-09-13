@@ -310,7 +310,7 @@ mod tests {
     use crate::yield_now;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_zero_capacity() {
         let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
@@ -337,7 +337,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_unbounded() {
         let ch = LocalChannel::unbounded();
         let ch_ref = &ch;
@@ -373,7 +373,7 @@ mod tests {
     // case 3 - send (N + 1) and recv N. Wait for send
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case1() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -401,7 +401,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case2() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -426,7 +426,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case3() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -450,7 +450,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case4() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -469,7 +469,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_split() {
         let ch = LocalChannel::bounded(N);
         let (tx, rx) = ch.split();

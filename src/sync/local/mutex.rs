@@ -178,7 +178,7 @@ mod tests {
     use crate::sleep::sleep;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_mutex() {
         let start = Instant::now();
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(*value, true);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 

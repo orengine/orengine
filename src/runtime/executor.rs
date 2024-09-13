@@ -540,7 +540,7 @@ mod tests {
     use crate::sync::Mutex;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_spawn_local_and_exec_future() {
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
             arr.get_mut().push(number);

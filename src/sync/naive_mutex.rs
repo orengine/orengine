@@ -152,7 +152,7 @@ mod tests {
     use crate::{sleep, Executor};
     use crate::sync::WaitGroup;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_naive_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -183,7 +183,7 @@ mod tests {
         drop(value);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_try_naive_mutex() {
         let mutex = Arc::new(NaiveMutex::new(false));
         let mutex_clone = mutex.clone();
@@ -227,7 +227,7 @@ mod tests {
         }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn stress_test_naive_mutex() {
         const PAR: usize = 50;
         const TRIES: usize = 100;

@@ -2,7 +2,7 @@ use std::future::Future;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use io_macros::poll_for_io_request;
+use orengine_macros::poll_for_io_request;
 use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};

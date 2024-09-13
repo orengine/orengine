@@ -50,7 +50,7 @@ mod tests {
     use super::*;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_remove_dir() {
         create_test_dir_if_not_exist();
 
