@@ -63,7 +63,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 
         let len = this.inner.storage.len();
         if unlikely(len >= this.inner.capacity) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.inner.senders.push_back(task);
             return Poll::Pending;
         }
@@ -118,7 +118,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
 
         let l = this.inner.storage.len();
         if unlikely(l == 0) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.was_enqueued = true;
             this.inner.receivers.push_back((task, this.slot));
             return Poll::Pending;

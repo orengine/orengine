@@ -137,7 +137,7 @@ impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             this.local_rw_lock.get_inner().wait_queue_read.push(task);
             this.need_wait = false;
             Poll::Pending
@@ -168,7 +168,7 @@ impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             this.local_rw_lock.get_inner().wait_queue_write.push(task);
             this.need_wait = false;
             Poll::Pending

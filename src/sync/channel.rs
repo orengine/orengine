@@ -183,7 +183,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                 let len = inner_lock.storage.len();
                 if unlikely(len >= inner_lock.capacity) {
-                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
                     inner_lock.senders.push_back((task, &mut this.call_state));
                     return_pending_and_release_lock!(ex, inner_lock);
                 }
@@ -268,7 +268,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                         }
                     }
 
-                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
                     inner_lock.receivers.push_back((task, this.slot, &mut this.call_state));
                     return_pending_and_release_lock!(ex, inner_lock);
                 }

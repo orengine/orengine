@@ -23,7 +23,7 @@ impl Future for Sleep {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
             while unlikely(!local_executor().sleeping_tasks().insert(sleeping_task)) {

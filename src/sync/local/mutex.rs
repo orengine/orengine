@@ -88,7 +88,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if unlikely(this.need_wait) {
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             let wait_queue = unsafe { &mut *this.local_mutex.wait_queue.get() };
             wait_queue.push(task);
             this.need_wait = false;

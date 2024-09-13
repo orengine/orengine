@@ -11,7 +11,7 @@ impl TestLock {
         }
     }
 
-    pub fn lock(&'static self) -> MutexGuard<()> {
+    pub fn lock(&'static self) -> MutexGuard<'static, ()> {
         self.lock.lock().unwrap()
     }
 }

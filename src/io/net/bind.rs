@@ -1,5 +1,3 @@
-// TODO maybe async via thread pool?
-
 use std::io::Result;
 use std::net::{ToSocketAddrs};
 

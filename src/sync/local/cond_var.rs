@@ -42,7 +42,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
         match this.state {
             State::WaitSleep => {
                 this.state = State::WaitWake;
-                let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                let task = unsafe { (cx.waker().data() as *mut Task).read() };
                 let wait_queue = unsafe { &mut *this.cond_var.wait_queue.get() };
                 wait_queue.push(task);
                 Poll::Pending
@@ -52,7 +52,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                     Some(guard) => Poll::Ready(guard),
                     None => {
                         this.state = State::WaitLock;
-                        let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                        let task = unsafe { (cx.waker().data() as *mut Task).read() };
                         this.local_mutex.subscribe(task);
                         Poll::Pending
                     }

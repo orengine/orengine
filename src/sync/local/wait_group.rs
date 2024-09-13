@@ -30,7 +30,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
             Poll::Ready(())
         } else {
             this.need_wait = false;
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             this.wait_group.get_inner().waited_tasks.push(task);
             Poll::Pending
         }
