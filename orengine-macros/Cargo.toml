@@ -4,6 +4,13 @@ cargo-features = ["edition2024"]
 name = "orengine-macros"
 version = "1.0.0"
 edition = "2024"
+license = "MIT"
+readme = "README.md"
+rust-version = "1.71.0"
+authors = ["Eugene Usachev <https://github.com/Eugene-Usachev> and orengine contributors <team@orengine>"]
+categories = ["asynchronous"]
+description = "Procedural macros for use with Orengine."
+repository = "https://github.com/orengine/orengine"
 
 [dependencies]
 syn = { version = "2.0.76", features = ["proc-macro", "clone-impls", "extra-traits", "parsing", "full"] }
