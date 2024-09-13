@@ -1,4 +1,12 @@
 services:
+  server:
+    build:
+      context: server
+      dockerfile: Dockerfile-bullseye
+      target: final
+    ports:
+      - 8083:8083
+
   client:
     build:
       context: client
@@ -6,3 +14,5 @@ services:
       target: final
     ports:
       - 8081:8081
+    depends_on:
+      - server

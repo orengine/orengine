@@ -1,7 +1,9 @@
 use std::thread;
 use orengine::buf::buffer;
+use orengine::Executor;
+use orengine::utils::{get_core_ids, CoreId};
 
-const ADDR: &str = "async:8083";
+const ADDR: &str = "server:8083";
 
 fn std_server() {
     println!("Using std.");
@@ -118,6 +120,7 @@ fn orengine() {
         loop {
             stream.poll_recv().await.unwrap();
             let mut buf = buffer();
+            buf.set_len_to_cap();
             let n = stream.recv(&mut buf).await.unwrap();
             if n == 0 {
                 break;
@@ -126,16 +129,29 @@ fn orengine() {
         }
     }
 
-   orengine::run_on_all_cores(|| async {
-        let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
-        while let Ok((stream, _)) = listener.accept().await {
-            orengine::local_executor().spawn_local(async move {
-                handle_client(stream).await
-            });
-        }
-    });
+    fn run_server(core_id: CoreId) {
+        let ex = Executor::init_on_core(core_id);
+        let _ = ex.run_and_block_on(async {
+            let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
+            while let Ok((stream, _)) = listener.accept().await {
+                orengine::local_executor().spawn_local(async move {
+                    handle_client(stream).await
+                });
+            }
+        });
+    }
+
+    let cores = get_core_ids().unwrap();
+    for i in 1..cores.len() {
+        let core = cores[i];
+        thread::spawn(move || {
+            run_server(core);
+        });
+    }
+    run_server(cores[0]);
 }
 
 fn main() {
-    std_server();
+    //std_server();
+    orengine();
 }

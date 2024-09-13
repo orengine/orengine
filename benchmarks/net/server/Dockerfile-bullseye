@@ -12,27 +12,19 @@ RUN apt-get update && apt-get install -y clang lld musl-dev git file gcc
 
 ARG TARGETPLATFORM
 
-# Copy the whole project directory to the container
-COPY . .
-
-# Install dependencies and build the project
-RUN --mount=type=cache,target=/app/benchmarks/net/server/target/,id=rust-cache-${APP_NAME}-${TARGETPLATFORM} \
+RUN --mount=type=bind,source=src,target=src \
+    --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
+    --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-     <<EOF
-set -e
-cd /app/benchmarks/net/server
-xx-cargo build --locked --release --target-dir /app/benchmarks/net/server/target
-cp /app/benchmarks/net/server/target/$(xx-cargo --print-target-triple)/release/$APP_NAME /bin/app
-xx-verify /bin/app
-EOF
+cargo build --locked --release && \
+cp ./target/release/$APP_NAME /bin/app
 
 FROM debian:bullseye-slim AS final
 
 USER root
 
 COPY --from=build /bin/app /bin/
-
-EXPOSE 8081
 
 CMD ["/bin/app"]
