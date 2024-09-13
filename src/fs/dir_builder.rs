@@ -143,7 +143,7 @@ mod tests {
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_dir_builder() {
         let dir_builder = DirBuilder::new();
         assert_eq!(dir_builder.mode, 0o666);
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(dir_builder.recursive, true);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_dir_builder_create() {
         create_test_dir_if_not_exist();
 

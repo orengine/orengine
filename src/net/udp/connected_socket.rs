@@ -127,7 +127,7 @@ mod tests {
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_client() {
         const SERVER_ADDR: &str = "127.0.0.1:11086";
         const CLIENT_ADDR: &str = "127.0.0.1:11091";
@@ -187,7 +187,7 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_timeout() {
         const ADDR: &str = "127.0.0.1:11141";
         const TIMEOUT: Duration = Duration::from_micros(1);

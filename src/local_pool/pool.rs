@@ -88,7 +88,7 @@ mod tests {
         { 0 }
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_new_local_pool() {
         let mut guard = TestPool::acquire();
         assert_eq!(*guard.deref(), 0);

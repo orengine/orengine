@@ -30,7 +30,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
             Poll::Ready(())
         } else {
             this.need_wait = false;
-            let task = unsafe { (cx.waker().as_raw().data() as *const Task).read() };
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
             this.wait_group.get_inner().waited_tasks.push(task);
             Poll::Pending
         }
@@ -109,7 +109,7 @@ mod tests {
     use crate::yield_now;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_many_wait_one() {
         let check_value = Local::new(false);
         let wait_group = Rc::new(LocalWaitGroup::new());
@@ -132,7 +132,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_one_wait_many() {
         let check_value = Local::new(5);
         let wait_group = Rc::new(LocalWaitGroup::new());

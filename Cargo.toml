@@ -1,6 +1,18 @@
 [package]
 name = "orengine"
 version = "0.1.0"
+license = "MIT"
+description = """
+Optimized ring engine for Rust.
+It is a lighter and faster asynchronous library than tokio-rs, async-std, may, and even smol.
+"""
+
+rust-version = "1.71.0"
+authors = ["Eugene Usachev <https://github.com/Eugene-Usachev> and orengine contributors <team@orengine>"]
+readme = "README.md"
+repository = "https://github.com/orengine/orengine"
+categories = ["asynchronous", "network-programming", "concurrency", "web-programming"]
+keywords = ["io", "async", "non-blocking", "shared-nothing", "high-performance"]
 edition = "2021"
 
 [dependencies]
@@ -9,8 +21,7 @@ socket2 = { version="0.5.7", features = ["all"] }
 smallvec = "2.0.0-alpha.7"
 ahash = "0.8.11"
 fastrand = "2.1.1"
-io-macros = { path = "src/io/io-macros" }
-test-macro = { path = "src/test-macro" }
+orengine-macros = { path = "orengine-macros", version = "1.0.0" }
 crossbeam = "0.8.4"
 flume = "0.11.0"
 

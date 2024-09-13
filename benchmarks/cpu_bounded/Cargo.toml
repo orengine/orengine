@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-orengine = { path = "../../" }
+orengine = "0.1.0"
 tools = { path = "../tools" }
 tokio = { version = "1", features = ["full"] }
 smol = "2.0.0"

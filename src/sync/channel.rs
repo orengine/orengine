@@ -183,7 +183,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                 let len = inner_lock.storage.len();
                 if unlikely(len >= inner_lock.capacity) {
-                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
                     inner_lock.senders.push_back((task, &mut this.call_state));
                     return_pending_and_release_lock!(ex, inner_lock);
                 }
@@ -268,7 +268,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                         }
                     }
 
-                    let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
                     inner_lock.receivers.push_back((task, this.slot, &mut this.call_state));
                     return_pending_and_release_lock!(ex, inner_lock);
                 }
@@ -479,7 +479,7 @@ mod tests {
     use crate::sync::channel::Channel;
     use crate::{sleep, Executor};
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_zero_capacity() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
@@ -509,7 +509,7 @@ mod tests {
 
     const N: usize = 10_025;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let ch_clone = ch.clone();
@@ -538,7 +538,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -562,7 +562,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -593,7 +593,7 @@ mod tests {
         };
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_unbounded_channel() {
         let ch = Arc::new(Channel::unbounded());
         let ch_clone = ch.clone();

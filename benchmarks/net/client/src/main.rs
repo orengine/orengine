@@ -8,14 +8,12 @@ use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
 use orengine::{sleep, Executor};
 use orengine::buf::buffer;
 use orengine::local::Local;
-use orengine::runtime::{end, local_executor};
+use orengine::runtime::{stop_all_executors, local_executor};
 use orengine::sync::LocalWaitGroup;
 use orengine::utils::get_core_ids;
 
-const ADDR_ENGINE: &str = "engine:8081";
-const ADDR_SERVER: &str = "server:8080";
-const ADDR_ASYNC_SERVER: &str = "async:8083";
-const CLIENT_SERVER: &str = "client:8079";
+const ASYNC_SERVER_ADDR: &str = "async:8083";
+const CLIENT_ADDR: &str = "client:8079";
 
 static HANDLE: AtomicUsize = AtomicUsize::new(0);
 
@@ -95,7 +93,7 @@ fn bench_throughput() {
                 let mut joins = Vec::with_capacity(PAR);
                 for _i in 0..PAR {
                     joins.push(thread::spawn(move || {
-                        let mut conn = std::net::TcpStream::connect(ADDR_ASYNC_SERVER).unwrap();
+                        let mut conn = std::net::TcpStream::connect(ASYNC_SERVER_ADDR).unwrap();
                         let mut buf = [0u8; 1024];
 
                         for _ in 0..COUNT {
@@ -126,7 +124,7 @@ fn bench_throughput() {
                     for _i in 0..PAR {
                         let tx = tx.clone();
                         ex.spawn(async move {
-                            let mut conn = smol::net::TcpStream::connect(ADDR_ASYNC_SERVER).await.unwrap();
+                            let mut conn = smol::net::TcpStream::connect(ASYNC_SERVER_ADDR).await.unwrap();
                             let mut buf = [0u8; 1024];
 
                             for _ in 0..COUNT {
@@ -159,7 +157,7 @@ fn bench_throughput() {
                     for _i in 0..PAR {
                         let tx = tx.clone();
                         tokio::spawn(async move {
-                            let mut conn = tokio::net::TcpStream::connect(ADDR_ASYNC_SERVER).await.unwrap();
+                            let mut conn = tokio::net::TcpStream::connect(ASYNC_SERVER_ADDR).await.unwrap();
                             let mut buf = [0u8; 1024];
 
                             for _ in 0..COUNT {
@@ -192,7 +190,7 @@ fn bench_throughput() {
                     for _i in 0..PAR {
                         let tx = tx.clone();
                         async_std::task::spawn(async move {
-                            let mut conn = async_std::net::TcpStream::connect(ADDR_ASYNC_SERVER).await.unwrap();
+                            let mut conn = async_std::net::TcpStream::connect(ASYNC_SERVER_ADDR).await.unwrap();
                             let mut buf = [0u8; 1024];
 
                             for _ in 0..COUNT {
@@ -228,7 +226,7 @@ fn bench_throughput() {
                     let wg = wg.clone();
                     local_executor().spawn_local(async move {
                         for _ in 0..count {
-                            let mut stream = orengine::net::TcpStream::connect(ADDR_ASYNC_SERVER).await.unwrap();
+                            let mut stream = orengine::net::TcpStream::connect(ASYNC_SERVER_ADDR).await.unwrap();
                             stream.send_all(b"ping").await.unwrap();
 
                             stream.poll_recv().await.unwrap();
@@ -250,7 +248,7 @@ fn bench_throughput() {
                     println!("orengine took {elapsed_ms} milliseconds, rps: {rps}");
                     if current == number_of_cores * TRIES {
                         println!("Average orengine rps: {}", total_rps / TRIES as u128);
-                        end();
+                        stop_all_executors();
                     }
                 }
                 sleep(Duration::from_secs(1)).await;

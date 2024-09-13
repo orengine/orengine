@@ -122,7 +122,7 @@ mod tests {
     use super::*;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
         let test_file_dir_path_: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
         let test_file_dir_path = unsafe { mem::transmute::<&str, &'static str>(test_file_dir_path_) };

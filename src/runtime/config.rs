@@ -269,7 +269,7 @@ mod tests {
     use std::intrinsics::black_box;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_default_config() {
         let config = Config::new().validate();
         assert_eq!(config.buffer_len, DEFAULT_BUF_LEN);
@@ -278,7 +278,7 @@ mod tests {
         assert_ne!(config.work_sharing_level, usize::MAX);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_config() {
         let config = Config::new()
             .set_buffer_len(1024)
@@ -300,7 +300,7 @@ mod tests {
     // 3 - first config with task sharing and without thread pool, next with thread pool and task sharing
     // 4 - first config with thread pool and task sharing, next with task sharing and without thread pool
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     #[should_panic]
     fn test_first_case_panic() {
         // with io worker and task sharing
@@ -314,7 +314,7 @@ mod tests {
         black_box(second_config);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     #[should_panic]
     fn test_second_case_panic() {
         // with task sharing and without io worker
@@ -328,7 +328,7 @@ mod tests {
         black_box(second_config);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     #[should_panic]
     fn test_third_case_panic() {
         // with task sharing and without thread pool
@@ -342,7 +342,7 @@ mod tests {
         black_box(second_config);
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     #[should_panic]
     fn test_fourth_case_panic() {
         // with thread pool and task sharing

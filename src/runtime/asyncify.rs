@@ -51,7 +51,7 @@ mod tests {
     use std::time::Duration;
     use crate::local_executor;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_asyncify() {
         let start = time::Instant::now();
         let list = Arc::new(std::sync::Mutex::new(vec![]));

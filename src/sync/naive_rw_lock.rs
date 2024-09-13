@@ -247,7 +247,7 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 mod tests {
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_rw_lock() {
         let rw_lock = RWLock::new(0);
 

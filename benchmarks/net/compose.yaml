@@ -1,0 +1,8 @@
+services:
+  client:
+    build:
+      context: client
+      dockerfile: Dockerfile-bullseye
+      target: final
+    ports:
+      - 8081:8081

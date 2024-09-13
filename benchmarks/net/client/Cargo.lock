@@ -323,7 +323,6 @@ dependencies = [
  "orengine",
  "smol",
  "tokio",
- "tools",
 ]
 
 [[package]]
@@ -585,15 +584,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "io-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "io-uring"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -744,18 +734,30 @@ checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 [[package]]
 name = "orengine"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b945c8d954b1858e4397e05f20c0dfc17665d9b56d81c6958864022199c0ae2"
 dependencies = [
  "ahash",
  "core_affinity",
  "crossbeam",
  "fastrand 2.1.1",
  "flume",
- "io-macros",
  "io-uring",
  "nix",
+ "orengine-macros",
  "smallvec 2.0.0-alpha.7",
  "socket2 0.5.7",
- "test-macro",
+]
+
+[[package]]
+name = "orengine-macros"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca88052ec9464d2acb806695179f2b5b26ab1a7c10163636b3572a1701596daa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -995,15 +997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "tokio"
 version = "1.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1031,10 +1024,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "tools"
-version = "0.1.0"
 
 [[package]]
 name = "tracing"

@@ -63,7 +63,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 
         let len = this.inner.storage.len();
         if unlikely(len >= this.inner.capacity) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.inner.senders.push_back(task);
             return Poll::Pending;
         }
@@ -118,7 +118,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
 
         let l = this.inner.storage.len();
         if unlikely(l == 0) {
-            let task = unsafe { (cx.waker().as_raw().data() as *mut Task).read() };
+            let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.was_enqueued = true;
             this.inner.receivers.push_back((task, this.slot));
             return Poll::Pending;
@@ -310,7 +310,7 @@ mod tests {
     use crate::yield_now;
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_zero_capacity() {
         let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
@@ -337,7 +337,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_unbounded() {
         let ch = LocalChannel::unbounded();
         let ch_ref = &ch;
@@ -373,7 +373,7 @@ mod tests {
     // case 3 - send (N + 1) and recv N. Wait for send
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case1() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -401,7 +401,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case2() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -426,7 +426,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case3() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -450,7 +450,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_case4() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -469,7 +469,7 @@ mod tests {
         }).await;
     }
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_local_channel_split() {
         let ch = LocalChannel::bounded(N);
         let (tx, rx) = ch.split();

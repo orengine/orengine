@@ -70,7 +70,7 @@ mod tests {
     use crate::{sleep, yield_now};
     use super::*;
 
-    #[test_macro::test]
+    #[orengine_macros::test]
     fn test_scope() {
         let local_a = Local::new(0);
 
