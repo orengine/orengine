@@ -114,7 +114,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
-    use crate::{sleep, Executor};
+    use crate::{sleep, stop_executor, Executor};
     use super::*;
 
     const PAR: usize = 40;
@@ -159,11 +159,14 @@ mod tests {
 
             thread::spawn(move || {
                 let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                ex.spawn_global(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
-                    wait_group.done();
+                    if wait_group.done() != 1 {
+                        stop_executor(local_executor().id());
+                    }
                 });
+                ex.run();
             });
         }
 
