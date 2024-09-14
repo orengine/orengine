@@ -1,7 +1,8 @@
 use std::thread;
+
 use orengine::buf::buffer;
-use orengine::Executor;
 use orengine::utils::{get_core_ids, CoreId};
+use orengine::Executor;
 
 const ADDR: &str = "server:8083";
 
@@ -23,7 +24,7 @@ fn std_server() {
 
     let mut listener = std::net::TcpListener::bind(ADDR).unwrap();
     while let Ok((stream, _)) = listener.accept() {
-        thread::spawn(|| { handle_client(stream)});
+        thread::spawn(|| handle_client(stream));
     }
 }
 
@@ -45,7 +46,7 @@ fn may() {
 
     let mut listener = may::net::TcpListener::bind(ADDR).unwrap();
     while let Ok((stream, _)) = listener.accept() {
-        may::go!(|| { handle_client(stream)});
+        may::go!(|| { handle_client(stream) });
     }
 }
 
@@ -53,7 +54,7 @@ fn tokio() {
     println!("Using tokio.");
     #[inline(always)]
     async fn handle_client(mut stream: tokio::net::TcpStream) {
-        use tokio::io::{AsyncWriteExt};
+        use tokio::io::AsyncWriteExt;
 
         loop {
             stream.readable().await.unwrap();
@@ -70,14 +71,16 @@ fn tokio() {
         }
     }
 
-    tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(async {
-        let mut listener = tokio::net::TcpListener::bind(ADDR).await.unwrap();
-        while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(async move {
-                handle_client(stream).await
-            });
-        }
-    });
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut listener = tokio::net::TcpListener::bind(ADDR).await.unwrap();
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(async move { handle_client(stream).await });
+            }
+        });
 }
 
 fn async_std() {
@@ -99,43 +102,15 @@ fn async_std() {
     async_std::task::block_on(async {
         let mut listener = async_std::net::TcpListener::bind(ADDR).await.unwrap();
         while let Ok((stream, _)) = listener.accept().await {
-            async_std::task::spawn(async move {
-                handle_client(stream).await
-            });
+            async_std::task::spawn(async move { handle_client(stream).await });
         }
     });
-}
-
-fn smol() {
-    println!("Using smol.");
-    #[inline(always)]
-    async fn handle_client(mut stream: smol::net::TcpStream) {
-        use smol::io::{AsyncReadExt, AsyncWriteExt};
-
-        let mut buf = vec![0u8; 4096];
-        loop {
-            let n = stream.read(&mut buf).await.unwrap();
-            if n == 0 {
-                break;
-            }
-            stream.write_all(&buf[..n]).await.unwrap();
-        }
-    }
-
-    smol::future::block_on(smol::Executor::new().run(async {
-        let mut listener = smol::net::TcpListener::bind(ADDR).await.unwrap();
-        while let Ok((stream, _)) = listener.accept().await {
-            smol::spawn(async move {
-                handle_client(stream).await
-            }).detach();
-        }
-    }));
 }
 
 fn orengine() {
     println!("Using orengine.");
 
-    use orengine::io::{AsyncBind, AsyncAccept};
+    use orengine::io::{AsyncAccept, AsyncBind};
 
     #[inline(always)]
     async fn handle_client<S: orengine::net::Stream>(mut stream: S) {
@@ -156,9 +131,7 @@ fn orengine() {
         let _ = ex.run_and_block_on(async {
             let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
             while let Ok((stream, _)) = listener.accept().await {
-                orengine::local_executor().spawn_local(async move {
-                    handle_client(stream).await
-                });
+                orengine::local_executor().spawn_local(async move { handle_client(stream).await });
             }
         });
     }
@@ -174,6 +147,9 @@ fn orengine() {
 }
 
 fn main() {
-    std_server();
-    //orengine();
+    //std_server();
+    //tokio();
+    //async_std();
+    //may();
+    orengine();
 }

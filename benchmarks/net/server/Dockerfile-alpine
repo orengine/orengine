@@ -1,7 +1,7 @@
 ARG RUST_VERSION=1.83.0-nightly
 ARG APP_NAME=server
 
-FROM rust:${RUST_VERSION}-alpine AS build
+FROM rustlang/rust:nightly-alpine AS build
 ARG APP_NAME
 WORKDIR /app
 

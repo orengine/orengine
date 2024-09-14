@@ -21,13 +21,16 @@ impl<'header> MessageRecvHeader<'header> {
         };
 
         s.header.msg_iov = s.io_slices.as_mut_ptr() as _;
-        s.header.msg_iovlen = s.io_slices.len();
+        s.header.msg_iovlen = s.io_slices.len() as _;
 
         s
     }
 
     #[inline(always)]
-    pub(crate) fn get_os_message_header_ptr(&mut self, sock_addr: *mut SockAddr) -> *mut OsMessageHeader {
+    pub(crate) fn get_os_message_header_ptr(
+        &mut self,
+        sock_addr: *mut SockAddr,
+    ) -> *mut OsMessageHeader {
         self.header.msg_name = sock_addr as _;
         self.header.msg_namelen = size_of::<SockAddr>() as _;
         &mut self.header
@@ -49,13 +52,16 @@ impl<'header> MessageSendHeader<'header> {
         };
 
         s.header.msg_iov = s.io_slices.as_mut_ptr() as _;
-        s.header.msg_iovlen = s.io_slices.len();
+        s.header.msg_iovlen = s.io_slices.len() as _;
 
         s
     }
 
     #[inline(always)]
-    pub(crate) fn get_os_message_header_ptr(&mut self, addr: &'header SockAddr) -> *mut OsMessageHeader {
+    pub(crate) fn get_os_message_header_ptr(
+        &mut self,
+        addr: &'header SockAddr,
+    ) -> *mut OsMessageHeader {
         self.header.msg_name = addr.as_ptr() as _;
         self.header.msg_namelen = addr.len() as _;
         &mut self.header
