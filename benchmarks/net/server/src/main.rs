@@ -27,6 +27,28 @@ fn std_server() {
     }
 }
 
+fn may() {
+    println!("Using may.");
+
+    #[inline(always)]
+    fn handle_client(mut stream: may::net::TcpStream) {
+        use std::io::{Read, Write};
+        let mut buf = vec![0u8; 4096];
+        loop {
+            let n = stream.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            stream.write_all(&buf[..n]).unwrap();
+        }
+    }
+
+    let mut listener = may::net::TcpListener::bind(ADDR).unwrap();
+    while let Ok((stream, _)) = listener.accept() {
+        may::go!(|| { handle_client(stream)});
+    }
+}
+
 fn tokio() {
     println!("Using tokio.");
     #[inline(always)]
@@ -152,6 +174,6 @@ fn orengine() {
 }
 
 fn main() {
-    //std_server();
-    orengine();
+    std_server();
+    //orengine();
 }
