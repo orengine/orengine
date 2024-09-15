@@ -29,6 +29,6 @@ RUN adduser \
     appuser
 USER appuser
 
-COPY --from=build /bin/server /bin/
+COPY --from=build /bin/app /bin/
 
-CMD ["/bin/server"]
+CMD ["/bin/app"]
