@@ -191,8 +191,7 @@ mod tests {
         test_one(true).await;
     }
 
-    // TODO 1
-    #[orengine_macros::test_global(timeout_secs="10000")]
+    #[orengine_macros::test_global]
     fn test_all_with_drop_guard() {
         test_all(true).await;
     }
