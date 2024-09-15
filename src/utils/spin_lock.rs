@@ -149,7 +149,7 @@ mod tests {
 
     use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_try_mutex() {
         let mutex = Arc::new(SpinLock::new(false));
         let mutex_clone = mutex.clone();
@@ -163,8 +163,7 @@ mod tests {
         lock_wg.add(1);
         unlock_wg.add(1);
         thread::spawn(move || {
-            let ex = Executor::init();
-            ex.spawn_global(async move {
+            Executor::init().run_with_global_future(async move {
                 let mut value = mutex_clone.lock();
                 println!("1");
                 lock_wg_clone.done();
@@ -175,7 +174,6 @@ mod tests {
                 second_lock_clone.done();
                 println!("5");
             });
-            ex.run();
         });
 
         let _ = lock_wg.wait().await;
@@ -195,7 +193,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn stress_test_mutex() {
         const PAR: usize = 50;
         const TRIES: usize = 100;
@@ -218,8 +216,7 @@ mod tests {
             let wg = wg.clone();
             let mutex = mutex.clone();
             thread::spawn(move || {
-                let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                Executor::init().run_with_global_future(async move {
                     for _ in 0..TRIES {
                         work_with_lock(&mutex, &wg).await;
                     }

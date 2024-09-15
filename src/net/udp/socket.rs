@@ -223,8 +223,7 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            Executor::init().run_with_local_future(async move {
                 let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);

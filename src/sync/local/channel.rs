@@ -306,8 +306,8 @@ impl<T> !Send for LocalChannel<T> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::sync::{local_scope, WaitGroup};
-    use crate::yield_now;
+    use crate::sync::{local_scope, LocalWaitGroup};
+    use crate::local_yield_now;
     use super::*;
 
     #[orengine_macros::test]
@@ -319,7 +319,7 @@ mod tests {
             scope.spawn(async move{
                 ch_ref.send(1).await.expect("closed");
 
-                yield_now().await;
+                local_yield_now().await;
 
                 ch_ref.send(2).await.expect("closed");
                 ch_ref.close();
@@ -346,7 +346,7 @@ mod tests {
             scope.spawn(async move{
                 ch_ref.send(1).await.expect("closed");
 
-                yield_now().await;
+                local_yield_now().await;
 
                 for i in 2..100 {
                     ch_ref.send(i).await.expect("closed");
@@ -384,7 +384,7 @@ mod tests {
                     ch_ref.send(i).await.expect("closed");
                 }
 
-                yield_now().await;
+                local_yield_now().await;
 
                 ch_ref.close();
             });
@@ -420,7 +420,7 @@ mod tests {
                 let _ = ch.send(i).await.expect("closed");
             }
 
-            yield_now().await;
+            local_yield_now().await;
 
             let _ = ch.send(N).await.expect("closed");
         }).await;
@@ -438,7 +438,7 @@ mod tests {
                     assert_eq!(res, i);
                 }
 
-                yield_now().await;
+                local_yield_now().await;
 
                 let res = ch_ref.recv().await.expect("closed");
                 assert_eq!(res, N);
@@ -483,7 +483,7 @@ mod tests {
                 }
             });
 
-            let wg = WaitGroup::new();
+            let wg = LocalWaitGroup::new();
             wg.add(1);
 
             scope.spawn(async {

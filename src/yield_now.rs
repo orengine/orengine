@@ -1,6 +1,7 @@
 use std::future::{Future};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use crate::{local_executor, panic_if_local_in_future};
 
 pub struct LocalYield {
     was_yielded: bool,
@@ -25,27 +26,29 @@ pub fn local_yield_now() -> LocalYield {
     LocalYield { was_yielded: false }
 }
 
-pub struct Yield {
+pub struct GlobalYield {
     was_yielded: bool,
 }
 
-impl Future for Yield {
+impl Future for GlobalYield {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
+        panic_if_local_in_future!(cx, "global_yield_now()");
+
         if this.was_yielded {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            cx.waker().wake_by_ref();
+            unsafe { local_executor().yield_current_global_task() };
             Poll::Pending
         }
     }
 }
 
-pub fn yield_now() -> Yield {
-    Yield { was_yielded: false }
+pub fn global_yield_now() -> GlobalYield {
+    GlobalYield { was_yielded: false }
 }
 
 #[cfg(test)]
@@ -62,7 +65,7 @@ mod tests {
             assert_eq!(*i.get(), false);
             *i.get_mut() = true;
         });
-        yield_now().await;
+        local_yield_now().await;
         assert_eq!(*i_clone.get(), true);
     }
 }

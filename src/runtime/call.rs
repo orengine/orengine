@@ -5,6 +5,7 @@ use crate::atomic_task_queue::AtomicTaskList;
 
 pub enum Call {
     None,
+    YieldCurrentGlobalTask,
     PushCurrentTaskTo(*const AtomicTaskList),
     PushCurrentTaskToAndRemoveItIfCounterIsZero(*const AtomicTaskList, *const AtomicUsize, Ordering),
     /// Stores `false` for the given `AtomicBool` with [`Release`] ordering.
@@ -37,6 +38,7 @@ impl Debug for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Call::None => write!(f, "Call::None"),
+            Call::YieldCurrentGlobalTask => write!(f, "Call::YieldCurrentGlobalTask"),
             Call::PushCurrentTaskTo(_) => write!(f, "Call::PushCurrentTaskTo"),
             Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(_, _, _) => {
                 write!(f, "Call::PushCurrentTaskToAndRemoveItIfCounterIsZero")

@@ -30,11 +30,6 @@ impl SharedExecutorTaskList {
     }
 
     #[inline(always)]
-    pub(crate) fn push(&self, task: Task) {
-        self.list.lock().push(task);
-    }
-
-    #[inline(always)]
     /// # Safety
     ///
     /// other_list must have at least `limit` reserved capacity

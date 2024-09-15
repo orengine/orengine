@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
 use crate::atomic_task_queue::AtomicTaskList;
+use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
 
 pub struct Wait<'wait_group> {
@@ -25,8 +26,10 @@ impl<'wait_group> Wait<'wait_group> {
 impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "WaitGroup");
+
         if !this.was_called {
             this.was_called = true;
 
@@ -117,9 +120,9 @@ mod tests {
     use crate::{sleep, stop_executor, Executor};
     use super::*;
 
-    const PAR: usize = 40;
+    const PAR: usize = 10;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_many_wait_one() {
         let check_value = Arc::new(Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
@@ -130,14 +133,12 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                ex.spawn_global(async move {
+                Executor::init().run_with_global_future(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
                 });
-                ex.run();
             });
         }
 
@@ -147,7 +148,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -158,15 +159,13 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                ex.spawn_global(async move {
+                Executor::init().run_with_global_future(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
                     if wait_group.done() != 1 {
                         stop_executor(local_executor().id());
                     }
                 });
-                ex.run();
             });
         }
 
@@ -176,7 +175,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -187,8 +186,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                Executor::init().run_with_global_future(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
                 });

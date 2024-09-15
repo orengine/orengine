@@ -67,7 +67,7 @@ where
 mod tests {
     use std::time::Duration;
     use crate::local::Local;
-    use crate::{sleep, yield_now};
+    use crate::{sleep, local_yield_now};
     use super::*;
 
     #[orengine_macros::test]
@@ -78,7 +78,7 @@ mod tests {
             scope.spawn(async {
                 assert_eq!(*local_a.get(), 0);
                 *local_a.get_mut() += 1;
-                yield_now().await;
+                local_yield_now().await;
                 assert_eq!(*local_a.get(), 4);
                 *local_a.get_mut() += 1;
             });
@@ -95,7 +95,7 @@ mod tests {
             scope.spawn(async {
                 assert_eq!(*local_a.get(), 2);
                 *local_a.get_mut() += 1;
-                yield_now().await;
+                local_yield_now().await;
                 assert_eq!(*local_a.get(),5);
                 *local_a.get_mut() += 1;
             });

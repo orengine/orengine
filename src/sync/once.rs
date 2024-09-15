@@ -79,7 +79,7 @@ mod tests {
 
     use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_local_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
@@ -93,8 +93,7 @@ mod tests {
             wg.add(1);
             let once = once.clone();
             thread::spawn(move || {
-                let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                Executor::init().run_with_global_future(async move {
                     let _ = once.call_once(|| {
                         assert!(!a.load(SeqCst));
                         a.store(true, SeqCst);

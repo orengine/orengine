@@ -2,7 +2,6 @@ use std::future::Future;
 use std::mem;
 use std::mem::size_of;
 use ahash::AHashMap;
-
 use crate::runtime::Task;
 
 pub struct TaskPool {
@@ -50,11 +49,19 @@ impl TaskPool {
             }
             Task {
                 future_ptr: future_ptr as *mut _,
+                #[cfg(debug_assertions)]
+                executor_id: crate::local_executor().id(),
+                #[cfg(debug_assertions)]
+                is_local: true,
             }
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
             Task {
                 future_ptr: future_ptr as *mut _,
+                #[cfg(debug_assertions)]
+                executor_id: crate::local_executor().id(),
+                #[cfg(debug_assertions)]
+                is_local: true,
             }
         }
     }

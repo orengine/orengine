@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use crossbeam::utils::CachePadded;
 
-use crate::yield_now;
+use crate::global_yield_now;
 
 union Data<T, F> {
     value: ManuallyDrop<T>,
@@ -91,7 +91,7 @@ impl<T, F: FnOnce() -> T> LazyLock<T, F> {
                 LazyLockState::Ready => unsafe {
                     return &*(*self.data.get()).value;
                 },
-                LazyLockState::InProgress => yield_now().await,
+                LazyLockState::InProgress => global_yield_now().await,
                 LazyLockState::NotCalled => {
                     if likely(
                         self.state

@@ -3,7 +3,7 @@ use std::future::Future;
 use std::intrinsics::unlikely;
 use std::mem::MaybeUninit;
 use std::task::{Context, Poll};
-
+use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
 use crate::sync::naive_mutex::NaiveMutex;
 
@@ -113,6 +113,8 @@ struct Inner<T> {
     receivers: VecDeque<(Task, *mut T, *mut RecvCallState)>,
 }
 
+unsafe impl<T> Send for Inner<T> {}
+
 // region futures
 
 macro_rules! return_pending_and_release_lock {
@@ -126,7 +128,10 @@ macro_rules! acquire_lock {
     ($mutex:expr) => {
         match $mutex.try_lock() {
             Some(lock) => lock,
-            None => return Poll::Pending
+            None => {
+                unsafe { local_executor().yield_current_global_task() };
+                return Poll::Pending
+            }
         }
     }
 }
@@ -154,6 +159,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "Channel");
 
         match this.call_state {
             SendCallState::FirstCall => {
@@ -217,6 +223,8 @@ impl<'future, T> Future for WaitSend<'future, T> {
     }
 }
 
+unsafe impl<T> Send for WaitSend<'_, T> {}
+
 pub struct WaitRecv<'future, T> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: RecvCallState,
@@ -241,6 +249,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "Channel");
 
         match this.call_state {
             RecvCallState::FirstCall => {
@@ -299,6 +308,8 @@ impl<'future, T> Future for WaitRecv<'future, T> {
         }
     }
 }
+
+unsafe impl<T> Send for WaitRecv<'_, T> {}
 
 // endregion
 
@@ -479,14 +490,14 @@ mod tests {
     use crate::sync::channel::Channel;
     use crate::{sleep, Executor};
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_zero_capacity() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 ch_clone.send(1).await.expect("closed");
                 ch_clone.send(2).await.expect("closed");
                 ch_clone.close().await;
@@ -509,14 +520,14 @@ mod tests {
 
     const N: usize = 10_025;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 for i in 0..N {
                     ch_clone.send(i).await.expect("closed");
                 }
@@ -538,14 +549,14 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 sleep(Duration::from_millis(1)).await;
                 ch_clone.send(1).await.expect("closed");
 
@@ -562,14 +573,14 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 ch_clone.send(1).await.expect("closed");
                 ch_clone.send(2).await.expect("closed");
 
@@ -593,14 +604,14 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_unbounded_channel() {
         let ch = Arc::new(Channel::unbounded());
         let ch_clone = ch.clone();
 
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 for i in 0..N {
                     ch_clone.send(i).await.expect("closed");
                 }

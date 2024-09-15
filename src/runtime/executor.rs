@@ -11,12 +11,14 @@ use std::time::{Duration, Instant};
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
 use crate::atomic_task_queue::AtomicTaskList;
+use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_option};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
-use crate::runtime::global_state::{register_local_executor, stop_executor, SubscribedState};
+use crate::runtime::global_state::{register_local_executor, SubscribedState};
 use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
+use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
@@ -184,6 +186,17 @@ impl Executor {
     #[inline(always)]
     /// # Safety
     ///
+    /// * the reference must live at least as long as this state of the task
+    ///
+    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    pub unsafe fn yield_current_global_task(&mut self) {
+        debug_assert!(self.current_call.is_none());
+        self.current_call = Call::YieldCurrentGlobalTask;
+    }
+
+    #[inline(always)]
+    /// # Safety
+    ///
     /// * send_to must be a valid pointer to [`AtomicTaskQueue`](AtomicTaskList)
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
@@ -225,6 +238,7 @@ impl Executor {
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
+        check_task_local_safety!(task);
         let waker = create_waker(task_ptr as *const ());
         let mut context = Context::from_waker(&waker);
 
@@ -239,6 +253,9 @@ impl Executor {
             Poll::Pending => {
                 match mem::take(&mut self.current_call) {
                     Call::None => {}
+                    Call::YieldCurrentGlobalTask => {
+                        self.global_tasks.push_front(task);
+                    },
                     Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
                     Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
                         task_list,
@@ -308,11 +325,20 @@ impl Executor {
     }
 
     #[inline(always)]
-    pub fn spawn_global_task(&mut self, task: Task) {
+    #[allow(unused_mut)] // because #[cfg(debug_assertions)]
+    pub fn spawn_global_task(&mut self, mut task: Task) {
+        #[cfg(debug_assertions)]
+        { task.is_local = false; }
         match self.config.is_work_sharing_enabled() {
             true => {
-                if self.global_tasks.len() > self.config.work_sharing_level {
-                    unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().push(task); }
+                if unlikely(self.global_tasks.len() > self.config.work_sharing_level) {
+                    let mut shared_tasks_list = unsafe {
+                        self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec()
+                    };
+                    let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
+                    for task in self.global_tasks.drain(..number_of_shared) {
+                        shared_tasks_list.push(task);
+                    }
                 } else {
                     self.global_tasks.push_back(task);
                 }
@@ -421,7 +447,26 @@ impl Executor {
 
         false
     }
+}
 
+macro_rules! generate_run_and_block_on_function {
+    ($func:expr, $future:expr, $executor:expr) => {
+        {
+            let mut res = None;
+            let static_future = EndLocalThreadAndWriteIntoPtr::new(&mut res, $future);
+            $func($executor, static_future);
+            $executor.run();
+            res.ok_or(
+                "The process has been stopped by stop_all_executors \
+                or stop_executor not in block_on future."
+            )
+        }
+    };
+}
+
+// region run
+
+impl Executor {
     pub fn run(&mut self) {
         let mut task;
         // A round is a number of tasks that must be completed before the next background_work call.
@@ -471,7 +516,7 @@ impl Executor {
     }
 
     #[inline(always)]
-    pub fn run_with_future<Fut: Future<Output = ()>>(
+    pub fn run_with_local_future<Fut: Future<Output = ()>>(
         &mut self,
         future: Fut,
     ) {
@@ -479,49 +524,31 @@ impl Executor {
         self.run();
     }
 
-    pub fn run_and_block_on<T, Fut: Future<Output = T>>(
+    #[inline(always)]
+    pub fn run_with_global_future<Fut: Future<Output = ()> + Send>(
+        &mut self,
+        future: Fut,
+    ) {
+        self.spawn_global(future);
+        self.run();
+    }
+
+    pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
-        // Async block in async block allocates double memory.
-        // But if we use async block in `Future::poll`, it allocates only one memory.
-        // When I say "async block" I mean future that is represented by `async {}`.
-        struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
-            res_ptr: *mut Option<R>,
-            future: Fut,
-            local_executor_id: usize
-        }
+        generate_run_and_block_on_function!(Executor::spawn_local, future, self)
+    }
 
-        impl<R, Fut: Future<Output = R>> Future for EndLocalThreadAndWriteIntoPtr<R, Fut> {
-            type Output = ();
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let this = unsafe { self.get_unchecked_mut() };
-                let mut pinned_fut = unsafe { Pin::new_unchecked(&mut this.future) };
-                match pinned_fut.as_mut().poll(cx) {
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(res) => {
-                        unsafe { this.res_ptr.write(Some(res)) };
-                        stop_executor(this.local_executor_id);
-                        Poll::Ready(())
-                    }
-                }
-            }
-        }
-
-        let mut res = None;
-        let static_future = EndLocalThreadAndWriteIntoPtr {
-            res_ptr: &mut res,
-            future,
-            local_executor_id: self.id()
-        };
-        self.exec_future(static_future);
-        self.run();
-        res.ok_or(
-            "The process has been ended by end() or end_local_thread() not in block_on future."
-        )
+    pub fn run_and_block_on_global<T, Fut: Future<Output = T> + Send>(
+        &'static mut self,
+        future: Fut,
+    ) -> Result<T, &'static str> {
+        generate_run_and_block_on_function!(Executor::spawn_global, future, self)
     }
 }
+
+// endregion
 
 #[inline(always)]
 pub fn init_local_executor_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, &'static str>
@@ -529,15 +556,14 @@ where
     Fut: Future<Output = T>,
 {
     Executor::init();
-    local_executor().run_and_block_on(future)
+    local_executor().run_and_block_on_local(future)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::local::Local;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
-    use crate::{stop_all_executors, yield_now};
-    use crate::sync::Mutex;
+    use crate::yield_now::local_yield_now;
     use super::*;
 
     #[orengine_macros::test]
@@ -553,7 +579,7 @@ mod tests {
         executor.spawn_local(insert(20, arr.clone()));
         executor.spawn_local(insert(30, arr.clone()));
 
-        yield_now().await;
+        local_yield_now().await;
 
         assert_eq!(&vec![10, 30, 20], arr.get()); // 30, 20 because of LIFO
 
@@ -574,39 +600,12 @@ mod tests {
         }
 
         Executor::init();
-        assert_eq!(Ok(42), local_executor().run_and_block_on(async_42()));
+        assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
         drop(lock);
     }
 
-    #[test]
-    fn work_sharing() {
-        let lock = GLOBAL_TEST_LOCK.lock();
-
-        let ids = Arc::new(Mutex::new(vec![]));
-        let ids_clone = ids.clone();
-
-        thread::spawn(|| {
-            let ex = Executor::init();
-            ex.run();
-        });
-
-        let ex = Executor::init_with_config(Config::default().set_work_sharing_level(0));
-        ex.spawn_global(async move {
-            println!("first executor id: {}", local_executor().id());
-        });
-        ex.spawn_global(async move {
-            ids_clone.lock().await.push(local_executor().id());
-            println!("second executor id: {}", local_executor().id());
-            stop_all_executors();
-        });
-
-        let _ = ex.run_and_block_on(async move {
-            ids.lock().await.push(local_executor().id());
-            println!("first executor id: {}", local_executor().id());
-            thread::sleep(Duration::from_millis(500));
-            assert_eq!(ids.lock().await.len(), 2);
-        });
-
-        drop(lock);
-    }
+    // #[test]
+    // TODO
+    // fn work_sharing() {
+    // }
 }

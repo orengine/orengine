@@ -5,32 +5,35 @@ use std::ops::Deref;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, Expr, Lit};
 
-#[proc_macro_attribute]
-pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
-    fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
-        let mut timeout = quote! { core::time::Duration::from_secs(1) };
-        match syn::parse::<syn::ExprAssign>(attr) {
-            Ok(syntax_tree) => {
-                if syntax_tree.left.into_token_stream().to_string() == "timeout_secs" {
-                    match syntax_tree.right.deref() {
-                        Expr::Lit(lit) => {
-                            if let Lit::Str(expr) = lit.lit.clone() {
-                                let token_stream: u64 = expr.value().parse().unwrap();
-                                timeout = quote! { core::time::Duration::from_secs(#token_stream) };
-                            }
+fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
+    let mut timeout = quote! { core::time::Duration::from_secs(1) };
+    match syn::parse::<syn::ExprAssign>(attr) {
+        Ok(syntax_tree) => {
+            if syntax_tree.left.into_token_stream().to_string() == "timeout_secs" {
+                match syntax_tree.right.deref() {
+                    Expr::Lit(lit) => {
+                        if let Lit::Str(expr) = lit.lit.clone() {
+                            let token_stream: u64 = expr.value().parse().unwrap();
+                            timeout = quote! { core::time::Duration::from_secs(#token_stream) };
                         }
-
-                        _ => {}
                     }
+
+                    _ => {}
                 }
-            },
-            Err(_err) => {},
-        }
-
-
-        timeout
+            }
+        },
+        Err(_err) => {},
     }
 
+
+    timeout
+}
+
+fn generate_test(
+    args: TokenStream,
+    input: TokenStream,
+    spawn_fn: proc_macro2::TokenStream
+) -> TokenStream {
     let timeout = get_timeout_name(args);
     let input = parse_macro_input!(input as syn::ItemFn);
     let body = &input.block;
@@ -51,7 +54,7 @@ pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
                 let sender2 = sender.clone();
                 let result = std::panic::catch_unwind(move || {
                     let executor = crate::Executor::init();
-                    let _ = executor.run_and_block_on(async move {
+                    let _ = executor.#spawn_fn(async move {
                         #body
                         sender2.send(Ok(())).unwrap();
                     });
@@ -86,6 +89,16 @@ pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+#[proc_macro_attribute]
+pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
+    generate_test(args, input, quote! { run_with_local_future })
+}
+
+#[proc_macro_attribute]
+pub fn test_global(args: TokenStream, input: TokenStream) -> TokenStream {
+    generate_test(args, input, quote! { run_with_global_future })
 }
 
 #[proc_macro]

@@ -7,6 +7,7 @@ pub mod config;
 mod global_state;
 mod local_thread_pool;
 pub mod asyncify;
+mod end_local_thread_and_write_into_ptr;
 
 pub use executor::{
     local_executor,

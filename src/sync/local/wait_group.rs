@@ -106,7 +106,7 @@ mod tests {
     use std::rc::Rc;
     use crate::local::Local;
     use crate::runtime::local_executor;
-    use crate::yield_now;
+    use crate::local_yield_now;
     use super::*;
 
     #[orengine_macros::test]
@@ -126,7 +126,7 @@ mod tests {
             });
         }
 
-        yield_now().await;
+        local_yield_now().await;
 
         *check_value.get_mut() = true;
         wait_group.done();
@@ -142,7 +142,7 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
-                yield_now().await;
+                local_yield_now().await;
                 *check_value.get_mut() -= 1;
                 wait_group.done();
             });

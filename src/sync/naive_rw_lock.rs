@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use crossbeam::utils::CachePadded;
 
-use crate::yield_now;
+use crate::global_yield_now;
 
 // region guards
 
@@ -124,7 +124,7 @@ impl<T> RWLock<T> {
         loop {
             match self.try_write() {
                 Some(guard) => return guard,
-                None => yield_now().await,
+                None => global_yield_now().await,
             }
         }
     }
@@ -147,7 +147,7 @@ impl<T> RWLock<T> {
         loop {
             match self.try_read() {
                 Some(guard) => return guard,
-                None => yield_now().await,
+                None => global_yield_now().await,
             }
         }
     }
@@ -247,7 +247,7 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 mod tests {
     use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_rw_lock() {
         let rw_lock = RWLock::new(0);
 

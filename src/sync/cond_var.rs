@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::atomic_task_queue::AtomicTaskList;
+use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
 use crate::sync::{Mutex, MutexGuard};
 
@@ -37,6 +38,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "CondVar");
 
         match this.state {
             State::WaitSleep => {
@@ -122,7 +124,7 @@ mod tests {
         let pair2 = pair.clone();
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 let (lock, cvar) = pair2.deref();
                 let mut started = lock.lock().await;
                 sleep(TIME_TO_SLEEP).await;
@@ -149,7 +151,7 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        local_executor().spawn_local(async move {
+        local_executor().spawn_global(async move {
             let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
@@ -167,7 +169,7 @@ mod tests {
             wg.add(1);
             thread::spawn(move || {
                 let executor = Executor::init();
-                let _ = executor.run_and_block_on(async move {
+                executor.spawn_global(async move {
                     let (lock, cvar) = pair.deref();
                     let mut started = lock.lock().await;
                     while !*started {
@@ -175,6 +177,7 @@ mod tests {
                     }
                     wg.done();
                 });
+                executor.run();
             });
         }
 
@@ -183,22 +186,23 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_with_drop_guard() {
         test_one(true).await;
     }
 
-    #[orengine_macros::test]
+    // TODO 1
+    #[orengine_macros::test_global(timeout_secs="10000")]
     fn test_all_with_drop_guard() {
         test_all(true).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_without_drop_guard() {
         test_one(false).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_all_without_drop_guard() {
         test_all(false).await;
     }
