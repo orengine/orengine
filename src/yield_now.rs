@@ -33,6 +33,7 @@ pub struct GlobalYield {
 impl Future for GlobalYield {
     type Output = ();
 
+    #[allow(unused_mut)] // because #[cfg(debug_assertions)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = self.get_mut();
         panic_if_local_in_future!(cx, "global_yield_now()");

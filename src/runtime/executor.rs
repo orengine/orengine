@@ -235,6 +235,7 @@ impl Executor {
             self.spawn_local_task(task);
             return;
         }
+
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr };
