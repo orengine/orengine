@@ -2,11 +2,10 @@
 use std::ffi::c_int;
 use std::fmt::{Debug, Formatter};
 use std::io::{Result};
-use std::net::ToSocketAddrs;
+use std::net::SocketAddr;
 use std::mem;
-use socket2::SockAddr;
+use socket2::{SockAddr, SockRef};
 
-use crate::each_addr;
 use crate::io::bind::BindConfig;
 use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
 use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
@@ -76,31 +75,19 @@ impl Into<OwnedFd> for TcpListener {
 }
 
 impl AsyncBind for TcpListener {
-    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, async move |addr| {
-            let fd = new_tcp_socket(&addr).await?;
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_fd);
+    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+        new_tcp_socket(addr).await
+    }
 
-            if config.only_v6 {
-                socket_ref.set_only_v6(true)?;
-            }
+    fn bind_and_listen_if_needed(
+        sock_ref: SockRef,
+        addr: SocketAddr,
+        config: &BindConfig
+    ) -> Result<()> {
+        sock_ref.bind(&SockAddr::from(addr))?;
+        sock_ref.listen(config.backlog_size as c_int)?;
 
-            if config.reuse_address {
-                socket_ref.set_reuse_address(true)?;
-            }
-
-            if config.reuse_port {
-                socket_ref.set_reuse_port(true)?;
-            }
-
-            socket_ref.bind(&SockAddr::from(addr))?;
-            socket_ref.listen(config.backlog_size as c_int)?;
-
-            Ok(Self {
-                fd
-            })
-        })
+        Ok(())
     }
 }
 
@@ -143,7 +130,8 @@ mod tests {
     use std::io;
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
-
+    use crate::io::ReusePort;
+    use crate::local_yield_now;
     use super::*;
 
     #[orengine_macros::test]
@@ -165,9 +153,10 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
-    fn test_accept() {
-        let mut listener = TcpListener::bind("127.0.0.1:4063").await.expect("bind call failed");
+    async fn test_listener_accept_with_config(config: &BindConfig) {
+        let mut listener = TcpListener::bind_with_config("127.0.0.1:4063", config)
+            .await
+            .expect("bind call failed");
         match listener.accept_with_timeout(Duration::from_micros(1)).await {
             Ok(_) => panic!("accept_with_timeout call failed"),
             Err(err) => {
@@ -183,5 +172,17 @@ mod tests {
             }
             Err(_) => panic!("accept_with_timeout call failed"),
         }
+
+        drop(listener);
+        local_yield_now().await;
+    }
+
+    #[orengine_macros::test]
+    fn test_accept() {
+        let config = BindConfig::default();
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::Default)).await;
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU)).await;
+        // TODO test_listener_accept_with_config(&config.reuse_port(ReusePort::NUMA)).await;
     }
 }

@@ -26,7 +26,7 @@ impl<'wait_group> Wait<'wait_group> {
 impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
-    #[allow(unused_mut)] // because #[cfg(debug_assertions)]
+    #[allow(unused)] // because #[cfg(debug_assertions)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         panic_if_local_in_future!(cx, "WaitGroup");

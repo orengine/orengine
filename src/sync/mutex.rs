@@ -92,7 +92,7 @@ impl<'mutex, T> MutexWait<'mutex, T> {
 impl<'mutex, T> Future for MutexWait<'mutex, T> {
     type Output = MutexGuard<'mutex, T>;
 
-    #[allow(unused_mut)] // because #[cfg(debug_assertions)]
+    #[allow(unused)] // because #[cfg(debug_assertions)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         panic_if_local_in_future!(cx, "Mutex");

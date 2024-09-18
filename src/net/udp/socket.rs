@@ -1,11 +1,10 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
-use std::net::ToSocketAddrs;
+use std::net::SocketAddr;
 
-use socket2::SockAddr;
+use socket2::{SockAddr, SockRef};
 
-use crate::each_addr;
 use crate::io::{
     AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
 };
@@ -79,28 +78,16 @@ impl Into<OwnedFd> for UdpSocket {
 }
 
 impl AsyncBind for UdpSocket {
-    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, async move |addr| {
-            let fd = new_udp_socket(&addr).await?;
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_fd);
+    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+        new_udp_socket(&addr).await
+    }
 
-            if config.only_v6 {
-                socket_ref.set_only_v6(true)?;
-            }
-
-            if config.reuse_address {
-                socket_ref.set_reuse_address(true)?;
-            }
-
-            if config.reuse_port {
-                socket_ref.set_reuse_port(true)?;
-            }
-
-            socket_ref.bind(&SockAddr::from(addr))?;
-
-            Ok(Self { fd })
-        })
+    fn bind_and_listen_if_needed(
+        sock_ref: SockRef<'_>,
+        addr: SocketAddr,
+        _config: &BindConfig
+    ) -> Result<()> {
+        sock_ref.bind(&SockAddr::from(addr))
     }
 }
 
