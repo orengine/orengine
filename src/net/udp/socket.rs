@@ -5,15 +5,15 @@ use std::net::SocketAddr;
 
 use socket2::{SockAddr, SockRef};
 
+use crate::io::recv_from::AsyncRecvFrom;
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use crate::io::{
     AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
 };
-use crate::io::bind::BindConfig;
-use crate::io::recv_from::AsyncRecvFrom;
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd, AsFd, BorrowedFd, OwnedFd};
-use crate::net::{Datagram, Socket};
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
+use crate::net::BindConfig;
+use crate::net::{Datagram, Socket};
 use crate::runtime::local_executor;
 
 pub struct UdpSocket {
@@ -85,7 +85,7 @@ impl AsyncBind for UdpSocket {
     fn bind_and_listen_if_needed(
         sock_ref: SockRef<'_>,
         addr: SocketAddr,
-        _config: &BindConfig
+        _config: &BindConfig,
     ) -> Result<()> {
         sock_ref.bind(&SockAddr::from(addr))
     }
@@ -131,19 +131,20 @@ impl Drop for UdpSocket {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, thread};
     use std::net::SocketAddr;
     use std::ops::Deref;
     use std::rc::Rc;
     use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use std::{io, thread};
 
-    use crate::{local_yield_now, Executor};
-    use crate::io::{AsyncBind, ReusePort};
+    use crate::io::AsyncBind;
+    use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
+    use crate::{local_yield_now, Executor};
 
     use super::*;
 

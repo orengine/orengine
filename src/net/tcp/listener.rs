@@ -1,17 +1,17 @@
 //! This module contains [`TcpListener`].
 use std::ffi::c_int;
 use std::fmt::{Debug, Formatter};
-use std::io::{Result};
-use std::net::SocketAddr;
+use std::io::Result;
 use std::mem;
+use std::net::SocketAddr;
+
 use socket2::{SockAddr, SockRef};
 
-use crate::io::bind::BindConfig;
-use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
-use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::{AsyncAccept, AsyncBind, AsyncClose};
 use crate::net::creators_of_sockets::new_tcp_socket;
-use crate::net::Listener;
 use crate::net::tcp::TcpStream;
+use crate::net::{BindConfig, Listener};
 use crate::runtime::local_executor;
 
 /// A TCP socket server, listening for connections.
@@ -82,7 +82,7 @@ impl AsyncBind for TcpListener {
     fn bind_and_listen_if_needed(
         sock_ref: SockRef,
         addr: SocketAddr,
-        config: &BindConfig
+        config: &BindConfig,
     ) -> Result<()> {
         sock_ref.bind(&SockAddr::from(addr))?;
         sock_ref.listen(config.backlog_size as c_int)?;
@@ -130,13 +130,17 @@ mod tests {
     use std::io;
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
-    use crate::io::ReusePort;
+
     use crate::local_yield_now;
+    use crate::net::ReusePort;
+
     use super::*;
 
     #[orengine_macros::test]
     fn test_listener() {
-        let listener = TcpListener::bind("127.0.0.1:8080").await.expect("bind call failed");
+        let listener = TcpListener::bind("127.0.0.1:8080")
+            .await
+            .expect("bind call failed");
         assert_eq!(
             listener.local_addr().unwrap(),
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
@@ -164,8 +168,7 @@ mod tests {
             }
         }
 
-        let stream =
-            std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
+        let stream = std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
         match listener.accept_with_timeout(Duration::from_secs(1)).await {
             Ok((_, addr)) => {
                 assert_eq!(addr, stream.local_addr().unwrap())

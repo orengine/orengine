@@ -1,7 +1,6 @@
 use std::thread;
 
 use orengine::buf::buffer;
-use orengine::io::ReusePort;
 use orengine::utils::{get_core_ids, CoreId};
 use orengine::Executor;
 
@@ -130,10 +129,7 @@ fn orengine() {
     fn run_server(core_id: CoreId) {
         let ex = Executor::init_on_core(core_id);
         let _ = ex.run_and_block_on_local(async {
-            let config = orengine::io::BindConfig::default().reuse_port(ReusePort::CPU);
-            let mut listener = orengine::net::TcpListener::bind_with_config(ADDR, &config)
-                .await
-                .unwrap();
+            let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
             while let Ok((stream, _)) = listener.accept().await {
                 orengine::local_executor().spawn_local(async move { handle_client(stream).await });
             }

@@ -3,11 +3,12 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
+
 use socket2::{Domain, Type};
 
-use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd, OwnedFd};
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
@@ -136,19 +137,19 @@ impl Drop for TcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, thread};
     use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+    use std::{io, thread};
 
-    use crate::{Executor};
     use crate::io::{AsyncAccept, AsyncBind};
-    use crate::io::bind::BindConfig;
-    use crate::net::Socket;
     use crate::net::tcp::TcpListener;
+    use crate::net::BindConfig;
+    use crate::net::Socket;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
+    use crate::Executor;
 
     use super::*;
 
