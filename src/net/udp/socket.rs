@@ -140,8 +140,8 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
-    use crate::{Executor};
-    use crate::io::AsyncBind;
+    use crate::{local_yield_now, Executor};
+    use crate::io::{AsyncBind, ReusePort};
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
 
@@ -202,8 +202,7 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[orengine_macros::test]
-    fn test_server() {
+    async fn test_server_with_config(config: BindConfig) {
         const SERVER_ADDR: &str = "127.0.0.1:10082";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
@@ -211,7 +210,9 @@ mod tests {
 
         thread::spawn(move || {
             Executor::init().run_with_local_future(async move {
-                let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
+                let mut server = UdpSocket::bind_with_config(SERVER_ADDR, &config)
+                    .await
+                    .expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
 
@@ -223,6 +224,9 @@ mod tests {
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
+
+                drop(server);
+                local_yield_now().await;
             });
         });
 
@@ -240,6 +244,15 @@ mod tests {
             stream.recv(&mut buf).expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
+    }
+
+    #[orengine_macros::test]
+    fn test_server() {
+        let config = BindConfig::default();
+        test_server_with_config(config.reuse_port(ReusePort::Disabled)).await;
+        test_server_with_config(config.reuse_port(ReusePort::Default)).await;
+        test_server_with_config(config.reuse_port(ReusePort::CPU)).await;
+        // TODO test_server_with_config(config.reuse_port(ReusePort::NUMA)).await;
     }
 
     #[orengine_macros::test]
