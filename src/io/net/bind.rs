@@ -1,14 +1,16 @@
 use std::io::Result;
 use std::net::{SocketAddr, ToSocketAddrs};
+
 use socket2::SockRef;
+
 use crate::each_addr;
-use crate::io::sys::{RawFd, BorrowedFd, FromRawFd};
+use crate::io::sys::{BorrowedFd, FromRawFd, RawFd};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ReusePort {
     Disabled,
     Default,
-    CPU
+    CPU,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -16,7 +18,7 @@ pub struct BindConfig {
     pub backlog_size: isize,
     pub only_v6: bool,
     pub reuse_address: bool,
-    pub reuse_port: ReusePort
+    pub reuse_port: ReusePort,
 }
 
 impl BindConfig {
@@ -51,7 +53,7 @@ impl Default for BindConfig {
             backlog_size: 1024,
             only_v6: false,
             reuse_address: true,
-            reuse_port: ReusePort::Default
+            reuse_port: ReusePort::Default,
         }
     }
 }
@@ -61,7 +63,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     fn bind_and_listen_if_needed(
         sock_ref: SockRef,
         addr: SocketAddr,
-        config: &BindConfig
+        config: &BindConfig,
     ) -> Result<()>;
 
     async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
@@ -79,7 +81,9 @@ pub trait AsyncBind: Sized + FromRawFd {
             }
 
             match config.reuse_port {
-                ReusePort::Disabled => { Self::bind_and_listen_if_needed(socket_ref, addr, config)?; }
+                ReusePort::Disabled => {
+                    Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
+                }
                 ReusePort::Default => {
                     socket_ref.set_reuse_port(true)?;
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
@@ -89,29 +93,32 @@ pub trait AsyncBind: Sized + FromRawFd {
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
 
                     if cfg!(target_os = "linux") {
-                        use nix::libc::{self, BPF_LD, BPF_W, BPF_ABS, BPF_RET, SKF_AD_OFF, SKF_AD_CPU};
+                        use nix::libc::{
+                            self, __u32, BPF_ABS, BPF_LD, BPF_RET, BPF_W, SKF_AD_CPU, SKF_AD_OFF,
+                        };
+                        const BPF_A: __u32 = 0x10;
 
                         // [
                         //     {BPF_LD | BPF_W | BPF_ABS, 0, 0, SKF_AD_OFF + SKF_AD_CPU},
                         //     {BPF_RET | BPF_A, 0, 0, 0}
                         // ]
                         let mut code = [
-                            libc::sock_filter{
+                            libc::sock_filter {
                                 code: (BPF_LD | BPF_W | BPF_ABS) as _,
                                 jt: 0,
                                 jf: 0,
-                                k: (SKF_AD_OFF + SKF_AD_CPU) as _
+                                k: (SKF_AD_OFF + SKF_AD_CPU) as _,
                             },
-                            libc::sock_filter{
-                                code: BPF_RET as _,
+                            libc::sock_filter {
+                                code: (BPF_RET | BPF_A) as _,
                                 jt: 0,
                                 jf: 0,
-                                k: 0
-                            }
+                                k: 0,
+                            },
                         ];
-                        let p = libc::sock_fprog{
+                        let p = libc::sock_fprog {
                             len: 2,
-                            filter: code.as_mut_ptr()
+                            filter: code.as_mut_ptr(),
                         };
 
                         let res = unsafe {
@@ -120,7 +127,7 @@ pub trait AsyncBind: Sized + FromRawFd {
                                 libc::SOL_SOCKET,
                                 libc::SO_ATTACH_REUSEPORT_CBPF,
                                 &p as *const _ as _,
-                                size_of::<libc::sock_fprog>() as _
+                                size_of::<libc::sock_fprog>() as _,
                             )
                         };
                         if res < 0 {
@@ -139,4 +146,3 @@ pub trait AsyncBind: Sized + FromRawFd {
         Self::bind_with_config(addrs, &BindConfig::default()).await
     }
 }
-
