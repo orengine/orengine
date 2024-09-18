@@ -8,8 +8,7 @@ use crate::io::sys::{RawFd, BorrowedFd, FromRawFd};
 pub enum ReusePort {
     Disabled,
     Default,
-    CPU,
-    NUMA
+    CPU
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -129,7 +128,6 @@ pub trait AsyncBind: Sized + FromRawFd {
                         }
                     }
                 }
-                ReusePort::NUMA => { todo!(); }
             }
 
             Ok(unsafe { Self::from_raw_fd(fd) })
