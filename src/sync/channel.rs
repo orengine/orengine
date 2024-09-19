@@ -517,13 +517,16 @@ unsafe impl<T> Send for Channel<T> {}
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering::Relaxed;
     use std::thread;
     use std::time::Duration;
 
     use crate::sync::channel::Channel;
     use crate::{sleep, Executor};
+    use crate::sync::WaitGroup;
     use crate::utils::droppable_element::DroppableElement;
-    use crate::utils::SpinLock;
+    use crate::utils::{get_core_ids, SpinLock};
 
     #[orengine_macros::test_global]
     fn test_zero_capacity() {
@@ -715,5 +718,56 @@ mod tests {
             .unwrap_err();
         assert_eq!(elem.value, 5);
         assert_eq!(dropped.lock().as_slice(), [2]);
+    }
+
+    async fn stress_test(channel: Channel<usize>) {
+        let channel = Arc::new(channel);
+        let wg = Arc::new(WaitGroup::new());
+        let sent = Arc::new(AtomicUsize::new(0));
+        let received = Arc::new(AtomicUsize::new(0));
+
+        for i in 0..get_core_ids().unwrap().len() * 4 {
+            let channel = channel.clone();
+            let wg = wg.clone();
+            let sent = sent.clone();
+            let received = received.clone();
+            wg.add(1);
+
+            thread::spawn(move || {
+                Executor::init().run_with_global_future(async move {
+                    if i % 2 == 0 {
+                        for j in 0..100 {
+                            channel.send(j).await.expect("closed");
+                            sent.fetch_add(j, Relaxed);
+                        }
+                    } else {
+                        for _ in 0..100 {
+                            let res = channel.recv().await.expect("closed");
+                            received.fetch_add(res, Relaxed);
+                        }
+                    }
+
+                    wg.done();
+                });
+            });
+        }
+
+        let _ = wg.wait().await;
+        assert_eq!(sent.load(Relaxed), received.load(Relaxed));
+    }
+
+    #[orengine_macros::test_global]
+    fn stress_test_bounded_channel() {
+        stress_test(Channel::bounded(1024)).await;
+    }
+
+    #[orengine_macros::test_global]
+    fn stress_test_unbounded_channel() {
+        stress_test(Channel::unbounded()).await;
+    }
+
+    #[orengine_macros::test_global]
+    fn stress_test_zero_capacity_channel() {
+        stress_test(Channel::bounded(0)).await;
     }
 }
