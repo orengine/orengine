@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::intrinsics::unlikely;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::Deref;
+use std::ptr;
+use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
@@ -79,7 +82,7 @@ enum SendCallState<T> {
     /// It has no lock now.
     WokenToWriteIntoTheSlot(*mut T),
     /// This task was enqueued, now it is woken by close, and it has no lock now.
-    WokenByClose,
+    WokenByClose
 }
 
 #[repr(u8)]
@@ -139,7 +142,9 @@ macro_rules! acquire_lock {
 pub struct WaitSend<'future, T> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: SendCallState<T>,
-    value: Option<T>,
+    value: ManuallyDrop<T>,
+    #[cfg(debug_assertions)]
+    was_awaited: bool
 }
 
 impl<'future, T> WaitSend<'future, T> {
@@ -148,7 +153,9 @@ impl<'future, T> WaitSend<'future, T> {
         Self {
             inner,
             call_state: SendCallState::FirstCall,
-            value: Some(value),
+            value: ManuallyDrop::new(value),
+            #[cfg(debug_assertions)]
+            was_awaited: false
         }
     }
 }
@@ -159,6 +166,8 @@ impl<'future, T> Future for WaitSend<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        #[cfg(debug_assertions)]
+        { this.was_awaited = true; }
         panic_if_local_in_future!(cx, "Channel");
 
         match this.call_state {
@@ -167,7 +176,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 let mut inner_lock = acquire_lock!(this.inner);
 
                 if unlikely(inner_lock.is_closed) {
-                    return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
+                    return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
                 }
 
                 if unlikely(inner_lock.receivers.len() > 0) {
@@ -179,7 +188,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                         inner_lock.unlock();
 
-                        slot.write(this.value.take().unwrap_unchecked());
+                        ptr::copy_nonoverlapping(this.value.deref(), slot, 1);
                         call_state.write(RecvCallState::WokenToReturnReady);
                         ex.exec_task(task);
 
@@ -197,7 +206,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 unsafe {
                     inner_lock
                         .storage
-                        .push_back(this.value.take().unwrap_unchecked());
+                        .push_back(ManuallyDrop::take(&mut this.value));
                 }
 
                 Poll::Ready(Ok(()))
@@ -207,17 +216,19 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 unsafe {
                     inner_lock
                         .storage
-                        .push_back(this.value.take().unwrap_unchecked());
+                        .push_back(ManuallyDrop::take(&mut this.value));
                     this.inner.unlock();
                 }
                 Poll::Ready(Ok(()))
             }
             SendCallState::WokenToWriteIntoTheSlot(slot_ptr) => {
-                unsafe { *slot_ptr = this.value.take().unwrap_unchecked() };
+                unsafe {
+                    ptr::copy_nonoverlapping(this.value.deref(), slot_ptr, 1);
+                };
                 Poll::Ready(Ok(()))
             }
             SendCallState::WokenByClose => {
-                Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }))
+                Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }))
             }
         }
     }
@@ -225,6 +236,14 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
 unsafe impl<T> Send for WaitSend<'_, T> {}
 
+#[cfg(debug_assertions)]
+impl<T> Drop for WaitSend<'_, T> {
+    fn drop(&mut self) {
+        assert!(self.was_awaited, "`WaitSend` was not awaited. This will cause a memory leak.");
+    }
+}
+
+/// Will [`write`](ptr::write) the value in the `slot`. Not [`replace`](ptr::replace).
 pub struct WaitRecv<'future, T> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: RecvCallState,
@@ -233,7 +252,6 @@ pub struct WaitRecv<'future, T> {
 
 impl<'future, T> WaitRecv<'future, T> {
     #[inline(always)]
-    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
     fn new(inner: &'future NaiveMutex<Inner<T>>, slot: *mut T) -> Self {
         Self {
             inner,
@@ -380,7 +398,7 @@ impl<'channel, T> Receiver<'channel, T> {
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
-            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+            match self.recv_in_ptr(slot.as_mut_ptr()).await {
                 Ok(_) => Ok(slot.assume_init()),
                 Err(_) => Err(()),
             }
@@ -388,10 +406,18 @@ impl<'channel, T> Receiver<'channel, T> {
     }
 
     #[inline(always)]
-    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
-    pub unsafe fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
+    /// Drops the old value in the slot.
+    pub fn recv_in(&self, slot: &'channel mut T) -> WaitRecv<'channel, T> {
+        unsafe { drop_in_place(slot) };
         WaitRecv::new(self.inner, slot)
     }
+
+    #[inline(always)]
+    /// Doesn't drop the old value in the slot.
+    pub unsafe fn recv_in_ptr(&self, slot: *mut T) -> WaitRecv<T> {
+        WaitRecv::new(self.inner, slot)
+    }
+
 
     #[inline(always)]
     pub async fn close(self) {
@@ -452,7 +478,7 @@ impl<T> Channel<T> {
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
-            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+            match self.recv_in_ptr(slot.as_mut_ptr()).await {
                 Ok(_) => Ok(slot.assume_init()),
                 Err(_) => Err(()),
             }
@@ -460,8 +486,15 @@ impl<T> Channel<T> {
     }
 
     #[inline(always)]
-    /// Will [`write`](ptr::write) the value at `slot`. Not [`replace`](ptr::replace).
-    pub unsafe fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
+    /// Drops the old value in the slot.
+    pub fn recv_in<'future>(&'future self, slot: &'future mut T) -> WaitRecv<'future, T> {
+        unsafe { drop_in_place(slot) };
+        WaitRecv::new(&self.inner, slot)
+    }
+
+    #[inline(always)]
+    /// Doesn't drop the old value in the slot.
+    pub unsafe fn recv_in_ptr(&self, slot: *mut T) -> WaitRecv<T> {
         WaitRecv::new(&self.inner, slot)
     }
 
@@ -489,6 +522,8 @@ mod tests {
 
     use crate::sync::channel::Channel;
     use crate::{sleep, Executor};
+    use crate::utils::droppable_element::DroppableElement;
+    use crate::utils::SpinLock;
 
     #[orengine_macros::test_global]
     fn test_zero_capacity() {
@@ -631,5 +666,54 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed")
         };
+    }
+
+    #[orengine_macros::test_global("timeout_secs=1000")]
+    fn test_drop_channel() {
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let channel = Channel::bounded(1);
+
+        let _ = channel.send(DroppableElement::new(1, dropped.clone())).await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        channel.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = channel.send(DroppableElement::new(3, dropped.clone())).await;
+        unsafe { channel.recv_in_ptr(&mut prev_elem).await }.expect("closed");
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        channel.close().await;
+        let elem = channel.send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+    }
+
+    #[orengine_macros::test_global]
+    fn test_drop_channel_split() {
+        let channel = Channel::bounded(1);
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let (sender, receiver) = channel.split();
+
+        let _ = sender.send(DroppableElement::new(1, dropped.clone())).await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        receiver.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = sender.send(DroppableElement::new(3, dropped.clone())).await;
+        unsafe { receiver.recv_in_ptr(&mut prev_elem).await.expect("closed") };
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        sender.close().await;
+        let elem = sender.send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
     }
 }

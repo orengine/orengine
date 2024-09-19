@@ -2,8 +2,10 @@ use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::intrinsics::{unlikely};
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::Deref;
 use std::ptr;
+use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
 use crate::runtime::{local_executor, Task};
 
@@ -19,7 +21,9 @@ struct Inner<T> {
 
 pub struct WaitLocalSend<'future, T> {
     inner: &'future mut Inner<T>,
-    value: Option<T>
+    value: ManuallyDrop<T>,
+    #[cfg(debug_assertions)]
+    was_awaited: bool
 }
 
 impl<'future, T> WaitLocalSend<'future, T> {
@@ -27,20 +31,11 @@ impl<'future, T> WaitLocalSend<'future, T> {
     fn new(value: T, inner: &'future mut Inner<T>) -> Self {
         Self {
             inner,
-            value: Some(value)
+            value: ManuallyDrop::new(value),
+            #[cfg(debug_assertions)]
+            was_awaited: false
         }
     }
-}
-
-macro_rules! insert_value {
-    ($this:expr) => {
-        {
-            unsafe {
-                $this.inner.storage.push_back($this.value.take().unwrap_unchecked());
-            }
-            Poll::Ready(Ok(()))
-        }
-    };
 }
 
 impl<'future, T> Future for WaitLocalSend<'future, T> {
@@ -49,14 +44,18 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
     #[inline(always)]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        #[cfg(debug_assertions)]
+        { this.was_awaited = true; }
 
         if unlikely(this.inner.is_closed) {
-            return Poll::Ready(Err(unsafe { this.value.take().unwrap_unchecked() }));
+            return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
         }
 
         if unlikely(this.inner.receivers.len() > 0) {
-            let (task, slot) = unsafe { this.inner.receivers.pop_front().unwrap_unchecked() };
-            unsafe { *slot = this.value.take().unwrap_unchecked() };
+            let (task, slot) = unsafe {
+                this.inner.receivers.pop_front().unwrap_unchecked()
+            };
+            unsafe { ptr::copy_nonoverlapping(this.value.deref(), slot, 1); };
             local_executor().exec_task(task);
             return Poll::Ready(Ok(()));
         }
@@ -68,33 +67,36 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
             return Poll::Pending;
         }
 
-        insert_value!(this)
+        unsafe {
+            this.inner.storage.push_back(ManuallyDrop::take(&mut this.value));
+        }
+        Poll::Ready(Ok(()))
     }
 }
 
+#[cfg(debug_assertions)]
+impl<'future, T> Drop for WaitLocalSend<'future, T> {
+    fn drop(&mut self) {
+        assert!(self.was_awaited, "WaitLocalSend was not awaited. This will cause a memory leak.");
+    }
+}
+
+/// Will
 pub struct WaitLocalRecv<'future, T> {
     inner: &'future mut Inner<T>,
     was_enqueued: bool,
-    slot: &'future mut T
+    slot: *mut T
 }
 
 impl<'future, T> WaitLocalRecv<'future, T> {
     #[inline(always)]
-    fn new(inner: &'future mut Inner<T>, slot: &'future mut T) -> Self {
+    fn new(inner: &'future mut Inner<T>, slot: *mut T) -> Self {
         Self {
             inner,
             was_enqueued: false,
             slot
         }
     }
-}
-
-macro_rules! get_value {
-    ($this:expr) => {
-        Poll::Ready(Ok(unsafe {
-            ptr::write($this.slot, $this.inner.storage.pop_front().unwrap_unchecked())
-        }))
-    };
 }
 
 impl<'future, T> Future for WaitLocalRecv<'future, T> {
@@ -124,7 +126,9 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
             return Poll::Pending;
         }
 
-        get_value!(this)
+        Poll::Ready(Ok(unsafe {
+            ptr::write(this.slot, this.inner.storage.pop_front().unwrap_unchecked())
+        }))
     }
 }
 
@@ -201,7 +205,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
-            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+            match self.recv_in_ptr(slot.as_mut_ptr()).await {
                 Ok(_) => Ok(slot.assume_init()),
                 Err(_) => Err(()),
             }
@@ -209,7 +213,15 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     }
 
     #[inline(always)]
+    /// Drops the old value in the slot.
     pub fn recv_in<'future>(&self, slot: &'future mut T) -> WaitLocalRecv<'future, T> {
+        unsafe { drop_in_place(slot) };
+        WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
+    }
+
+    #[inline(always)]
+    /// Doesn't drop the old value in the slot.
+    pub unsafe fn recv_in_ptr<'future>(&self, slot: *mut T) -> WaitLocalRecv<'future, T> {
         WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
     }
 
@@ -275,7 +287,7 @@ impl<T> LocalChannel<T> {
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
-            match self.recv_in(&mut *slot.as_mut_ptr()).await {
+            match self.recv_in_ptr(slot.as_mut_ptr()).await {
                 Ok(_) => Ok(slot.assume_init()),
                 Err(_) => Err(()),
             }
@@ -283,8 +295,16 @@ impl<T> LocalChannel<T> {
     }
 
     #[inline(always)]
+    /// Drops the old value in the slot.
     pub fn recv_in<'future>(&self, slot: &'future mut T) -> WaitLocalRecv<'future, T> {
-        WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
+        unsafe { drop_in_place(slot) };
+        WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
+    }
+
+    #[inline(always)]
+    /// Doesn't drop the old value in the slot.
+    pub unsafe fn recv_in_ptr<'future>(&self, slot: *mut T) -> WaitLocalRecv<'future, T> {
+        WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot as _)
     }
 
     #[inline(always)]
@@ -306,8 +326,11 @@ impl<T> !Send for LocalChannel<T> {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::sync::{local_scope, LocalWaitGroup};
     use crate::local_yield_now;
+    use crate::utils::droppable_element::DroppableElement;
+    use crate::utils::SpinLock;
     use super::*;
 
     #[orengine_macros::test]
@@ -500,5 +523,54 @@ mod tests {
                 tx.send(i).await.expect("closed");
             }
         }).await;
+    }
+
+    #[orengine_macros::test]
+    fn test_drop_channel() {
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let channel = LocalChannel::bounded(1);
+
+        let _ = channel.send(DroppableElement::new(1, dropped.clone())).await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        channel.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = channel.send(DroppableElement::new(3, dropped.clone())).await;
+        unsafe { channel.recv_in_ptr(&mut prev_elem).await.expect("closed") };
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        channel.close();
+        let elem = channel.send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+    }
+
+    #[orengine_macros::test]
+    fn test_drop_channel_split() {
+        let channel = LocalChannel::bounded(1);
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let (sender, receiver) = channel.split();
+
+        let _ = sender.send(DroppableElement::new(1, dropped.clone())).await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        receiver.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = sender.send(DroppableElement::new(3, dropped.clone())).await;
+        unsafe { receiver.recv_in_ptr(&mut prev_elem).await.expect("closed") };
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        sender.close();
+        let elem = sender.send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
     }
 }
