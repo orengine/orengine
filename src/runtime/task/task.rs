@@ -20,6 +20,8 @@ impl Task {
     }
 }
 
+unsafe impl Send for Task {}
+
 #[macro_export]
 macro_rules! check_task_local_safety {
     ($task:expr) => {
