@@ -8,6 +8,24 @@ use crate::io::create_dir::CreateDir;
 use crate::io::sys::OsPath::get_os_path;
 
 #[derive(Debug)]
+/// A builder used to create directories in various manners.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::fs::DirBuilder;
+///
+/// # async fn foo() -> std::io::Result<()> {
+/// DirBuilder::new()
+///     .recursive(true)
+///     .mode(0o777)
+///     .create("foo/bar")
+///     .await?;
+///
+/// assert!(std::fs::exists("foo/bar")?);
+/// # Ok(())
+/// # }
+/// ```
 pub struct DirBuilder {
     mode: u32,
     recursive: bool,
@@ -41,7 +59,18 @@ impl DirBuilder {
     /// builder.
     ///
     /// It is considered an error if the directory already exists unless
-    /// recursive mode is enabled.
+    /// [`recursive mode`](DirBuilder::recursive) is enabled.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::DirBuilder;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    ///  DirBuilder::new().mode(0o777).create("foo").await?;
+    ///  assert!(std::fs::exists("foo")?);
+    /// # Ok(())
+    /// # }
     pub async fn create<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         if self.recursive {
@@ -52,9 +81,24 @@ impl DirBuilder {
         }
     }
 
+    /// Creates the specified directory and all of its parent components if they don't exist.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{create_dir_all};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// create_dir_all("foo/bar").await?;
+    /// assert!(std::fs::exists("foo/bar")?);
+    /// # Ok(())
+    /// # }
     async fn create_dir_all(path: &Path, mode: u32) -> io::Result<()> {
         #[inline(always)]
-        fn get_offset<const STACK_CAP: usize>(offsets: &mut SmallVec<usize, STACK_CAP>, path: &Path) -> Result<usize, ()> {
+        fn get_offset<const STACK_CAP: usize>(
+            offsets: &mut SmallVec<usize, STACK_CAP>,
+            path: &Path
+        ) -> Result<usize, ()> {
             let mut path_index;
             if offsets.is_empty() {
                 path_index = path.as_os_str().len() - 1

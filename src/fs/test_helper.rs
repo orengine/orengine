@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
+/// The path of the test directory.
 #[cfg(test)]
 pub(crate) const TEST_DIR_PATH: &str = "./test";
 
@@ -11,7 +12,7 @@ pub(crate) fn is_exists<S: AsRef<OsStr>>(path: S) -> bool {
    Path::new(path.as_ref()).exists()
 }
 
-
+/// Creates the test directory if it does not exist.
 #[cfg(test)]
 pub(crate) fn create_test_dir_if_not_exist() {
     if !is_exists(TEST_DIR_PATH) {
