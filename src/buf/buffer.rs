@@ -161,7 +161,9 @@ impl Buffer {
         };
 
         new_buf.len = self.len;
-        new_buf.as_mut()[..self.len].copy_from_slice(&self.as_ref()[..self.len]);
+        unsafe {
+            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len);
+        }
 
         *self = new_buf;
     }
