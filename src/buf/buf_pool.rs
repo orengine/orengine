@@ -1,14 +1,15 @@
-use std::intrinsics::{likely, unlikely};
+use std::intrinsics::likely;
 use std::ptr::addr_of_mut;
+
 use crate::buf::Buffer;
 use crate::local_executor;
 use crate::runtime::config::DEFAULT_BUF_LEN;
 
-/// Local [`BufPool`]. So, it is lockless.
+/// Local [`BufPool`]. Therefore, it is lockless.
 #[thread_local]
 pub static mut BUF_POOL: BufPool = BufPool::new();
 
-/// Get [`BufPool`] from thread local. So, it is lockless.
+/// Get [`BufPool`] from thread local. Therefore, it is lockless.
 #[inline(always)]
 pub fn buf_pool() -> &'static mut BufPool {
     unsafe { &mut *addr_of_mut!(BUF_POOL) }
@@ -16,7 +17,7 @@ pub fn buf_pool() -> &'static mut BufPool {
 
 /// Get [`Buffer`] from local [`BufPool`].
 ///
-/// Please, do not keep the buffer longer than necessary.
+/// Please, don't keep the buffer longer than necessary.
 /// After drop, it will be returned to the pool.
 #[inline(always)]
 pub fn buffer() -> Buffer {
@@ -60,14 +61,14 @@ pub fn full_buffer() -> Buffer {
 /// use [`BufPool::tune_buffer_len`].
 pub struct BufPool {
     pool: Vec<Buffer>,
-    buffer_len: usize
+    buffer_len: usize,
 }
 
 impl BufPool {
     const fn new() -> Self {
         Self {
             pool: Vec::new(),
-            buffer_len: DEFAULT_BUF_LEN
+            buffer_len: DEFAULT_BUF_LEN,
         }
     }
 
@@ -83,28 +84,30 @@ impl BufPool {
         }
         local_executor().set_config_buffer_len(self.buffer_len);
         self.buffer_len = buffer_len;
-        self.pool = Vec::with_capacity(0);
+        self.pool = Vec::new();
     }
 
     /// Get [`Buffer`] from [`BufPool`].
     pub fn get(&mut self) -> Buffer {
-        if unlikely(self.pool.is_empty()) {
-            return Buffer::new_from_pool(self.buffer_len);
+        match self.pool.pop() {
+            Some(buf) => buf,
+            None => Buffer::new_from_pool(self.buffer_len),
         }
-
-        unsafe { self.pool.pop().unwrap_unchecked() }
     }
 
     /// Put [`Buffer`] to [`BufPool`].
     pub fn put(&mut self, buf: Buffer) {
         if likely(buf.cap() == self.buffer_len) {
-            unsafe { self.put_unchecked(buf); }
+            unsafe {
+                self.put_unchecked(buf);
+            }
         }
     }
 
     /// Put [`Buffer`] to [`BufPool`] without checking for a size.
     ///
     /// # Safety
+    ///
     /// - buf.cap() == self.buffer_len
     #[inline(always)]
     pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
