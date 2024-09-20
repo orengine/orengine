@@ -1,22 +1,26 @@
+use std::alloc::{alloc, dealloc, Layout};
+use std::cmp::max;
 use std::fmt::Debug;
 use std::intrinsics::unlikely;
-use std::alloc::{alloc, dealloc, Layout};
-use std::cmp::{max};
 use std::ops::{Deref, DerefMut, Index, IndexMut};
-use std::ptr::{NonNull, slice_from_raw_parts_mut};
+use std::ptr;
+use std::ptr::{slice_from_raw_parts_mut, NonNull};
 use std::slice::SliceIndex;
+
 use crate::buf::buf_pool::buf_pool;
 use crate::buf::buffer;
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
-/// Buffer has `len` field.
+/// Buffer has `len` and `cap`.
 ///
 /// - `len` is how many bytes have been written into the buffer.
-/// 
+/// - `cap` is how many bytes have been allocated for the buffer.
+///
 /// # About pool
-/// 
-/// For get from [`BufPool`] call [`buffer`](crate::buf::buffer).
+///
+/// For get from [`BufPool`](crate::buf::BufPool), call [`buffer`](crate::buf::buffer)
+/// or [`full_buffer`](crate::buf::full_buffer).
 /// If you can use [`BufPool`], use it, to have better performance.
 ///
 /// If it was gotten from [`BufPool`] it will come back after drop.
@@ -37,7 +41,7 @@ use crate::buf::buffer;
 /// ```
 pub struct Buffer {
     pub(crate) slice: NonNull<[u8]>,
-    len: usize
+    len: usize,
 }
 
 impl Buffer {
@@ -52,15 +56,14 @@ impl Buffer {
             Ok(layout) => layout,
             Err(_) => panic!("Cannot create slice with capacity {capacity}. Capacity overflow."),
         };
-        unsafe {
-            NonNull::new_unchecked(slice_from_raw_parts_mut(alloc(layout), capacity))
-        }
+        unsafe { NonNull::new_unchecked(slice_from_raw_parts_mut(alloc(layout), capacity)) }
     }
 
     /// Creates new buffer with given size. This buffer will not be put to the pool.
     /// So, use it only for creating a buffer with specific size.
     ///
     /// # Safety
+    ///
     /// - size > 0
     #[inline(always)]
     pub fn new(size: usize) -> Self {
@@ -70,7 +73,7 @@ impl Buffer {
 
         Buffer {
             slice: Self::raw_slice(size),
-            len: 0
+            len: 0,
         }
     }
 
@@ -79,7 +82,7 @@ impl Buffer {
     pub(crate) fn new_from_pool(size: usize) -> Self {
         Buffer {
             slice: Self::raw_slice(size),
-            len: 0
+            len: 0,
         }
     }
 
@@ -90,13 +93,12 @@ impl Buffer {
     }
 
     /// Returns how many bytes have been written into the buffer.
-    /// So, it is [`len`](#field.len).
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Increases [`len`](#field.len) on diff
+    /// Increases [`len`](#field.len) by the diff.
     #[inline(always)]
     pub fn add_len(&mut self, diff: usize) {
         self.len += diff;
@@ -126,6 +128,26 @@ impl Buffer {
         self.cap() == self.len
     }
 
+    /// Resizes the buffer to a new size.
+    ///
+    /// If the new_size is less than the current length of the buffer,
+    /// the length is truncated to new_size.
+    ///
+    /// A new buffer is created with the specified new_size.
+    /// If a buffer of the same size is available in the buffer pool, it is reused;
+    /// otherwise, a new buffer is allocated.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::buf::Buffer;
+    ///
+    /// let mut buf = Buffer::new(100);
+    /// buf.append(&[1, 2, 3]);
+    /// buf.resize(200); // Buffer is resized to 200, contents are preserved
+    /// assert_eq!(buf.cap(), 200);
+    /// assert_eq!(buf.as_ref(), &[1, 2, 3]);
+    /// ```
     #[inline(always)]
     pub fn resize(&mut self, new_size: usize) {
         if new_size < self.len {
@@ -144,7 +166,8 @@ impl Buffer {
         *self = new_buf;
     }
 
-    /// Appends data to the buffer. If a capacity is not enough, the buffer will be resized and will not be put to the pool.
+    /// Appends data to the buffer.
+    /// If a capacity is not enough, the buffer will be resized.
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
         let len = buf.len();
@@ -152,7 +175,9 @@ impl Buffer {
             self.resize(max(self.len + len, self.cap() * 2));
         }
 
-        unsafe { self.slice.as_mut()[self.len..self.len + len].copy_from_slice(buf); }
+        unsafe {
+            ptr::copy_nonoverlapping(buf.as_ptr(), self.as_mut_ptr().add(self.len), len);
+        }
         self.len += len;
     }
 
@@ -282,14 +307,14 @@ impl Drop for Buffer {
         if self.cap() == pool.buffer_len() {
             let buf = Buffer {
                 slice: self.slice,
-                len: self.len
+                len: self.len,
             };
             unsafe { pool.put_unchecked(buf) };
         } else {
             unsafe {
                 dealloc(
                     self.slice.as_ptr() as *mut _,
-                    Layout::array::<u8>(self.cap()).unwrap_unchecked()
+                    Layout::array::<u8>(self.cap()).unwrap_unchecked(),
                 )
             }
         }
@@ -394,7 +419,7 @@ mod tests {
         assert_eq!(buf[0], 1);
         assert_eq!(buf[1], 2);
         assert_eq!(buf[2], 3);
-        assert_eq!(&buf[1..=2], &[2,3]);
+        assert_eq!(&buf[1..=2], &[2, 3]);
         assert_eq!(&buf[..3], &[1, 2, 3]);
         assert_eq!(&buf[2..], &[3]);
         assert_eq!(&buf[..], &[1, 2, 3]);
