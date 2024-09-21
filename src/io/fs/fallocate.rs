@@ -8,6 +8,7 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::io_request::{IoRequest};
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `fallocate` io operation which allows to allocate space in a file from a given offset.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Fallocate {
     fd: RawFd,
@@ -18,6 +19,7 @@ pub struct Fallocate {
 }
 
 impl Fallocate {
+    /// Creates a new `fallocate` io operation.
     pub fn new(fd: RawFd, offset: usize, len: usize, flags: i32) -> Self {
         Self {
             fd,
@@ -50,6 +52,10 @@ impl Future for Fallocate {
     }
 }
 
+/// This trait allows to create a `fallocate` io operation
+/// which allows to allocate space in a file from a given offset.
+///
+/// Call [`fallocate`](AsyncFallocate::fallocate) to allocate len bytes on the disk.
 pub trait AsyncFallocate: AsRawFd {
     #[inline(always)]
     fn fallocate(&self, offset: usize, len: usize, flags: i32) -> Fallocate {

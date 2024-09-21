@@ -7,6 +7,7 @@ use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `remove` io operation which allows to remove a file from a given path.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Remove {
     path: OsPath,
@@ -14,6 +15,7 @@ pub struct Remove {
 }
 
 impl Remove{
+    /// Creates a new `remove` io operation.
     pub fn new(path: OsPath) -> Self {
         Self {
             path,

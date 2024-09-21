@@ -10,6 +10,7 @@ use crate::io::sys::OsPath::OsPath;
 use crate::io::sys::unix::OsOpenOptions;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `open` io operation which opens a file at the given path with the given options.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Open<F: FromRawFd> {
     path: OsPath,
@@ -19,6 +20,7 @@ pub struct Open<F: FromRawFd> {
 }
 
 impl<F: FromRawFd> Open<F> {
+    /// Creates a new `open` io operation.
     pub fn new(path: OsPath, os_open_options: OsOpenOptions) -> Self {
         Self {
             path,

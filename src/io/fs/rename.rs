@@ -7,6 +7,7 @@ use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// Rename a file or directory from one path to another.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Rename {
     old_path: OsPath,
@@ -15,6 +16,7 @@ pub struct Rename {
 }
 
 impl Rename {
+    /// Creates a new `rename` io operation.
     pub fn new(old_path: OsPath, new_path: OsPath) -> Self {
         Self {
             old_path,

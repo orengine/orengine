@@ -7,6 +7,7 @@ use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// Create a directory at the given path.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct CreateDir {
     mode: u32,
@@ -15,6 +16,7 @@ pub struct CreateDir {
 }
 
 impl CreateDir {
+    /// Creates a new `CreateDir` future for the given path.
     pub fn new(path: OsPath, mode: u32) -> Self {
         Self {
             mode,

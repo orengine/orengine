@@ -7,6 +7,7 @@ use crate::io::io_request::{IoRequest};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `remove_dir` io operation from a given path.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct RemoveDir {
     path: OsPath,
@@ -14,6 +15,7 @@ pub struct RemoveDir {
 }
 
 impl RemoveDir {
+    /// Creates a new 'remove_dir' io operation from a given path.
     pub fn new(path: OsPath) -> Self {
         Self {
             path,

@@ -73,17 +73,97 @@ impl<'buf> Future for PositionedWrite<'buf> {
     }
 }
 
+/// The `AsyncWrite` trait provides asynchronous methods for writing to a file descriptor.
+///
+/// This trait is implemented for types that can be represented
+/// as raw file descriptors (via [`AsRawFd`]). It includes basic asynchronous write operations,
+/// as well as methods for performing positioned writes.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::fs::File;
+/// use orengine::fs::OpenOptions;
+/// use orengine::io::AsyncWrite;
+///
+/// # async fn foo() -> std::io::Result<()> {
+/// let options = OpenOptions::new().write(true);
+/// let mut file = File::open("example.txt", &options).await?;
+///
+/// // Asynchronously write to the file
+/// file.write_all(b"Hello, world!").await?;
+/// # Ok(())
+/// # }
+/// ```
 pub trait AsyncWrite: AsRawFd {
+    /// Asynchronously writes data from the provided buffer to the file descriptor.
+    ///
+    /// This method write some bytes from the buffer to the file descriptor.
+    /// It returns a future that resolves to the number of bytes written.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::File;
+    /// use orengine::fs::OpenOptions;
+    /// use orengine::io::AsyncWrite;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let options = OpenOptions::new().write(true);
+    /// let mut file = File::open("example.txt", &options).await?;
+    /// let bytes_written = file.write(b"Hello, world!").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     fn write<'buf>(&mut self, buf: &'buf [u8]) -> Write<'buf> {
         Write::new(self.as_raw_fd(), buf)
     }
 
+    /// Asynchronously performs a positioned write, writing to the file at the specified offset.
+    ///
+    /// This method does not modify the file's current position but instead writes to the specified
+    /// `offset`. It returns a future that resolves to the number of bytes written.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::File;
+    /// use orengine::fs::OpenOptions;
+    /// use orengine::buf::full_buffer;
+    /// use orengine::io::AsyncWrite;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let options = OpenOptions::new().write(true);
+    /// let mut file = File::open("example.txt", &options).await?;
+    /// let bytes_written = file.pwrite(b"Hello, world!", 1024).await?;  // Write at offset 1024
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     fn pwrite<'buf>(&mut self, buf: &'buf [u8], offset: usize) -> PositionedWrite<'buf> {
         PositionedWrite::new(self.as_raw_fd(), buf, offset)
     }
 
+    /// Asynchronously writes all data from the buffer to the file descriptor.
+    ///
+    /// This method continues writing until the entire buffer is written to the file descriptor.
+    /// It will return an error if the write operation fails or cannot complete.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::File;
+    /// use orengine::fs::OpenOptions;
+    /// use orengine::io::AsyncWrite;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let options = OpenOptions::new().write(true);
+    /// let mut file = File::open("example.txt", &options).await?;
+    /// file.write_all(b"Hello, world").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
         let mut written = 0;
@@ -94,6 +174,25 @@ pub trait AsyncWrite: AsRawFd {
         Ok(())
     }
 
+    /// Asynchronously performs a positioned write, writing all data from the buffer starting at the specified offset.
+    ///
+    /// This method continues writing from the specified `offset` until the entire buffer is written.
+    /// If the write operation fails or cannot complete, it will return an error.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::File;
+    /// use orengine::fs::OpenOptions;
+    /// use orengine::io::AsyncWrite;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let options = OpenOptions::new().write(true);
+    /// let mut file = File::open("example.txt", &options).await?;
+    /// file.pwrite_all(b"Hello, world", 512).await?;  // Write all starting at offset 512
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline]
     async fn pwrite_all(&mut self, buf: &[u8], offset: usize) -> Result<()> {
         let mut written = 0;

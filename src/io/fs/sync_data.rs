@@ -3,11 +3,11 @@ use std::pin::Pin;
 use std::io::Result;
 use std::task::{Context, Poll};
 use orengine_macros::{poll_for_io_request};
-
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::io_request::{IoRequest};
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `sync_data` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SyncData {
     fd: RawFd,
@@ -15,6 +15,7 @@ pub struct SyncData {
 }
 
 impl SyncData {
+    /// Creates a new 'sync_data' io operation.
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
@@ -38,7 +39,38 @@ impl Future for SyncData {
     }
 }
 
+/// The [`AsyncSyncData`](AsyncSyncData) trait provides
+/// a [`sync_data`](AsyncSyncData::sync_data) method to synchronize the data of a
+/// file with the underlying storage device.
+///
+/// For more details, see [`sync_data`](AsyncSyncData::sync_data).
 pub trait AsyncSyncData: AsRawFd {
+    /// This function is similar to [`sync_all`](crate::io::AsyncSyncAll::sync_all),
+    /// except that it might not synchronize file metadata to the filesystem.
+    ///
+    /// This is intended for use cases that must synchronize content, but don't
+    /// need the metadata on disk. The goal of this method is to reduce disk operations.
+    ///
+    /// Note that some platforms may simply implement
+    /// this in terms of [`sync_all`](crate::io::AsyncSyncAll::sync_all).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::buf::full_buffer;
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::{AsyncRead, AsyncSyncData, AsyncWrite};
+    /// use orengine::io::sync_all::AsyncSyncAll;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let options = OpenOptions::new().write(true);
+    /// let mut file = File::open("example.txt", &options).await?;
+    /// let mut buffer = b"Hello, world";
+    /// file.write_all(buffer).await?;
+    /// file.sync_data().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     fn sync_data(&self) -> SyncData {
         SyncData::new(self.as_raw_fd())
