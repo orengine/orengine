@@ -14,6 +14,7 @@ use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::messages::BUG;
 
+/// `peek_from` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PeekFrom<'fut> {
     fd: RawFd,
@@ -23,6 +24,7 @@ pub struct PeekFrom<'fut> {
 }
 
 impl<'fut> PeekFrom<'fut> {
+    /// Creates a new `peek_from` io operation.
     pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
             fd,
@@ -52,6 +54,7 @@ impl<'fut> Future for PeekFrom<'fut> {
     }
 }
 
+/// `peek_from` io operation with deadline.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PeekFromWithDeadline<'fut> {
     fd: RawFd,
@@ -62,6 +65,7 @@ pub struct PeekFromWithDeadline<'fut> {
 }
 
 impl<'fut> PeekFromWithDeadline<'fut> {
+    /// Creates a new `peek_from` io operation with deadline.
     pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
@@ -92,7 +96,52 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
     }
 }
 
+/// The `AsyncPeekFrom` trait provides asynchronous methods for peeking at the incoming data
+/// without consuming it from the socket (datagram).
+/// It returns [`SocketAddr`](SocketAddr) of the sender.
+/// It offers options to peek with deadlines, timeouts, and to ensure
+/// reading an exact number of bytes.
+///
+/// This trait can be implemented for datagram-oriented sockets that supports the `AsRawFd`.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::buf::full_buffer;
+/// use orengine::io::{AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
+/// use orengine::net::UdpSocket;
+///
+/// async fn foo() -> std::io::Result<()> {
+/// let mut stream = UdpSocket::bind("127.0.0.1:8080").await?;
+/// stream.poll_recv().await?;
+/// let mut buf = full_buffer();
+///
+/// // Peek at the incoming data without consuming it
+/// let bytes_peeked = stream.peek_from(&mut buf).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub trait AsyncPeekFrom: AsRawFd {
+    /// Asynchronously peeks into the incoming datagram without consuming it, filling the buffer
+    /// with available data and returning the number of bytes peeked and the sender's address.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::net::UdpSocket;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// socket.poll_recv().await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram without consuming it
+    /// let (bytes_peeked, addr) = socket.peek_from(&mut buf).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     async fn peek_from(
         &mut self,
@@ -104,6 +153,32 @@ pub trait AsyncPeekFrom: AsRawFd {
     Ok((n, sock_addr.as_socket().expect(BUG)))
     }
 
+    /// Asynchronously peeks into the incoming datagram with a deadline, without consuming it,
+    /// filling the buffer with available data and returning the number of bytes peeked
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::{Duration, Instant};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    /// socket.poll_recv_with_deadline(deadline).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram with a deadline
+    /// let (bytes_peeked, addr) = socket.peek_from_with_deadline(&mut buf, deadline).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     async fn peek_from_with_deadline(
         &mut self,
@@ -116,6 +191,32 @@ pub trait AsyncPeekFrom: AsRawFd {
     Ok((n, sock_addr.as_socket().expect(BUG)))
     }
 
+    /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,
+    /// filling the buffer with available data and returning the number of bytes peeked
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    /// socket.poll_recv_with_timeout(timeout).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram with a timeout
+    /// let (bytes_peeked, addr) = socket.peek_from_with_timeout(&mut buf, timeout).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     async fn peek_from_with_timeout(
         &mut self,

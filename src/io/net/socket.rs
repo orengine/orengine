@@ -7,6 +7,7 @@ use crate::io::io_request::IoRequest;
 use crate::io::sys::RawFd;
 use crate::io::worker::{IoWorker, local_worker};
 
+/// `socket` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Socket{
     domain: Domain,
@@ -15,6 +16,7 @@ pub struct Socket{
 }
 
 impl Socket {
+    /// Creates new `socket` io operation.
     pub fn new(domain: Domain, socket_type: Type) -> Self {
         Self {
             domain,
