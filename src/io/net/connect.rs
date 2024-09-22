@@ -9,7 +9,7 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 use crate::each_addr;
 
-use crate::io::io_request::IoRequest;
+use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd, IntoRawFd, FromRawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -19,7 +19,7 @@ use crate::io::worker::{local_worker, IoWorker};
 pub struct Connect<'fut> {
     fd: RawFd,
     addr: &'fut SockAddr,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl<'fut> Connect<'fut> {
@@ -28,7 +28,7 @@ impl<'fut> Connect<'fut> {
         Self {
             fd,
             addr,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -47,7 +47,7 @@ impl<'fut> Future for Connect<'fut> {
                 this.fd,
                 this.addr.as_ptr(),
                 this.addr.len(),
-                this.io_request.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ()
         ));
@@ -60,7 +60,7 @@ pub struct ConnectWithDeadline<'fut> {
     fd: RawFd,
     addr: &'fut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl<'fut> ConnectWithDeadline<'fut> {
@@ -70,7 +70,7 @@ impl<'fut> ConnectWithDeadline<'fut> {
             fd,
             addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -89,7 +89,7 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
                 this.fd,
                 this.addr.as_ptr(),
                 this.addr.len(),
-                this.io_request.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ()
         ));

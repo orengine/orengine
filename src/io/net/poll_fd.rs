@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
@@ -14,7 +14,7 @@ macro_rules! generate_poll {
         #[must_use = "Future must be awaited to drive the IO operation"]
         pub struct $name {
             fd: RawFd,
-            io_request: Option<IoRequest>
+            io_request_data: Option<IoRequestData>
         }
 
         impl $name {
@@ -22,7 +22,7 @@ macro_rules! generate_poll {
             pub fn new(fd: RawFd) -> Self {
                 Self {
                     fd,
-                    io_request: None
+                    io_request_data: None
                 }
             }
         }
@@ -37,7 +37,7 @@ macro_rules! generate_poll {
                 let ret;
 
                 poll_for_io_request!((
-                     worker.$method(this.fd, this.io_request.as_mut().unwrap_unchecked()),
+                     worker.$method(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
                      ()
                 ));
             }
@@ -48,7 +48,7 @@ macro_rules! generate_poll {
         pub struct $name_with_deadline {
             fd: RawFd,
             time_bounded_io_task: TimeBoundedIoTask,
-            io_request: Option<IoRequest>
+            io_request_data: Option<IoRequestData>
         }
 
         impl $name_with_deadline {
@@ -57,7 +57,7 @@ macro_rules! generate_poll {
                 Self {
                     fd,
                     time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-                    io_request: None
+                    io_request_data: None
                 }
             }
         }
@@ -72,7 +72,7 @@ macro_rules! generate_poll {
                 let ret;
 
                 poll_for_time_bounded_io_request!((
-                     worker.$method(this.fd, this.io_request.as_mut().unwrap_unchecked()),
+                     worker.$method(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
                      ()
                 ));
             }

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
-use crate::io::io_request::IoRequest;
+use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
@@ -20,8 +20,9 @@ use crate::messages::BUG;
 pub struct RecvFrom<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
+    buf: &'fut mut [u8],
     addr: &'fut mut SockAddr,
-    io_request: Option<IoRequest>,
+    io_request_data: Option<IoRequestData>,
 }
 
 impl<'fut> RecvFrom<'fut> {
@@ -29,9 +30,10 @@ impl<'fut> RecvFrom<'fut> {
     pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
             fd,
-            msg_header: MessageRecvHeader::new(buf),
+            msg_header: MessageRecvHeader::new(),
+            buf,
             addr,
-            io_request: None,
+            io_request_data: None,
         }
     }
 }
@@ -47,8 +49,8 @@ impl<'fut> Future for RecvFrom<'fut> {
         poll_for_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr),
-                this.io_request.as_mut().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
         ));
@@ -60,9 +62,10 @@ impl<'fut> Future for RecvFrom<'fut> {
 pub struct RecvFromWithDeadline<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
+    buf: &'fut mut [u8],
     addr: &'fut mut SockAddr,
     time_bounded_io_task: TimeBoundedIoTask,
-    io_request: Option<IoRequest>,
+    io_request_data: Option<IoRequestData>,
 }
 
 impl<'fut> RecvFromWithDeadline<'fut> {
@@ -70,10 +73,11 @@ impl<'fut> RecvFromWithDeadline<'fut> {
     pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
         Self {
             fd,
-            msg_header: MessageRecvHeader::new(buf),
+            msg_header: MessageRecvHeader::new(),
+            buf,
             addr,
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-            io_request: None,
+            io_request_data: None,
         }
     }
 }
@@ -89,8 +93,8 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
         poll_for_time_bounded_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr),
-                this.io_request.as_mut().unwrap_unchecked()
+                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
         ));

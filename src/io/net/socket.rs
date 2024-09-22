@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use orengine_macros::poll_for_io_request;
 use socket2::{Domain, Type};
-use crate::io::io_request::IoRequest;
+use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::RawFd;
 use crate::io::worker::{IoWorker, local_worker};
 
@@ -12,7 +12,7 @@ use crate::io::worker::{IoWorker, local_worker};
 pub struct Socket{
     domain: Domain,
     socket_type: Type,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl Socket {
@@ -21,7 +21,7 @@ impl Socket {
         Self {
             domain,
             socket_type,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -35,7 +35,7 @@ impl Future for Socket {
         let ret;
 
         poll_for_io_request!((
-            worker.socket(this.domain, this.socket_type, this.io_request.as_mut().unwrap_unchecked()),
+            worker.socket(this.domain, this.socket_type, this.io_request_data.as_mut().unwrap_unchecked()),
             ret as RawFd
         ));
     }

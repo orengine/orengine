@@ -109,10 +109,10 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
     let ret_statement = &input_elems[1];
 
     let expanded = quote! {
-        if this.io_request.is_none() {
+        if this.io_request_data.is_none() {
             unsafe {
                 let task = (cx.waker().data() as *const crate::runtime::Task).read();
-                this.io_request = Some(IoRequest::new(task));
+                this.io_request_data = Some(IoRequestData::new(task));
 
                 #do_request;
 
@@ -120,7 +120,7 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        let ret_ = unsafe { this.io_request.take().unwrap_unchecked() }.ret();
+        let ret_ = unsafe { this.io_request_data.take().unwrap_unchecked() }.ret();
 
         if ret_.is_ok() {
             unsafe {
@@ -143,13 +143,13 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
     let ret_statement = &input_elems[1];
 
     let expanded = quote! {
-        if this.io_request.is_none() {
+        if this.io_request_data.is_none() {
             unsafe {
                 let task = (cx.waker().data() as *const crate::runtime::Task).read();
-                this.io_request = Some(IoRequest::new(task));
+                this.io_request_data = Some(IoRequestData::new(task));
 
                 unsafe {
-                    this.time_bounded_io_task.set_user_data(this.io_request.as_mut().unwrap_unchecked() as *const _ as u64);
+                    this.time_bounded_io_task.set_user_data(this.io_request_data.as_mut().unwrap_unchecked() as *const _ as u64);
                 }
 
                 worker.register_time_bounded_io_task(&mut this.time_bounded_io_task);
@@ -159,7 +159,7 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        let ret_ = unsafe { this.io_request.take().unwrap_unchecked() }.ret();
+        let ret_ = unsafe { this.io_request_data.take().unwrap_unchecked() }.ret();
         if ret_.is_ok() {
             unsafe {
                 ret = ret_.unwrap_unchecked();

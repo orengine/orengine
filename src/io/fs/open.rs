@@ -4,7 +4,7 @@ use std::io::{Result};
 use std::marker::PhantomData;
 use std::task::{Context, Poll};
 use orengine_macros::poll_for_io_request;
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::sys::{RawFd, FromRawFd};
 use crate::io::sys::OsPath::OsPath;
 use crate::io::sys::unix::OsOpenOptions;
@@ -15,7 +15,7 @@ use crate::io::worker::{IoWorker, local_worker};
 pub struct Open<F: FromRawFd> {
     path: OsPath,
     os_open_options: OsOpenOptions,
-    io_request: Option<IoRequest>,
+    io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<F>
 }
 
@@ -25,7 +25,7 @@ impl<F: FromRawFd> Open<F> {
         Self {
             path,
             os_open_options,
-            io_request: None,
+            io_request_data: None,
             phantom_data: PhantomData
         }
     }
@@ -40,7 +40,7 @@ impl<F: FromRawFd> Future for Open<F> {
         let ret;
 
         poll_for_io_request!((
-            worker.open(this.path.as_ptr(), &this.os_open_options, this.io_request.as_mut().unwrap_unchecked()),
+            worker.open(this.path.as_ptr(), &this.os_open_options, this.io_request_data.as_mut().unwrap_unchecked()),
             F::from_raw_fd(ret as RawFd)
         ));
     }

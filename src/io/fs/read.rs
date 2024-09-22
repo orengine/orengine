@@ -3,7 +3,7 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use orengine_macros::poll_for_io_request;
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
 
@@ -12,7 +12,7 @@ use crate::io::worker::{IoWorker, local_worker};
 pub struct Read<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl<'buf> Read<'buf> {
@@ -21,7 +21,7 @@ impl<'buf> Read<'buf> {
         Self {
             fd,
             buf,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -35,7 +35,7 @@ impl<'buf> Future for Read<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.io_request.as_mut().unwrap_unchecked()),
+             worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.io_request_data.as_mut().unwrap_unchecked()),
              ret
         ));
     }
@@ -52,7 +52,7 @@ pub struct PositionedRead<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     offset: usize,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl<'buf> PositionedRead<'buf> {
@@ -62,7 +62,7 @@ impl<'buf> PositionedRead<'buf> {
             fd,
             buf,
             offset,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -76,7 +76,7 @@ impl<'buf> Future for PositionedRead<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.pread(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.offset, this.io_request.as_mut().unwrap_unchecked()),
+             worker.pread(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.offset, this.io_request_data.as_mut().unwrap_unchecked()),
              ret
         ));
     }

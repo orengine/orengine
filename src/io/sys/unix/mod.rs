@@ -1,3 +1,4 @@
+//! Unix-specific I/O with `io-uring`.
 pub(crate) mod fd;
 pub(crate) mod io_uring;
 pub(crate) mod os_path;

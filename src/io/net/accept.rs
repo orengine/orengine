@@ -10,7 +10,7 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use nix::libc;
 use socket2::SockAddr;
 
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, FromRawFd, AsRawFd};
 use crate::io::worker::{IoWorker, local_worker};
@@ -21,7 +21,7 @@ use crate::messages::BUG;
 pub struct Accept<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
-    io_request: Option<IoRequest>,
+    io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<S>
 }
 
@@ -31,7 +31,7 @@ impl<S: FromRawFd> Accept<S> {
         Self {
             fd,
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
-            io_request: None,
+            io_request_data: None,
             phantom_data: PhantomData
         }
     }
@@ -46,7 +46,7 @@ impl<S: FromRawFd> Future for Accept<S> {
         let ret;
 
         poll_for_io_request!((
-            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request.as_mut().unwrap_unchecked()),
+            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request_data.as_mut().unwrap_unchecked()),
             (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
         ));
     }
@@ -58,7 +58,7 @@ pub struct AcceptWithDeadline<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
     time_bounded_io_task: TimeBoundedIoTask,
-    io_request: Option<IoRequest>,
+    io_request_data: Option<IoRequestData>,
     pin: PhantomData<S>
 }
 
@@ -69,7 +69,7 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
             fd,
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
-            io_request: None,
+            io_request_data: None,
             pin: PhantomData
         }
     }
@@ -84,7 +84,7 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request.as_mut().unwrap_unchecked()),
+            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request_data.as_mut().unwrap_unchecked()),
             (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
         ));
     }

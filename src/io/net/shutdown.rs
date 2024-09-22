@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 use orengine_macros::{poll_for_io_request};
 use std::io::Result;
 use std::net::Shutdown as ShutdownHow;
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{IoWorker, local_worker};
 
@@ -13,7 +13,7 @@ use crate::io::worker::{IoWorker, local_worker};
 pub struct Shutdown {
     fd: RawFd,
     how: ShutdownHow,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl Shutdown {
@@ -22,7 +22,7 @@ impl Shutdown {
         Self {
             fd,
             how,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -37,7 +37,7 @@ impl Future for Shutdown {
         let ret;
 
         poll_for_io_request!((
-             worker.shutdown(this.fd, this.how, this.io_request.as_mut().unwrap_unchecked()),
+             worker.shutdown(this.fd, this.how, this.io_request_data.as_mut().unwrap_unchecked()),
              ()
         ));
     }

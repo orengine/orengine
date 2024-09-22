@@ -5,14 +5,14 @@ use std::task::{Context, Poll};
 use orengine_macros::{poll_for_io_request};
 
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::io_request::{IoRequest};
+use crate::io::io_request_data::{IoRequestData};
 use crate::io::worker::{IoWorker, local_worker};
 
 #[must_use = "Future must be awaited to drive the IO operation"]     
 pub struct Write<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }     
 
 impl<'buf> Write<'buf> {
@@ -20,7 +20,7 @@ impl<'buf> Write<'buf> {
         Self {               
             fd,              
             buf,
-            io_request: None
+            io_request_data: None
         } 
     }  
 }   
@@ -33,7 +33,7 @@ impl<'buf> Future for Write<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), this.io_request.as_mut().unwrap_unchecked()),
+             worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), this.io_request_data.as_mut().unwrap_unchecked()),
              ret
         ));
     }  
@@ -44,7 +44,7 @@ pub struct PositionedWrite<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
     offset: usize,
-    io_request: Option<IoRequest>
+    io_request_data: Option<IoRequestData>
 }
 
 impl<'buf> PositionedWrite<'buf> {
@@ -53,7 +53,7 @@ impl<'buf> PositionedWrite<'buf> {
             fd,
             buf,
             offset,
-            io_request: None
+            io_request_data: None
         }
     }
 }
@@ -67,7 +67,7 @@ impl<'buf> Future for PositionedWrite<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.pwrite(this.fd, this.buf.as_ptr(), this.buf.len(), this.offset, this.io_request.as_mut().unwrap_unchecked()),
+             worker.pwrite(this.fd, this.buf.as_ptr(), this.buf.len(), this.offset, this.io_request_data.as_mut().unwrap_unchecked()),
              ret
         ));
     }
