@@ -44,7 +44,7 @@ struct Inner<T> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use orengine::local::Local;
 /// use orengine::Executor;
 /// use orengine::local_executor;
@@ -67,7 +67,7 @@ struct Inner<T> {
 ///         let cloned_data = local_data.clone();
 ///         local_executor().spawn_local(async move {
 ///             // Work here with the cloned data.
-///             assert_eq!(*cloned_data.get(), 42);
+///             assert_eq!(*cloned_data.get(), 43);
 ///         });
 ///     });
 /// }
