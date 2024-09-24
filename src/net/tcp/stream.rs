@@ -17,6 +17,38 @@ use crate::runtime::local_executor;
 /// # Close
 ///
 /// [`TcpStream`] is automatically closed after it is dropped.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::buf::full_buffer;
+/// use orengine::io::{AsyncAccept, AsyncBind};
+/// use orengine::local_executor;
+/// use orengine::net::{Stream, TcpListener};
+///
+/// async fn handle_stream<S: Stream>(mut stream: S) {
+///     loop {
+///         stream.poll_recv().await.expect("poll_recv was failed");
+///         let mut buf = full_buffer();
+///         let n = stream.recv(&mut buf).await.expect("recv was failed");
+///         if n == 0 {
+///             break;
+///         }
+///
+///         stream.send_all(b"pong").await.expect("send_all was failed");
+///     }
+/// }
+///
+/// async fn run_server() -> std::io::Result<()> {
+///     let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+///     while let Ok((stream, addr)) = listener.accept().await {
+///         local_executor().spawn_local(async move {
+///             handle_stream(stream).await;
+///         });
+///     }
+///     Ok(())
+/// }
+/// ```
 pub struct TcpStream {
     fd: RawFd,
 }

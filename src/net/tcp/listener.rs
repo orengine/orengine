@@ -19,6 +19,21 @@ use crate::runtime::local_executor;
 /// # Close
 ///
 /// [`TcpListener`] is automatically closed after it is dropped.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::io::{AsyncAccept, AsyncBind};
+/// use orengine::net::TcpListener;
+///
+/// # async fn foo() -> std::io::Result<()> {
+/// let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+/// while let Ok((stream, addr)) = listener.accept().await {
+///     // process the stream
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct TcpListener {
     pub(crate) fd: RawFd,
 }
