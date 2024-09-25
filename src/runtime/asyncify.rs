@@ -4,12 +4,14 @@ use std::pin::Pin;
 use std::task::Poll;
 use crate::local_executor;
 
+/// A function that must be executed in the blocking pool.
 pub struct Asyncify<'future> {
     f: &'future mut dyn Fn(),
     was_called: bool
 }
 
 impl<'future> Asyncify<'future> {
+    /// Create a new [`Asyncify`] with the given function.
     pub fn new(f: &'future mut dyn Fn()) -> Self {
         Self {
             f,
@@ -36,7 +38,24 @@ impl<'future> Future for Asyncify<'future> {
     }
 }
 
-
+/// Create a new [`Asyncify`] from the given function.
+///
+/// Use it to run a blocking function in async runtime.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::asyncify;
+///
+/// # fn blocking_code() {}
+///
+/// async fn foo() {
+///     asyncify!(|| {
+///         // call blocking code here
+///         blocking_code();
+///     }).await;
+/// }
+/// ```
 #[macro_export]
 macro_rules! asyncify {
     ($f:expr) => {

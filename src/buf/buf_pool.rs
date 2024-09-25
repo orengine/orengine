@@ -3,7 +3,7 @@ use std::ptr::addr_of_mut;
 
 use crate::buf::Buffer;
 use crate::local_executor;
-use crate::runtime::config::DEFAULT_BUF_LEN;
+use crate::runtime::config::DEFAULT_BUF_CAP;
 
 /// Local [`BufPool`]. Therefore, it is lockless.
 #[thread_local]
@@ -68,7 +68,7 @@ impl BufPool {
     const fn new() -> Self {
         Self {
             pool: Vec::new(),
-            buffer_len: DEFAULT_BUF_LEN,
+            buffer_len: DEFAULT_BUF_CAP,
         }
     }
 
@@ -77,13 +77,13 @@ impl BufPool {
         self.buffer_len
     }
 
-    /// Change default buffer size.
-    pub fn tune_buffer_len(&mut self, buffer_len: usize) {
-        if self.buffer_len == buffer_len {
+    /// Change default buffer capacity.
+    pub fn tune_buffer_cap(&mut self, buffer_cap: usize) {
+        if self.buffer_len == buffer_cap {
             return;
         }
-        local_executor().set_config_buffer_len(self.buffer_len);
-        self.buffer_len = buffer_len;
+        local_executor().set_config_buffer_cap(self.buffer_len);
+        self.buffer_len = buffer_cap;
         self.pool = Vec::new();
     }
 

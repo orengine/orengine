@@ -2,6 +2,11 @@ use crate::io::IoWorkerConfig;
 use crate::messages::BUG;
 use crate::utils::SpinLock;
 
+/// A global config of state of the all runtime.
+/// It is used to prevent unsafe behavior in the runtime.
+///
+/// For example, when the task that uses an IO worker is
+/// shared with the [`Executor`](crate::runtime::executor::Executor), that has no IO worker.
 struct ConfigStats {
     number_of_executors_with_enabled_io_worker_and_work_sharing: usize,
     number_of_executors_with_enabled_thread_pool_and_work_sharing: usize,
@@ -10,6 +15,7 @@ struct ConfigStats {
 }
 
 impl ConfigStats {
+    /// Create a new config stats.
     const fn new() -> Self {
         Self {
             number_of_executors_with_enabled_io_worker_and_work_sharing: 0,
@@ -20,13 +26,16 @@ impl ConfigStats {
     }
 }
 
+/// A global config of state of the all runtime.
 static GLOBAL_CONFIG_STATS: SpinLock<ConfigStats> = SpinLock::new(ConfigStats::new());
 
-pub const DEFAULT_BUF_LEN: usize = 4096;
+/// The default [`buffers`](crate::buf::Buffer) capacity.
+pub const DEFAULT_BUF_CAP: usize = 4096;
 
+/// Config that can be used to create an Executor, because it is valid.
 #[derive(Clone)]
 pub(crate) struct ValidConfig {
-    pub(crate) buffer_len: usize,
+    pub(crate) buffer_cap: usize,
     pub(crate) io_worker_config: Option<IoWorkerConfig>,
     pub(crate) number_of_thread_workers: usize,
     /// If it is `usize::MAX`, it means that work sharing is disabled.
@@ -34,10 +43,12 @@ pub(crate) struct ValidConfig {
 }
 
 impl ValidConfig {
+    /// Returns whether the IO worker is enabled.
     pub const fn is_work_sharing_enabled(&self) -> bool {
         self.work_sharing_level != usize::MAX
     }
 
+    /// Returns whether the thread pool is enabled.
     pub const fn is_thread_pool_enabled(&self) -> bool {
         self.number_of_thread_workers != 0
     }
@@ -78,42 +89,70 @@ impl Drop for ValidConfig {
     }
 }
 
+/// `Config` is a configuration struct used for controlling various parameters
+/// related to buffers, I/O workers, thread workers, and work-sharing behavior.
+///
+/// # Fields
+/// - `buffer_cap`: The size of the [`buffers`](crate::buf::Buffer).
+///
+/// - `io_worker_config`: An optional configuration for I/O workers. If none is provided,
+/// the IO worker will be disabled.
+///
+/// - `number_of_thread_workers`: The number of thread workers to spawn. If zero is provided,
+/// the thread pool will be disabled.
+///
+/// - `work_sharing_level`: The level of work sharing between threads. It is responsible for
+/// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
+/// them to the shared queue.
+/// If [`usize::MAX`] is provided, work sharing will be disabled.
 #[derive(Clone)]
 pub struct Config {
-    buffer_len: usize,
+    /// The size of the [`buffers`](crate::buf::Buffer).
+    buffer_cap: usize,
+    /// An optional configuration for I/O workers. If none is provided,
+    /// the IO worker will be disabled.
     io_worker_config: Option<IoWorkerConfig>,
+    /// The number of thread workers to spawn. If zero is provided,
+    /// the thread pool will be disabled.
     number_of_thread_workers: usize,
+    /// The level of work sharing between threads. It is responsible for
+    /// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
+    /// them to the shared queue.
+    /// If [`usize::MAX`] is provided, work sharing will be disabled.
     work_sharing_level: usize
 }
 
 impl Config {
+    /// Returns a default [`Config`].
     pub const fn default() -> Self {
         Self {
-            buffer_len: DEFAULT_BUF_LEN,
+            buffer_cap: DEFAULT_BUF_CAP,
             io_worker_config: Some(IoWorkerConfig::default()),
             number_of_thread_workers: 1,
             work_sharing_level: 7
         }
     }
 
-    pub const fn new() -> Self {
-        Self::default()
+    /// Returns the capacity of the [`buffers`](crate::buf::Buffer).
+    pub const fn buffer_cap(&self) -> usize {
+        self.buffer_cap
     }
 
-    pub const fn buffer_len(&self) -> usize {
-        self.buffer_len
-    }
-
-    pub const fn set_buffer_len(mut self, buf_len: usize) -> Self {
-        self.buffer_len = buf_len;
+    /// Sets the capacity of the [`buffers`](crate::buf::Buffer).
+    pub const fn set_buffer_cap(mut self, buf_cap: usize) -> Self {
+        self.buffer_cap = buf_cap;
 
         self
     }
 
+    /// Returns the optional configuration for I/O workers. If none is returned,
+    /// the IO worker is disabled.
     pub const fn io_worker_config(&self) -> Option<IoWorkerConfig> {
         self.io_worker_config
     }
 
+    /// Sets the optional configuration for I/O workers. If none is provided,
+    /// the IO worker will be disabled.
     pub const fn set_io_worker_config(
         mut self,
         io_worker_config: Option<IoWorkerConfig>
@@ -134,30 +173,38 @@ impl Config {
         Ok(self)
     }
 
+    /// Disables the IO worker.
     pub const fn disable_io_worker(mut self) -> Self {
         self.io_worker_config = None;
 
         self
     }
 
+    /// Returns the number of thread workers to spawn. If zero is returned,
+    /// the thread pool is disabled.
     pub const fn number_of_thread_workers(&self) -> usize {
         self.number_of_thread_workers
     }
 
+    /// Returns whether the thread pool is enabled.
     pub const fn is_thread_pool_enabled(&self) -> bool {
         self.number_of_thread_workers != 0
     }
 
+    /// Sets the number of thread workers to spawn. If zero is provided,
+    /// the thread pool will be disabled.
     pub const fn set_numbers_of_thread_workers(mut self, number_of_thread_workers: usize) -> Self {
         self.number_of_thread_workers = number_of_thread_workers;
 
         self
     }
 
+    /// Returns whether the work sharing is enabled.
     pub const fn is_work_sharing_enabled(&self) -> bool {
         self.work_sharing_level != usize::MAX
     }
-    
+
+    /// Enables the work sharing.
     pub const fn enable_work_sharing(mut self) -> Self {
         if self.work_sharing_level == usize::MAX {
             self.work_sharing_level = 7;
@@ -165,22 +212,25 @@ impl Config {
         
         self
     }
-    
+
+    /// Disables the work sharing.
     pub const fn disable_work_sharing(mut self) -> Self {
         self.work_sharing_level = usize::MAX;
         
         self
     }
 
+    /// Sets the level of work sharing between threads. It is responsible for
+    /// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
+    /// them to the shared queue.
+    /// If [`usize::MAX`] is provided, work sharing will be disabled.
     pub const fn set_work_sharing_level(mut self, work_sharing_level: usize) -> Self {
-        if work_sharing_level > 1_000_000 {
-            panic!("The work_sharing_level must be less than 1,000,000");
-        }
         self.work_sharing_level = work_sharing_level;
 
         self
     }
 
+    /// Validates the configuration.
     pub(crate) fn validate(self) -> ValidConfig {
         if self.work_sharing_level != usize::MAX {
             let mut global_config_stats = GLOBAL_CONFIG_STATS.lock();
@@ -245,7 +295,7 @@ impl Config {
         }
 
         ValidConfig {
-            buffer_len: self.buffer_len,
+            buffer_cap: self.buffer_cap,
             io_worker_config: self.io_worker_config,
             number_of_thread_workers: self.number_of_thread_workers,
             work_sharing_level: self.work_sharing_level
@@ -256,7 +306,7 @@ impl Config {
 impl From<&ValidConfig> for Config {
     fn from(config: &ValidConfig) -> Self {
         Config {
-            buffer_len: config.buffer_len,
+            buffer_cap: config.buffer_cap,
             io_worker_config: config.io_worker_config,
             number_of_thread_workers: config.number_of_thread_workers,
             work_sharing_level: config.work_sharing_level
@@ -271,8 +321,8 @@ mod tests {
 
     #[orengine_macros::test]
     fn test_default_config() {
-        let config = Config::new().validate();
-        assert_eq!(config.buffer_len, DEFAULT_BUF_LEN);
+        let config = Config::default().validate();
+        assert_eq!(config.buffer_cap, DEFAULT_BUF_CAP);
         assert!(config.io_worker_config.is_some());
         assert!(config.is_thread_pool_enabled());
         assert_ne!(config.work_sharing_level, usize::MAX);
@@ -280,14 +330,14 @@ mod tests {
 
     #[orengine_macros::test]
     fn test_config() {
-        let config = Config::new()
-            .set_buffer_len(1024)
+        let config = Config::default()
+            .set_buffer_cap(1024)
             .set_io_worker_config(None).unwrap()
             .set_numbers_of_thread_workers(0)
             .disable_work_sharing();
 
         let config = config.validate();
-        assert_eq!(config.buffer_len, 1024);
+        assert_eq!(config.buffer_cap, 1024);
         assert!(config.io_worker_config.is_none());
         assert!(!config.is_thread_pool_enabled());
         assert_eq!(config.work_sharing_level, usize::MAX);
@@ -304,8 +354,8 @@ mod tests {
     #[should_panic]
     fn test_first_case_panic() {
         // with io worker and task sharing
-        let first_config = Config::new().validate();
-        let second_config = Config::new()
+        let first_config = Config::default().validate();
+        let second_config = Config::default()
             .set_io_worker_config(None).unwrap()
             .enable_work_sharing()
             .validate();
@@ -318,11 +368,11 @@ mod tests {
     #[should_panic]
     fn test_second_case_panic() {
         // with task sharing and without io worker
-        let first_config = Config::new()
+        let first_config = Config::default()
             .set_io_worker_config(None).unwrap()
             .enable_work_sharing()
             .validate();
-        let second_config = Config::new().validate();
+        let second_config = Config::default().validate();
 
         black_box(first_config);
         black_box(second_config);
@@ -332,11 +382,11 @@ mod tests {
     #[should_panic]
     fn test_third_case_panic() {
         // with task sharing and without thread pool
-        let first_config = Config::new()
+        let first_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
-        let second_config = Config::new().validate();
+        let second_config = Config::default().validate();
 
         black_box(first_config);
         black_box(second_config);
@@ -346,8 +396,8 @@ mod tests {
     #[should_panic]
     fn test_fourth_case_panic() {
         // with thread pool and task sharing
-        let first_config = Config::new().validate();
-        let second_config = Config::new()
+        let first_config = Config::default().validate();
+        let second_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();

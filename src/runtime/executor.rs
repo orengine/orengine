@@ -25,45 +25,93 @@ use crate::runtime::waker::create_waker;
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::utils::CoreId;
 
+/// Thread local [`Executor`]. So, it is lockless.
 #[thread_local]
 pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
 
+/// Change the state of local thread to pre-initialized.
 fn uninit_local_executor() {
     unsafe { LOCAL_EXECUTOR = None }
     unsafe { LOCAL_WORKER = None; }
 }
 
-// TODO
+/// Message that prints out when local executor is not initialized
+/// but [`local_executor()`](local_executor) is called.
+#[cfg(debug_assertions)]
 pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
-    ------------------------------------------------------------------------------------------\n\
-    |    Local executor is not initialized.                                                  |\n\
-    |    Please initialize it first.                                                         |\n\
-    |                                                                                        |\n\
-    |    1 - use let executor = Executor::init();                                            |\n\
-    |    2 - use executor.spawn_local(your_future)                                           |\n\
-    |            or executor.spawn_global(your_future)                                       |\n\
-    |                                                                                        |\n\
-    |    ATTENTION: if you want the future to finish the local runtime,                      |\n\
-    |               add orengine::end_local_thread() in the end of the future,               |\n\
-    |               otherwise the local runtime will never be stopped.                       |\n\
-    |                                                                                        |\n\
-    |    3 - use executor.run()                                                              |\n\
-    ------------------------------------------------------------------------------------------";
+------------------------------------------------------------------------------------------
+|    Local executor is not initialized.                                                  |
+|    Please initialize it first.                                                         |
+|                                                                                        |
+|    First way:                                                                          |
+|    1 - let executor = Executor::init();                                                |
+|    2 - executor.run_with_global_future(your_future) or                                 |
+|        executor.run_with_local_future(your_future)                                     |
+|                                                                                        |
+|    ATTENTION:                                                                          |
+|    To stop the executor, save in the start of the future local_executor().id()         |
+|    and call orengine::stop_executor(executor_id), or                                   |
+|    call orengine::stop_all_executors to stop the entire runtime.                       |
+|                                                                                        |
+|    Second way:                                                                         |
+|    1 - let executor = Executor::init();                                                |
+|    2 - executor.spawn_local(your_future) or                                            |
+|        executor.spawn_global(your_future)                                              |
+|    3 - executor.run()                                                                  |
+|                                                                                        |
+|    ATTENTION:                                                                          |
+|    To stop the executor, save in the start of the future local_executor().id()         |
+|    and call orengine::stop_executor(executor_id), or                                   |
+|    call orengine::stop_all_executors to stop the entire runtime.                       |
+|                                                                                        |
+|    Third way:                                                                          |
+|    1 - let executor = Executor::init();                                                |
+|    2 - executor.run_and_block_on_local(your_future) or                                 |
+|        executor.run_and_block_on_global(your_future)                                   |
+|                                                                                        |
+|        This will block the current thread executor until the future completes.         |
+|        And after the future completes, the executor will be stopped.                   |
+------------------------------------------------------------------------------------------";
 
+/// Returns the [`Executor`] that is running in the current thread.
+///
+/// # Panics
+///
+/// If the local executor is not initialized.
+///
+/// # Undefined Behavior
+///
+/// If the local executor is not initialized and the program is in `release` mode.
+///
+/// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`] for more details.
 #[inline(always)]
 pub fn local_executor() -> &'static mut Executor {
+    #[cfg(debug_assertions)]
     unsafe {
         LOCAL_EXECUTOR
             .as_mut()
             .expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
     }
+
+    #[cfg(not(debug_assertions))]
+    unsafe {
+        LOCAL_EXECUTOR
+            .as_mut()
+            .unwrap_unchecked()
+    }
 }
 
+/// Returns the [`Executor`] that is running in the current thread.
+///
+/// # Undefined Behavior
+///
+/// If the local executor is not initialized.
 #[inline(always)]
 pub unsafe fn local_executor_unchecked() -> &'static mut Executor {
     unsafe { LOCAL_EXECUTOR.as_mut().unwrap_unchecked() }
 }
 
+/// The executor that runs futures in the current thread.
 pub struct Executor {
     core_id: CoreId,
     executor_id: usize,
@@ -166,8 +214,8 @@ impl Executor {
         self.shared_tasks_list.as_ref()
     }
 
-    pub(crate) fn set_config_buffer_len(&mut self, buffer_len: usize) {
-        self.config.buffer_len = buffer_len;
+    pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
+        self.config.buffer_cap = buffer_len;
     }
 
     #[inline(always)]

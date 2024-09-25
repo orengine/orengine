@@ -3,16 +3,22 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use crate::{local_executor, stop_executor};
 
-// Async block in async block allocates double memory.
-// But if we use async block in `Future::poll`, it allocates only one memory.
-// When I say "async block" I mean future that is represented by `async {}`.
+/// `EndLocalThreadAndWriteIntoPtr` is a wrapper of a future. After the future is done,
+/// a result of the future is written into the pointer.
+///
+/// # Why it is needed?
+/// Async block in async block allocates double memory.
+/// But if we use async block in `Future::poll`, it allocates only one memory.
+///
+/// When I say "async block" I mean future that is represented by `async {}`.
 pub(crate) struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
     res_ptr: *mut Option<R>,
     future: Fut,
     local_executor_id: usize
 }
 
-impl <R, Fut: Future<Output = R>> EndLocalThreadAndWriteIntoPtr<R, Fut> {
+impl<R, Fut: Future<Output = R>> EndLocalThreadAndWriteIntoPtr<R, Fut> {
+    /// Creates a new `EndLocalThreadAndWriteIntoPtr`.
     pub(crate) fn new(res_ptr: *mut Option<R>, future: Fut) -> Self {
         Self {
             res_ptr,

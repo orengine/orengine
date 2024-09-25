@@ -3,7 +3,20 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crossbeam::utils::CachePadded;
 use crate::atomic_task_queue::AtomicTaskList;
 
-pub enum Call {
+/// Represents a call from a `Future::poll` to the [`Executor`](crate::runtime::Executor).
+/// The `Call` enum encapsulates different actions that an executor can take
+/// after a future yields [`Poll::Pending`](std::task::Poll::Pending).
+/// These actions may involve scheduling
+/// the current task, signaling readiness, or interacting with sync primitives.
+///
+/// # Safety
+///
+/// After invoking a `Call`, the associated future **must** return `Poll::Pending` immediately.
+/// The action defined by the `Call` will be executed **after** the future returns, ensuring
+/// that it is safe to perform state transitions or task scheduling without directly affecting
+/// the current state of the future. Use this mechanism only if you fully understand the
+/// implications and safety concerns of moving a future between different states or threads.
+pub(crate) enum Call {
     None,
     YieldCurrentGlobalTask,
     PushCurrentTaskTo(*const AtomicTaskList),
@@ -15,7 +28,7 @@ pub enum Call {
 
 impl Call {
     #[inline(always)]
-    pub fn is_none(&self) -> bool {
+    pub(crate) fn is_none(&self) -> bool {
         matches!(self, Call::None)
     }
 }
