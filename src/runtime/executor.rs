@@ -238,7 +238,7 @@ impl Executor {
 
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
-        let future = unsafe { &mut *task_ref.future_ptr };
+        let future = unsafe { &mut *task_ref.future_ptr() };
         check_task_local_safety!(task);
         let waker = create_waker(task_ptr as *const ());
         let mut context = Context::from_waker(&waker);
@@ -384,7 +384,7 @@ impl Executor {
                    return;
                 }
 
-                unsafe { list.take_batch(&mut self.global_tasks, limit) };
+                 list.take_batch(&mut self.global_tasks, limit);
             }
         }
     }
@@ -495,7 +495,7 @@ impl Executor {
                     let prev_len = self.global_tasks.len();
                     let to_take = (self.config.work_sharing_level - prev_len)
                         .min(MAX_NUMBER_OF_TASKS_TAKEN);
-                    unsafe { shared_tasks_list.take_batch(&mut self.global_tasks, to_take) };
+                    shared_tasks_list.take_batch(&mut self.global_tasks, to_take);
 
                     let taken = self.global_tasks.len() - prev_len;
                     for _ in 0..taken {

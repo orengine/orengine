@@ -1,6 +1,7 @@
 use std::future::Future;
 use crate::runtime::task_pool;
 
+/// `Task` is a wrapper of a future.
 #[derive(Copy, Clone)]
 pub struct Task {
     pub(crate) future_ptr: *mut dyn Future<Output=()>,
@@ -11,10 +12,26 @@ pub struct Task {
 }
 
 impl Task {
+    /// Returns a [`Task`] with the given future.
+    #[inline(always)]
     pub fn from_future<F: Future<Output=()>>(future: F) -> Self {
         task_pool().acquire(future)
     }
 
+    /// Returns the future that are wrapped by this [`Task`].
+    ///
+    /// # Safety
+    ///
+    /// It is safe because it returns a pointer without dereferencing it.
+    ///
+    /// Deref it only if you know what you are doing.
+    #[inline(always)]
+    pub fn future_ptr(self) -> *mut dyn Future<Output=()> {
+        self.future_ptr
+    }
+
+    /// Drops the wrapped future.
+    #[inline(always)]
     pub unsafe fn drop_future(&mut self) {
         task_pool().put(self.future_ptr)
     }

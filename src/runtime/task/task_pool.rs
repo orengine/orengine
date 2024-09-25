@@ -1,17 +1,23 @@
 use std::future::Future;
-use std::mem;
 use std::mem::size_of;
 use ahash::AHashMap;
 use crate::runtime::Task;
 
+/// A pool of tasks.
 pub struct TaskPool {
     /// Key is a size.
     storage: AHashMap<usize, Vec<*mut ()>>,
 }
 
+/// A thread-local task pool. So it is lockless.
 #[thread_local]
 pub static mut TASK_POOL: Option<TaskPool> = None;
 
+/// Returns `&'static mut TaskPool` of the current thread.
+///
+/// # Safety
+///
+/// [`TASK_POOL`](TASK_POOL) must be initialized.
 #[inline(always)]
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
@@ -28,14 +34,18 @@ pub fn task_pool() -> &'static mut TaskPool {
 }
 
 impl TaskPool {
+    /// Initializes a new `TaskPool` in the current thread if it is not initialized.
     pub fn init() {
         unsafe {
-            TASK_POOL = Some(TaskPool {
-                storage: AHashMap::new(),
-            });
+            if TASK_POOL.is_none() {
+                TASK_POOL = Some(TaskPool {
+                    storage: AHashMap::new(),
+                });
+            }
         }
     }
 
+    /// Returns a [`Task`] with the given future.
     #[inline(always)]
     pub fn acquire<F: Future<Output = ()>>(&mut self, future: F) -> Task {
         let size = size_of::<F>();
@@ -66,9 +76,10 @@ impl TaskPool {
         }
     }
 
+    /// Puts a task into the pool.
     #[inline(always)]
     pub fn put(&mut self, ptr: *mut dyn Future<Output = ()>) {
-        let size = mem::size_of_val(unsafe { &*ptr });
+        let size = size_of_val(unsafe { &*ptr });
         if let Some(pool) = self.storage.get_mut(&size) {
             pool.push(ptr as *mut ());
             return;
