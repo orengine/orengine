@@ -3,8 +3,11 @@ use crate::io::{AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo,
 use crate::net::connected_datagram::ConnectedDatagram;
 use crate::net::Socket;
 
-pub trait Datagram<C: ConnectedDatagram>:
-    Socket + AsyncConnectDatagram<C> + AsyncRecvFrom + AsyncPeekFrom + AsyncSendTo + AsyncBind {
+pub trait Datagram:
+Socket + AsyncConnectDatagram<Self::ConnectedDatagram> + AsyncRecvFrom +
+AsyncPeekFrom + AsyncSendTo + AsyncBind {
+    type ConnectedDatagram: ConnectedDatagram;
+
     #[inline(always)]
     fn set_broadcast(&self, broadcast: bool) -> std::io::Result<()> {
         let borrow_fd = self.as_fd();

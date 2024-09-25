@@ -2,9 +2,9 @@ use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
 use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncClose};
+use crate::io::{AsyncClose, AsyncPollFd};
 
-pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncClose {
+pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncClose {
     #[inline(always)]
     fn local_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();

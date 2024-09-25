@@ -2,11 +2,11 @@ use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
 use std::time::Duration;
-use crate::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncShutdown};
+use crate::io::{AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
 use crate::net::Socket;
 
 pub trait Stream:
-    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown + AsyncPollFd{
+    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown {
     #[inline(always)]
     fn set_linger(&self, linger: Option<Duration>) -> io::Result<()> {
         let borrow_fd = self.as_fd();

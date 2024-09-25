@@ -7,10 +7,10 @@ Cargo.lock
 /orengine-macros/target/
 /orengine-macros/Cargo.lock
 
-/benchmarks/net/client/target/
-/benchmarks/net/client/Cargo.lock
-/benchmarks/net/server/target/
-/benchmarks/net/server/Cargo.lock
+/benchmarks/net/tcp/client/target/
+/benchmarks/net/tcp/client/Cargo.lock
+/benchmarks/net/tcp/server/target/
+/benchmarks/net/tcp/server/Cargo.lock
 /benchmarks/cpu_bounded/target/
 /benchmarks/cpu_bounded/Cargo.lock
 /benchmarks/tools/target/

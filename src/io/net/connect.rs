@@ -264,8 +264,16 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     }
 }
 
-/// The `AsyncConnectDatagram` trait provides asynchronous methods for connecting a datagram socket
-/// (like UDP) to a remote address. It also supports connection timeouts and deadlines.
+/// The `AsyncConnectDatagram` trait provides asynchronous methods for "connecting" a datagram socket
+/// (like UDP) to a remote address.
+///
+/// Although datagram-oriented protocols are connectionless,
+/// this implementation provides an interface to set an address where data should
+/// be sent and received from. After setting a remote address with [`connect`],
+/// data can be sent to and received from that address with
+/// [`send`](crate::io::AsyncSend) and [`recv`](crate::io::AsyncRecv).
+///
+/// It also supports connection timeouts and deadlines.
 ///
 /// This trait can be implemented for datagram-oriented socket types.
 ///
@@ -277,7 +285,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
-/// let remote_socket = socket.connect("127.0.0.1:8080").await?;
+/// let connected_datagram = socket.connect("127.0.0.1:8080").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -287,12 +295,25 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     /// # Example
     ///
     /// ```no_run
+    /// use orengine::buf::full_buffer;
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram};
+    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
-    /// let remote_socket = socket.connect("127.0.0.1:8080").await?;
+    /// let mut connected_datagram = socket.connect("127.0.0.1:8080").await?;
+    ///
+    /// loop {
+    ///     connected_datagram.poll_recv().await?;
+    ///     let mut buf = full_buffer();
+    ///     let n = connected_datagram.recv(&mut buf).await?;
+    ///     if n == 0 {
+    ///         break;
+    ///     }
+    ///
+    ///     connected_datagram.send_all(&buf[..n]).await?;
+    /// }
+    ///
     /// # Ok(())
     /// # }
     /// ```
@@ -317,13 +338,26 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```no_run
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram};
-    /// use std::time::{Instant, Duration};
+    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use std::time::{Instant, Duration};    ///
+    /// #
+    /// use orengine::buf::full_buffer;
     ///
-    /// # async fn foo() -> std::io::Result<()> {
+    /// async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
-    /// let remote_socket = socket.connect_with_deadline("127.0.0.1:8080", deadline).await?;
+    /// let mut connected_datagram = socket.connect_with_deadline("127.0.0.1:8080", deadline).await?;
+    ///
+    /// loop {
+    ///     connected_datagram.poll_recv().await?;
+    ///     let mut buf = full_buffer();
+    ///     let n = connected_datagram.recv(&mut buf).await?;
+    ///     if n == 0 {
+    ///         break;
+    ///     }
+    ///
+    ///     connected_datagram.send_all(&buf[..n]).await?;
+    /// }
     /// # Ok(())
     /// # }
     /// ```
@@ -348,12 +382,25 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```no_run
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram};
-    /// use std::time::Duration;
+    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use std::time::Duration;    ///
+    /// #
+    /// use orengine::buf::full_buffer;
     ///
-    /// # async fn foo() -> std::io::Result<()> {
+    /// async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
-    /// let remote_socket = socket.connect_with_timeout("127.0.0.1:8080", Duration::from_secs(10)).await?;
+    /// let mut connected_datagram = socket.connect_with_timeout("127.0.0.1:8080", Duration::from_secs(10)).await?;
+    ///
+    /// loop {
+    ///     connected_datagram.poll_recv().await?;
+    ///     let mut buf = full_buffer();
+    ///     let n = connected_datagram.recv(&mut buf).await?;
+    ///     if n == 0 {
+    ///         break;
+    ///     }
+    ///
+    ///     connected_datagram.send_all(&buf[..n]).await?;
+    /// }
     /// # Ok(())
     /// # }
     /// ```

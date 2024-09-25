@@ -2,5 +2,5 @@ dev
 target
 test
 src/test-macro/target
-benchmarks/net/server/target
-benchmarks/net/client/target
+benchmarks/net/tcp/server/target
+benchmarks/net/tcp/client/target
