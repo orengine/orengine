@@ -27,8 +27,10 @@ unsafe fn wake_by_ref(data_ptr: *const ()) {
 /// Do nothing, because [`Executor`](crate::runtime::Executor) will drop the [`Task`] only when it is needed.
 unsafe fn drop(_: *const ()) {}
 
+/// [`RawWakerVTable`] for `orengine` runtime only!
 pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
+/// Creates a [`Waker`] with [`orengine::VTABLE`](VTABLE).
 #[inline(always)]
 pub fn create_waker(data_ptr: *const ()) -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(data_ptr, &VTABLE)) }
