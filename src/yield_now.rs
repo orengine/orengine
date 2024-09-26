@@ -1,6 +1,7 @@
-use std::future::{Future};
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 use crate::{local_executor, panic_if_local_in_future};
 
 pub struct LocalYield {
@@ -42,7 +43,7 @@ impl Future for GlobalYield {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            unsafe { local_executor().yield_current_global_task() };
+            unsafe { local_executor().push_current_task_at_the_start_of_lifo_global_queue() };
             Poll::Pending
         }
     }
@@ -56,6 +57,7 @@ pub fn global_yield_now() -> GlobalYield {
 mod tests {
     use crate::local::Local;
     use crate::runtime::local_executor;
+
     use super::*;
 
     #[orengine_macros::test]
