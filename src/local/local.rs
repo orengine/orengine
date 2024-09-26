@@ -1,6 +1,6 @@
 // TODO docs
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use crate::utils::Ptr;
 
 /// A private structure used within Local to hold a reference counter
@@ -123,6 +123,13 @@ impl<T: Default> Default for Local<T> {
 
 impl<T: Debug> Debug for Local<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get().fmt(f)
+    }
+}
+
+
+impl<T: Display> Display for Local<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.get().fmt(f)
     }
 }

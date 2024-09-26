@@ -605,16 +605,19 @@ impl Executor {
         }
     }
 
+    /// Returns a reference to the local tasks queue.
     #[inline(always)]
     pub fn local_queue(&mut self) -> &mut VecDeque<Task> {
         &mut self.local_tasks
     }
 
+    /// Returns a reference to the global tasks queue.
     #[inline(always)]
     pub fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
         &mut self.sleeping_tasks
     }
 
+    /// Tries to take a batch of tasks from the global tasks queue if needed.
     #[inline(always)]
     fn take_work_if_needed(&mut self) {
         if self.global_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
@@ -644,9 +647,19 @@ impl Executor {
         }
     }
 
-    #[inline(always)]
-    /// Return true, if we need to stop ([`end_local_thread`](end_local_thread)
+    /// Does background work like:
+    ///
+    /// - polls blocking worker
+    ///
+    /// - polls io worker
+    ///
+    /// - takes works if needed
+    ///
+    /// - checks sleeping tasks
+    ///
+    /// Returns true, if we need to stop ([`end_local_thread`](end_local_thread)
     /// was called or [`end`](crate::runtime::end::end)).
+    #[inline(always)]
     fn background_task(&mut self) -> bool {
         self.subscribed_state.check_subscription(self.executor_id);
         if unlikely(self.subscribed_state.is_stopped()) {
@@ -720,6 +733,28 @@ macro_rules! generate_run_and_block_on_function {
 // region run
 
 impl Executor {
+    /// Runs the executor.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::{Executor, stop_executor, sleep};
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     let mut executor = Executor::init();
+    ///     let id = executor.id();
+    ///
+    ///     executor.spawn_local(async move {
+    ///         println!("Hello from an async runtime!");
+    ///         sleep(Duration::from_secs(3)).await;
+    ///         stop_executor(id); // stops the executor
+    ///     });
+    ///     executor.run();
+    ///
+    ///     println!("Hello from a sync runtime after at least 3 seconds");
+    /// }
+    /// ```
     pub fn run(&mut self) {
         let mut task;
         // A round is a number of tasks that must be completed before the next background_work call.
@@ -768,18 +803,101 @@ impl Executor {
         uninit_local_executor();
     }
 
-    #[inline(always)]
+    /// Runs the executor with a local task.
+    ///
+    /// # The difference between global and local tasks
+    ///
+    /// Read it in [`Executor`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::{Executor, stop_executor, sleep, Local};
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     let mut executor = Executor::init();
+    ///     let id = executor.id();
+    ///     let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
+    ///     // but you can use Local, because here we use a local task.
+    ///
+    ///     executor.run_with_local_future(async move {
+    ///         println!("{}" ,local_msg);
+    ///         sleep(Duration::from_secs(3)).await;
+    ///         stop_executor(id); // stops the executor
+    ///     });
+    ///
+    ///     println!("Hello from a sync runtime after at least 3 seconds");
+    /// }
+    /// ```
     pub fn run_with_local_future<Fut: Future<Output = ()>>(&mut self, future: Fut) {
         self.spawn_local(future);
         self.run();
     }
 
-    #[inline(always)]
+    /// Runs the executor with a global task.
+    ///
+    /// # The difference between global and local tasks
+    ///
+    /// Read it in [`Executor`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::{Executor, stop_executor, sleep, Local};
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     let mut executor = Executor::init();
+    ///     let id = executor.id();
+    ///
+    ///     executor.run_with_global_future(async move {
+    ///         println!("Hello from an async runtime!");
+    ///         sleep(Duration::from_secs(3)).await;
+    ///         stop_executor(id); // stops the executor
+    ///     });
+    ///
+    ///     println!("Hello from a sync runtime after at least 3 seconds");
+    /// }
+    /// ```
     pub fn run_with_global_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
         self.spawn_global(future);
         self.run();
     }
 
+    /// Runs the executor with a local task and blocks on it. The executor will be stopped
+    /// after the task completes.
+    ///
+    /// # The difference between global and local tasks
+    ///
+    /// Read it in [`Executor`].
+    ///
+    /// # Returns
+    ///
+    /// It returns `Err(&'static msg)` if undefined behavior happened or `Ok(T)` if everything is ok.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::{Executor, stop_executor, sleep, Local};
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     let mut executor = Executor::init();
+    ///     let id = executor.id();
+    ///     let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
+    ///     // but you can use Local, because here we use a local task.
+    ///
+    ///     let res = executor.run_and_block_on_local(async move {
+    ///         println!("{}" ,local_msg);
+    ///         sleep(Duration::from_secs(3)).await;
+    ///
+    ///         42
+    ///     }).expect("undefined behavior happened"); // 42
+    ///
+    ///     println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
+    /// }
+    /// ```
     pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
         &'static mut self,
         future: Fut,
@@ -787,6 +905,37 @@ impl Executor {
         generate_run_and_block_on_function!(Executor::spawn_local, future, self)
     }
 
+    /// Runs the executor with a global task and blocks on it. The executor will be stopped
+    /// after the task completes.
+    ///
+    /// # The difference between global and local tasks
+    ///
+    /// Read it in [`Executor`].
+    ///
+    /// # Returns
+    ///
+    /// It returns `Err(&'static msg)` if undefined behavior happened or `Ok(T)` if everything is ok.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::{Executor, stop_executor, sleep, Local};
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     let mut executor = Executor::init();
+    ///     let id = executor.id();
+    ///
+    ///     let res = executor.run_and_block_on_global(async move {
+    ///         println!("Hello from an async runtime!");
+    ///         sleep(Duration::from_secs(3)).await;
+    ///
+    ///         42
+    ///     }).expect("undefined behavior happened"); // 42
+    ///
+    ///     println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
+    /// }
+    /// ```
     pub fn run_and_block_on_global<T, Fut: Future<Output = T> + Send>(
         &'static mut self,
         future: Fut,
@@ -796,15 +945,6 @@ impl Executor {
 }
 
 // endregion
-
-#[inline(always)]
-pub fn init_local_executor_and_run_it_for_block_on<T, Fut>(future: Fut) -> Result<T, &'static str>
-where
-    Fut: Future<Output = T>,
-{
-    Executor::init();
-    local_executor().run_and_block_on_local(future)
-}
 
 #[cfg(test)]
 mod tests {
