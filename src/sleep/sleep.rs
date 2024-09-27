@@ -8,9 +8,11 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use crate::sleep::sleeping_task::SleepingTask;
 
+/// `Sleep` implements the [`Future`] trait. It waits at least until `sleep_until` and works only
+/// in `orengine` runtime.
 pub struct Sleep {
     was_yielded: bool,
-    sleep_until: Instant,
+    sleep_until: Instant
 }
 
 impl Future for Sleep {
@@ -35,12 +37,27 @@ impl Future for Sleep {
     }
 }
 
+/// Sleeps at least until `Instant::now() + duration`. It works only in `orengine` runtime.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::sleep;
+/// use std::time::Duration;
+///
+/// fn main() {
+///     orengine::Executor::init().run_with_local_future(async {
+///         sleep(Duration::from_millis(100)).await;
+///         println!("Hello after at least 100 millis!");
+///     });
+/// }
+/// ```
 #[inline(always)]
 #[must_use]
 pub fn sleep(duration: Duration) -> Sleep {
     Sleep {
         was_yielded: false,
-        sleep_until: Instant::now() + duration,
+        sleep_until: Instant::now() + duration
     }
 }
 

@@ -1,27 +1,32 @@
 use std::time::Instant;
 use crate::runtime::task::Task;
 
-pub struct SleepingTask {
+/// `SleepingTask` is a wrapper of a task that contains `time to sleep`
+/// which is used to wake the task after some time.
+pub(crate) struct SleepingTask {
     time_to_wake: Instant,
     task: Task
 }
 
 impl SleepingTask {
+    /// Creates new [`SleepingTask`].
     #[inline(always)]
-    pub fn new(time_to_wake: Instant, task: Task) -> Self {
+    pub(crate) fn new(time_to_wake: Instant, task: Task) -> Self {
         Self {
             time_to_wake,
             task
         }
     }
 
+    /// Returns the associated task.
     #[inline(always)]
-    pub fn task(self) -> Task {
+    pub(crate) fn task(self) -> Task {
         self.task
     }
 
+    /// Returns the time to wake.
     #[inline(always)]
-    pub fn time_to_wake(&self) -> Instant {
+    pub(crate) fn time_to_wake(&self) -> Instant {
         self.time_to_wake
     }
 }

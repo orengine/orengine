@@ -13,6 +13,12 @@ pub struct TaskPool {
 #[thread_local]
 pub static mut TASK_POOL: Option<TaskPool> = None;
 
+/// Returns the thread-local task pool wrapped in an [`Option`].
+#[inline(always)]
+pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
+    unsafe { &mut *(&raw mut TASK_POOL) }
+}
+
 /// Returns `&'static mut TaskPool` of the current thread.
 ///
 /// # Safety
@@ -21,13 +27,11 @@ pub static mut TASK_POOL: Option<TaskPool> = None;
 #[inline(always)]
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
-    unsafe {
-        TASK_POOL.as_mut().expect(crate::messages::BUG)
-    }
+    { get_task_pool_ref().as_mut().expect(crate::messages::BUG) }
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        crate::runtime::task_pool::TASK_POOL
+        get_task_pool_ref()
             .as_mut()
             .unwrap_unchecked()
     }
@@ -36,12 +40,10 @@ pub fn task_pool() -> &'static mut TaskPool {
 impl TaskPool {
     /// Initializes a new `TaskPool` in the current thread if it is not initialized.
     pub fn init() {
-        unsafe {
-            if TASK_POOL.is_none() {
-                TASK_POOL = Some(TaskPool {
-                    storage: AHashMap::new(),
-                });
-            }
+        if get_task_pool_ref().is_none() {
+            *get_task_pool_ref() = Some(TaskPool {
+                storage: AHashMap::new(),
+            });
         }
     }
 

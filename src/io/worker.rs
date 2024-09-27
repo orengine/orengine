@@ -7,16 +7,24 @@ use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
+use crate::messages::BUG;
 
 /// Thread-local worker for async io operations.
 #[thread_local]
 pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
 
+/// Returns the thread-local worker wrapped in an [`Option`].
+pub(crate) fn get_local_worker_ref() -> &'static mut Option<WorkerSys> {
+    unsafe { &mut *(&raw mut LOCAL_WORKER) }
+}
+
 /// Initializes the thread-local worker.
 pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
-    unsafe {
-        LOCAL_WORKER = Some(WorkerSys::new(config));
+    if get_local_worker_ref().is_some() {
+        panic!("{}", BUG);
     }
+    
+    *get_local_worker_ref() = Some(WorkerSys::new(config));
 }
 
 /// Returns the thread-local worker wrapped in an [`Option`].
@@ -36,18 +44,18 @@ pub(crate) fn local_worker_option() -> &'static mut Option<WorkerSys> {
 #[inline(always)]
 pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
-    unsafe {
+    {
         if crate::local_executor().config().io_worker_config().is_none() {
             panic!("An attempt to call io-operation has failed, \
              because an Executor has no io-worker. Look at the config of the Executor.");
         }
 
-        LOCAL_WORKER.as_mut().expect(crate::messages::BUG)
+        get_local_worker_ref().as_mut().expect(BUG)
     }
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        LOCAL_WORKER.as_mut().unwrap_unchecked()
+        get_local_worker_ref().as_mut().unwrap_unchecked()
     }
 }
 

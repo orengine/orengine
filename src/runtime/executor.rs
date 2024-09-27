@@ -14,7 +14,7 @@ use fastrand::Rng;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{init_local_worker, IoWorker, LOCAL_WORKER, local_worker_option};
+use crate::io::worker::{init_local_worker, IoWorker, local_worker_option, get_local_worker_ref};
 use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
@@ -30,12 +30,17 @@ use crate::utils::CoreId;
 #[thread_local]
 pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
 
+/// Returns the thread-local executor wrapped in an [`Option`].
+/// 
+/// It is `None` if the executor is not initialized.
+fn get_local_executor_ref() -> &'static mut Option<Executor> {
+    unsafe { &mut *(&raw mut LOCAL_EXECUTOR) }
+}
+
 /// Change the state of local thread to pre-initialized.
 fn uninit_local_executor() {
-    unsafe { LOCAL_EXECUTOR = None }
-    unsafe {
-        LOCAL_WORKER = None;
-    }
+    *get_local_executor_ref() = None;
+    *get_local_worker_ref() = None;
 }
 
 /// Message that prints out when local executor is not initialized
@@ -90,15 +95,13 @@ pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 #[inline(always)]
 pub fn local_executor() -> &'static mut Executor {
     #[cfg(debug_assertions)]
-    unsafe {
-        LOCAL_EXECUTOR
-            .as_mut()
-            .expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
+    {
+        get_local_executor_ref().as_mut().expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
     }
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        LOCAL_EXECUTOR.as_mut().unwrap_unchecked()
+        crate::runtime::executor::get_local_executor_ref().as_mut().unwrap_unchecked()
     }
 }
 
@@ -109,7 +112,7 @@ pub fn local_executor() -> &'static mut Executor {
 /// If the local executor is not initialized.
 #[inline(always)]
 pub unsafe fn local_executor_unchecked() -> &'static mut Executor {
-    unsafe { LOCAL_EXECUTOR.as_mut().unwrap_unchecked() }
+    unsafe { get_local_executor_ref().as_mut().unwrap_unchecked() }
 }
 
 /// The executor that runs futures in the current thread.
@@ -162,6 +165,10 @@ const MAX_NUMBER_OF_TASKS_TAKEN: usize = 16;
 
 impl Executor {
     /// Initializes the executor in the current thread with provided config on the given core.
+    /// 
+    /// # Panics
+    /// 
+    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -181,6 +188,10 @@ impl Executor {
     /// }
     /// ```
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
+        if get_local_executor_ref().is_some() {
+            panic!("There is already an initialized executor in the current thread!");
+        }
+        
         let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
@@ -198,8 +209,7 @@ impl Executor {
             if let Some(io_config) = valid_config.io_worker_config {
                 init_local_worker(io_config);
             }
-
-            LOCAL_EXECUTOR = Some(Executor {
+            *get_local_executor_ref() = Some(Executor {
                 core_id,
                 executor_id,
                 config: valid_config,
@@ -224,7 +234,11 @@ impl Executor {
     }
 
     /// Initializes the executor in the current thread on the given core.
+    /// 
+    /// # Panics
     ///
+    /// If the local executor is already initialized.
+    /// 
     /// # Example
     ///
     /// ```no_run
@@ -247,6 +261,10 @@ impl Executor {
 
     /// Initializes the executor in the current thread with provided config.
     ///
+    /// # Panics
+    ///
+    /// If the local executor is already initialized.
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -267,6 +285,10 @@ impl Executor {
     }
 
     /// Initializes the executor in the current thread.
+    ///
+    /// # Panics
+    ///
+    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -611,9 +633,9 @@ impl Executor {
         &mut self.local_tasks
     }
 
-    /// Returns a reference to the global tasks queue.
+    /// Returns a reference to the `sleeping_tasks`.
     #[inline(always)]
-    pub fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
+    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
         &mut self.sleeping_tasks
     }
 

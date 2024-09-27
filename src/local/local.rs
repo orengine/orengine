@@ -1,5 +1,3 @@
-// TODO docs
-
 use std::fmt::{Debug, Display, Formatter};
 use crate::utils::Ptr;
 
@@ -66,21 +64,42 @@ struct Inner<T> {
 ///         // Cloning (increments the internal counter)
 ///         let cloned_data = local_data.clone();
 ///         local_executor().spawn_local(async move {
-///             // Work here with the cloned data.
 ///             assert_eq!(*cloned_data.get(), 43);
 ///         });
 ///     });
 /// }
 /// ```
 pub struct Local<T> {
-    inner: Ptr<Inner<T>>
+    inner: Ptr<Inner<T>>,
+    #[cfg(debug_assertions)]
+    parent_executor_id: usize
+}
+
+macro_rules! check_parent_executor_id {
+    ($local:expr) => {
+        #[cfg(debug_assertions)]
+        {
+            if $local.parent_executor_id != crate::local_executor().id() {
+                panic!("{}", crate::messages::BUG);
+            }
+        }
+    };
 }
 
 impl<T> Local<T> {
     /// Creates a new [`Local`] instance, initializing it with the provided data.
+    /// 
+    /// # Panics
+    /// 
+    /// If the [`Executor`](crate::Executor) is not initialized.
+    /// 
+    /// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`](crate::runtime::executor::MSG_LOCAL_EXECUTOR_IS_NOT_INIT) 
+    /// for more details.
     pub fn new(data: T) -> Self {
         Local {
-            inner: Ptr::new(Inner { data, counter: 1 })
+            inner: Ptr::new(Inner { data, counter: 1 }),
+            #[cfg(debug_assertions)]
+            parent_executor_id: crate::local_executor().id()
         }
     }
 
@@ -89,6 +108,8 @@ impl<T> Local<T> {
     /// (e.g., when `clone()` is called).
     #[inline(always)]
     fn inc_counter(&self) {
+        check_parent_executor_id!(self);
+        
         unsafe { self.inner.as_mut().counter += 1; }
     }
 
@@ -97,6 +118,8 @@ impl<T> Local<T> {
     /// If the reference count reaches zero, the data is cleaned up.
     #[inline(always)]
     fn dec_counter(&self) -> usize {
+        check_parent_executor_id!(self);
+        
         let reference = unsafe { self.inner.as_mut() };
         reference.counter -= 1;
         reference.counter
@@ -105,12 +128,16 @@ impl<T> Local<T> {
     /// Returns an immutable reference to the inner data.
     #[inline(always)]
     pub fn get<'local>(&self) -> &'local T {
+        check_parent_executor_id!(self);
+        
         unsafe { &self.inner.as_ref().data }
     }
 
     /// Returns a mutable reference to the inner data.
     #[inline(always)]
     pub fn get_mut<'local>(&self) -> &'local mut T {
+        check_parent_executor_id!(self);
+        
         unsafe { &mut self.inner.as_mut().data }
     }
 }
@@ -122,7 +149,9 @@ impl<T: Default> Default for Local<T> {
 }
 
 impl<T: Debug> Debug for Local<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        check_parent_executor_id!(self);
+        
         self.get().fmt(f)
     }
 }
@@ -130,6 +159,8 @@ impl<T: Debug> Debug for Local<T> {
 
 impl<T: Display> Display for Local<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        check_parent_executor_id!(self);
+        
         self.get().fmt(f)
     }
 }
@@ -138,13 +169,17 @@ impl<T> Clone for Local<T> {
     fn clone(&self) -> Self {
         self.inc_counter();
         Self {
-            inner: self.inner
+            inner: self.inner,
+            #[cfg(debug_assertions)]
+            parent_executor_id: self.parent_executor_id
         }
     }
 }
 
 impl<T> Drop for Local<T> {
     fn drop(&mut self) {
+        check_parent_executor_id!(self);
+        
         if self.dec_counter() == 0 {
             unsafe {
                 self.inner.drop_and_deallocate();
