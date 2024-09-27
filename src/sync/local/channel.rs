@@ -9,6 +9,8 @@ use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
 use crate::runtime::{local_executor, Task};
 
+/// This is the internal data structure for the channel.
+/// It holds the actual storage for the values and manages the queue of senders and receivers.
 struct Inner<T> {
     storage: VecDeque<T>,
     is_closed: bool,
@@ -19,6 +21,13 @@ struct Inner<T> {
 
 // region futures
 
+/// This struct represents a future that waits for a value to be sent into the channel.
+/// When the future is polled, it either sends the value immediately (if there is capacity) or
+/// gets parked in the list of waiting senders.
+///
+/// # Panics or memory leaks
+///
+/// If [`WaitLocalSend::poll`] is not called.
 pub struct WaitLocalSend<'future, T> {
     inner: &'future mut Inner<T>,
     value: ManuallyDrop<T>,
@@ -27,6 +36,7 @@ pub struct WaitLocalSend<'future, T> {
 }
 
 impl<'future, T> WaitLocalSend<'future, T> {
+    /// Creates a new [`WaitLocalSend`].
     #[inline(always)]
     fn new(value: T, inner: &'future mut Inner<T>) -> Self {
         Self {
@@ -81,7 +91,9 @@ impl<'future, T> Drop for WaitLocalSend<'future, T> {
     }
 }
 
-/// Will
+/// This struct represents a future that waits for a value to be received from the channel.
+/// When the future is polled, it either receives the value immediately (if available) or
+/// gets parked in the list of waiting receivers.
 pub struct WaitLocalRecv<'future, T> {
     inner: &'future mut Inner<T>,
     was_enqueued: bool,
@@ -89,6 +101,7 @@ pub struct WaitLocalRecv<'future, T> {
 }
 
 impl<'future, T> WaitLocalRecv<'future, T> {
+    /// Creates a new [`WaitLocalRecv`].
     #[inline(always)]
     fn new(inner: &'future mut Inner<T>, slot: *mut T) -> Self {
         Self {
@@ -134,6 +147,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
 
 // endregion
 
+/// Closes the channel and wakes all senders and receivers.
 #[inline(always)]
 fn close<T>(inner: &mut Inner<T>) {
     inner.is_closed = true;
@@ -150,11 +164,28 @@ fn close<T>(inner: &mut Inner<T>) {
 
 // region sender
 
+/// The `LocalSender` allows sending values into the [`LocalChannel`].
+/// When the channel is not full, values are sent immediately.
+/// If the channel is full, the sender waits until capacity is available or the channel is closed.
+///
+/// # Example
+///
+/// ```no_run
+/// async fn foo() {
+///     let channel = orengine::sync::local::LocalChannel::bounded(2); // capacity = 2
+///     let (sender, receiver) = channel.split();
+///
+///     sender.send(1).await.unwrap();
+///     let res = receiver.recv().await.unwrap();
+///     assert_eq!(res, 1);
+/// }
+/// ```
 pub struct LocalSender<'channel, T> {
     inner: &'channel UnsafeCell<Inner<T>>
 }
 
 impl<'channel, T> LocalSender<'channel, T> {
+    /// Creates a new [`LocalSender`].
     #[inline(always)]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
@@ -162,11 +193,29 @@ impl<'channel, T> LocalSender<'channel, T> {
         }
     }
 
+    /// Sends a value into the channel.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(T)` if the channel is closed.
+    /// 
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+    ///     let (sender, receiver) = channel.split();
+    ///
+    ///     sender.send(1).await.unwrap(); // not blocked
+    ///     sender.send(2).await.unwrap(); // blocked forever, because recv will never be called
+    /// }
+    /// ```
     #[inline(always)]
     pub fn send(&self, value: T) -> WaitLocalSend<'_, T> {
         WaitLocalSend::new(value, unsafe { &mut * self.inner.get() })
     }
 
+    /// Closes the [`LocalChannel`] associated with this sender.
     #[inline(always)]
     pub fn close(&self) {
         let inner = unsafe { &mut * self.inner.get() };
@@ -189,11 +238,28 @@ impl<'channel, T> !Send for LocalSender<'channel, T> {}
 
 // region receiver
 
+/// The `LocalReceiver` allows receiving values from the [`LocalChannel`].
+/// When the channel is not empty, values are received immediately.
+/// If the channel is empty, the receiver waits until a value is available or the channel is closed.
+///
+/// # Example
+///
+/// ```no_run
+/// async fn foo() {
+///     let channel = orengine::sync::local::LocalChannel::bounded(2); // capacity = 2
+///     let (sender, receiver) = channel.split();
+///
+///     sender.send(1).await.unwrap();
+///     let res = receiver.recv().await.unwrap();
+///     assert_eq!(res, 1);
+/// }
+///
 pub struct LocalReceiver<'channel, T> {
     inner: &'channel UnsafeCell<Inner<T>>
 }
 
 impl<'channel, T> LocalReceiver<'channel, T> {
+    /// Creates a new [`LocalReceiver`].
     #[inline(always)]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
@@ -201,6 +267,30 @@ impl<'channel, T> LocalReceiver<'channel, T> {
         }
     }
 
+    /// Asynchronously receives a value from the [`channel`](LocalChannel).
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    ///
+    /// Else, the value is immediately received.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(())` if the channel is closed.
+    /// 
+    /// # Example
+    /// 
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+    ///     let (sender, receiver) = channel.split();
+    ///
+    ///     sender.send(1).await.unwrap();
+    ///     let res = receiver.recv().await.unwrap(); // not blocked
+    ///     assert_eq!(res, 1);
+    ///     let _ = receiver.recv().await.unwrap(); // blocked forever because send will never be called
+    /// }
+    /// ```
     #[inline(always)]
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
@@ -212,19 +302,77 @@ impl<'channel, T> LocalReceiver<'channel, T> {
         }
     }
 
+    /// Asynchronously receives a value from the [`channel`](LocalChannel) to the provided slot.
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    ///
+    /// Else, the value is immediately received.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(())` if the channel is closed.
+    ///
+    /// # Attention
+    ///
+    /// `Drops` the old value in the slot.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+    ///     let (sender, receiver) = channel.split();
+    ///
+    ///     sender.send(1).await.unwrap();
+    ///     let mut res = receiver.recv().await.unwrap(); // not blocked
+    ///     assert_eq!(res, 1);
+    ///     receiver.recv_in(&mut res).await.unwrap(); // blocked forever because send will never be called
+    /// }
+    /// ```
     #[inline(always)]
-    /// Drops the old value in the slot.
     pub fn recv_in<'future>(&self, slot: &'future mut T) -> WaitLocalRecv<'future, T> {
         unsafe { drop_in_place(slot) };
         WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
     }
-
+    
+    /// Asynchronously receives a value from the [`channel`](LocalChannel) to the provided slot.
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    ///
+    /// Else, the value is immediately received.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(())` if the channel is closed.
+    ///
+    /// # Attention
+    ///
+    /// `Doesn't drop` the old value in the slot.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+    ///     let (sender, receiver) = channel.split();
+    ///
+    ///     sender.send(1).await.unwrap();
+    ///     let mut res_: std::mem::MaybeUninit<usize> = std::mem::MaybeUninit::uninit();
+    ///     unsafe { receiver.recv_in_ptr(res_.as_mut_ptr()).await.unwrap(); } // not blocked
+    ///     let res = unsafe { res_.assume_init() }; // 1
+    ///     unsafe { 
+    ///         receiver.recv_in_ptr(res_.as_mut_ptr()).await.unwrap(); // blocked forever because send will never be called
+    ///     }
+    /// }
+    /// ```
     #[inline(always)]
-    /// Doesn't drop the old value in the slot.
     pub unsafe fn recv_in_ptr<'future>(&self, slot: *mut T) -> WaitLocalRecv<'future, T> {
         WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
     }
 
+    /// Closes the [`LocalChannel`] associated with this receiver.
     #[inline(always)]
     pub fn close(self) {
         let inner = unsafe { &mut * self.inner.get() };
@@ -247,11 +395,64 @@ impl<'channel, T> !Send for LocalReceiver<'channel, T> {}
 
 // region channel
 
+/// The `LocalChannel` provides an asynchronous communication channel between 
+/// tasks running on the same thread. 
+/// 
+/// It supports both [`bounded`](LocalChannel::bounded) and [`unbounded`](LocalChannel::unbounded)
+/// channels for sending and receiving values.
+///
+/// When the channel is not empty, values are received immediately else 
+/// the reception operation is waiting until a value is available or the channel is closed.
+/// 
+/// When channel is not full, values are sent immediately else 
+/// the sending operation is waiting until capacity is available or the channel is closed.
+///
+/// # Examples
+/// 
+/// ## Don't split
+/// 
+/// ```no_run
+/// async fn foo() {
+///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+///
+///     channel.send(1).await.unwrap();
+///     let res = channel.recv().await.unwrap();
+///     assert_eq!(res, 1);
+/// }
+/// ```
+/// 
+/// ## Split into receiver and sender
+/// 
+/// ```no_run
+/// async fn foo() {
+///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+///     let (sender, receiver) = channel.split();
+///
+///     sender.send(1).await.unwrap();
+///     let res = receiver.recv().await.unwrap();
+///     assert_eq!(res, 1);
+/// }
+/// ```
 pub struct LocalChannel<T> {
     inner: UnsafeCell<Inner<T>>
 }
 
 impl<T> LocalChannel<T> {
+    /// Creates a bounded channel with a given capacity.
+    ///
+    /// A bounded channel limits the number of items that can be stored before sending blocks.
+    /// Once the channel reaches its capacity, senders will block until space becomes available.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1);
+    ///
+    ///     channel.send(1).await.unwrap(); // not blocked
+    ///     channel.send(2).await.unwrap(); // blocked because the channel is full
+    /// }
+    /// ```
     #[inline(always)]
     pub fn bounded(capacity: usize) -> Self {
         Self {
@@ -265,6 +466,20 @@ impl<T> LocalChannel<T> {
         }
     }
 
+    /// Creates an unbounded channel.
+    ///
+    /// An unbounded channel allows senders to send an unlimited number of values.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::unbounded();
+    ///
+    ///     channel.send(1).await.unwrap(); // not blocked
+    ///     channel.send(2).await.unwrap(); // not blocked
+    /// }
+    /// ```
     #[inline(always)]
     pub fn unbounded() -> Self {
         Self {
@@ -278,11 +493,50 @@ impl<T> LocalChannel<T> {
         }
     }
 
+    /// Sends a value into the channel, returning a [`WaitLocalSend`] future.
+    ///
+    /// This method is usually called by the `LocalSender`. It does not block the sender directly;
+    /// instead, it returns a future that will complete once the value 
+    /// is sent or the channel is closed.
+    /// 
+    /// # On close
+    /// 
+    /// Returns `Err(T)` if the channel is closed.
+    ///
+    /// # Panics or memory leaks
+    ///
+    /// If the future is not polled (awaited).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(0);
+    ///     channel.send(1).await.unwrap(); // blocked
+    /// }
+    /// ```
     #[inline(always)]
     pub fn send(&self, value: T) -> WaitLocalSend<'_, T> {
         WaitLocalSend::new(value, unsafe { &mut * self.inner.get() })
     }
 
+    /// Receives a value from the channel, returning a future that completes with the result.
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    /// 
+    /// # On close
+    /// 
+    /// Returns `Err(())` if the channel is closed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::<usize>::bounded(1);
+    ///     let res = channel.recv().await.unwrap(); // blocked until a value is sent
+    /// }
+    /// ```
     #[inline(always)]
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
@@ -294,25 +548,96 @@ impl<T> LocalChannel<T> {
         }
     }
 
+    /// Asynchronously receives a value from the `LocalChannel` to the provided slot.
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    ///
+    /// Else, the value is immediately received.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(())` if the channel is closed.
+    ///
+    /// # Attention
+    ///
+    /// `Drops` the old value in the slot.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); 
+    ///
+    ///     channel.send(1).await.unwrap();
+    ///     let mut res = channel.recv().await.unwrap(); // not blocked
+    ///     assert_eq!(res, 1);
+    ///     channel.recv_in(&mut res).await.unwrap(); // blocked forever because send will never be called
+    /// }
+    /// ```
     #[inline(always)]
-    /// Drops the old value in the slot.
     pub fn recv_in<'future>(&self, slot: &'future mut T) -> WaitLocalRecv<'future, T> {
         unsafe { drop_in_place(slot) };
         WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot)
     }
 
+    /// Asynchronously receives a value from the `LocalChannel` to the provided slot.
+    ///
+    /// If the channel is empty, the receiver waits until a value is available
+    /// or the channel is closed.
+    ///
+    /// Else, the value is immediately received.
+    ///
+    /// # On close
+    ///
+    /// Returns `Err(())` if the channel is closed.
+    ///
+    /// # Attention
+    ///
+    /// `Doesn't drop` the old value in the slot.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1); // capacity = 1
+    ///
+    ///     channel.send(1).await.unwrap();
+    ///     let mut res_: std::mem::MaybeUninit<usize> = std::mem::MaybeUninit::uninit();
+    ///     unsafe { channel.recv_in_ptr(res_.as_mut_ptr()).await.unwrap(); } // not blocked
+    ///     let res = unsafe { res_.assume_init() }; // 1
+    ///     unsafe { 
+    ///         channel.recv_in_ptr(res_.as_mut_ptr()).await.unwrap(); // blocked forever because send will never be called
+    ///     }
+    /// }
+    /// ```
     #[inline(always)]
-    /// Doesn't drop the old value in the slot.
     pub unsafe fn recv_in_ptr<'future>(&self, slot: *mut T) -> WaitLocalRecv<'future, T> {
         WaitLocalRecv::new(unsafe { &mut * self.inner.get() }, slot as _)
     }
 
+    /// Closes the `LocalChannel`. It will wake all waiting receivers and senders.
     #[inline(always)]
     pub fn close(&self) {
         let inner = unsafe { &mut * self.inner.get() };
         close(inner);
     }
 
+    /// Splits the channel into a [`LocalSender`] and a [`LocalReceiver`], allowing separate
+    /// sending and receiving tasks.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// async fn foo() {
+    ///     let channel = orengine::sync::local::LocalChannel::bounded(1);
+    ///     let (sender, receiver) = channel.split();
+    ///
+    ///     sender.send(1).await.unwrap();
+    ///     let res = receiver.recv().await.unwrap();
+    ///     assert_eq!(res, 1);
+    /// }
+    /// ```
     #[inline(always)]
     pub fn split(&self) -> (LocalSender<T>, LocalReceiver<T>) {
         (LocalSender::new(&self.inner), LocalReceiver::new(&self.inner))
