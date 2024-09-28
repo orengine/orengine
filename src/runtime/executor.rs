@@ -1,12 +1,12 @@
-use std::{mem, thread};
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use std::{mem, thread};
 
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
@@ -14,8 +14,7 @@ use fastrand::Rng;
 use crate::atomic_task_queue::AtomicTaskList;
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{init_local_worker, IoWorker, local_worker_option, get_local_worker_ref};
-use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
+use crate::io::worker::{get_local_worker_ref, init_local_worker, local_worker_option, IoWorker};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
@@ -23,6 +22,7 @@ use crate::runtime::global_state::{register_local_executor, SubscribedState};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
+use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::utils::CoreId;
 
@@ -31,7 +31,7 @@ use crate::utils::CoreId;
 pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
 
 /// Returns the thread-local executor wrapped in an [`Option`].
-/// 
+///
 /// It is `None` if the executor is not initialized.
 fn get_local_executor_ref() -> &'static mut Option<Executor> {
     unsafe { &mut *(&raw mut LOCAL_EXECUTOR) }
@@ -96,12 +96,16 @@ pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 pub fn local_executor() -> &'static mut Executor {
     #[cfg(debug_assertions)]
     {
-        get_local_executor_ref().as_mut().expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
+        get_local_executor_ref()
+            .as_mut()
+            .expect(MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
     }
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        crate::runtime::executor::get_local_executor_ref().as_mut().unwrap_unchecked()
+        crate::runtime::executor::get_local_executor_ref()
+            .as_mut()
+            .unwrap_unchecked()
     }
 }
 
@@ -165,9 +169,9 @@ const MAX_NUMBER_OF_TASKS_TAKEN: usize = 16;
 
 impl Executor {
     /// Initializes the executor in the current thread with provided config on the given core.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// If the local executor is already initialized.
     ///
     /// # Example
@@ -191,7 +195,7 @@ impl Executor {
         if get_local_executor_ref().is_some() {
             panic!("There is already an initialized executor in the current thread!");
         }
-        
+
         let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
@@ -234,11 +238,11 @@ impl Executor {
     }
 
     /// Initializes the executor in the current thread on the given core.
-    /// 
+    ///
     /// # Panics
     ///
     /// If the local executor is already initialized.
-    /// 
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -973,6 +977,7 @@ mod tests {
     use crate::local::Local;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
     use crate::yield_now::local_yield_now;
+    use std::ops::Deref;
 
     use super::*;
 
@@ -991,7 +996,7 @@ mod tests {
 
         local_yield_now().await;
 
-        assert_eq!(&vec![10, 30, 20], arr.get()); // 30, 20 because of LIFO
+        assert_eq!(&vec![10, 30, 20], arr.deref()); // 30, 20 because of LIFO
 
         let arr = Local::new(Vec::new());
 
@@ -999,7 +1004,7 @@ mod tests {
         local_executor().exec_future(insert(20, arr.clone()));
         local_executor().exec_future(insert(30, arr.clone()));
 
-        assert_eq!(&vec![10, 20, 30], arr.get()); // 20, 30 because we don't use the list here
+        assert_eq!(&vec![10, 20, 30], arr.deref()); // 20, 30 because we don't use the list here
     }
 
     #[test]

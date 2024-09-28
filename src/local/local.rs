@@ -1,5 +1,6 @@
-use std::fmt::{Debug, Display, Formatter};
 use crate::utils::Ptr;
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::{Deref, DerefMut};
 
 /// A private structure used within Local to hold a reference counter
 /// and the actual data.
@@ -10,7 +11,7 @@ struct Inner<T> {
     /// when references are dropped.
     counter: usize,
     /// The user-defined data that the [`Local`] struct manages.
-    data: T
+    data: T,
 }
 
 /// [`Local`] is a custom smart pointer-like structure designed to manage `T` in a single-threaded,
@@ -51,20 +52,16 @@ struct Inner<T> {
 ///     Executor::init().run_with_local_future(async {
 ///         let local_data = Local::new(42);
 ///
-///         // Get immutable access
-///         let value = local_data.get();
-///         println!("The value is: {}", value);
+///         println!("The value is: {}", local_data);
 ///
-///         // Get mutable access
-///         let mut_value = local_data.get_mut();
-///         *mut_value += 1;
+///         *local_data.get_mut() += 1;
 ///
-///         println!("Updated value: {}", local_data.get());
+///         println!("Updated value: {}", local_data);
 ///
 ///         // Cloning (increments the internal counter)
 ///         let cloned_data = local_data.clone();
 ///         local_executor().spawn_local(async move {
-///             assert_eq!(*cloned_data.get(), 43);
+///             assert_eq!(*cloned_data, 43);
 ///         });
 ///     });
 /// }
@@ -72,7 +69,7 @@ struct Inner<T> {
 pub struct Local<T> {
     inner: Ptr<Inner<T>>,
     #[cfg(debug_assertions)]
-    parent_executor_id: usize
+    parent_executor_id: usize,
 }
 
 macro_rules! check_parent_executor_id {
@@ -88,18 +85,18 @@ macro_rules! check_parent_executor_id {
 
 impl<T> Local<T> {
     /// Creates a new [`Local`] instance, initializing it with the provided data.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// If the [`Executor`](crate::Executor) is not initialized.
-    /// 
-    /// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`](crate::runtime::executor::MSG_LOCAL_EXECUTOR_IS_NOT_INIT) 
+    ///
+    /// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`](crate::runtime::executor::MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
     /// for more details.
     pub fn new(data: T) -> Self {
         Local {
             inner: Ptr::new(Inner { data, counter: 1 }),
             #[cfg(debug_assertions)]
-            parent_executor_id: crate::local_executor().id()
+            parent_executor_id: crate::local_executor().id(),
         }
     }
 
@@ -109,8 +106,10 @@ impl<T> Local<T> {
     #[inline(always)]
     fn inc_counter(&self) {
         check_parent_executor_id!(self);
-        
-        unsafe { self.inner.as_mut().counter += 1; }
+
+        unsafe {
+            self.inner.as_mut().counter += 1;
+        }
     }
 
     /// Decrements the internal reference counter. This is called when a reference is dropped
@@ -119,25 +118,17 @@ impl<T> Local<T> {
     #[inline(always)]
     fn dec_counter(&self) -> usize {
         check_parent_executor_id!(self);
-        
+
         let reference = unsafe { self.inner.as_mut() };
         reference.counter -= 1;
         reference.counter
     }
 
-    /// Returns an immutable reference to the inner data.
-    #[inline(always)]
-    pub fn get<'local>(&self) -> &'local T {
-        check_parent_executor_id!(self);
-        
-        unsafe { &self.inner.as_ref().data }
-    }
-
     /// Returns a mutable reference to the inner data.
     #[inline(always)]
-    pub fn get_mut<'local>(&self) -> &'local mut T {
+    pub fn get_mut(&self) -> &mut T {
         check_parent_executor_id!(self);
-        
+
         unsafe { &mut self.inner.as_mut().data }
     }
 }
@@ -151,17 +142,32 @@ impl<T: Default> Default for Local<T> {
 impl<T: Debug> Debug for Local<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         check_parent_executor_id!(self);
-        
-        self.get().fmt(f)
+
+        self.fmt(f)
     }
 }
 
+impl<T> Deref for Local<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        check_parent_executor_id!(self);
+
+        unsafe { &self.inner.as_ref().data }
+    }
+}
+
+impl<T> DerefMut for Local<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
+}
 
 impl<T: Display> Display for Local<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         check_parent_executor_id!(self);
-        
-        self.get().fmt(f)
+
+        self.fmt(f)
     }
 }
 
@@ -171,7 +177,7 @@ impl<T> Clone for Local<T> {
         Self {
             inner: self.inner,
             #[cfg(debug_assertions)]
-            parent_executor_id: self.parent_executor_id
+            parent_executor_id: self.parent_executor_id,
         }
     }
 }
@@ -179,7 +185,7 @@ impl<T> Clone for Local<T> {
 impl<T> Drop for Local<T> {
     fn drop(&mut self) {
         check_parent_executor_id!(self);
-        
+
         if self.dec_counter() == 0 {
             unsafe {
                 self.inner.drop_and_deallocate();

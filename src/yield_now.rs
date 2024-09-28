@@ -57,6 +57,7 @@ pub fn global_yield_now() -> GlobalYield {
 mod tests {
     use crate::local::Local;
     use crate::runtime::local_executor;
+    use std::ops::Deref;
 
     use super::*;
 
@@ -65,10 +66,10 @@ mod tests {
         let i = Local::new(false);
         let i_clone = i.clone();
         local_executor().spawn_local(async move {
-            assert_eq!(*i.get(), false);
+            assert_eq!(*i.deref(), false);
             *i.get_mut() = true;
         });
         local_yield_now().await;
-        assert_eq!(*i_clone.get(), true);
+        assert_eq!(*i_clone.deref(), true);
     }
 }

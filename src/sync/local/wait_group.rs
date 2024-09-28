@@ -1,14 +1,14 @@
+use crate::runtime::local_executor;
+use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 
 pub struct Wait<'wait_group> {
     need_wait: bool,
-    wait_group: &'wait_group LocalWaitGroup
+    wait_group: &'wait_group LocalWaitGroup,
 }
 
 impl<'wait_group> Wait<'wait_group> {
@@ -16,7 +16,7 @@ impl<'wait_group> Wait<'wait_group> {
     fn new(need_wait: bool, wait_group: &'wait_group LocalWaitGroup) -> Self {
         Self {
             need_wait,
-            wait_group
+            wait_group,
         }
     }
 }
@@ -39,17 +39,20 @@ impl<'wait_group> Future for Wait<'wait_group> {
 
 struct Inner {
     count: usize,
-    waited_tasks: Vec<Task>
+    waited_tasks: Vec<Task>,
 }
 
 pub struct LocalWaitGroup {
-    inner: UnsafeCell<Inner>
+    inner: UnsafeCell<Inner>,
 }
 
 impl LocalWaitGroup {
     pub fn new() -> Self {
         Self {
-            inner: UnsafeCell::new(Inner { count: 0, waited_tasks: Vec::new() })
+            inner: UnsafeCell::new(Inner {
+                count: 0,
+                waited_tasks: Vec::new(),
+            }),
         }
     }
 
@@ -89,7 +92,7 @@ impl LocalWaitGroup {
     }
 
     #[inline(always)]
-    #[must_use="Future must be awaited to start the wait"]
+    #[must_use = "Future must be awaited to start the wait"]
     pub fn wait(&self) -> Wait {
         if unlikely(self.get_inner().count == 0) {
             return Wait::new(false, self);
@@ -103,11 +106,11 @@ impl !Send for LocalWaitGroup {}
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-    use crate::local::Local;
-    use crate::runtime::local_executor;
-    use crate::local_yield_now;
     use super::*;
+    use crate::local::Local;
+    use crate::local_yield_now;
+    use crate::runtime::local_executor;
+    use std::rc::Rc;
 
     #[orengine_macros::test]
     fn test_many_wait_one() {
@@ -120,7 +123,7 @@ mod tests {
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
                 wait_group.wait().await;
-                if !check_value.get() {
+                if !*check_value {
                     panic!("not waited");
                 }
             });
@@ -149,7 +152,7 @@ mod tests {
         }
 
         wait_group.wait().await;
-        if *check_value.get() != 0 {
+        if *check_value != 0 {
             panic!("not waited");
         }
     }

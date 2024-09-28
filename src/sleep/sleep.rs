@@ -12,7 +12,7 @@ use crate::sleep::sleeping_task::SleepingTask;
 /// in `orengine` runtime.
 pub struct Sleep {
     was_yielded: bool,
-    sleep_until: Instant
+    sleep_until: Instant,
 }
 
 impl Future for Sleep {
@@ -57,12 +57,13 @@ impl Future for Sleep {
 pub fn sleep(duration: Duration) -> Sleep {
     Sleep {
         was_yielded: false,
-        sleep_until: Instant::now() + duration
+        sleep_until: Instant::now() + duration,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
     use std::time::Duration;
 
     use crate::local::Local;
@@ -84,7 +85,7 @@ mod tests {
         local_executor().exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.get());
+        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
 
         let arr = Local::new(Vec::new());
 
@@ -95,6 +96,6 @@ mod tests {
         executor.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.get());
+        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
     }
 }
