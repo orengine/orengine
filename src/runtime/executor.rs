@@ -707,7 +707,10 @@ impl Executor {
             } else {
                 let need_to_sleep = sleeping_task.time_to_wake() - instant;
                 self.sleeping_tasks.insert(sleeping_task);
-                if unlikely(has_no_io_work) {
+                let has_no_work = has_no_io_work 
+                    && self.global_tasks.len() == 0
+                    && self.local_tasks.len() == 0;
+                if unlikely(has_no_work) {
                     const MAX_SLEEP: Duration = Duration::from_millis(1);
 
                     if need_to_sleep > MAX_SLEEP {
