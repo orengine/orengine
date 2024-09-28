@@ -15,4 +15,6 @@ Cargo.lock
 /benchmarks/cpu_bounded/Cargo.lock
 /benchmarks/tools/target/
 /benchmarks/tools/Cargo.lock
+/benchmarks/fs/target/
+/benchmarks/fs/Cargo.lock
 

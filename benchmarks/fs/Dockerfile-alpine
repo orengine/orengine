@@ -1,4 +1,4 @@
-ARG APP_NAME=client
+ARG APP_NAME=fs
 
 FROM rustlang/rust:nightly-alpine AS build
 ARG APP_NAME
