@@ -694,7 +694,7 @@ impl Executor {
 
         self.exec_series = 0;
         self.take_work_if_needed();
-        self.thread_pool.poll(&mut self.local_tasks);
+        let has_blocking_work = self.thread_pool.poll(&mut self.local_tasks);
         let has_no_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(Duration::ZERO),
             None => true,
@@ -709,7 +709,8 @@ impl Executor {
                 self.sleeping_tasks.insert(sleeping_task);
                 let has_no_work = has_no_io_work 
                     && self.global_tasks.len() == 0
-                    && self.local_tasks.len() == 0;
+                    && self.local_tasks.len() == 0
+                    && !has_blocking_work;
                 if unlikely(has_no_work) {
                     const MAX_SLEEP: Duration = Duration::from_millis(1);
 

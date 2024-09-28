@@ -103,14 +103,17 @@ impl LocalThreadWorkerPool {
         self.wait += 1;
     }
 
+    /// Returns whether the [`LocalThreadWorkerPool`] has work to do.
     #[inline(always)]
-    pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) {
+    pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) -> bool {
         if self.wait == 0 {
-            return;
+            return false;
         }
 
         let prev_len = other_list.len();
         self.result_list.take_batch(other_list, usize::MAX);
         self.wait -= other_list.len() - prev_len;
+
+        true
     }
 }
