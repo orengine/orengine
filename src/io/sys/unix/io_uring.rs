@@ -119,6 +119,10 @@ impl IoUringWorker {
     /// Cancels requests that have expired.
     #[inline(always)]
     fn check_deadlines(&mut self) {
+        if self.time_bounded_io_task_queue.is_empty() {
+            return;
+        }
+        
         let now = Instant::now();
 
         while let Some(time_bounded_io_task) = self.time_bounded_io_task_queue.pop_first() {

@@ -16,7 +16,7 @@ Cargo.lock
 /benchmarks/tools/target/
 /benchmarks/tools/Cargo.lock
 
-
+/benchmarks/fs
 /benchmarks/fs/target/
 /benchmarks/fs/Cargo.lock
 

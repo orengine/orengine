@@ -143,7 +143,7 @@ impl<T: Debug> Debug for Local<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         check_parent_executor_id!(self);
 
-        self.fmt(f)
+        self.deref().fmt(f)
     }
 }
 
@@ -167,7 +167,7 @@ impl<T: Display> Display for Local<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         check_parent_executor_id!(self);
 
-        self.fmt(f)
+        self.deref().fmt(f)
     }
 }
 

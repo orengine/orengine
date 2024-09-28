@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-use std::{mem, thread};
+use std::mem;
 
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
@@ -694,54 +694,41 @@ impl Executor {
 
         self.exec_series = 0;
         self.take_work_if_needed();
-        let has_blocking_work = self.thread_pool.poll(&mut self.local_tasks);
-        let has_no_io_work = match self.local_worker {
+        self.thread_pool.poll(&mut self.local_tasks);
+        match self.local_worker {
             Some(io_worker) => io_worker.must_poll(Duration::ZERO),
             None => true,
         };
-
-        let instant = Instant::now();
-        while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
-            if sleeping_task.time_to_wake() <= instant {
-                self.exec_task(sleeping_task.task());
-            } else {
-                let need_to_sleep = sleeping_task.time_to_wake() - instant;
-                self.sleeping_tasks.insert(sleeping_task);
-                let has_no_work = has_no_io_work 
-                    && self.global_tasks.len() == 0
-                    && self.local_tasks.len() == 0
-                    && !has_blocking_work;
-                if unlikely(has_no_work) {
-                    const MAX_SLEEP: Duration = Duration::from_millis(1);
-
-                    if need_to_sleep > MAX_SLEEP {
-                        let _ = thread::sleep(MAX_SLEEP);
-                        break;
-                    } else {
-                        let _ = thread::sleep(need_to_sleep);
-                    }
+        
+        if self.sleeping_tasks.len() > 0 {
+            let instant = Instant::now();
+            while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
+                if sleeping_task.time_to_wake() <= instant {
+                    self.exec_task(sleeping_task.task());
                 } else {
+                    self.sleeping_tasks.insert(sleeping_task);
                     break;
                 }
             }
         }
 
-        macro_rules! shrink {
-            ($list:expr) => {
-                if unlikely($list.capacity() > 512 && $list.len() * 3 < $list.capacity()) {
-                    $list.shrink_to(self.local_tasks.len() * 2 + 1);
-                }
-            };
-        }
-
-        shrink!(self.local_tasks);
-        shrink!(self.global_tasks);
-        if self.shared_tasks_list.is_some() {
-            let mut shared_tasks_list =
-                unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
-
-            shrink!(shared_tasks_list);
-        }
+        // TODO think about it
+        // macro_rules! shrink {
+        //     ($list:expr) => {
+        //         if unlikely($list.capacity() > 512 && $list.len() * 3 < $list.capacity()) {
+        //             $list.shrink_to(self.local_tasks.len() * 2 + 1);
+        //         }
+        //     };
+        // }
+        // 
+        // shrink!(self.local_tasks);
+        // shrink!(self.global_tasks);
+        // if self.shared_tasks_list.is_some() {
+        //     let mut shared_tasks_list =
+        //         unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
+        // 
+        //     shrink!(shared_tasks_list);
+        // }
 
         false
     }

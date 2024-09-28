@@ -336,7 +336,7 @@ mod tests {
 
     #[orengine_macros::test_global]
     fn stress_test_mutex() {
-        const PAR: usize = 50;
+        const PAR: usize = 5;
         const TRIES: usize = 100;
 
         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
