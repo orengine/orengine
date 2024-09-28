@@ -1,19 +1,23 @@
 use std::sync::{Mutex, MutexGuard};
 
+/// A global lock that can be used to prevent tests from running in parallel.
 pub(crate) struct TestLock {
     lock: Mutex<()>
 }
 
 impl TestLock {
-    pub const fn new() -> Self {
+    /// Create a new [`TestLock`].
+    pub(crate) const fn new() -> Self {
         Self {
             lock: Mutex::new(())
         }
     }
 
-    pub fn lock(&'static self) -> MutexGuard<'static, ()> {
+    /// Lock the [`TestLock`].
+    pub(crate) fn lock(&'static self) -> MutexGuard<'static, ()> {
         self.lock.lock().unwrap()
     }
 }
 
+/// A global lock that can be used to prevent tests from running in parallel.
 pub(crate) static GLOBAL_TEST_LOCK: TestLock = TestLock::new();
