@@ -221,27 +221,28 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     }
 }
 
-pub trait AsyncAcceptUnix<S: FromRawFd>: AsRawFd {
-    #[inline(always)]
-    async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {
-        let (stream, addr) = Accept::<S>::new(self.as_raw_fd()).await?;
-        Ok((stream, addr.as_unix().expect(BUG)))
-    }
-
-    #[inline(always)]
-    async fn accept_with_deadline(
-        &mut self,
-        deadline: Instant
-    ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-        let (stream, addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
-        Ok((stream, addr.as_unix().expect(BUG)))
-    }
-
-    #[inline(always)]
-    async fn accept_with_timeout(
-        &mut self,
-        timeout: Duration
-    ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-        self.accept_with_deadline(Instant::now() + timeout).await
-    }
-}
+// TODO
+// pub(crate) trait AsyncAcceptUnix<S: FromRawFd>: AsRawFd {
+//     #[inline(always)]
+//     async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {
+//         let (stream, addr) = Accept::<S>::new(self.as_raw_fd()).await?;
+//         Ok((stream, addr.as_unix().expect(BUG)))
+//     }
+// 
+//     #[inline(always)]
+//     async fn accept_with_deadline(
+//         &mut self,
+//         deadline: Instant
+//     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
+//         let (stream, addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
+//         Ok((stream, addr.as_unix().expect(BUG)))
+//     }
+// 
+//     #[inline(always)]
+//     async fn accept_with_timeout(
+//         &mut self,
+//         timeout: Duration
+//     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
+//         self.accept_with_deadline(Instant::now() + timeout).await
+//     }
+// }

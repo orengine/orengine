@@ -105,7 +105,7 @@ impl Drop for ValidConfig {
 /// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
 /// them to the shared queue.
 /// If [`usize::MAX`] is provided, work sharing will be disabled.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Config {
     /// The size of the [`buffers`](crate::buf::Buffer).
     buffer_cap: usize,
