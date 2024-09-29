@@ -1,3 +1,6 @@
+//! This module provides a custom asynchronous mutex type [`LocalMutex`]. 
+//! It allows for non-blocking locking and unlocking, integrates with futures, and provides
+//! ownership-based locking through [`LocalMutexGuard`]. 
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::unlikely;

@@ -1,3 +1,5 @@
+pub use channel::*;
+pub use cond_var::*;
 pub use lazy_lock::*;
 pub use local::*;
 pub use mutex::*;

@@ -9,7 +9,7 @@ use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
 use crate::runtime::{local_executor, Task};
 
-/// This is the internal data structure for the channel.
+/// This is the internal data structure for the [`local channel`](LocalChannel).
 /// It holds the actual storage for the values and manages the queue of senders and receivers.
 struct Inner<T> {
     storage: VecDeque<T>,
@@ -21,7 +21,8 @@ struct Inner<T> {
 
 // region futures
 
-/// This struct represents a future that waits for a value to be sent into the channel.
+/// This struct represents a future that waits for a value to be sent 
+/// into the [`local channel`](LocalChannel).
 /// When the future is polled, it either sends the value immediately (if there is capacity) or
 /// gets parked in the list of waiting senders.
 ///
@@ -91,7 +92,8 @@ impl<'future, T> Drop for WaitLocalSend<'future, T> {
     }
 }
 
-/// This struct represents a future that waits for a value to be received from the channel.
+/// This struct represents a future that waits for a value to be 
+/// received from the [`local channel`](LocalChannel).
 /// When the future is polled, it either receives the value immediately (if available) or
 /// gets parked in the list of waiting receivers.
 pub struct WaitLocalRecv<'future, T> {
@@ -147,7 +149,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
 
 // endregion
 
-/// Closes the channel and wakes all senders and receivers.
+/// Closes the [`local channel`](LocalChannel) and wakes all senders and receivers.
 #[inline(always)]
 fn close<T>(inner: &mut Inner<T>) {
     inner.is_closed = true;
@@ -165,8 +167,9 @@ fn close<T>(inner: &mut Inner<T>) {
 // region sender
 
 /// The `LocalSender` allows sending values into the [`LocalChannel`].
-/// When the channel is not full, values are sent immediately.
-/// If the channel is full, the sender waits until capacity is available or the channel is closed.
+/// When the [`local channel`](LocalChannel) is not full, values are sent immediately.
+/// If the [`local channel`](LocalChannel) is full, the sender waits until capacity 
+/// is available or the [`local channel`](LocalChannel) is closed.
 ///
 /// # Example
 ///
@@ -193,11 +196,11 @@ impl<'channel, T> LocalSender<'channel, T> {
         }
     }
 
-    /// Sends a value into the channel.
+    /// Sends a value into the [`local channel`](LocalChannel).
     ///
     /// # On close
     ///
-    /// Returns `Err(T)` if the channel is closed.
+    /// Returns `Err(T)` if the [`local channel`](LocalChannel) is closed.
     /// 
     /// # Example
     ///
@@ -239,8 +242,9 @@ impl<'channel, T> !Send for LocalSender<'channel, T> {}
 // region receiver
 
 /// The `LocalReceiver` allows receiving values from the [`LocalChannel`].
-/// When the channel is not empty, values are received immediately.
-/// If the channel is empty, the receiver waits until a value is available or the channel is closed.
+/// When the [`local channel`](LocalChannel) is not empty, values are received immediately.
+/// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value 
+/// is available or the [`local channel`](LocalChannel) is closed.
 ///
 /// # Example
 ///
@@ -269,14 +273,14 @@ impl<'channel, T> LocalReceiver<'channel, T> {
 
     /// Asynchronously receives a value from the [`channel`](LocalChannel).
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value 
+    /// is available  or the [`local channel`](LocalChannel) is closed.
     ///
     /// Else, the value is immediately received.
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     /// 
     /// # Example
     /// 
@@ -304,14 +308,14 @@ impl<'channel, T> LocalReceiver<'channel, T> {
 
     /// Asynchronously receives a value from the [`channel`](LocalChannel) to the provided slot.
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value 
+    /// is available or the [`local channel`](LocalChannel) is closed.
     ///
     /// Else, the value is immediately received.
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Attention
     ///
@@ -338,14 +342,14 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     
     /// Asynchronously receives a value from the [`channel`](LocalChannel) to the provided slot.
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value
+    /// is available or the [`local channel`](LocalChannel) is closed.
     ///
     /// Else, the value is immediately received.
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Attention
     ///
@@ -401,11 +405,19 @@ impl<'channel, T> !Send for LocalReceiver<'channel, T> {}
 /// It supports both [`bounded`](LocalChannel::bounded) and [`unbounded`](LocalChannel::unbounded)
 /// channels for sending and receiving values.
 ///
-/// When the channel is not empty, values are received immediately else 
-/// the reception operation is waiting until a value is available or the channel is closed.
+/// When the [`local channel`](LocalChannel) is not empty, values are received immediately else 
+/// the reception operation is waiting until a value is available or
+/// the [`local channel`](LocalChannel) is closed.
 /// 
 /// When channel is not full, values are sent immediately else 
-/// the sending operation is waiting until capacity is available or the channel is closed.
+/// the sending operation is waiting until capacity is available or 
+/// the [`local channel`](LocalChannel) is closed.
+/// 
+/// # THe difference between `LocalChannel` and [`Channel`](crate::sync::Channel).
+/// 
+/// The `LocalChannel` works with `local tasks`. 
+/// 
+/// Read [`Executor`](crate::Executor) for more details.
 ///
 /// # Examples
 /// 
@@ -441,7 +453,8 @@ impl<T> LocalChannel<T> {
     /// Creates a bounded channel with a given capacity.
     ///
     /// A bounded channel limits the number of items that can be stored before sending blocks.
-    /// Once the channel reaches its capacity, senders will block until space becomes available.
+    /// Once the [`local channel`](LocalChannel) reaches its capacity, 
+    /// senders will block until space becomes available.
     ///
     /// # Example
     ///
@@ -450,7 +463,7 @@ impl<T> LocalChannel<T> {
     ///     let channel = orengine::sync::local::LocalChannel::bounded(1);
     ///
     ///     channel.send(1).await.unwrap(); // not blocked
-    ///     channel.send(2).await.unwrap(); // blocked because the channel is full
+    ///     channel.send(2).await.unwrap(); // blocked because the [`local channel`](LocalChannel) is full
     /// }
     /// ```
     #[inline(always)]
@@ -493,15 +506,15 @@ impl<T> LocalChannel<T> {
         }
     }
 
-    /// Sends a value into the channel, returning a [`WaitLocalSend`] future.
+    /// Sends a value into the [`local channel`](LocalChannel), returning a [`WaitLocalSend`] future.
     ///
     /// This method is usually called by the `LocalSender`. It does not block the sender directly;
     /// instead, it returns a future that will complete once the value 
-    /// is sent or the channel is closed.
+    /// is sent or the [`local channel`](LocalChannel) is closed.
     /// 
     /// # On close
     /// 
-    /// Returns `Err(T)` if the channel is closed.
+    /// Returns `Err(T)` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Panics or memory leaks
     ///
@@ -520,14 +533,15 @@ impl<T> LocalChannel<T> {
         WaitLocalSend::new(value, unsafe { &mut * self.inner.get() })
     }
 
-    /// Receives a value from the channel, returning a future that completes with the result.
+    /// Receives a value from the [`local channel`](LocalChannel), returning a future 
+    /// that completes with the result.
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value is available
+    /// or the [`local channel`](LocalChannel) is closed.
     /// 
     /// # On close
     /// 
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Example
     ///
@@ -550,14 +564,15 @@ impl<T> LocalChannel<T> {
 
     /// Asynchronously receives a value from the `LocalChannel` to the provided slot.
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits 
+    /// until a value is available
+    /// or the [`local channel`](LocalChannel) is closed.
     ///
     /// Else, the value is immediately received.
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Attention
     ///
@@ -583,14 +598,14 @@ impl<T> LocalChannel<T> {
 
     /// Asynchronously receives a value from the `LocalChannel` to the provided slot.
     ///
-    /// If the channel is empty, the receiver waits until a value is available
-    /// or the channel is closed.
+    /// If the [`local channel`](LocalChannel) is empty, the receiver waits until 
+    /// a value is available or the [`local channel`](LocalChannel) is closed.
     ///
     /// Else, the value is immediately received.
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the channel is closed.
+    /// Returns `Err(())` if the [`local channel`](LocalChannel) is closed.
     ///
     /// # Attention
     ///
@@ -623,8 +638,8 @@ impl<T> LocalChannel<T> {
         close(inner);
     }
 
-    /// Splits the channel into a [`LocalSender`] and a [`LocalReceiver`], allowing separate
-    /// sending and receiving tasks.
+    /// Splits the [`local channel`](LocalChannel) into a [`LocalSender`] and a [`LocalReceiver`], 
+    /// allowing separate sending and receiving tasks.
     ///
     /// # Example
     ///
