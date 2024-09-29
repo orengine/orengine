@@ -80,13 +80,13 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///
 /// Drop a lock before call [`notify_one`](LocalCondVar::notify_one)
 /// or [`notify_all`](LocalCondVar::notify_all) to improve performance.
-/// 
+///
 /// # The difference between `LocalCondVar` and [`CondVar`](crate::sync::CondVar)
 ///
-/// The `LocalCondVar` works with `local tasks`. 
+/// The `LocalCondVar` works with `local tasks`.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
-/// 
+///
 /// # Example
 ///
 /// ```no_run

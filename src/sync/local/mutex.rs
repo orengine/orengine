@@ -11,16 +11,26 @@ use std::task::{Context, Poll};
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 
+/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
+/// dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`](Deref) and [`DerefMut`] implementations.
+///
+/// This structure is created by the [`lock`](LocalMutex::lock) 
+/// and [`try_lock`](LocalMutex::try_lock) methods on [`LocalMutex`].
 pub struct LocalMutexGuard<'mutex, T> {
     local_mutex: &'mutex LocalMutex<T>
 }
 
 impl<'mutex, T> LocalMutexGuard<'mutex, T> {
+    /// Creates a new [`LocalMutexGuard`].
     #[inline(always)]
     pub(crate) fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self { local_mutex }
     }
 
+    /// Returns a reference to the original [`LocalMutex`].
     #[inline(always)]
     pub fn local_mutex(&'mutex self) -> &'mutex LocalMutex<T> {
         &self.local_mutex
@@ -35,12 +45,22 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
     pub fn unlock(self) {}
-
+    
+    /// Returns a reference to the original [`LocalMutex`].
+    /// 
+    /// The mutex will be unlocked.
     #[inline(always)]
     pub fn into_local_mutex(self) -> &'mutex LocalMutex<T> {
-        &self.local_mutex
+        self.local_mutex
     }
 
+    /// Returns a reference to the original [`LocalMutex`].
+    /// 
+    /// The mutex will be locked.
+    ///
+    /// # Safety
+    /// 
+    /// The mutex is unlocked by calling [`LocalMutex::unlock`](LocalMutex::unlock) later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'static LocalMutex<T> {
         let static_local_mutex = unsafe { mem::transmute(self.local_mutex) };
@@ -70,16 +90,18 @@ impl<'mutex, T> Drop for LocalMutexGuard<'mutex, T> {
     }
 }
 
+/// `MutexWait` is a future that will be resolved when the mutex is unlocked.
 pub struct MutexWait<'mutex, T> {
-    need_wait: bool,
+    was_called: bool,
     local_mutex: &'mutex LocalMutex<T>
 }
 
 impl<'mutex, T> MutexWait<'mutex, T> {
+    /// Creates a new [`MutexWait`].
     #[inline(always)]
-    fn new(need_wait: bool, local_mutex: &'mutex LocalMutex<T>) -> Self {
+    pub fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self {
-            need_wait,
+            was_called: false,
             local_mutex
         }
     }
@@ -90,18 +112,77 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if unlikely(this.need_wait) {
+        if !this.was_called {
             let task = unsafe { (cx.waker().data() as *const Task).read() };
             let wait_queue = unsafe { &mut *this.local_mutex.wait_queue.get() };
             wait_queue.push(task);
-            this.need_wait = false;
-            Poll::Pending
-        } else {
-            Poll::Ready(LocalMutexGuard::new(this.local_mutex))
+            this.was_called = true;
+            return Poll::Pending;
         }
+        
+        Poll::Ready(LocalMutexGuard::new(this.local_mutex))
     }
 }
 
+/// A mutual exclusion primitive useful for protecting shared data
+///
+/// This mutex will block tasks waiting for the lock to become available. The
+/// mutex can be created via a [`new`] constructor. Each mutex has a type parameter
+/// which represents the data that it is protecting. The data can be accessed
+/// through the RAII guards returned from [`lock`] and [`try_lock`], which
+/// guarantees that the data is only ever accessed when the mutex is locked, or 
+/// with an unsafe method [`get_locked`](LocalMutex::get_locked).
+///
+/// # The difference between `LocalMutex` and [`Mutex`](crate::sync::Mutex).
+///
+/// The `LocalMutex` works with `local tasks`. 
+///
+/// Read [`Executor`](crate::Executor) for more details.
+/// 
+/// # Incorrect usage
+/// 
+/// ```no_run
+/// use orengine::sync::LocalMutex;
+///
+/// // Incorrect usage, because in local runtime all tasks are executed sequentially.
+/// async fn inc_counter(counter: &LocalMutex<u32>) {
+///     let mut guard = counter.lock().await;
+///     *guard += 1;
+/// }
+/// ```
+/// 
+/// Use [`Local`](crate::Local) instead.
+///
+/// ```no_run
+/// use orengine::Local;
+///
+/// // Correct usage, because in local runtime all tasks are executed sequentially.
+/// async fn inc_counter(counter: Local<u32>) {
+///     *counter.get_mut() += 1;
+/// }
+/// ```
+/// 
+/// # Example with correct usage
+/// 
+/// ```no_run
+/// use std::collections::HashMap;
+/// use orengine::Local;
+/// use orengine::sync::LocalMutex;
+/// 
+/// # async fn write_to_the_dump_file(key: usize, value: usize) {}
+///
+/// // Correct usage, because after `write_to_log_file(*key, *value).await` and before the future is resolved
+/// // another task can modify the storage. So, we need to lock the storage.
+/// async fn dump_storage(storage: Local<LocalMutex<HashMap<usize, usize>>>) {
+///     let mut guard = storage.lock().await;
+///     
+///     for (key, value) in guard.iter_mut() {
+///         write_to_the_dump_file(*key, *value).await;
+///     }
+/// 
+///     // lock is released when `guard` goes out of scope
+/// }
+/// ```
 pub struct LocalMutex<T> {
     is_locked: UnsafeCell<bool>,
     wait_queue: UnsafeCell<Vec<Task>>,
@@ -109,6 +190,7 @@ pub struct LocalMutex<T> {
 }
 
 impl<T> LocalMutex<T> {
+    /// Creates a new [`LocalMutex`].
     #[inline(always)]
     pub fn new(value: T) -> LocalMutex<T> {
         LocalMutex {
@@ -118,17 +200,22 @@ impl<T> LocalMutex<T> {
         }
     }
 
+    /// Returns [`LocalMutexGuard`] that allows access to the inner value.
+    /// 
+    /// It will block the current task if the mutex is locked.
     #[inline(always)]
-    pub fn lock(&self) -> MutexWait<T> {
+    pub async fn lock(&self) -> LocalMutexGuard<T> {
         let is_locked = unsafe { &mut *self.is_locked.get() };
         if !*is_locked {
             *is_locked = true;
-            MutexWait::new(false, self)
+            LocalMutexGuard::new(self)
         } else {
-            MutexWait::new(true, self)
+            MutexWait::new(self).await
         }
     }
 
+    /// If the mutex is unlocked, returns [`LocalMutexGuard`] that allows access to the inner value, 
+    /// otherwise returns [`None`].
     #[inline(always)]
     pub fn try_lock(&self) -> Option<LocalMutexGuard<T>> {
         let is_locked = unsafe { &mut *self.is_locked.get() };
@@ -140,12 +227,20 @@ impl<T> LocalMutex<T> {
         }
     }
 
+    /// Add current task to wait queue.
     #[inline(always)]
     pub(crate) fn subscribe(&self, task: Task) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         wait_queue.push(task);
     }
 
+    /// Unlocks the mutex.
+    /// 
+    /// # Safety
+    /// 
+    /// - The mutex must be locked.
+    /// 
+    /// - And no tasks has an ownership of this [`mutex`](LocalMutex).
     #[inline(always)]
     pub unsafe fn unlock(&self) {
         debug_assert!(self.is_locked.get().read());
@@ -160,6 +255,13 @@ impl<T> LocalMutex<T> {
         }
     }
 
+    /// Returns a reference to the inner value.
+    /// 
+    /// # Safety
+    /// 
+    /// - The mutex must be locked.
+    /// 
+    /// - And only current task has an ownership of this [`mutex`](LocalMutex).
     #[inline(always)]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
