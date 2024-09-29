@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 
 use crossbeam::utils::{Backoff, CachePadded};
 
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, local_executor_unchecked, Task};
 
@@ -118,7 +118,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 
 pub struct Mutex<T> {
     counter: CachePadded<AtomicUsize>,
-    wait_queue: AtomicTaskList,
+    wait_queue: SyncTaskList,
     value: UnsafeCell<T>,
     expected_count: Cell<usize>,
 }
@@ -128,7 +128,7 @@ impl<T> Mutex<T> {
     pub fn new(value: T) -> Mutex<T> {
         Mutex {
             counter: CachePadded::new(AtomicUsize::new(0)),
-            wait_queue: AtomicTaskList::new(),
+            wait_queue: SyncTaskList::new(),
             value: UnsafeCell::new(value),
             expected_count: Cell::new(1),
         }

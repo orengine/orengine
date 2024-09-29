@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
 use crate::sync::{Mutex, MutexGuard};
@@ -64,14 +64,14 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 
 // TODO: in docs say to drop(guard) before notify
 pub struct CondVar {
-    wait_queue: AtomicTaskList,
+    wait_queue: SyncTaskList,
 }
 
 impl CondVar {
     #[inline(always)]
     pub fn new() -> CondVar {
         CondVar {
-            wait_queue: AtomicTaskList::new(),
+            wait_queue: SyncTaskList::new(),
         }
     }
 

@@ -11,7 +11,7 @@ use std::mem;
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
 
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, local_worker_option, IoWorker};
@@ -353,7 +353,7 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * send_to must be a valid pointer to [`AtomicTaskQueue`](AtomicTaskList)
+    /// * send_to must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
     /// * the reference must live at least as long as this state of the task
     ///
@@ -361,7 +361,7 @@ impl Executor {
     ///
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
-    pub unsafe fn push_current_task_to(&mut self, send_to: &AtomicTaskList) {
+    pub unsafe fn push_current_task_to(&mut self, send_to: &SyncTaskList) {
         debug_assert!(self.current_call.is_none());
         self.current_call = Call::PushCurrentTaskTo(send_to);
     }
@@ -390,7 +390,7 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * send_to must be a valid pointer to [`AtomicTaskQueue`](AtomicTaskList)
+    /// * send_to must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
@@ -402,7 +402,7 @@ impl Executor {
     #[inline(always)]
     pub unsafe fn push_current_task_to_and_remove_it_if_counter_is_zero(
         &mut self,
-        send_to: &AtomicTaskList,
+        send_to: &SyncTaskList,
         counter: &AtomicUsize,
         order: Ordering,
     ) {

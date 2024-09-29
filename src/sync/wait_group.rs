@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
 
@@ -60,14 +60,14 @@ impl<'wait_group> Future for Wait<'wait_group> {
 
 pub struct WaitGroup {
     counter: AtomicUsize,
-    waited_tasks: AtomicTaskList
+    waited_tasks: SyncTaskList
 }
 
 impl WaitGroup {
     pub fn new() -> Self {
         Self {
             counter: AtomicUsize::new(0),
-            waited_tasks: AtomicTaskList::new()
+            waited_tasks: SyncTaskList::new()
         }
     }
 

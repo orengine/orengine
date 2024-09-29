@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crossbeam::utils::CachePadded;
 
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 
 /// Represents a call from a `Future::poll` to the [`Executor`](crate::runtime::Executor).
 /// The `Call` enum encapsulates different actions that an executor can take
@@ -25,11 +25,11 @@ pub(crate) enum Call {
     /// task queue of the current executor.
     PushCurrentTaskAtTheStartOfLIFOGlobalQueue,
     /// Pushes current task to the given `AtomicTaskList`.
-    PushCurrentTaskTo(*const AtomicTaskList),
+    PushCurrentTaskTo(*const SyncTaskList),
     /// Pushes current task to the given `AtomicTaskList` and removes it if the given `AtomicUsize`
     /// is `0` with given `Ordering` after removing executes it.
     PushCurrentTaskToAndRemoveItIfCounterIsZero(
-        *const AtomicTaskList,
+        *const SyncTaskList,
         *const AtomicUsize,
         Ordering,
     ),
