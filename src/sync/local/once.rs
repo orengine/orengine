@@ -1,3 +1,12 @@
+use std::cell::Cell;
+use std::future::Future;
+
+/// `OnceState` is used to indicate whether the `Once` has been called or not.
+/// 
+/// # Variants
+/// 
+/// * `NotCalled` - The `Once` has not been called.
+/// * `Called` - The `Once` has been called.
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum OnceState {
     NotCalled = 0,
@@ -5,10 +14,12 @@ pub enum OnceState {
 }
 
 impl OnceState {
+    /// Returns the `OnceState` as an `isize`.
     pub const fn not_called() -> isize {
         0
     }
 
+    /// Returns the `OnceState` as an `isize`.
     pub const fn called() -> isize {
         1
     }
@@ -30,47 +41,113 @@ impl From<isize> for OnceState {
     }
 }
 
+/// `LocalOnce` is an asynchronous [`std::Once`](std::sync::Once).
+/// 
+/// # Usage
+/// 
+/// `LocalOnce` is used to call a function only once.
+/// 
+/// # The difference between `LocalOnce` and [`Once`](crate::sync::Once)
+///
+/// The `LocalOnce` works with `local tasks`. 
+///
+/// Read [`Executor`](crate::Executor) for more details.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use orengine::sync::LocalOnce;
+/// 
+/// static START: LocalOnce = LocalOnce::new();
+/// 
+/// async fn async_print_msg_on_start() {
+///     let was_called = START.call_once(async {
+///         // some async code
+///         println!("start");
+///     }).await.is_ok();
+/// }
+/// 
+/// async fn print_msg_on_start() {
+///     let was_called = START.call_once_sync(|| {
+///         println!("start");
+///     }).is_ok();
+/// }
+/// ```
 pub struct LocalOnce {
-    state: OnceState,
+    state: Cell<OnceState>,
 }
 
 impl LocalOnce {
+    /// Creates a new `LocalOnce`.
     pub const fn new() -> LocalOnce {
         LocalOnce {
-            state: OnceState::NotCalled,
+            state: Cell::new(OnceState::NotCalled),
         }
     }
 
+    /// Calls the future only once.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::LocalOnce;
+    ///
+    /// static START: LocalOnce = LocalOnce::new();
+    ///
+    /// async fn async_print_msg_on_start() {
+    ///     let was_called = START.call_once(async {
+    ///         // some async code
+    ///         println!("start");
+    ///     }).await.is_ok();
+    /// }
+    /// ```
     #[inline(always)]
-    pub fn call_once<F: FnOnce()>(&mut self, f: F) -> Result<(), ()> {
-        if self.state == OnceState::NotCalled {
-            self.state = OnceState::Called;
-            f();
-            Ok(())
-        } else {
-            Err(())
+    pub async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
+        if self.is_called() {
+            return Err(());
         }
+        
+        self.state.replace(OnceState::Called);
+        f.await;
+        Ok(())
     }
 
+    /// Calls the function only once.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::LocalOnce;
+    ///
+    /// static START: LocalOnce = LocalOnce::new();
+    ///
+    /// async fn print_msg_on_start() {
+    ///     let was_called = START.call_once_sync(|| {
+    ///         println!("start");
+    ///     }).is_ok();
+    /// }
+    /// ```
     #[inline(always)]
-    pub fn call_once_force<F: FnOnce(&OnceState)>(&mut self, f: F) -> Result<(), ()> {
-        if self.state == OnceState::NotCalled {
-            self.state = OnceState::Called;
-            f(&self.state);
-            Ok(())
-        } else {
-            Err(())
+    pub fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
+        if self.is_called() {
+            return Err(());
         }
+        
+        self.state.replace(OnceState::Called);
+        f();
+        Ok(())
     }
 
+    /// Returns the [`state`](OnceState) of the `Once`.
     #[inline(always)]
     pub fn state(&self) -> OnceState {
-        self.state
+        self.state.get()
     }
 
+    /// Returns whether the `Once` has been called or not.
     #[inline(always)]
     pub fn is_called(&self) -> bool {
-        self.state == OnceState::Called
+        self.state.get() == OnceState::Called
     }
 }
 
@@ -83,14 +160,27 @@ mod tests {
 
     #[orengine_macros::test]
     fn test_local_once() {
-        let mut once = LocalOnce::new();
+        let once = LocalOnce::new();
         assert_eq!(once.state(), OnceState::NotCalled);
         assert!(!once.is_called());
 
-        assert_eq!(once.call_once(|| ()), Ok(()));
+        assert_eq!(once.call_once_sync(|| ()), Ok(()));
         assert_eq!(once.state(), OnceState::Called);
 
         assert!(once.is_called());
-        assert_eq!(once.call_once(|| ()), Err(()));
+        assert_eq!(once.call_once_sync(|| ()), Err(()));
+    }
+
+    #[orengine_macros::test]
+    fn test_local_once_async() {
+        let async_once = LocalOnce::new();
+        assert_eq!(async_once.state(), OnceState::NotCalled);
+        assert!(!async_once.is_called());
+
+        assert_eq!(async_once.call_once(async {}).await, Ok(()));
+        assert_eq!(async_once.state(), OnceState::Called);
+
+        assert!(async_once.is_called());
+        assert_eq!(async_once.call_once(async {}).await, Err(()));
     }
 }

@@ -413,7 +413,7 @@ impl<'channel, T> !Send for LocalReceiver<'channel, T> {}
 /// the sending operation is waiting until capacity is available or 
 /// the [`local channel`](LocalChannel) is closed.
 /// 
-/// # THe difference between `LocalChannel` and [`Channel`](crate::sync::Channel).
+/// # The difference between `LocalChannel` and [`Channel`](crate::sync::Channel)
 /// 
 /// The `LocalChannel` works with `local tasks`. 
 /// 
