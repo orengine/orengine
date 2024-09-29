@@ -1,5 +1,5 @@
 use crate::io::IoWorkerConfig;
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 use crate::utils::SpinLock;
 
 /// A global config of state of the all runtime.
@@ -60,12 +60,12 @@ impl Drop for ValidConfig {
             let mut guard;
             if self.io_worker_config.is_some() {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let global_config_stats = guard.as_mut().expect(BUG);
+                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
                 global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -= 1;
             } else {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let global_config_stats = guard.as_mut().expect(BUG);
+                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
                 global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -= 1;
             }
@@ -75,14 +75,14 @@ impl Drop for ValidConfig {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
 
-                let global_config_stats = guard.as_mut().expect(BUG);
+                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
                 global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
             } else {
                 if guard.is_none() {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
 
-                let global_config_stats = guard.as_mut().expect(BUG);
+                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
                 global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
             }
         }

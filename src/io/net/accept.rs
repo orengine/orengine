@@ -14,7 +14,7 @@ use crate::io::io_request_data::{IoRequestData};
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, FromRawFd, AsRawFd};
 use crate::io::worker::{IoWorker, local_worker};
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 
 /// `accept` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
@@ -145,7 +145,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     #[inline(always)]
     async fn accept(&mut self) -> Result<(S, SocketAddr)> {
         let (stream, sock_addr) = Accept::<S>::new(self.as_raw_fd()).await?;
-        Ok((stream, sock_addr.as_socket().expect(BUG)))
+        Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously accepts a new connection, with a specified deadline.
@@ -182,7 +182,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
         deadline: Instant
     ) -> Result<(S, SocketAddr)> {
         let (stream, sock_addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
-        Ok((stream, sock_addr.as_socket().expect(BUG)))
+        Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously accepts a new connection, with a specified timeout.

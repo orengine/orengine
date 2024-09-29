@@ -27,7 +27,7 @@ pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
 #[inline(always)]
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
-    { get_task_pool_ref().as_mut().expect(crate::messages::BUG) }
+    { get_task_pool_ref().as_mut().expect(crate::BUG_MESSAGE) }
 
     #[cfg(not(debug_assertions))]
     unsafe {

@@ -13,7 +13,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 
 /// `recv_from` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
@@ -155,7 +155,7 @@ pub trait AsyncRecvFrom: AsRawFd {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-        Ok((n, sock_addr.as_socket().expect(BUG)))
+        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously receives into the incoming datagram with a deadline, with consuming it,
@@ -193,7 +193,7 @@ pub trait AsyncRecvFrom: AsRawFd {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
 
-        Ok((n, sock_addr.as_socket().expect(BUG)))
+        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously receives into the incoming datagram with a timeout, with consuming it,

@@ -12,7 +12,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 
 /// `peek_from` io operation.
 #[must_use = "Future must be awaited to drive the IO operation"]
@@ -154,7 +154,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     let mut sock_addr = unsafe { std::mem::zeroed() };
     let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-    Ok((n, sock_addr.as_socket().expect(BUG)))
+    Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously peeks into the incoming datagram with a deadline, without consuming it,
@@ -192,7 +192,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     let mut sock_addr = unsafe { std::mem::zeroed() };
     let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
 
-    Ok((n, sock_addr.as_socket().expect(BUG)))
+    Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,

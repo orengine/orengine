@@ -15,7 +15,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
 use crate::io::worker::{IoWorker};
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 use crate::runtime::local_executor_unchecked;
 
 /// Configuration for [`IoUringWorker`].
@@ -197,7 +197,7 @@ impl IoWorker for IoUringWorker {
         };
 
         let submitter = s.ring.get_mut().submitter();
-        submitter.register_probe(&mut s.probe).expect(BUG);
+        submitter.register_probe(&mut s.probe).expect(BUG_MESSAGE);
 
         s
     }

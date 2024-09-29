@@ -7,7 +7,7 @@ use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
-use crate::messages::BUG;
+use crate::BUG_MESSAGE;
 
 /// Thread-local worker for async io operations.
 #[thread_local]
@@ -21,7 +21,7 @@ pub(crate) fn get_local_worker_ref() -> &'static mut Option<WorkerSys> {
 /// Initializes the thread-local worker.
 pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     if get_local_worker_ref().is_some() {
-        panic!("{}", BUG);
+        panic!("{}", BUG_MESSAGE);
     }
     
     *get_local_worker_ref() = Some(WorkerSys::new(config));
@@ -50,7 +50,7 @@ pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
              because an Executor has no io-worker. Look at the config of the Executor.");
         }
 
-        get_local_worker_ref().as_mut().expect(BUG)
+        get_local_worker_ref().as_mut().expect(BUG_MESSAGE)
     }
 
     #[cfg(not(debug_assertions))]

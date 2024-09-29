@@ -77,7 +77,7 @@ macro_rules! check_parent_executor_id {
         #[cfg(debug_assertions)]
         {
             if $local.parent_executor_id != crate::local_executor().id() {
-                panic!("{}", crate::messages::BUG);
+                panic!("{}", crate::BUG_MESSAGE);
             }
         }
     };
