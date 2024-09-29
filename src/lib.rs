@@ -10,7 +10,6 @@ pub mod buf;
 pub mod fs;
 pub mod io;
 pub mod local;
-pub mod local_pool;
 pub mod net;
 pub mod run;
 pub mod runtime;
