@@ -4,6 +4,10 @@ use std::task::{Context, Poll};
 
 use crate::{local_executor, panic_if_local_in_future};
 
+/// `LocalYield` implements the [`Future`] trait for yielding the current task.
+/// 
+/// When [`Future::poll`] is called, it will add current task to 
+/// the beginning of the `local` LIFO queue.
 pub struct LocalYield {
     was_yielded: bool,
 }
@@ -23,10 +27,34 @@ impl Future for LocalYield {
     }
 }
 
+/// `local_yield_now` transfers control to the executor and adds the current task 
+/// to the beginning of the `local` LIFO queue.
+/// 
+/// # The difference between `local_yield_now` and [`global_yield_now`]
+/// 
+/// Adds the current task to the beginning of the `local` LIFO queue.
+/// For more details, see [`Executor`](crate::runtime::Executor).
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use std::ops::Deref;
+/// use orengine::{local_yield_now, Local};
+///
+///  async fn wait(is_ready: Local<bool>) {
+///     while !is_ready.deref() {
+///         local_yield_now().await;
+///     }
+/// }
+/// ```
 pub fn local_yield_now() -> LocalYield {
     LocalYield { was_yielded: false }
 }
 
+/// `GlobalYield` implements the [`Future`] trait for yielding the current task.
+/// 
+/// When [`Future::poll`] is called, it will add current task to 
+/// the beginning of the `global` LIFO queue.
 pub struct GlobalYield {
     was_yielded: bool,
 }
@@ -49,6 +77,26 @@ impl Future for GlobalYield {
     }
 }
 
+/// `global_yield_now` transfers control to the executor and adds the current task 
+/// to the beginning of the `global` LIFO queue.
+/// 
+/// # The difference between `global_yield_now` and [`local_yield_now`]
+/// 
+/// Adds the current task to the beginning of the `global` LIFO queue.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::sync::atomic::AtomicBool;
+/// use std::sync::atomic::Ordering::SeqCst;
+/// use orengine::global_yield_now;
+///
+///  async fn wait(is_ready: &AtomicBool) {
+///     while !is_ready.load(SeqCst) {
+///         global_yield_now().await;
+///     }
+/// }
+/// ```
 pub fn global_yield_now() -> GlobalYield {
     GlobalYield { was_yielded: false }
 }
