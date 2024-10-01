@@ -14,4 +14,4 @@ pub use rw_lock::{LocalRWLock, LocalWriteLockGuard};
 pub use wait_group::LocalWaitGroup;
 pub use channel::{LocalChannel};
 pub use once::LocalOnce;
-pub use scope::{LocalScope, local_scope, ScopedHandle};
+pub use scope::{LocalScope, local_scope, LocalScopedHandle};

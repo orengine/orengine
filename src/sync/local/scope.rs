@@ -11,23 +11,36 @@ pub struct LocalScope<'scope> {
 
 impl<'scope> LocalScope<'scope> {
     #[inline(always)]
-    pub fn spawn<F: Future<Output = ()>>(&'scope self, future: F) {
+    pub fn exec<F: Future<Output = ()>>(&'scope self, future: F) {
         self.wg.inc();
-        let handle = ScopedHandle {
+        let handle = LocalScopedHandle {
             scope: self,
             fut: future,
         };
 
         local_executor().exec_future(handle);
     }
+
+    #[inline(always)]
+    pub fn spawn<F: Future<Output = ()>>(&'scope self, future: F) {
+        self.wg.inc();
+        let handle = LocalScopedHandle {
+            scope: self,
+            fut: future,
+        };
+
+        local_executor().spawn_local(handle);
+    }
 }
 
-pub struct ScopedHandle<'scope, Fut: Future<Output = ()>> {
+impl !Send for LocalScope<'_> {}
+
+pub struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     scope: &'scope LocalScope<'scope>,
     fut: Fut,
 }
 
-impl<'scope, Fut: Future<Output = ()>> Future for ScopedHandle<'scope, Fut> {
+impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
@@ -43,6 +56,8 @@ impl<'scope, Fut: Future<Output = ()>> Future for ScopedHandle<'scope, Fut> {
         }
     }
 }
+
+impl<F: Future<Output = ()>> !Send for LocalScopedHandle<'_, F> {}
 
 #[inline(always)]
 pub async fn local_scope<'scope, Fut, F>(f: F)
@@ -70,15 +85,44 @@ mod tests {
     use std::time::Duration;
 
     #[orengine_macros::test]
-    fn test_scope() {
+    fn test_scope_exec() {
+        let local_a = Local::new(0);
+
+        local_scope(|scope| async {
+            scope.exec(async {
+                assert_eq!(*local_a.deref(), 0);
+                *local_a.get_mut() += 1;
+                local_yield_now().await;
+                assert_eq!(*local_a.deref(), 3);
+                *local_a.get_mut() += 1;
+            });
+
+            scope.exec(async {
+                assert_eq!(*local_a.deref(), 1);
+                *local_a.get_mut() += 1;
+                sleep(Duration::from_millis(1)).await;
+                assert_eq!(*local_a.deref(), 4);
+                *local_a.get_mut() += 1;
+            });
+
+            assert_eq!(*local_a.deref(), 2);
+            *local_a.get_mut() += 1;
+        })
+        .await;
+
+        assert_eq!(*local_a.deref(), 5);
+    }
+
+    #[orengine_macros::test]
+    fn test_scope_spawn() {
         let local_a = Local::new(0);
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a.deref(), 0);
+                assert_eq!(*local_a.deref(), 2);
                 *local_a.get_mut() += 1;
                 local_yield_now().await;
-                assert_eq!(*local_a.deref(), 4);
+                assert_eq!(*local_a.deref(), 3);
                 *local_a.get_mut() += 1;
             });
 
@@ -86,24 +130,15 @@ mod tests {
                 assert_eq!(*local_a.deref(), 1);
                 *local_a.get_mut() += 1;
                 sleep(Duration::from_millis(1)).await;
-                assert_eq!(*local_a.deref(), 6);
+                assert_eq!(*local_a.deref(), 4);
                 *local_a.get_mut() += 1;
             });
 
-            // Do not call await here
-            scope.spawn(async {
-                assert_eq!(*local_a.deref(), 2);
-                *local_a.get_mut() += 1;
-                local_yield_now().await;
-                assert_eq!(*local_a.deref(), 5);
-                *local_a.get_mut() += 1;
-            });
-
-            assert_eq!(*local_a.deref(), 3);
+            assert_eq!(*local_a.deref(), 0);
             *local_a.get_mut() += 1;
         })
-        .await;
+            .await;
 
-        assert_eq!(*local_a.deref(), 7);
+        assert_eq!(*local_a.deref(), 5);
     }
 }

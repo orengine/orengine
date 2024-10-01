@@ -90,6 +90,8 @@ impl<'mutex, T> Drop for LocalMutexGuard<'mutex, T> {
     }
 }
 
+impl<T> !Send for LocalMutexGuard<'_, T> {}
+
 /// `MutexWait` is a future that will be resolved when the lock is acquired.
 pub struct MutexWait<'mutex, T> {
     was_called: bool,

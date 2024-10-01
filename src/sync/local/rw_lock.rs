@@ -10,6 +10,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 // region guards
 
 /// RAII structure used to release the shared read access of a lock when
@@ -47,7 +48,7 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
 
     /// Returns a reference to the original [`LocalRWLock`].
     ///
-    /// The read shared access will not be released.
+    /// The read portion of this lock will not be released.
     ///
     /// # Safety
     ///
@@ -76,6 +77,8 @@ impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
         }
     }
 }
+
+impl<T> !Send for LocalReadLockGuard<'_, T> {}
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
@@ -112,7 +115,7 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
 
     /// Returns a reference to the original [`LocalRWLock`].
     ///
-    /// The write exclusive access will not be released.
+    /// The write portion of this lock will not be released.
     ///
     /// # Safety
     ///
@@ -147,6 +150,8 @@ impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
         }
     }
 }
+
+impl<T> !Send for LocalWriteLockGuard<'_, T> {}
 
 // endregion
 
