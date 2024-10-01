@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::Deref;
 use std::ptr;
@@ -179,11 +178,11 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 let ex = local_executor();
                 let mut inner_lock = acquire_lock!(this.inner);
 
-                if unlikely(inner_lock.is_closed) {
+                if inner_lock.is_closed {
                     return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
                 }
 
-                if unlikely(inner_lock.receivers.len() > 0) {
+                if inner_lock.receivers.len() > 0 {
                     unsafe {
                         let (task, slot, call_state) =
                             inner_lock.receivers.pop_front().unwrap_unchecked();
@@ -199,7 +198,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 }
 
                 let len = inner_lock.storage.len();
-                if unlikely(len >= inner_lock.capacity) {
+                if len >= inner_lock.capacity {
                     let task = unsafe { (cx.waker().data() as *mut Task).read() };
                     inner_lock.senders.push_back((task, &mut this.call_state));
                     return_pending_and_release_lock!(ex, inner_lock);
@@ -279,13 +278,13 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                 let ex = local_executor();
                 let mut inner_lock = acquire_lock!(this.inner);
 
-                if unlikely(inner_lock.is_closed) {
+                if inner_lock.is_closed {
                     return Poll::Ready(Err(()));
                 }
 
                 let l = inner_lock.storage.len();
-                if unlikely(l == 0) {
-                    if unlikely(inner_lock.senders.len() > 0) {
+                if l == 0 {
+                    if inner_lock.senders.len() > 0 {
                         unsafe {
                             let (task, call_state) =
                                 inner_lock.senders.pop_front().unwrap_unchecked();
@@ -311,7 +310,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                         .write(inner_lock.storage.pop_front().unwrap_unchecked())
                 }
 
-                if unlikely(inner_lock.senders.len() > 0) {
+                if inner_lock.senders.len() > 0 {
                     unsafe {
                         let (task, call_state) = inner_lock.senders.pop_front().unwrap_unchecked();
                         inner_lock.leak();

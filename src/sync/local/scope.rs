@@ -7,6 +7,8 @@ use std::task::Poll;
 pub struct LocalScope<'scope> {
     wg: LocalWaitGroup,
     _scope: std::marker::PhantomData<&'scope ()>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'scope> LocalScope<'scope> {
@@ -16,6 +18,7 @@ impl<'scope> LocalScope<'scope> {
         let handle = LocalScopedHandle {
             scope: self,
             fut: future,
+            no_send_marker: std::marker::PhantomData,
         };
 
         local_executor().exec_future(handle);
@@ -27,17 +30,18 @@ impl<'scope> LocalScope<'scope> {
         let handle = LocalScopedHandle {
             scope: self,
             fut: future,
+            no_send_marker: std::marker::PhantomData,
         };
 
         local_executor().spawn_local(handle);
     }
 }
 
-impl !Send for LocalScope<'_> {}
-
 pub struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     scope: &'scope LocalScope<'scope>,
     fut: Fut,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
@@ -57,8 +61,6 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
     }
 }
 
-impl<F: Future<Output = ()>> !Send for LocalScopedHandle<'_, F> {}
-
 #[inline(always)]
 pub async fn local_scope<'scope, Fut, F>(f: F)
 where
@@ -68,6 +70,7 @@ where
     let scope = LocalScope {
         wg: LocalWaitGroup::new(),
         _scope: std::marker::PhantomData,
+        no_send_marker: std::marker::PhantomData,
     };
     let static_scope = unsafe { std::mem::transmute::<&_, &'static LocalScope<'static>>(&scope) };
 

@@ -316,7 +316,6 @@ impl From<&ValidConfig> for Config {
 
 #[cfg(test)]
 mod tests {
-    use std::intrinsics::black_box;
     use super::*;
 
     #[orengine_macros::test]
@@ -354,55 +353,43 @@ mod tests {
     #[should_panic]
     fn test_first_case_panic() {
         // with io worker and task sharing
-        let first_config = Config::default().validate();
-        let second_config = Config::default()
+        let _first_config = Config::default().validate();
+        let _second_config = Config::default()
             .set_io_worker_config(None).unwrap()
             .enable_work_sharing()
             .validate();
-
-        black_box(first_config);
-        black_box(second_config);
     }
 
     #[orengine_macros::test]
     #[should_panic]
     fn test_second_case_panic() {
         // with task sharing and without io worker
-        let first_config = Config::default()
+        let _first_config = Config::default()
             .set_io_worker_config(None).unwrap()
             .enable_work_sharing()
             .validate();
-        let second_config = Config::default().validate();
-
-        black_box(first_config);
-        black_box(second_config);
+        let _second_config = Config::default().validate();
     }
 
     #[orengine_macros::test]
     #[should_panic]
     fn test_third_case_panic() {
         // with task sharing and without thread pool
-        let first_config = Config::default()
+        let _first_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
-        let second_config = Config::default().validate();
-
-        black_box(first_config);
-        black_box(second_config);
+        let _second_config = Config::default().validate();
     }
 
     #[orengine_macros::test]
     #[should_panic]
     fn test_fourth_case_panic() {
         // with thread pool and task sharing
-        let first_config = Config::default().validate();
-        let second_config = Config::default()
+        let _first_config = Config::default().validate();
+        let _second_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
-
-        black_box(first_config);
-        black_box(second_config);
     }
 }

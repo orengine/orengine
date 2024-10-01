@@ -1,3 +1,4 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::size_of;
 use ahash::AHashMap;
@@ -9,14 +10,15 @@ pub struct TaskPool {
     storage: AHashMap<usize, Vec<*mut ()>>,
 }
 
-/// A thread-local task pool. So it is lockless.
-#[thread_local]
-pub static mut TASK_POOL: Option<TaskPool> = None;
+thread_local! {
+    /// A thread-local task pool. So it is lockless.
+    pub(crate) static TASK_POOL: UnsafeCell<Option<TaskPool>> = UnsafeCell::new(None);
+}
 
 /// Returns the thread-local task pool wrapped in an [`Option`].
 #[inline(always)]
 pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
-    unsafe { &mut *(&raw mut TASK_POOL) }
+    TASK_POOL.with(|task_pool| unsafe { &mut *task_pool.get() })
 }
 
 /// Returns `&'static mut TaskPool` of the current thread.

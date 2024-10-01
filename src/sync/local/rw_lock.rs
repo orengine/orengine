@@ -5,7 +5,6 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::intrinsics::{likely, unlikely};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -20,13 +19,18 @@ use std::task::{Context, Poll};
 /// and [`LocalRWLock::try_read`](LocalRWLock::try_read).
 pub struct LocalReadLockGuard<'rw_lock, T> {
     local_rw_lock: &'rw_lock LocalRWLock<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     /// Creates a new `LocalReadLockGuard`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
-        Self { local_rw_lock }
+        Self {
+            local_rw_lock,
+            no_send_marker: std::marker::PhantomData,
+        }
     }
 
     /// Returns a reference to the original [`LocalRWLock`].
@@ -78,8 +82,6 @@ impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<T> !Send for LocalReadLockGuard<'_, T> {}
-
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 ///
@@ -87,13 +89,18 @@ impl<T> !Send for LocalReadLockGuard<'_, T> {}
 /// and [`LocalRWLock::try_write`](LocalRWLock::try_write).
 pub struct LocalWriteLockGuard<'rw_lock, T> {
     local_rw_lock: &'rw_lock LocalRWLock<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     /// Creates a new `LocalWriteLockGuard`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
-        Self { local_rw_lock }
+        Self { 
+            local_rw_lock,
+            no_send_marker: std::marker::PhantomData,
+        }
     }
 
     /// Returns a reference to the original [`LocalRWLock`].
@@ -150,8 +157,6 @@ impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
         }
     }
 }
-
-impl<T> !Send for LocalWriteLockGuard<'_, T> {}
 
 // endregion
 
@@ -304,6 +309,8 @@ struct Inner<T> {
 /// ```
 pub struct LocalRWLock<T> {
     inner: UnsafeCell<Inner<T>>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<T> LocalRWLock<T> {
@@ -317,6 +324,7 @@ impl<T> LocalRWLock<T> {
                 number_of_readers: 0,
                 value,
             }),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -333,7 +341,7 @@ impl<T> LocalRWLock<T> {
     pub async fn write(&self) -> LocalWriteLockGuard<T> {
         let inner = self.get_inner();
 
-        if unlikely(inner.number_of_readers == 0) {
+        if inner.number_of_readers == 0 {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
@@ -350,7 +358,7 @@ impl<T> LocalRWLock<T> {
     pub async fn read(&self) -> LocalReadLockGuard<T> {
         let inner = self.get_inner();
 
-        if likely(inner.number_of_readers > -1) {
+        if inner.number_of_readers > -1 {
             inner.number_of_readers += 1;
             return LocalReadLockGuard::new(self);
         }
@@ -364,7 +372,7 @@ impl<T> LocalRWLock<T> {
     pub fn try_write(&self) -> Option<LocalWriteLockGuard<T>> {
         let inner = self.get_inner();
 
-        if unlikely(inner.number_of_readers == 0) {
+        if inner.number_of_readers == 0 {
             debug_assert!(inner.wait_queue_read.is_empty());
 
             inner.number_of_readers = -1;
@@ -379,7 +387,7 @@ impl<T> LocalRWLock<T> {
     #[inline(always)]
     pub fn try_read(&self) -> Option<LocalReadLockGuard<T>> {
         let inner = self.get_inner();
-        if likely(inner.number_of_readers > -1) {
+        if inner.number_of_readers > -1 {
             inner.number_of_readers += 1;
             Some(LocalReadLockGuard::new(self))
         } else {
@@ -416,7 +424,7 @@ impl<T> LocalRWLock<T> {
         if inner.number_of_readers == 0 {
             debug_assert!(inner.wait_queue_read.is_empty());
             let task = inner.wait_queue_write.pop();
-            if unlikely(task.is_some()) {
+            if task.is_some() {
                 inner.number_of_readers = -1;
                 local_executor().exec_task(unsafe { task.unwrap_unchecked() });
             }
@@ -443,9 +451,7 @@ impl<T> LocalRWLock<T> {
         let inner = self.get_inner();
 
         let task = inner.wait_queue_write.pop();
-        if unlikely(task.is_some()) {
-            local_executor().exec_task(task.unwrap());
-        } else {
+        if task.is_none() {
             let mut readers_count = inner.wait_queue_read.len();
             inner.number_of_readers = readers_count as isize;
             while readers_count > 0 {
@@ -453,6 +459,8 @@ impl<T> LocalRWLock<T> {
                 local_executor().exec_task(unsafe { task.unwrap_unchecked() });
                 readers_count -= 1;
             }
+        } else {
+            local_executor().exec_task(unsafe { task.unwrap_unchecked() });
         }
     }
 
@@ -498,7 +506,6 @@ impl<T> LocalRWLock<T> {
 }
 
 unsafe impl<T: Sync> Sync for LocalRWLock<T> {}
-impl<T> !Send for LocalRWLock<T> {}
 
 #[cfg(test)]
 mod tests {

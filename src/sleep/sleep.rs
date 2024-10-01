@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -28,7 +27,7 @@ impl Future for Sleep {
             let task = unsafe { (cx.waker().data() as *const Task).read() };
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
-            while unlikely(!local_executor().sleeping_tasks().insert(sleeping_task)) {
+            while !local_executor().sleeping_tasks().insert(sleeping_task) {
                 this.sleep_until += Duration::from_nanos(1);
                 sleeping_task = SleepingTask::new(this.sleep_until, task);
             }

@@ -201,7 +201,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
         each_addr!(
             &addr,
-            async move |addr: SocketAddr| -> Result<Self> {
+            move |addr: SocketAddr| async move {
                 let stream = Self::new_for_addr(&addr).await?;
                 Connect::new(stream.as_raw_fd(), &SockAddr::from(addr)).await?;
 
@@ -232,7 +232,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     async fn connect_with_deadline<A: ToSocketAddrs>(addr: A, deadline: Instant) -> Result<Self> {
         each_addr!(
             &addr,
-            async move |addr: SocketAddr| -> Result<Self> {
+            move |addr: SocketAddr| async move {
                 let stream = Self::new_for_addr(&addr).await?;
                 ConnectWithDeadline::new(stream.as_raw_fd(), &SockAddr::from(addr), deadline).await?;
 
@@ -322,7 +322,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
         let new_datagram_socket_fd = self.into_raw_fd();
         each_addr!(
             &addr,
-            async move |addr: SocketAddr| -> Result<S> {
+            move |addr: SocketAddr| async move {
                 Connect::new(new_datagram_socket_fd, &SockAddr::from(addr)).await?;
                 Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
             }
@@ -366,7 +366,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
         let new_datagram_socket_fd = self.into_raw_fd();
         each_addr!(
             &addr,
-            async move |addr: SocketAddr| -> Result<S> {
+            move |addr: SocketAddr| async move {
                 ConnectWithDeadline::new(new_datagram_socket_fd, &SockAddr::from(addr), deadline).await?;
                 Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
             }

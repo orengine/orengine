@@ -1,10 +1,5 @@
 #![allow(internal_features)]
 #![allow(async_fn_in_trait)]
-#![feature(core_intrinsics)]
-#![feature(async_closure)]
-#![feature(negative_impls)]
-#![feature(thread_local)]
-#![feature(io_error_uncategorized)]
 
 pub mod buf;
 pub mod fs;

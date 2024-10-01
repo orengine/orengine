@@ -2,7 +2,6 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -44,6 +43,8 @@ struct Inner {
 
 pub struct LocalWaitGroup {
     inner: UnsafeCell<Inner>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl LocalWaitGroup {
@@ -53,6 +54,7 @@ impl LocalWaitGroup {
                 count: 0,
                 waited_tasks: Vec::new(),
             }),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -80,7 +82,7 @@ impl LocalWaitGroup {
     pub fn done(&self) -> usize {
         let inner = self.get_inner();
         inner.count -= 1;
-        if unlikely(inner.count == 0) {
+        if inner.count == 0 {
             let executor = local_executor();
             for task in inner.waited_tasks.iter() {
                 executor.exec_task(*task);
@@ -94,7 +96,7 @@ impl LocalWaitGroup {
     #[inline(always)]
     #[must_use = "Future must be awaited to start the wait"]
     pub fn wait(&self) -> Wait {
-        if unlikely(self.get_inner().count == 0) {
+        if self.get_inner().count == 0 {
             return Wait::new(false, self);
         }
         Wait::new(true, self)
@@ -102,7 +104,6 @@ impl LocalWaitGroup {
 }
 
 unsafe impl Sync for LocalWaitGroup {}
-impl !Send for LocalWaitGroup {}
 
 #[cfg(test)]
 mod tests {

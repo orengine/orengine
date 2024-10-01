@@ -70,6 +70,8 @@ pub struct Local<T> {
     inner: Ptr<Inner<T>>,
     #[cfg(debug_assertions)]
     parent_executor_id: usize,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 macro_rules! check_parent_executor_id {
@@ -97,6 +99,7 @@ impl<T> Local<T> {
             inner: Ptr::new(Inner { data, counter: 1 }),
             #[cfg(debug_assertions)]
             parent_executor_id: crate::local_executor().id(),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -178,6 +181,7 @@ impl<T> Clone for Local<T> {
             inner: self.inner,
             #[cfg(debug_assertions)]
             parent_executor_id: self.parent_executor_id,
+            no_send_marker: std::marker::PhantomData,
         }
     }
 }
@@ -194,5 +198,4 @@ impl<T> Drop for Local<T> {
     }
 }
 
-impl<T> !Send for Local<T> {}
 unsafe impl<T> Sync for Local<T> {}

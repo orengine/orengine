@@ -28,7 +28,7 @@
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use std::ops::Deref;
 /// use orengine::new_local_pool;
 ///
@@ -72,7 +72,7 @@ macro_rules! new_local_pool {
         ///
         /// # Example
         ///
-        /// ```rust
+        /// ```no_run
         /// use std::ops::Deref;
         /// use orengine::new_local_pool;
         ///
@@ -150,7 +150,7 @@ macro_rules! new_local_pool {
         ///
         /// # Example
         ///
-        /// ```rust
+        /// ```no_run
         /// use std::ops::Deref;
         /// use orengine::new_local_pool;
         ///

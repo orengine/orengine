@@ -126,7 +126,7 @@ impl<T> SpinLock<T> {
     #[inline(always)]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(self.is_locked.load(Acquire));
-        &mut *self.value.get()
+        unsafe { &mut *self.value.get() }
     }
 
     #[inline(always)]

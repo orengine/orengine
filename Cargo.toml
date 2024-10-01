@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "orengine"
 version = "0.1.9"
@@ -7,13 +9,13 @@ Optimized ring engine for Rust.
 It is a lighter and faster asynchronous library than tokio-rs, async-std, may, and even smol.
 """
 
-rust-version = "1.71.0"
+rust-version = "1.80.0"
 authors = ["Eugene Usachev <https://github.com/Eugene-Usachev> and orengine contributors <team@orengine>"]
 readme = "README.md"
 repository = "https://github.com/orengine/orengine"
 categories = ["asynchronous", "network-programming", "concurrency", "web-programming"]
 keywords = ["io", "async", "non-blocking", "shared-nothing", "high-performance"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 core_affinity = "0.8.1"

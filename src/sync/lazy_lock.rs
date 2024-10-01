@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::fmt::Debug;
-use std::intrinsics::likely;
 use std::mem::ManuallyDrop;
 use std::ptr;
 use std::sync::atomic::AtomicIsize;
@@ -93,16 +92,14 @@ impl<T, F: FnOnce() -> T> LazyLock<T, F> {
                 },
                 LazyLockState::InProgress => global_yield_now().await,
                 LazyLockState::NotCalled => {
-                    if likely(
-                        self.state
-                            .compare_exchange(
-                                LazyLockState::not_called(),
-                                LazyLockState::in_progress(),
-                                Acquire,
-                                Relaxed,
-                            )
-                            .is_ok(),
-                    ) {
+                    let was_swapped = self.state
+                        .compare_exchange(
+                            LazyLockState::not_called(),
+                            LazyLockState::in_progress(),
+                            Acquire,
+                            Relaxed)
+                        .is_ok();
+                    if was_swapped {
                         let data = unsafe { &mut *self.data.get() };
                         let f = unsafe { ManuallyDrop::take(&mut data.f) };
                         let value = f();

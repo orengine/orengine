@@ -1,7 +1,6 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::cmp::max;
 use std::fmt::Debug;
-use std::intrinsics::unlikely;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr;
 use std::ptr::{slice_from_raw_parts_mut, NonNull};
@@ -67,7 +66,7 @@ impl Buffer {
     /// - size > 0
     #[inline(always)]
     pub fn new(size: usize) -> Self {
-        if unlikely(size == 0) {
+        if size == 0 {
             panic!("Cannot create Buffer with size 0. Size must be > 0.");
         }
 
@@ -139,7 +138,7 @@ impl Buffer {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
     /// use orengine::buf::Buffer;
     ///
     /// let mut buf = Buffer::new(100);
@@ -173,7 +172,7 @@ impl Buffer {
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
         let len = buf.len();
-        if unlikely(len > self.slice.len() - self.len) {
+        if len > self.slice.len() - self.len {
             self.resize(max(self.len + len, self.cap() * 2));
         }
 
@@ -339,7 +338,7 @@ mod tests {
         Buffer::new(0);
     }
 
-    #[test]
+    #[orengine_macros::test]
     fn test_add_len_and_set_len_to_cap() {
         let mut buf = Buffer::new(100);
         assert_eq!(buf.len(), 0);

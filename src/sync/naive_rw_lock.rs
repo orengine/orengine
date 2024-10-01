@@ -1,5 +1,4 @@
 use std::cell::UnsafeCell;
-use std::intrinsics::unlikely;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicIsize;
@@ -135,14 +134,13 @@ impl<T> RWLock<T> {
 
     #[inline(always)]
     pub fn try_write(&self) -> Option<WriteLockGuard<T>> {
-        if unlikely(
-            self.number_of_readers
-                .compare_exchange(0, -1, Acquire, Relaxed)
-                .is_ok(),
-        ) {
-            Some(WriteLockGuard::new(self))
-        } else {
+        let was_swapped = self.number_of_readers
+            .compare_exchange(0, -1, Acquire, Relaxed)
+            .is_ok();
+        if !was_swapped {
             None
+        } else {
+            Some(WriteLockGuard::new(self))
         }
     }
 
@@ -160,9 +158,7 @@ impl<T> RWLock<T> {
     pub fn try_read(&self) -> Option<ReadLockGuard<T>> {
         loop {
             let number_of_readers = self.number_of_readers.load(Acquire);
-            if unlikely(number_of_readers < 0) {
-                break None;
-            } else {
+            if number_of_readers >= 0 {
                 if self
                     .number_of_readers
                     .compare_exchange(number_of_readers, number_of_readers + 1, Acquire, Relaxed)
@@ -170,6 +166,8 @@ impl<T> RWLock<T> {
                 {
                     break Some(ReadLockGuard::new(self));
                 }
+            } else {
+                break None;
             }
         }
     }
@@ -224,7 +222,7 @@ impl<T> RWLock<T> {
             }
         }
 
-        &*self.value.get()
+        unsafe { &*self.value.get() }
     }
 
     #[inline(always)]
@@ -240,7 +238,7 @@ impl<T> RWLock<T> {
             }
         }
 
-        &mut *self.value.get()
+        unsafe { &mut *self.value.get() }
     }
 }
 

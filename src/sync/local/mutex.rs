@@ -5,7 +5,6 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -21,13 +20,18 @@ use std::task::{Context, Poll};
 /// and [`try_lock`](LocalMutex::try_lock) methods on [`LocalMutex`].
 pub struct LocalMutexGuard<'mutex, T> {
     local_mutex: &'mutex LocalMutex<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     /// Creates a new [`LocalMutexGuard`].
     #[inline(always)]
     pub(crate) fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
-        Self { local_mutex }
+        Self {
+            local_mutex,
+            no_send_marker: std::marker::PhantomData
+        }
     }
 
     /// Returns a reference to the original [`LocalMutex`].
@@ -89,8 +93,6 @@ impl<'mutex, T> Drop for LocalMutexGuard<'mutex, T> {
         unsafe { self.local_mutex.unlock() };
     }
 }
-
-impl<T> !Send for LocalMutexGuard<'_, T> {}
 
 /// `MutexWait` is a future that will be resolved when the lock is acquired.
 pub struct MutexWait<'mutex, T> {
@@ -189,6 +191,8 @@ pub struct LocalMutex<T> {
     is_locked: UnsafeCell<bool>,
     wait_queue: UnsafeCell<Vec<Task>>,
     value: UnsafeCell<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<T> LocalMutex<T> {
@@ -199,6 +203,7 @@ impl<T> LocalMutex<T> {
             is_locked: UnsafeCell::new(false),
             wait_queue: UnsafeCell::new(Vec::new()),
             value: UnsafeCell::new(value),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -245,11 +250,11 @@ impl<T> LocalMutex<T> {
     /// - And no tasks has an ownership of this [`mutex`](LocalMutex).
     #[inline(always)]
     pub unsafe fn unlock(&self) {
-        debug_assert!(self.is_locked.get().read());
+        debug_assert!(unsafe { self.is_locked.get().read() });
 
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         let next = wait_queue.pop();
-        if unlikely(next.is_some()) {
+        if next.is_some() {
             local_executor().exec_task(unsafe { next.unwrap_unchecked() });
         } else {
             let is_locked = unsafe { &mut *self.is_locked.get() };
@@ -267,16 +272,15 @@ impl<T> LocalMutex<T> {
     #[inline(always)]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
-            self.is_locked.get().read(),
+            unsafe { self.is_locked.get().read() },
             "LocalMutex is unlocked, but calling get_locked it must be locked"
         );
 
-        &mut *self.value.get()
+        unsafe { &mut *self.value.get() }
     }
 }
 
 unsafe impl<T> Sync for LocalMutex<T> {}
-impl<T> !Send for LocalMutex<T> {}
 
 #[cfg(test)]
 mod tests {

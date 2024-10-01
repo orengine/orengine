@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::intrinsics::likely;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -19,7 +18,7 @@ impl SubscribedState {
     #[inline(always)]
     pub(crate) fn check_subscription(&mut self, executor_id: usize) {
         let current_version = self.current_version.load(Acquire);
-        if likely(self.processed_version == current_version) {
+        if self.processed_version == current_version {
             // The subscription has valid data
             return;
         }

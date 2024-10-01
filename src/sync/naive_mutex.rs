@@ -136,7 +136,7 @@ impl<T> NaiveMutex<T> {
             "Mutex is unlocked, but calling get_locked it must be locked"
         );
 
-        &mut *self.value.get()
+        unsafe { &mut *self.value.get() }
     }
 }
 

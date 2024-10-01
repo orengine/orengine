@@ -1,7 +1,6 @@
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::intrinsics::{unlikely};
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::Deref;
 use std::ptr;
@@ -58,11 +57,11 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
         #[cfg(debug_assertions)]
         { this.was_awaited = true; }
 
-        if unlikely(this.inner.is_closed) {
+        if this.inner.is_closed {
             return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
         }
 
-        if unlikely(this.inner.receivers.len() > 0) {
+        if this.inner.receivers.len() > 0 {
             let (task, slot) = unsafe {
                 this.inner.receivers.pop_front().unwrap_unchecked()
             };
@@ -72,7 +71,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
         }
 
         let len = this.inner.storage.len();
-        if unlikely(len >= this.inner.capacity) {
+        if len >= this.inner.capacity {
             let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.inner.senders.push_back(task);
             return Poll::Pending;
@@ -121,20 +120,20 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
-        if unlikely(this.inner.is_closed) {
+        if this.inner.is_closed {
             return Poll::Ready(Err(()));
         }
 
-        if unlikely(this.was_enqueued) {
+        if this.was_enqueued {
             return Poll::Ready(Ok(()));
         }
 
-        if unlikely(this.inner.senders.len() > 0) {
+        if this.inner.senders.len() > 0 {
             unsafe { local_executor().spawn_local_task(this.inner.senders.pop_front().unwrap_unchecked()); }
         }
 
         let l = this.inner.storage.len();
-        if unlikely(l == 0) {
+        if l == 0 {
             let task = unsafe { (cx.waker().data() as *mut Task).read() };
             this.was_enqueued = true;
             this.inner.receivers.push_back((task, this.slot));
@@ -184,7 +183,9 @@ fn close<T>(inner: &mut Inner<T>) {
 /// }
 /// ```
 pub struct LocalSender<'channel, T> {
-    inner: &'channel UnsafeCell<Inner<T>>
+    inner: &'channel UnsafeCell<Inner<T>>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'channel, T> LocalSender<'channel, T> {
@@ -192,7 +193,8 @@ impl<'channel, T> LocalSender<'channel, T> {
     #[inline(always)]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
-            inner
+            inner,
+            no_send_marker: std::marker::PhantomData
         }
     }
 
@@ -229,13 +231,13 @@ impl<'channel, T> LocalSender<'channel, T> {
 impl<'channel, T> Clone for LocalSender<'channel, T> {
     fn clone(&self) -> Self {
         LocalSender {
-            inner: self.inner
+            inner: self.inner,
+            no_send_marker: std::marker::PhantomData
         }
     }
 }
 
 unsafe impl<'channel, T> Sync for LocalSender<'channel, T> {}
-impl<'channel, T> !Send for LocalSender<'channel, T> {}
 
 // endregion
 
@@ -259,7 +261,9 @@ impl<'channel, T> !Send for LocalSender<'channel, T> {}
 /// }
 ///
 pub struct LocalReceiver<'channel, T> {
-    inner: &'channel UnsafeCell<Inner<T>>
+    inner: &'channel UnsafeCell<Inner<T>>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'channel, T> LocalReceiver<'channel, T> {
@@ -267,7 +271,8 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     #[inline(always)]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
-            inner
+            inner,
+            no_send_marker: std::marker::PhantomData
         }
     }
 
@@ -387,13 +392,13 @@ impl<'channel, T> LocalReceiver<'channel, T> {
 impl<'channel, T> Clone for LocalReceiver<'channel, T> {
     fn clone(&self) -> Self {
         LocalReceiver {
-            inner: self.inner
+            inner: self.inner,
+            no_send_marker: std::marker::PhantomData
         }
     }
 }
 
 unsafe impl<'channel, T> Sync for LocalReceiver<'channel, T> {}
-impl<'channel, T> !Send for LocalReceiver<'channel, T> {}
 
 // endregion
 
@@ -446,7 +451,9 @@ impl<'channel, T> !Send for LocalReceiver<'channel, T> {}
 /// }
 /// ```
 pub struct LocalChannel<T> {
-    inner: UnsafeCell<Inner<T>>
+    inner: UnsafeCell<Inner<T>>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<T> LocalChannel<T> {
@@ -475,7 +482,8 @@ impl<T> LocalChannel<T> {
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
                 receivers: VecDeque::with_capacity(0)
-            })
+            }),
+            no_send_marker: std::marker::PhantomData
         }
     }
 
@@ -502,7 +510,8 @@ impl<T> LocalChannel<T> {
                 is_closed: false,
                 senders: VecDeque::with_capacity(0),
                 receivers: VecDeque::with_capacity(0)
-            })
+            }),
+            no_send_marker: std::marker::PhantomData
         }
     }
 
@@ -660,7 +669,6 @@ impl<T> LocalChannel<T> {
 }
 
 unsafe impl<T> Sync for LocalChannel<T> {}
-impl<T> !Send for LocalChannel<T> {}
 
 // endregion
 

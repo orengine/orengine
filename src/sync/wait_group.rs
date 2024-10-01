@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -89,11 +88,11 @@ impl WaitGroup {
     #[inline(always)]
     pub fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
-        if unlikely(prev_count == 0) {
+        if prev_count == 0 {
             panic!("WaitGroup::done called after counter reached 0");
         }
 
-        if unlikely(prev_count == 1) {
+        if prev_count == 1 {
             let executor = local_executor();
             while let Some(task) = self.waited_tasks.pop() {
                 executor.spawn_global_task(task);

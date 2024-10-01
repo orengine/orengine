@@ -119,7 +119,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     /// # }
     /// ```
     async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, async move |addr| {
+        each_addr!(&addrs, move |addr| async move {
             let fd = Self::new_socket(&addr).await?;
             let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
             let socket_ref = socket2::SockRef::from(&borrowed_fd);

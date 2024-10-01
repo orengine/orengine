@@ -1,5 +1,5 @@
+use std::cell::UnsafeCell;
 use std::net::Shutdown;
-use std::ptr::addr_of_mut;
 use std::time::Duration;
 use nix::libc;
 use nix::libc::sockaddr;
@@ -9,13 +9,16 @@ use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{RawFd, WorkerSys, OpenHow, OsMessageHeader};
 use crate::BUG_MESSAGE;
 
-/// Thread-local worker for async io operations.
-#[thread_local]
-pub(crate) static mut LOCAL_WORKER: Option<WorkerSys> = None;
+thread_local! {
+    /// Thread-local worker for async io operations.
+    pub(crate) static LOCAL_WORKER: UnsafeCell<Option<WorkerSys>> = UnsafeCell::new(None);
+}
 
 /// Returns the thread-local worker wrapped in an [`Option`].
 pub(crate) fn get_local_worker_ref() -> &'static mut Option<WorkerSys> {
-    unsafe { &mut *(&raw mut LOCAL_WORKER) }
+    LOCAL_WORKER.with(|local_worker| unsafe { 
+        &mut *local_worker.get() 
+    })
 }
 
 /// Initializes the thread-local worker.
@@ -27,9 +30,9 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     *get_local_worker_ref() = Some(WorkerSys::new(config));
 }
 
-/// Returns the thread-local worker wrapped in an [`Option`].
-pub(crate) fn local_worker_option() -> &'static mut Option<WorkerSys> {
-    unsafe { &mut *addr_of_mut!(LOCAL_WORKER) }
+/// Uninitializes the thread-local worker.
+pub(crate) fn uninit_local_worker() {
+    *get_local_worker_ref() = None;
 }
 
 /// Returns the thread-local worker.

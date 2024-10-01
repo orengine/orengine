@@ -25,7 +25,7 @@ use crate::runtime::local_executor;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```no_run
 /// use orengine::fs::{File, OpenOptions};
 ///
 /// # async fn foo() -> std::io::Result<()> {

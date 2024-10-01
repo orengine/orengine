@@ -75,6 +75,8 @@ impl From<isize> for OnceState {
 /// ```
 pub struct LocalOnce {
     state: Cell<OnceState>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl LocalOnce {
@@ -82,6 +84,7 @@ impl LocalOnce {
     pub const fn new() -> LocalOnce {
         LocalOnce {
             state: Cell::new(OnceState::NotCalled),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -152,7 +155,6 @@ impl LocalOnce {
 }
 
 unsafe impl Sync for LocalOnce {}
-impl !Send for LocalOnce {}
 
 #[cfg(test)]
 mod tests {

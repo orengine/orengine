@@ -1,5 +1,4 @@
 use std::ffi::OsStr;
-use std::intrinsics::unlikely;
 use std::{io};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -108,9 +107,9 @@ impl DirBuilder {
 
             let bytes = path.as_os_str().as_encoded_bytes();
             loop {
-                if unlikely(path_index == 1 || bytes[path_index] == b'.' || bytes[path_index] == b':') {
+                if path_index == 1 || bytes[path_index] == b'.' || bytes[path_index] == b':' {
                     if bytes[path_index] == b'.' {
-                        if unlikely(path_index + 1 == bytes.len() || bytes[path_index + 1] == std::path::MAIN_SEPARATOR as u8) {
+                        if path_index + 1 == bytes.len() || bytes[path_index + 1] == std::path::MAIN_SEPARATOR as u8 {
                             break Err(());
                         }
                     } else {
@@ -118,7 +117,7 @@ impl DirBuilder {
                     }
                 }
 
-                if unlikely(bytes[path_index] == std::path::MAIN_SEPARATOR as u8) {
+                if bytes[path_index] == std::path::MAIN_SEPARATOR as u8 {
                     offsets.push(path_index);
                     break Ok(path_index);
                 }
@@ -162,7 +161,7 @@ impl DirBuilder {
                         },
                         Err(_) => {
                             return Err(io::Error::new(
-                                io::ErrorKind::Uncategorized,
+                                io::ErrorKind::InvalidData,
                                 "failed to create path tree",
                             ));
                         },

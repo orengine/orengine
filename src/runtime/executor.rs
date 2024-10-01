@@ -1,6 +1,6 @@
+use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -10,11 +10,10 @@ use std::mem;
 
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
-
 use crate::sync_task_queue::SyncTaskList;
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{get_local_worker_ref, init_local_worker, local_worker_option, IoWorker};
+use crate::io::worker::{get_local_worker_ref, init_local_worker, uninit_local_worker, IoWorker};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
@@ -26,21 +25,24 @@ use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::utils::CoreId;
 
-/// Thread local [`Executor`]. So, it is lockless.
-#[thread_local]
-pub static mut LOCAL_EXECUTOR: Option<Executor> = None;
+thread_local! {
+    /// Thread local [`Executor`]. So, it is lockless.
+    pub(crate) static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = UnsafeCell::new(None);
+}
 
 /// Returns the thread-local executor wrapped in an [`Option`].
 ///
 /// It is `None` if the executor is not initialized.
 fn get_local_executor_ref() -> &'static mut Option<Executor> {
-    unsafe { &mut *(&raw mut LOCAL_EXECUTOR) }
+    LOCAL_EXECUTOR.with(|local_executor| unsafe { 
+        &mut *local_executor.get() 
+    })
 }
 
 /// Change the state of local thread to pre-initialized.
 fn uninit_local_executor() {
     *get_local_executor_ref() = None;
-    *get_local_worker_ref() = None;
+    uninit_local_worker();
 }
 
 /// Message that prints out when local executor is not initialized
@@ -226,7 +228,7 @@ impl Executor {
 
                 current_call: Call::default(),
                 exec_series: 0,
-                local_worker: local_worker_option(),
+                local_worker: get_local_worker_ref(),
                 thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
                 sleeping_tasks: BTreeSet::new(),
             });
@@ -455,7 +457,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_task(&mut self, mut task: Task) {
         self.exec_series += 1;
-        if unlikely(self.exec_series == 107) {
+        if self.exec_series == 107 {
             self.exec_series = 0;
             self.spawn_local_task(task);
             return;
@@ -614,15 +616,15 @@ impl Executor {
         }
         match self.config.is_work_sharing_enabled() {
             true => {
-                if unlikely(self.global_tasks.len() > self.config.work_sharing_level) {
+                if self.global_tasks.len() <= self.config.work_sharing_level {
+                    self.global_tasks.push_back(task);
+                } else {
                     let mut shared_tasks_list =
                         unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
                     let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
                     for task in self.global_tasks.drain(..number_of_shared) {
                         shared_tasks_list.push(task);
                     }
-                } else {
-                    self.global_tasks.push_back(task);
                 }
             }
             false => {
@@ -688,7 +690,7 @@ impl Executor {
     #[inline(always)]
     fn background_task(&mut self) -> bool {
         self.subscribed_state.check_subscription(self.executor_id);
-        if unlikely(self.subscribed_state.is_stopped()) {
+        if self.subscribed_state.is_stopped() {
             return true;
         }
 
@@ -809,7 +811,7 @@ impl Executor {
                 }
             }
 
-            if unlikely(self.background_task()) {
+            if self.background_task() {
                 break;
             }
 

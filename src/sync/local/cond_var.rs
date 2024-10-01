@@ -3,7 +3,6 @@ use crate::runtime::task::Task;
 use crate::sync::{LocalMutex, LocalMutexGuard};
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::intrinsics::likely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -116,6 +115,8 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// ```
 pub struct LocalCondVar {
     wait_queue: UnsafeCell<Vec<Task>>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl LocalCondVar {
@@ -124,6 +125,7 @@ impl LocalCondVar {
     pub fn new() -> LocalCondVar {
         LocalCondVar {
             wait_queue: UnsafeCell::new(Vec::new()),
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -184,7 +186,7 @@ impl LocalCondVar {
     #[inline(always)]
     pub fn notify_one(&self) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
-        if likely(!wait_queue.is_empty()) {
+        if !wait_queue.is_empty() {
             let task = wait_queue.pop();
             local_executor().exec_task(unsafe { task.unwrap_unchecked() });
         }
@@ -219,7 +221,6 @@ impl LocalCondVar {
 }
 
 unsafe impl Sync for LocalCondVar {}
-impl !Send for LocalCondVar {}
 
 #[cfg(test)]
 mod tests {

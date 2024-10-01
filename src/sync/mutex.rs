@@ -1,7 +1,6 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::hint::spin_loop;
-use std::intrinsics::{likely, unlikely};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -97,12 +96,12 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
         let this = unsafe { self.get_unchecked_mut() };
         panic_if_local_in_future!(cx, "Mutex");
 
-        if likely(!this.was_called) {
+        if !this.was_called {
             if let Some(guard) = this.mutex.try_lock_with_spinning() {
                 return Poll::Ready(guard);
             }
 
-            if unlikely(this.mutex.counter.fetch_add(1, Acquire) == 0) {
+            if this.mutex.counter.fetch_add(1, Acquire) == 0 {
                 return Poll::Ready(MutexGuard::new(&this.mutex));
             }
 
@@ -194,20 +193,18 @@ impl<T> Mutex<T> {
     pub unsafe fn unlock(&self) {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
-        if likely(
-            // Here compare_exchange is used instead of compare_exchange_weak
-            // because we need to have a guarantee of failure.
-            self.counter
-                .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
-                .is_ok(),
-        ) {
+        let was_swapped = self
+            .counter
+            .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
+            .is_ok();
+        if was_swapped {
             self.expected_count.set(1);
             return;
         }
 
         self.expected_count.set(self.expected_count.get() + 1);
         let next = self.wait_queue.pop();
-        if likely(next.is_some()) {
+        if next.is_some() {
             unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
         } else {
             // Another task failed to acquire a lock, but it is not yet in the queue
@@ -230,7 +227,7 @@ impl<T> Mutex<T> {
             "Mutex is unlocked, but calling get_locked it must be locked"
         );
 
-        &*self.value.get()
+        unsafe { &*self.value.get() }
     }
 }
 

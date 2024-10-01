@@ -1,7 +1,6 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
-use std::intrinsics::{likely, unlikely};
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
@@ -166,7 +165,7 @@ impl IoUringWorker {
             }
         }
 
-        let res = if likely(duration == Duration::ZERO) {
+        let res = if duration == Duration::ZERO {
             submitter.submit_with_args(1, &self.timeout)
         } else {
             submitter.submit_with_args(1, &SubmitArgs::new().timespec(&Timespec::from(duration)))
@@ -204,7 +203,7 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask) {
-        while unlikely(!self.time_bounded_io_task_queue.insert(time_bounded_io_task.clone())) {
+        while !self.time_bounded_io_task_queue.insert(time_bounded_io_task.clone()) {
             time_bounded_io_task.inc_deadline();
         }
     }
@@ -218,7 +217,7 @@ impl IoWorker for IoUringWorker {
     #[must_use]
     fn must_poll(&mut self, duration: Duration) -> bool {
         self.check_deadlines();
-        if !unlikely(self.submit(duration).expect("IoUringWorker::submit() failed")) {
+        if !self.submit(duration).expect("IoUringWorker::submit() failed") {
             return false;
         }
 
@@ -228,7 +227,7 @@ impl IoWorker for IoUringWorker {
         let executor = unsafe { local_executor_unchecked() };
 
         for cqe in &mut cq {
-            if unlikely(cqe.user_data() == 0) {
+            if cqe.user_data() == 0 {
                 // AsyncCancel was done.
                 continue;
             }
@@ -237,11 +236,11 @@ impl IoWorker for IoUringWorker {
             let io_request_ptr = cqe.user_data() as *mut IoRequestData;
             let io_request = unsafe { &mut *io_request_ptr };
 
-            if unlikely(ret < 0) {
-                if unlikely(ret == -libc::ECANCELED) {
-                    io_request.set_ret(Err(Error::from(ErrorKind::TimedOut)));
-                } else {
+            if ret < 0 {
+                if ret != -libc::ECANCELED {
                     io_request.set_ret(Err(Error::from_raw_os_error(-ret)));
+                } else {
+                    io_request.set_ret(Err(Error::from(ErrorKind::TimedOut)));
                 }
             } else {
                 io_request.set_ret(Ok(ret as _));
