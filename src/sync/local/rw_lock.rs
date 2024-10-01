@@ -3,7 +3,6 @@
 //! ownership-based locking through [`LocalReadLockGuard`] and [`LocalWriteLockGuard`].
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
-use crate::sync::LocalMutex;
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::intrinsics::{likely, unlikely};
