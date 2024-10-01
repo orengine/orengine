@@ -11,9 +11,9 @@ use std::task::{Context, Poll};
 
 use crossbeam::utils::{Backoff, CachePadded};
 
-use crate::sync_task_queue::SyncTaskList;
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, local_executor_unchecked, Task};
+use crate::sync_task_queue::SyncTaskList;
 
 pub struct MutexGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
@@ -96,7 +96,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         panic_if_local_in_future!(cx, "Mutex");
-        
+
         if likely(!this.was_called) {
             if let Some(guard) = this.mutex.try_lock_with_spinning() {
                 return Poll::Ready(guard);
@@ -155,8 +155,7 @@ impl<T> Mutex<T> {
     #[inline(always)]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
-            let lock_res = self.counter
-                .compare_exchange(0, 1, Acquire, Acquire);
+            let lock_res = self.counter.compare_exchange(0, 1, Acquire, Acquire);
             match lock_res {
                 Ok(_) => return Some(MutexGuard::new(self)),
                 Err(count) if count == 1 => {
@@ -235,7 +234,7 @@ impl<T> Mutex<T> {
     }
 }
 
-unsafe impl<T: Send> Sync for Mutex<T> {}
+unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
 unsafe impl<T: Send> Send for Mutex<T> {}
 
 #[cfg(test)]
@@ -246,7 +245,7 @@ mod tests {
 
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::{Executor};
+    use crate::Executor;
 
     use super::*;
 

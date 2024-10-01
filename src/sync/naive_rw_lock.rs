@@ -50,7 +50,9 @@ impl<'rw_lock, T> Deref for ReadLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for ReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        unsafe { self.local_rw_lock.unlock_read(); }
+        unsafe {
+            self.local_rw_lock.unlock_read();
+        }
     }
 }
 
@@ -99,7 +101,9 @@ impl<'rw_lock, T> DerefMut for WriteLockGuard<'rw_lock, T> {
 
 impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
-        unsafe { self.local_rw_lock.unlock_write(); }
+        unsafe {
+            self.local_rw_lock.unlock_write();
+        }
     }
 }
 
@@ -240,7 +244,7 @@ impl<T> RWLock<T> {
     }
 }
 
-unsafe impl<T: Send> Sync for RWLock<T> {}
+unsafe impl<T: Send + Sync> Sync for RWLock<T> {}
 unsafe impl<T: Send> Send for RWLock<T> {}
 
 #[cfg(test)]

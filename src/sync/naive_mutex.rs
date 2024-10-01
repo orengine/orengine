@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use crossbeam::utils::{CachePadded};
+use crossbeam::utils::CachePadded;
 
 use crate::global_yield_now;
 
@@ -92,7 +92,7 @@ impl<T> NaiveMutex<T> {
                 if let Some(guard) = self.try_lock() {
                     return guard;
                 }
-                for _ in 0..1 <<step {
+                for _ in 0..1 << step {
                     spin_loop();
                 }
             }
@@ -140,17 +140,17 @@ impl<T> NaiveMutex<T> {
     }
 }
 
-unsafe impl<T: Send> Sync for NaiveMutex<T> {}
+unsafe impl<T: Send + Sync> Sync for NaiveMutex<T> {}
 unsafe impl<T: Send> Send for NaiveMutex<T> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sync::WaitGroup;
+    use crate::{sleep, Executor};
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
-    use crate::{sleep, Executor};
-    use crate::sync::WaitGroup;
 
     #[orengine_macros::test_global]
     fn test_naive_mutex() {
