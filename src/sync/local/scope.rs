@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::Poll;
 
 /// A scope to spawn scoped local tasks in.
-/// 
+///
 /// # The difference between `LocalScope` and [`Scope`](crate::sync::Scope)
 ///
 /// The `LocalScope` works with `local tasks`.
@@ -26,38 +26,38 @@ impl<'scope> LocalScope<'scope> {
     /// Unlike non-scoped tasks, tasks created with this function may
     /// borrow non-`'static` data from the outside the scope. See [`local_scope`] for
     /// details.
-    /// 
+    ///
     /// The created task will be executed later.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```no_run
     /// use std::ops::Deref;
     /// use std::time::Duration;
     /// use orengine::{sleep, Local};
     /// use orengine::sync::{local_scope, LocalWaitGroup};
     ///
-    /// async fn foo() {
-    ///     let wg = LocalWaitGroup::new();
-    ///     let a = Local::new(0);
+    /// # async fn foo() {
+    /// let wg = LocalWaitGroup::new();
+    /// let a = Local::new(0);
     ///
-    ///     local_scope(|scope| async {
-    ///         for i in 0..10 {
-    ///             wg.inc();
-    ///             scope.exec(async {
-    ///                 assert_eq!(*a.deref(), i);
-    ///                 *a.get_mut() += 1;
-    ///                 sleep(Duration::from_millis(i)).await;
-    ///                 wg.done();
-    ///             });
-    ///         }
-    /// 
-    ///         wg.wait().await;
-    ///         assert_eq!(*a.deref(), 10);
-    ///     }).await;
-    /// 
+    /// local_scope(|scope| async {
+    ///     for i in 0..10 {
+    ///         wg.inc();
+    ///         scope.exec(async {
+    ///             assert_eq!(*a.deref(), i);
+    ///             *a.get_mut() += 1;
+    ///             sleep(Duration::from_millis(i)).await;
+    ///             wg.done();
+    ///         });
+    ///     }
+    ///
+    ///     wg.wait().await;
     ///     assert_eq!(*a.deref(), 10);
-    /// }
+    /// }).await;
+    ///
+    /// assert_eq!(*a.deref(), 10);
+    /// # }
     /// ```
     #[inline(always)]
     pub fn exec<F: Future<Output = ()>>(&'scope self, future: F) {
@@ -87,28 +87,28 @@ impl<'scope> LocalScope<'scope> {
     /// use orengine::{sleep, Local};
     /// use orengine::sync::{local_scope, LocalWaitGroup};
     ///
-    /// async fn foo() {
-    ///     let wg = LocalWaitGroup::new();
-    ///     let a = Local::new(0);
+    /// # async fn foo() {
+    /// let wg = LocalWaitGroup::new();
+    /// let a = Local::new(0);
     ///
-    ///     local_scope(|scope| async {
-    ///         for i in 0..10 {
-    ///             wg.inc();
-    ///             scope.spawn(async {
-    ///                 assert_eq!(*a.deref(), 0);
-    ///                 sleep(Duration::from_millis(i)).await;
-    ///                 *a.get_mut() += 1;
-    ///                 wg.done();
-    ///             });
-    ///         }
+    /// local_scope(|scope| async {
+    ///     for i in 0..10 {
+    ///         wg.inc();
+    ///         scope.spawn(async {
+    ///             assert_eq!(*a.deref(), 0);
+    ///             sleep(Duration::from_millis(i)).await;
+    ///             *a.get_mut() += 1;
+    ///             wg.done();
+    ///         });
+    ///     }
     ///
-    ///         assert_eq!(*a.deref(), 0);
-    ///         wg.wait().await;
-    ///         assert_eq!(*a.deref(), 10);
-    ///     }).await;
-    ///
+    ///     assert_eq!(*a.deref(), 0);
+    ///     wg.wait().await;
     ///     assert_eq!(*a.deref(), 10);
-    /// }
+    /// }).await;
+    ///
+    /// assert_eq!(*a.deref(), 10);
+    /// # }
     /// ```
     #[inline(always)]
     pub fn spawn<F: Future<Output = ()>>(&'scope self, future: F) {
@@ -152,12 +152,12 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 /// Creates a [`local scope`](LocalScope) for spawning scoped local tasks.
 ///
 /// The function passed to `scope` will be provided a [`LocalScope`] object,
-/// through which scoped local tasks can be [spawned][`LocalScope::spawn`] 
+/// through which scoped local tasks can be [spawned][`LocalScope::spawn`]
 /// or [executed][`LocalScope::exec`].
 ///
 /// Unlike non-scoped tasks, scoped tasks can borrow non-`'static` data,
 /// as the scope guarantees all tasks will be awaited at the end of the scope.
-/// 
+///
 /// # The difference between `LocalScope` and [`global_scope`](crate::sync::global_scope)
 ///
 /// The `local_scope` works with `local tasks`.
@@ -172,27 +172,27 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 /// use orengine::{sleep, Local};
 /// use orengine::sync::{local_scope, LocalWaitGroup};
 ///
-/// async fn foo() {
-///     let wg = LocalWaitGroup::new();
-///     let a = Local::new(0);
+/// # async fn foo() {
+/// let wg = LocalWaitGroup::new();
+/// let a = Local::new(0);
 ///
-///     local_scope(|scope| async {
-///         for i in 0..10 {
-///             wg.inc();
-///             scope.exec(async {
-///                 assert_eq!(*a.deref(), i);
-///                 *a.get_mut() += 1;
-///                 sleep(Duration::from_millis(i)).await;
-///                 wg.done();
-///             });
-///         }
+/// local_scope(|scope| async {
+///     for i in 0..10 {
+///         wg.inc();
+///         scope.exec(async {
+///             assert_eq!(*a.deref(), i);
+///             *a.get_mut() += 1;
+///             sleep(Duration::from_millis(i)).await;
+///             wg.done();
+///         });
+///     }
 ///
-///         wg.wait().await;
-///         assert_eq!(*a.deref(), 10);
-///     }).await;
-///
+///     wg.wait().await;
 ///     assert_eq!(*a.deref(), 10);
-/// }
+/// }).await;
+///
+/// assert_eq!(*a.deref(), 10);
+/// # }
 /// ```
 #[inline(always)]
 pub async fn local_scope<'scope, Fut, F>(f: F)
@@ -205,9 +205,7 @@ where
         _scope: std::marker::PhantomData,
         no_send_marker: std::marker::PhantomData,
     };
-    let static_scope = unsafe { 
-        std::mem::transmute::<&_, &'static LocalScope<'static>>(&scope)
-    };
+    let static_scope = unsafe { std::mem::transmute::<&_, &'static LocalScope<'static>>(&scope) };
 
     f(static_scope).await;
 
@@ -275,7 +273,7 @@ mod tests {
             assert_eq!(*local_a.deref(), 0);
             *local_a.get_mut() += 1;
         })
-            .await;
+        .await;
 
         assert_eq!(*local_a.deref(), 5);
     }
