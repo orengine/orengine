@@ -54,7 +54,7 @@ impl LocalWaitGroup {
                 count: 0,
                 waited_tasks: Vec::new(),
             }),
-            no_send_marker: std::marker::PhantomData,
+            no_send_marker: std::marker::PhantomData, 
         }
     }
 
