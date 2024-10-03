@@ -2,9 +2,9 @@ use std::cell::Cell;
 use std::future::Future;
 
 /// `OnceState` is used to indicate whether the `Once` has been called or not.
-/// 
+///
 /// # Variants
-/// 
+///
 /// * `NotCalled` - The `Once` has not been called.
 /// * `Called` - The `Once` has been called.
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -42,31 +42,31 @@ impl From<isize> for OnceState {
 }
 
 /// `LocalOnce` is an asynchronous [`std::Once`](std::sync::Once).
-/// 
+///
 /// # Usage
-/// 
+///
 /// `LocalOnce` is used to call a function only once.
-/// 
+///
 /// # The difference between `LocalOnce` and [`Once`](crate::sync::Once)
 ///
-/// The `LocalOnce` works with `local tasks`. 
+/// The `LocalOnce` works with `local tasks`.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```no_run
 /// use orengine::sync::LocalOnce;
-/// 
+///
 /// static START: LocalOnce = LocalOnce::new();
-/// 
+///
 /// async fn async_print_msg_on_start() {
 ///     let was_called = START.call_once(async {
 ///         // some async code
 ///         println!("start");
 ///     }).await.is_ok();
 /// }
-/// 
+///
 /// async fn print_msg_on_start() {
 ///     let was_called = START.call_once_sync(|| {
 ///         println!("start");
@@ -109,7 +109,7 @@ impl LocalOnce {
         if self.is_called() {
             return Err(());
         }
-        
+
         self.state.replace(OnceState::Called);
         f.await;
         Ok(())
@@ -135,19 +135,19 @@ impl LocalOnce {
         if self.is_called() {
             return Err(());
         }
-        
+
         self.state.replace(OnceState::Called);
         f();
         Ok(())
     }
 
-    /// Returns the [`state`](OnceState) of the `Once`.
+    /// Returns the [`state`](OnceState) of the `LocalOnce`.
     #[inline(always)]
     pub fn state(&self) -> OnceState {
         self.state.get()
     }
 
-    /// Returns whether the `Once` has been called or not.
+    /// Returns whether the `LocalOnce` has been called or not.
     #[inline(always)]
     pub fn is_called(&self) -> bool {
         self.state.get() == OnceState::Called

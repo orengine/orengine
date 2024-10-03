@@ -1,3 +1,4 @@
+// TODO docs
 use std::cell::UnsafeCell;
 use std::hint::spin_loop;
 use std::mem;
@@ -147,7 +148,7 @@ unsafe impl<T: Send> Send for NaiveMutex<T> {}
 mod tests {
     use super::*;
     use crate::sync::WaitGroup;
-    use crate::{sleep, Executor};
+    use crate::{Executor, sleep};
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;

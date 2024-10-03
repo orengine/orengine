@@ -1,3 +1,4 @@
+// TODO docs
 use std::collections::VecDeque;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
@@ -7,7 +8,7 @@ use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
 
 use crate::panic_if_local_in_future;
-use crate::runtime::{local_executor, Task};
+use crate::runtime::{Task, local_executor};
 use crate::sync::naive_mutex::NaiveMutex;
 
 enum SendCallState<T> {
@@ -521,17 +522,17 @@ unsafe impl<T> Send for Channel<T> {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::Relaxed;
-    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
-    use crate::sync::channel::Channel;
     use crate::sync::WaitGroup;
+    use crate::sync::channel::Channel;
     use crate::utils::droppable_element::DroppableElement;
-    use crate::utils::{get_core_ids, SpinLock};
-    use crate::{sleep, Executor};
+    use crate::utils::{SpinLock, get_core_ids};
+    use crate::{Executor, sleep};
 
     #[orengine_macros::test_global]
     fn test_zero_capacity() {

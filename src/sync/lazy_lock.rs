@@ -1,3 +1,4 @@
+// TODO docs
 use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::mem::ManuallyDrop;
@@ -92,12 +93,14 @@ impl<T, F: FnOnce() -> T> LazyLock<T, F> {
                 },
                 LazyLockState::InProgress => global_yield_now().await,
                 LazyLockState::NotCalled => {
-                    let was_swapped = self.state
+                    let was_swapped = self
+                        .state
                         .compare_exchange(
                             LazyLockState::not_called(),
                             LazyLockState::in_progress(),
                             Acquire,
-                            Relaxed)
+                            Relaxed,
+                        )
                         .is_ok();
                     if was_swapped {
                         let data = unsafe { &mut *self.data.get() };
