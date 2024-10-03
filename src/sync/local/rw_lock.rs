@@ -39,7 +39,6 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
         &self.local_rw_lock
     }
 
-    #[inline(always)]
     /// Release the shared read access of a lock.
     /// Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
     /// This was done to improve readability.
@@ -48,6 +47,7 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     ///
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
+    #[inline(always)]
     pub fn unlock(self) {}
 
     /// Returns a reference to the original [`LocalRWLock`].
@@ -395,7 +395,7 @@ impl<T> LocalRWLock<T> {
         }
     }
 
-    /// Returns a mutable reference to the inner value.
+    /// Returns a mutable reference to the inner value. It is safe because it uses `&mut self`.
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         &mut self.inner.get_mut().value
