@@ -27,7 +27,7 @@ impl<'scope> LocalScope<'scope> {
     /// borrow non-`'static` data from the outside the scope. See [`local_scope`] for
     /// details.
     ///
-    /// The created task will be executed later.
+    /// The created task will be executed immediately.
     ///
     /// # Example
     ///
@@ -83,8 +83,7 @@ impl<'scope> LocalScope<'scope> {
     ///
     /// ```no_run
     /// use std::ops::Deref;
-    /// use std::time::Duration;
-    /// use orengine::{sleep, Local};
+    /// use orengine::Local;
     /// use orengine::sync::{local_scope, LocalWaitGroup};
     ///
     /// # async fn foo() {
@@ -95,8 +94,6 @@ impl<'scope> LocalScope<'scope> {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.spawn(async {
-    ///             assert_eq!(*a.deref(), 0);
-    ///             sleep(Duration::from_millis(i)).await;
     ///             *a.get_mut() += 1;
     ///             wg.done();
     ///         });
@@ -158,7 +155,7 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 /// Unlike non-scoped tasks, scoped tasks can borrow non-`'static` data,
 /// as the scope guarantees all tasks will be awaited at the end of the scope.
 ///
-/// # The difference between `LocalScope` and [`global_scope`](crate::sync::global_scope)
+/// # The difference between `local_scope` and [`global_scope`](crate::sync::global_scope)
 ///
 /// The `local_scope` works with `local tasks`.
 ///
