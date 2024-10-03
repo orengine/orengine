@@ -30,7 +30,7 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     pub(crate) fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self {
             local_mutex,
-            no_send_marker: std::marker::PhantomData
+            no_send_marker: std::marker::PhantomData,
         }
     }
 
@@ -40,7 +40,6 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
         &self.local_mutex
     }
 
-    #[inline(always)]
     /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
     /// This was done to improve readability.
     ///
@@ -48,6 +47,7 @@ impl<'mutex, T> LocalMutexGuard<'mutex, T> {
     ///
     /// Even if you doesn't call `guard.unlock()`,
     /// the mutex will be unlocked after the `guard` is dropped.
+    #[inline(always)]
     pub fn unlock(self) {}
 
     /// Returns a reference to the original [`LocalMutex`].
@@ -131,13 +131,14 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 /// A mutual exclusion primitive useful for protecting shared data.
 ///
 /// This mutex will block tasks waiting for the lock to become available. The
-/// mutex can be created via a [`new`] constructor. Each mutex has a type parameter
+/// mutex can be created via a [`new`](LocalMutex::new) constructor. Each mutex has a type parameter
 /// which represents the data that it is protecting. The data can be accessed
-/// through the RAII guards returned from [`lock`] and [`try_lock`], which
+/// through the RAII guards returned from [`lock`](LocalMutex::lock)
+/// and [`try_lock`](LocalMutex::try_lock), which
 /// guarantees that the data is only ever accessed when the mutex is locked, or
 /// with an unsafe method [`get_locked`](LocalMutex::get_locked).
 ///
-/// # The difference between `LocalMutex` and [`Mutex`](crate::sync::Mutex).
+/// # The difference between `LocalMutex` and [`Mutex`](crate::sync::Mutex)
 ///
 /// The `LocalMutex` works with `local tasks`.
 ///
@@ -170,14 +171,13 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 ///
 /// ```no_run
 /// use std::collections::HashMap;
-/// use orengine::Local;
 /// use orengine::sync::LocalMutex;
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
 /// // Correct usage, because after `write_to_log_file(*key, *value).await` and before the future is resolved
 /// // another task can modify the storage. So, we need to lock the storage.
-/// async fn dump_storage(storage: Local<LocalMutex<HashMap<usize, usize>>>) {
+/// async fn dump_storage(storage: &LocalMutex<HashMap<usize, usize>>) {
 ///     let mut guard = storage.lock().await;
 ///     
 ///     for (key, value) in guard.iter() {
@@ -209,7 +209,7 @@ impl<T> LocalMutex<T> {
 
     /// Returns [`LocalMutexGuard`] that allows access to the inner value.
     ///
-    /// It will block the current task if the mutex is locked.
+    /// It blocks the current task if the mutex is locked.
     #[inline(always)]
     pub async fn lock(&self) -> LocalMutexGuard<T> {
         let is_locked = unsafe { &mut *self.is_locked.get() };
@@ -232,6 +232,12 @@ impl<T> LocalMutex<T> {
         } else {
             None
         }
+    }
+
+    /// Returns the inner value. It is safe because it uses `&mut self`.
+    #[inline(always)]
+    pub fn get_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.value.get() }
     }
 
     /// Add current task to wait queue.

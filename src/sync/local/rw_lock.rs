@@ -97,7 +97,7 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     /// Creates a new `LocalWriteLockGuard`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
-        Self { 
+        Self {
             local_rw_lock,
             no_send_marker: std::marker::PhantomData,
         }
@@ -256,7 +256,7 @@ struct Inner<T> {
 /// returned from the locking methods implement [`Deref`] (and [`DerefMut`]
 /// for the `write` methods) to allow access to the content of the lock.
 ///
-/// # The difference between `LocalRWLock` and [`RWLock`](crate::sync::RWLock).
+/// # The difference between `LocalRWLock` and [`RWLock`](crate::sync::RWLock)
 ///
 /// The `LocalRWLock` works with `local tasks`.
 ///
