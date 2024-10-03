@@ -69,7 +69,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
     }
 }
 
-/// LocalCondVar is a condition variable that allows tasks to wait until
+/// `LocalCondVar` is a condition variable that allows tasks to wait until
 /// notified by another task.
 ///
 /// It is designed to be used in conjunction with a [`LocalMutex`] to provide a way for tasks
@@ -89,28 +89,28 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// # Example
 ///
 /// ```no_run
-/// use orengine::sync::{LocalCondVar, LocalMutex};
-/// use orengine::{Local, local_executor, sleep};
+/// use orengine::sync::{LocalCondVar, LocalMutex, local_scope};
+/// use orengine::sleep;
 /// use std::time::Duration;
 ///
 /// # async fn test() {
-/// let cvar = Local::new(LocalCondVar::new());
-/// let cvar_clone = cvar.clone();
-/// let is_ready = Local::new(LocalMutex::new(false));
-/// let is_ready_clone = is_ready.clone();
+/// let cvar = LocalCondVar::new();
+/// let is_ready = LocalMutex::new(false);
 ///
-/// local_executor().spawn_local(async move {
-///     sleep(Duration::from_secs(1)).await;
-///     let mut lock = is_ready_clone.lock().await;
-///     *lock = true;
-///     lock.unlock();
-///     cvar_clone.notify_one();
-/// });
+/// local_scope(|scope| async {
+///     scope.spawn(async {
+///         sleep(Duration::from_secs(1)).await;
+///         let mut lock = is_ready.lock().await;
+///         *lock = true;
+///         lock.unlock();
+///         cvar.notify_one();
+///     });
 ///
-/// let mut lock = is_ready.lock().await;
-/// while !*lock {
-///     lock = cvar.wait(lock).await; // wait 1 second
-/// }
+///     let mut lock = is_ready.lock().await;
+///     while !*lock {
+///         lock = cvar.wait(lock).await; // wait 1 second
+///     }
+/// }).await;
 /// # }
 /// ```
 pub struct LocalCondVar {
@@ -134,28 +134,28 @@ impl LocalCondVar {
     /// # Example
     ///
     /// ```no_run
-    /// use orengine::sync::{LocalCondVar, LocalMutex};
-    /// use orengine::{Local, local_executor, sleep};
+    /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope};
+    /// use orengine::sleep;
     /// use std::time::Duration;
     ///
     /// # async fn test() {
-    /// let cvar = Local::new(LocalCondVar::new());
-    /// let cvar_clone = cvar.clone();
-    /// let is_ready = Local::new(LocalMutex::new(false));
-    /// let is_ready_clone = is_ready.clone();
+    /// let cvar = LocalCondVar::new();
+    /// let is_ready = LocalMutex::new(false);
     ///
-    /// local_executor().spawn_local(async move {
-    ///     sleep(Duration::from_secs(1)).await;
-    ///     let mut lock = is_ready_clone.lock().await;
-    ///     *lock = true;
-    ///     lock.unlock();
-    ///     cvar_clone.notify_one();
-    /// });
+    /// local_scope(|scope| async {
+    ///     scope.spawn(async {
+    ///         sleep(Duration::from_secs(1)).await;
+    ///         let mut lock = is_ready.lock().await;
+    ///         *lock = true;
+    ///         lock.unlock();
+    ///         cvar.notify_one();
+    ///     });
     ///
-    /// let mut lock = is_ready.lock().await;
-    /// while !*lock {
-    ///     lock = cvar.wait(lock).await; // wait 1 second
-    /// }
+    ///     let mut lock = is_ready.lock().await;
+    ///     while !*lock {
+    ///         lock = cvar.wait(lock).await; // wait 1 second
+    ///     }
+    /// }).await;
     /// # }
     #[inline(always)]
     pub fn wait<'mutex, 'cond_var, T>(
