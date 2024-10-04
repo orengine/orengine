@@ -1,10 +1,11 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use std::ops::Deref;
 use quote::{quote, ToTokens};
+use std::ops::Deref;
 use syn::{parse_macro_input, Expr, Lit};
 
+// TODO docs
 fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
     let mut timeout = quote! { core::time::Duration::from_secs(1) };
     match syn::parse::<syn::ExprAssign>(attr) {
@@ -21,10 +22,9 @@ fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
                     _ => {}
                 }
             }
-        },
-        Err(_err) => {},
+        }
+        Err(_err) => {}
     }
-
 
     timeout
 }
@@ -32,7 +32,7 @@ fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
 fn generate_test(
     args: TokenStream,
     input: TokenStream,
-    spawn_fn: proc_macro2::TokenStream
+    spawn_fn: proc_macro2::TokenStream,
 ) -> TokenStream {
     let timeout = get_timeout_name(args);
     let input = parse_macro_input!(input as syn::ItemFn);

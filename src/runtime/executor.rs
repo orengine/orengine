@@ -1,29 +1,29 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-use std::mem;
 
-use crossbeam::utils::CachePadded;
-use fastrand::Rng;
-use crate::sync_task_queue::SyncTaskList;
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{get_local_worker_ref, init_local_worker, uninit_local_worker, IoWorker};
+use crate::io::worker::{IoWorker, get_local_worker_ref, init_local_worker, uninit_local_worker};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
-use crate::runtime::global_state::{register_local_executor, SubscribedState};
+use crate::runtime::global_state::{SubscribedState, register_local_executor};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
-use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
+use crate::runtime::{SharedExecutorTaskList, get_core_id_for_executor};
 use crate::sleep::sleeping_task::SleepingTask;
+use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
+use crossbeam::utils::CachePadded;
+use fastrand::Rng;
 
 thread_local! {
     /// Thread local [`Executor`]. So, it is lockless.
@@ -34,9 +34,7 @@ thread_local! {
 ///
 /// It is `None` if the executor is not initialized.
 fn get_local_executor_ref() -> &'static mut Option<Executor> {
-    LOCAL_EXECUTOR.with(|local_executor| unsafe { 
-        &mut *local_executor.get() 
-    })
+    LOCAL_EXECUTOR.with(|local_executor| unsafe { &mut *local_executor.get() })
 }
 
 /// Change the state of local thread to pre-initialized.
@@ -455,13 +453,25 @@ impl Executor {
     ///
     /// Execute [`tasks`](Task) only by this method!
     #[inline(always)]
-    pub fn exec_task(&mut self, mut task: Task) {
-        self.exec_series += 1;
-        if self.exec_series == 107 {
+    pub fn exec_task(&mut self, task: Task) {
+        if self.exec_series >= 106 {
             self.exec_series = 0;
             self.spawn_local_task(task);
             return;
         }
+
+        self.exec_task_now(task);
+    }
+
+    // TODO real docs
+    /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
+    ///
+    /// # Attention
+    ///
+    /// Execute [`tasks`](Task) only by this method!
+    #[inline(always)]
+    pub fn exec_task_now(&mut self, mut task: Task) {
+        self.exec_series += 1;
 
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
@@ -701,7 +711,7 @@ impl Executor {
             Some(io_worker) => io_worker.must_poll(Duration::ZERO),
             None => true,
         };
-        
+
         if self.sleeping_tasks.len() > 0 {
             let instant = Instant::now();
             while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
@@ -722,13 +732,13 @@ impl Executor {
         //         }
         //     };
         // }
-        // 
+        //
         // shrink!(self.local_tasks);
         // shrink!(self.global_tasks);
         // if self.shared_tasks_list.is_some() {
         //     let mut shared_tasks_list =
         //         unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
-        // 
+        //
         //     shrink!(shared_tasks_list);
         // }
 

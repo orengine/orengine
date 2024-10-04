@@ -132,6 +132,7 @@ pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
 impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
     type Output = ();
 
+    #[inline(always)]
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
