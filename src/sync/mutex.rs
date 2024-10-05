@@ -42,13 +42,13 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
         &self.mutex
     }
 
-    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
+    /// Unlocks the [`mutex`](Mutex). Calling `guard.unlock()` is equivalent to
+    /// calling `drop(guard)`. This was done to improve readability.
     ///
     /// # Attention
     ///
     /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
+    /// the [`mutex`](Mutex) will be unlocked after the `guard` is dropped.
     #[inline(always)]
     pub fn unlock(self) {}
 
@@ -66,7 +66,7 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     ///
     /// # Safety
     ///
-    /// The mutex is unlocked by calling [`Mutex::unlock`](Mutex::unlock) later.
+    /// The mutex is unlocked by calling [`Mutex::unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'static Mutex<T> {
         let static_mutex = unsafe { mem::transmute(self.mutex) };
@@ -147,13 +147,27 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 /// which represents the data that it is protecting. The data can be accessed
 /// through the RAII guards returned from [`lock`](Mutex::lock) and [`try_lock`](Mutex::try_lock),
 /// which guarantees that the data is only ever accessed when the mutex is locked, or
-/// with an unsafe method [`get_locked`](LocalMutex::get_locked).
+/// with an unsafe method [`get_locked`](Mutex::get_locked).
 ///
 /// # The difference between `Mutex` and [`LocalMutex`](crate::sync::LocalMutex)
 ///
 /// The `Mutex` works with `global tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
+///
+/// # The differences between `Mutex` and [`NaiveMutex`](crate::sync::NaiveMutex)
+///
+/// The `Mutex` uses a queue of tasks waiting for the lock to become available.
+///
+/// The [`NaiveMutex`](crate::sync::NaiveMutex) yields the current task if it is unable
+/// to acquire the lock.
+///
+/// Use `Mutex` when a lot of tasks are waiting for the same lock because the lock is acquired
+/// for a __long__ time. If a lot of tasks are waiting for the same lock because the lock
+/// is acquired for a __short__ time try to share the `Mutex`.
+///
+/// If the lock is mostly acquired the first time, it is better to
+/// use [`NaiveMutex`](crate::sync::NaiveMutex), as it spends less time on successful operations.
 ///
 /// # Example
 ///

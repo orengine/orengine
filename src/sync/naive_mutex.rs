@@ -1,4 +1,3 @@
-// TODO docs
 use std::cell::UnsafeCell;
 use std::hint::spin_loop;
 use std::mem;
@@ -10,41 +9,66 @@ use crossbeam::utils::CachePadded;
 
 use crate::global_yield_now;
 
+/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
+/// dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`](Deref) and [`DerefMut`] implementations.
+///
+/// This structure is created by the [`lock`](NaiveMutex::lock)
+/// and [`try_lock`](NaiveMutex::try_lock) methods on [`NaiveMutex`].
 pub struct NaiveMutexGuard<'mutex, T> {
     mutex: &'mutex NaiveMutex<T>,
 }
 
 impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
+    /// Creates a new [`NaiveMutexGuard`].
     #[inline(always)]
     pub(crate) fn new(mutex: &'mutex NaiveMutex<T>) -> Self {
         Self { mutex }
     }
 
+    /// Returns a reference to the original [`NaiveMutex`].
     #[inline(always)]
     pub fn mutex(&self) -> &NaiveMutex<T> {
         &self.mutex
     }
 
-    #[inline(always)]
-    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
+    /// Unlocks the [`mutex`](NaiveMutex). Calling `guard.unlock()` is equivalent to
+    /// calling `drop(guard)`. This was done to improve readability.
     ///
     /// # Attention
     ///
     /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
+    /// the [`mutex`](NaiveMutex) will be unlocked after the `guard` is dropped.
+    #[inline(always)]
     pub fn unlock(self) {}
 
+    /// Returns a reference to the original [`NaiveMutex`].
+    ///
+    /// The mutex will never be unlocked.
+    ///
+    /// # Safety
+    ///
+    /// The mutex is unlocked by calling [`NaiveMutex::unlock`] later.
     #[inline(always)]
-    pub unsafe fn leak(self) -> &'mutex T {
+    pub unsafe fn leak(self) -> &'mutex NaiveMutex<T> {
         let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
         static_mutex
     }
 
+    /// Returns a reference to the [`CachePadded<AtomicBool>`]
+    /// associated with the original [`NaiveMutex`] to
+    /// use [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
+    ///
+    /// # Safety
+    ///
+    /// The mutex is unlocked by calling [`NaiveMutex::unlock`] later or
+    /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
     #[inline(always)]
-    pub(crate) unsafe fn leak_to_atomic(self) -> &'mutex CachePadded<AtomicBool> {
+    pub unsafe fn leak_to_atomic(self) -> &'mutex CachePadded<AtomicBool> {
         let static_mutex = unsafe { mem::transmute(&self.mutex.is_locked) };
         mem::forget(self);
 
@@ -72,12 +96,61 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
     }
 }
 
+/// A mutual exclusion primitive useful for protecting shared data.
+///
+/// This mutex will block tasks waiting for the lock to become available. The
+/// mutex can be created via a [`new`](NaiveMutex::new) constructor. Each mutex has a type parameter
+/// which represents the data that it is protecting. The data can be accessed
+/// through the RAII guards returned from [`lock`](NaiveMutex::lock) and
+/// [`try_lock`](NaiveMutex::try_lock),
+/// which guarantees that the data is only ever accessed when the mutex is locked, or
+/// with an unsafe method [`get_locked`](NaiveMutex::get_locked).
+///
+/// # The difference between `NaiveMutex` and [`LocalMutex`](crate::sync::LocalMutex)
+///
+/// The `NaiveMutex` works with `global tasks` and can be shared between threads.
+///
+/// Read [`Executor`](crate::Executor) for more details.
+///
+/// # The differences between `NaiveMutex` and [`Mutex`](crate::sync::Mutex)
+///
+/// The [`NaiveMutex`](crate::sync::NaiveMutex) yields the current task if it is unable
+/// to acquire the lock.
+///
+/// The `Mutex` uses a queue of tasks waiting for the lock to become available.
+///
+/// Use `Mutex` when a lot of tasks are waiting for the same lock because the lock is acquired
+/// for a __long__ time. If a lot of tasks are waiting for the same lock because the lock
+/// is acquired for a __short__ time try to share the `Mutex`.
+///
+/// If the lock is mostly acquired the first time, it is better to
+/// use [`NaiveMutex`](crate::sync::NaiveMutex), as it spends less time on successful operations.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::collections::HashMap;
+/// use orengine::sync::NaiveMutex;
+///
+/// # async fn write_to_the_dump_file(key: usize, value: usize) {}
+///
+/// async fn dump_storage(storage: &NaiveMutex<HashMap<usize, usize>>) {
+///     let mut guard = storage.lock().await;
+///
+///     for (key, value) in guard.iter() {
+///         write_to_the_dump_file(*key, *value).await;
+///     }
+///
+///     // lock is released when `guard` goes out of scope
+/// }
+/// ```
 pub struct NaiveMutex<T> {
     is_locked: CachePadded<AtomicBool>,
     value: UnsafeCell<T>,
 }
 
 impl<T> NaiveMutex<T> {
+    /// Creates a new [`NaiveMutex`].
     #[inline(always)]
     pub fn new(value: T) -> NaiveMutex<T> {
         NaiveMutex {
@@ -86,6 +159,10 @@ impl<T> NaiveMutex<T> {
         }
     }
 
+    /// Returns a [`Future`] that resolves to [`NaiveMutexGuard`] that allows
+    /// access to the inner value.
+    ///
+    /// It blocks the current task if the mutex is locked.
     #[inline(always)]
     pub async fn lock(&self) -> NaiveMutexGuard<T> {
         loop {
@@ -102,6 +179,8 @@ impl<T> NaiveMutex<T> {
         }
     }
 
+    /// If the mutex is unlocked, returns [`NaiveMutexGuard`] that allows access to the inner value,
+    /// otherwise returns [`None`].
     #[inline(always)]
     pub fn try_lock(&self) -> Option<NaiveMutexGuard<T>> {
         if self
@@ -115,11 +194,19 @@ impl<T> NaiveMutex<T> {
         }
     }
 
+    /// Returns a reference to the underlying data. It is safe because it uses `&mut self`.
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
+    /// Unlocks the mutex.
+    ///
+    /// # Safety
+    ///
+    /// - The mutex must be locked.
+    ///
+    /// - And no tasks has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
     pub unsafe fn unlock(&self) {
         debug_assert!(
@@ -130,11 +217,18 @@ impl<T> NaiveMutex<T> {
         self.is_locked.store(false, Release);
     }
 
+    /// Returns a reference to the inner value.
+    ///
+    /// # Safety
+    ///
+    /// - The mutex must be locked.
+    ///
+    /// - And only current task has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
             self.is_locked.load(Acquire),
-            "Mutex is unlocked, but calling get_locked it must be locked"
+            "NaiveMutex is unlocked, but calling get_locked it must be locked"
         );
 
         unsafe { &mut *self.value.get() }

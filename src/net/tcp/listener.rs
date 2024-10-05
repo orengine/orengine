@@ -201,6 +201,5 @@ mod tests {
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Default)).await;
         test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU)).await;
-        // TODO test_listener_accept_with_config(&config.reuse_port(ReusePort::NUMA)).await;
     }
 }

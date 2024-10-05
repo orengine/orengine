@@ -10,9 +10,9 @@ use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, R
 use crate::io::{
     AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
 };
+use crate::net::BindConfig;
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
-use crate::net::BindConfig;
 use crate::net::{Datagram, Socket};
 use crate::runtime::local_executor;
 
@@ -205,7 +205,7 @@ mod tests {
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
-    use crate::{local_yield_now, Executor};
+    use crate::{Executor, local_yield_now};
 
     use super::*;
 
@@ -314,7 +314,6 @@ mod tests {
         test_server_with_config(config.reuse_port(ReusePort::Disabled)).await;
         test_server_with_config(config.reuse_port(ReusePort::Default)).await;
         test_server_with_config(config.reuse_port(ReusePort::CPU)).await;
-        // TODO test_server_with_config(config.reuse_port(ReusePort::NUMA)).await;
     }
 
     #[orengine_macros::test]
