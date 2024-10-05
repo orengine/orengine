@@ -279,7 +279,7 @@ impl Config {
                     global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
                 },
                 false => {
-                    if !global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing != 0 {
+                    if global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing != 0 {
                         panic!(
                             "An attempt to create an Executor with task sharing and without a \
                             thread pool enabled has failed because another Executor was created with \
