@@ -11,7 +11,7 @@ struct ConfigStats {
     number_of_executors_with_enabled_io_worker_and_work_sharing: usize,
     number_of_executors_with_enabled_thread_pool_and_work_sharing: usize,
     number_of_executors_with_work_sharing_and_without_io_worker: usize,
-    number_of_executors_with_work_sharing_and_without_thread_pool: usize
+    number_of_executors_with_work_sharing_and_without_thread_pool: usize,
 }
 
 impl ConfigStats {
@@ -21,7 +21,7 @@ impl ConfigStats {
             number_of_executors_with_enabled_io_worker_and_work_sharing: 0,
             number_of_executors_with_enabled_thread_pool_and_work_sharing: 0,
             number_of_executors_with_work_sharing_and_without_io_worker: 0,
-            number_of_executors_with_work_sharing_and_without_thread_pool: 0
+            number_of_executors_with_work_sharing_and_without_thread_pool: 0,
         }
     }
 }
@@ -62,12 +62,14 @@ impl Drop for ValidConfig {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
                 let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
-                global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -= 1;
+                global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -=
+                    1;
             } else {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
                 let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
-                global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -= 1;
+                global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -=
+                    1;
             }
 
             if self.is_thread_pool_enabled() {
@@ -76,14 +78,16 @@ impl Drop for ValidConfig {
                 }
 
                 let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-                global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
+                global_config_stats
+                    .number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
             } else {
                 if guard.is_none() {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
 
                 let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-                global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
+                global_config_stats
+                    .number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
             }
         }
     }
@@ -119,7 +123,7 @@ pub struct Config {
     /// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
     /// them to the shared queue.
     /// If [`usize::MAX`] is provided, work sharing will be disabled.
-    work_sharing_level: usize
+    work_sharing_level: usize,
 }
 
 impl Config {
@@ -129,7 +133,7 @@ impl Config {
             buffer_cap: DEFAULT_BUF_CAP,
             io_worker_config: Some(IoWorkerConfig::default()),
             number_of_thread_workers: 1,
-            work_sharing_level: 7
+            work_sharing_level: 7,
         }
     }
 
@@ -155,7 +159,7 @@ impl Config {
     /// the IO worker will be disabled.
     pub const fn set_io_worker_config(
         mut self,
-        io_worker_config: Option<IoWorkerConfig>
+        io_worker_config: Option<IoWorkerConfig>,
     ) -> Result<Self, &'static str> {
         match io_worker_config {
             Some(io_worker_config) => {
@@ -164,7 +168,7 @@ impl Config {
                 }
 
                 self.io_worker_config = Some(io_worker_config);
-            },
+            }
             None => {
                 self.io_worker_config = None;
             }
@@ -209,14 +213,14 @@ impl Config {
         if self.work_sharing_level == usize::MAX {
             self.work_sharing_level = 7;
         }
-        
+
         self
     }
 
     /// Disables the work sharing.
     pub const fn disable_work_sharing(mut self) -> Self {
         self.work_sharing_level = usize::MAX;
-        
+
         self
     }
 
@@ -237,7 +241,10 @@ impl Config {
 
             match self.io_worker_config.is_some() {
                 true => {
-                    if global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker != 0 {
+                    if global_config_stats
+                        .number_of_executors_with_work_sharing_and_without_io_worker
+                        != 0
+                    {
                         panic!(
                             "An attempt to create an Executor with task sharing and with an \
                             IO worker has failed because another Executor was created with \
@@ -247,10 +254,14 @@ impl Config {
                         );
                     }
 
-                    global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
-                },
+                    global_config_stats
+                        .number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
+                }
                 false => {
-                    if global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing != 0 {
+                    if global_config_stats
+                        .number_of_executors_with_enabled_io_worker_and_work_sharing
+                        != 0
+                    {
                         panic!(
                             "An attempt to create an Executor with task sharing and without an \
                             IO worker has failed because another Executor was created with \
@@ -260,13 +271,17 @@ impl Config {
                         );
                     }
 
-                    global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker += 1;
+                    global_config_stats
+                        .number_of_executors_with_work_sharing_and_without_io_worker += 1;
                 }
             }
 
             match self.is_thread_pool_enabled() {
                 true => {
-                    if global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool != 0 {
+                    if global_config_stats
+                        .number_of_executors_with_work_sharing_and_without_thread_pool
+                        != 0
+                    {
                         panic!(
                             "An attempt to create an Executor with task sharing and with a \
                             thread pool enabled has failed because another Executor was created with \
@@ -276,10 +291,14 @@ impl Config {
                         );
                     }
 
-                    global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
-                },
+                    global_config_stats
+                        .number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
+                }
                 false => {
-                    if global_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing != 0 {
+                    if global_config_stats
+                        .number_of_executors_with_enabled_thread_pool_and_work_sharing
+                        != 0
+                    {
                         panic!(
                             "An attempt to create an Executor with task sharing and without a \
                             thread pool enabled has failed because another Executor was created with \
@@ -289,7 +308,8 @@ impl Config {
                         );
                     }
 
-                    global_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool += 1;
+                    global_config_stats
+                        .number_of_executors_with_work_sharing_and_without_thread_pool += 1;
                 }
             }
         }
@@ -298,7 +318,7 @@ impl Config {
             buffer_cap: self.buffer_cap,
             io_worker_config: self.io_worker_config,
             number_of_thread_workers: self.number_of_thread_workers,
-            work_sharing_level: self.work_sharing_level
+            work_sharing_level: self.work_sharing_level,
         }
     }
 }
@@ -309,13 +329,15 @@ impl From<&ValidConfig> for Config {
             buffer_cap: config.buffer_cap,
             io_worker_config: config.io_worker_config,
             number_of_thread_workers: config.number_of_thread_workers,
-            work_sharing_level: config.work_sharing_level
+            work_sharing_level: config.work_sharing_level,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[orengine_macros::test]
     fn test_default_config() {
         let config = Config::default().validate();
@@ -329,7 +351,8 @@ mod tests {
     fn test_config() {
         let config = Config::default()
             .set_buffer_cap(1024)
-            .set_io_worker_config(None).unwrap()
+            .set_io_worker_config(None)
+            .unwrap()
             .set_numbers_of_thread_workers(0)
             .disable_work_sharing();
 
@@ -353,7 +376,8 @@ mod tests {
         // with io worker and task sharing
         let _first_config = Config::default().validate();
         let _second_config = Config::default()
-            .set_io_worker_config(None).unwrap()
+            .set_io_worker_config(None)
+            .unwrap()
             .enable_work_sharing()
             .validate();
     }
@@ -363,7 +387,8 @@ mod tests {
     fn test_second_case_panic() {
         // with task sharing and without io worker
         let _first_config = Config::default()
-            .set_io_worker_config(None).unwrap()
+            .set_io_worker_config(None)
+            .unwrap()
             .enable_work_sharing()
             .validate();
         let _second_config = Config::default().validate();
