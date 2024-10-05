@@ -1,6 +1,6 @@
 use crate::io::IoWorkerConfig;
-use crate::BUG_MESSAGE;
 use crate::utils::SpinLock;
+use crate::BUG_MESSAGE;
 
 /// A global config of state of the all runtime.
 /// It is used to prevent unsafe behavior in the runtime.
@@ -250,7 +250,7 @@ impl Config {
                     global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
                 },
                 false => {
-                    if !global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing != 0 {
+                    if global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing != 0 {
                         panic!(
                             "An attempt to create an Executor with task sharing and without an \
                             IO worker has failed because another Executor was created with \
@@ -316,8 +316,6 @@ impl From<&ValidConfig> for Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[orengine_macros::test]
     fn test_default_config() {
         let config = Config::default().validate();
