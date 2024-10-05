@@ -15,7 +15,7 @@ readme = "README.md"
 repository = "https://github.com/orengine/orengine"
 categories = ["asynchronous", "network-programming", "concurrency", "web-programming"]
 keywords = ["io", "async", "non-blocking", "shared-nothing", "high-performance"]
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 core_affinity = "0.8.1"

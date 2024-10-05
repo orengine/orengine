@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
@@ -137,10 +138,10 @@ unsafe impl Send for Once {}
 #[cfg(test)]
 mod tests {
     use crate::sync::WaitGroup;
-    use crate::{Executor, sleep};
-    use std::sync::Arc;
+    use crate::{sleep, Executor};
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::SeqCst;
+    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
