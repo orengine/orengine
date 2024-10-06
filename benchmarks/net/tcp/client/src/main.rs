@@ -284,7 +284,7 @@ fn bench_throughput() {
             let counter = counter.clone();
             thread::spawn(move || {
                 let ex = Executor::init_on_core(core);
-                let _ = ex.run_and_block_on(start_client(number_of_cores, counter));
+                let _ = ex.run_and_block_on_local(start_client(number_of_cores, counter));
             });
         }
 

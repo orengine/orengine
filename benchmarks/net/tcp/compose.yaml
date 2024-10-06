@@ -2,17 +2,17 @@ services:
   server:
     build:
       context: server
-      dockerfile: server/Dockerfile-alpine
+      dockerfile: Dockerfile-alpine
       target: final
     ports:
-      - 8083:8083
+      - "8083:8083"
 
   client:
     build:
       context: client
-      dockerfile: client/Dockerfile-bullseye
+      dockerfile: Dockerfile-bullseye
       target: final
     ports:
-      - 8081:8081
+      - "8081:8081"
     depends_on:
       - server
