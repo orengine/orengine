@@ -1,21 +1,21 @@
+use crate::io::config::IoWorkerConfig;
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::{IntoRawFd, OsMessageHeader, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
+use crate::io::worker::IoWorker;
+use crate::runtime::local_executor_unchecked;
+use crate::BUG_MESSAGE;
+use io_uring::squeue::Entry;
+use io_uring::types::{OpenHow, SubmitArgs, Timespec};
+use io_uring::{cqueue, opcode, types, IoUring, Probe};
+use nix::libc;
+use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
-use io_uring::{cqueue, IoUring, opcode, Probe, types};
-use io_uring::squeue::Entry;
-use io_uring::types::{OpenHow, SubmitArgs, Timespec};
-use nix::libc;
-use nix::libc::sockaddr;
-use crate::io::config::IoWorkerConfig;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{RawFd, OsMessageHeader, IntoRawFd};
-use crate::io::worker::{IoWorker};
-use crate::BUG_MESSAGE;
-use crate::runtime::local_executor_unchecked;
 
 /// Configuration for [`IoUringWorker`].
 ///
@@ -28,13 +28,15 @@ use crate::runtime::local_executor_unchecked;
 pub struct IoUringConfig {
     /// Number of entries in `io_uring`. Must be greater than 0. Every entry is 64 bytes, but
     /// [`IoUringWorker`] can't process more requests at a one time than the number of entries.
-    number_of_entries: u32
+    number_of_entries: u32,
 }
 
 impl IoUringConfig {
     /// Creates new `IoUringConfig` with default values.
     pub const fn default() -> Self {
-        Self { number_of_entries: 256 }
+        Self {
+            number_of_entries: 256,
+        }
     }
 
     /// Checks if [`IoUringConfig`] is valid.
@@ -74,7 +76,7 @@ pub(crate) struct IoUringWorker {
     backlog: VecDeque<Entry>,
     probe: Probe,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
-    number_of_active_tasks: usize
+    number_of_active_tasks: usize,
 }
 
 impl IoUringWorker {
@@ -121,14 +123,15 @@ impl IoUringWorker {
         if self.time_bounded_io_task_queue.is_empty() {
             return;
         }
-        
+
         let now = Instant::now();
 
         while let Some(time_bounded_io_task) = self.time_bounded_io_task_queue.pop_first() {
             if time_bounded_io_task.deadline() <= now {
                 self.cancel_entry(time_bounded_io_task.user_data());
             } else {
-                self.time_bounded_io_task_queue.insert(time_bounded_io_task.clone());
+                self.time_bounded_io_task_queue
+                    .insert(time_bounded_io_task.clone());
                 break;
             }
         }
@@ -192,7 +195,7 @@ impl IoWorker for IoUringWorker {
             backlog: VecDeque::with_capacity(64),
             probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new(),
-            number_of_active_tasks: 0
+            number_of_active_tasks: 0,
         };
 
         let submitter = s.ring.get_mut().submitter();
@@ -203,7 +206,10 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask) {
-        while !self.time_bounded_io_task_queue.insert(time_bounded_io_task.clone()) {
+        while !self
+            .time_bounded_io_task_queue
+            .insert(time_bounded_io_task.clone())
+        {
             time_bounded_io_task.inc_deadline();
         }
     }
@@ -217,7 +223,10 @@ impl IoWorker for IoUringWorker {
     #[must_use]
     fn must_poll(&mut self, duration: Duration) -> bool {
         self.check_deadlines();
-        if !self.submit(duration).expect("IoUringWorker::submit() failed") {
+        if !self
+            .submit(duration)
+            .expect("IoUringWorker::submit() failed")
+        {
             return false;
         }
 
@@ -247,16 +256,28 @@ impl IoWorker for IoUringWorker {
             }
 
             self.number_of_active_tasks -= 1;
-            executor.exec_task(io_request.task());
+            if io_request.task().is_local() {
+                executor.exec_task(io_request.task());
+            } else {
+                executor.spawn_global_task(io_request.task());
+            }
         }
 
         true
     }
 
     #[inline(always)]
-    fn socket(&mut self, domain: socket2::Domain, sock_type: socket2::Type, request_ptr: *mut IoRequestData) {
+    fn socket(
+        &mut self,
+        domain: socket2::Domain,
+        sock_type: socket2::Type,
+        request_ptr: *mut IoRequestData,
+    ) {
         if self.is_supported(opcode::Socket::CODE) {
-            self.register_entry(opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(), request_ptr);
+            self.register_entry(
+                opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(),
+                request_ptr,
+            );
             return;
         }
 
@@ -268,51 +289,103 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn accept(&mut self, listen_fd: RawFd, addr: *mut sockaddr, addrlen: *mut libc::socklen_t, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Accept::new(types::Fd(listen_fd), addr, addrlen).build(), request_ptr);
+    fn accept(
+        &mut self,
+        listen_fd: RawFd,
+        addr: *mut sockaddr,
+        addrlen: *mut libc::socklen_t,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Accept::new(types::Fd(listen_fd), addr, addrlen).build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
-    fn connect(&mut self, socket_fd: RawFd, addr_ptr: *const sockaddr, addr_len: libc::socklen_t, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Connect::new(types::Fd(socket_fd), addr_ptr, addr_len).build(), request_ptr);
+    fn connect(
+        &mut self,
+        socket_fd: RawFd,
+        addr_ptr: *const sockaddr,
+        addr_len: libc::socklen_t,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Connect::new(types::Fd(socket_fd), addr_ptr, addr_len).build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
     fn poll_fd_read(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::PollAdd::new(types::Fd(fd), libc::POLLIN as _).build(), request_ptr);
+        self.register_entry(
+            opcode::PollAdd::new(types::Fd(fd), libc::POLLIN as _).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
     fn poll_fd_write(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::PollAdd::new(types::Fd(fd), libc::POLLOUT as _).build(), request_ptr);
-    }
-    
-    #[inline(always)]
-    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Recv::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+        self.register_entry(
+            opcode::PollAdd::new(types::Fd(fd), libc::POLLOUT as _).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
-    fn recv_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
+    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Recv::new(types::Fd(fd), buf_ptr, len as _).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn recv_from(
+        &mut self,
+        fd: RawFd,
+        msg_header: *mut OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::RecvMsg::new(types::Fd(fd), msg_header).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData) {
         if self.is_supported(opcode::SendZc::CODE) {
-            self.register_entry(opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+            self.register_entry(
+                opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
+                request_ptr,
+            );
             return;
         }
-        self.register_entry(opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+        self.register_entry(
+            opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
-    fn send_to(&mut self, fd: RawFd, msg_header: *const OsMessageHeader, request_ptr: *mut IoRequestData) {
+    fn send_to(
+        &mut self,
+        fd: RawFd,
+        msg_header: *const OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+    ) {
         if self.is_supported(opcode::SendMsgZc::CODE) {
-            self.register_entry(opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(), request_ptr);
+            self.register_entry(
+                opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
+                request_ptr,
+            );
             return;
         }
-        self.register_entry(opcode::SendMsg::new(types::Fd(fd), msg_header).build(), request_ptr);
+        self.register_entry(
+            opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
@@ -321,14 +394,24 @@ impl IoWorker for IoUringWorker {
             opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
                 .flags(libc::MSG_PEEK)
                 .build(),
-            request_ptr
+            request_ptr,
         );
     }
 
     #[inline(always)]
-    fn peek_from(&mut self, fd: RawFd, msg_header: *mut OsMessageHeader, request_ptr: *mut IoRequestData) {
+    fn peek_from(
+        &mut self,
+        fd: RawFd,
+        msg_header: *mut OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+    ) {
         let msg_header = unsafe { &mut *msg_header };
-        self.register_entry(opcode::RecvMsg::new(types::Fd(fd), msg_header).flags(libc::MSG_PEEK as u32).build(), request_ptr);
+        self.register_entry(
+            opcode::RecvMsg::new(types::Fd(fd), msg_header)
+                .flags(libc::MSG_PEEK as u32)
+                .build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
@@ -337,23 +420,41 @@ impl IoWorker for IoUringWorker {
             Shutdown::Read => libc::SHUT_RD,
             Shutdown::Write => libc::SHUT_WR,
             Shutdown::Both => libc::SHUT_RDWR,
-        } ;
-        self.register_entry(opcode::Shutdown::new(types::Fd(fd), how).build(), request_ptr);
-    }
-    
-    #[inline(always)]
-    fn open(&mut self, path: *const libc::c_char, open_how: *const OpenHow, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::OpenAt2::new(types::Fd(libc::AT_FDCWD), path, open_how).build(), request_ptr);
+        };
+        self.register_entry(
+            opcode::Shutdown::new(types::Fd(fd), how).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
-    fn fallocate(&mut self, fd: RawFd, offset:u64, len: u64, flags: i32, request_ptr: *mut IoRequestData) {
+    fn open(
+        &mut self,
+        path: *const libc::c_char,
+        open_how: *const OpenHow,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::OpenAt2::new(types::Fd(libc::AT_FDCWD), path, open_how).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn fallocate(
+        &mut self,
+        fd: RawFd,
+        offset: u64,
+        len: u64,
+        flags: i32,
+        request_ptr: *mut IoRequestData,
+    ) {
         self.register_entry(
             opcode::Fallocate::new(types::Fd(fd), len)
                 .offset(offset)
                 .mode(flags)
                 .build(),
-            request_ptr
+            request_ptr,
         );
     }
 
@@ -368,52 +469,120 @@ impl IoWorker for IoUringWorker {
             opcode::Fsync::new(types::Fd(fd))
                 .flags(types::FsyncFlags::DATASYNC)
                 .build(),
-            request_ptr
+            request_ptr,
         );
     }
-    
+
     #[inline(always)]
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+        self.register_entry(
+            opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
-    fn pread(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, offset: usize, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Read::new(types::Fd(fd), buf_ptr, len as _).offset(offset as _).build(), request_ptr);
+    fn pread(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *mut u8,
+        len: usize,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
-    fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(), request_ptr);
+    fn write(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *const u8,
+        len: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
-    fn pwrite(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, offset: usize, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Write::new(types::Fd(fd), buf_ptr, len as _).offset(offset as _).build(), request_ptr);
+    fn pwrite(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *const u8,
+        len: usize,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
     fn close(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
         self.register_entry(opcode::Close::new(types::Fd(fd)).build(), request_ptr);
     }
-    
+
     #[inline(always)]
-    fn rename(&mut self, old_path: *const libc::c_char, new_path: *const libc::c_char, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::RenameAt::new(types::Fd(libc::AT_FDCWD), old_path, types::Fd(libc::AT_FDCWD), new_path).build(), request_ptr);
+    fn rename(
+        &mut self,
+        old_path: *const libc::c_char,
+        new_path: *const libc::c_char,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::RenameAt::new(
+                types::Fd(libc::AT_FDCWD),
+                old_path,
+                types::Fd(libc::AT_FDCWD),
+                new_path,
+            )
+            .build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
-    fn create_dir(&mut self, path: *const libc::c_char, mode: u32, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::MkDirAt::new(types::Fd(libc::AT_FDCWD), path).mode(mode).build(), request_ptr);
+    fn create_dir(
+        &mut self,
+        path: *const libc::c_char,
+        mode: u32,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::MkDirAt::new(types::Fd(libc::AT_FDCWD), path)
+                .mode(mode)
+                .build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
     fn remove_file(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).build(), request_ptr);
+        self.register_entry(
+            opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).build(),
+            request_ptr,
+        );
     }
-    
+
     #[inline(always)]
     fn remove_dir(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).flags(libc::AT_REMOVEDIR).build(), request_ptr);
+        self.register_entry(
+            opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path)
+                .flags(libc::AT_REMOVEDIR)
+                .build(),
+            request_ptr,
+        );
     }
 }

@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use crossbeam::utils::CachePadded;
 
-use crate::global_yield_now;
+use crate::yield_now;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
@@ -175,7 +175,7 @@ impl<T> NaiveMutex<T> {
                 }
             }
 
-            global_yield_now().await;
+            yield_now().await;
         }
     }
 
@@ -242,7 +242,7 @@ unsafe impl<T: Send> Send for NaiveMutex<T> {}
 mod tests {
     use super::*;
     use crate::sync::WaitGroup;
-    use crate::{Executor, sleep};
+    use crate::{sleep, Executor};
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;

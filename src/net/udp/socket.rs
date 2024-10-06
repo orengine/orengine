@@ -10,9 +10,9 @@ use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, R
 use crate::io::{
     AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
 };
-use crate::net::BindConfig;
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
+use crate::net::BindConfig;
 use crate::net::{Datagram, Socket};
 use crate::runtime::local_executor;
 
@@ -184,7 +184,7 @@ impl Debug for UdpSocket {
 impl Drop for UdpSocket {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future.await.expect("Failed to close UDP socket");
         });
     }
@@ -205,7 +205,7 @@ mod tests {
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
-    use crate::{Executor, local_yield_now};
+    use crate::{yield_now, Executor};
 
     use super::*;
 
@@ -288,7 +288,7 @@ mod tests {
                 }
 
                 drop(server);
-                local_yield_now().await;
+                yield_now().await;
             });
         });
 
@@ -325,7 +325,7 @@ mod tests {
         let is_server_ready = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
 
-        local_executor().exec_future(async move {
+        local_executor().exec_local_future(async move {
             let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
             {

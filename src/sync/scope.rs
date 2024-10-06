@@ -66,17 +66,8 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        #[cfg(debug_assertions)]
-        {
-            let mut global_task = crate::runtime::Task::from_future(handle);
-            global_task.is_local = false;
-            local_executor().exec_task(global_task);
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            local_executor().exec_future(handle);
-        }
+        let global_task = crate::runtime::Task::from_future(handle, 0);
+        local_executor().exec_task(global_task);
     }
 
     /// Spawns a new global task within a scope.
@@ -222,7 +213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{global_yield_now, sleep};
+    use crate::{sleep, yield_now};
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
     use std::time::Duration;
@@ -235,7 +226,7 @@ mod tests {
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
-                global_yield_now().await;
+                yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });
@@ -264,7 +255,7 @@ mod tests {
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 2);
                 a.fetch_add(1, SeqCst);
-                global_yield_now().await;
+                yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });

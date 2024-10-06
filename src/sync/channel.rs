@@ -1,5 +1,5 @@
 use crate::panic_if_local_in_future;
-use crate::runtime::{Task, local_executor};
+use crate::runtime::{local_executor, Task};
 use crate::sync::naive_mutex::NaiveMutex;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -855,17 +855,17 @@ unsafe impl<T> Send for Channel<T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::Relaxed;
+    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
-    use crate::sync::WaitGroup;
     use crate::sync::channel::Channel;
+    use crate::sync::WaitGroup;
     use crate::utils::droppable_element::DroppableElement;
-    use crate::utils::{SpinLock, get_core_ids};
-    use crate::{Executor, sleep};
+    use crate::utils::{get_core_ids, SpinLock};
+    use crate::{sleep, Executor};
 
     #[orengine_macros::test_global]
     fn test_zero_capacity() {
@@ -900,7 +900,11 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_channel() {
         let ch = Arc::new(Channel::bounded(N));
+        let wg = Arc::new(WaitGroup::new());
         let ch_clone = ch.clone();
+        let wg_clone = wg.clone();
+
+        wg.add(N);
 
         thread::spawn(move || {
             let ex = Executor::init();
@@ -909,8 +913,7 @@ mod tests {
                     ch_clone.send(i).await.expect("closed");
                 }
 
-                sleep(Duration::from_millis(1)).await;
-
+                let _ = wg_clone.wait().await;
                 ch_clone.close().await;
             });
         });
@@ -918,6 +921,7 @@ mod tests {
         for i in 0..N {
             let res = ch.recv().await.expect("closed");
             assert_eq!(res, i);
+            wg.done();
         }
 
         match ch.recv().await {
@@ -1015,7 +1019,7 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test_global()]
+    #[orengine_macros::test_global]
     fn test_drop_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = Channel::bounded(1);

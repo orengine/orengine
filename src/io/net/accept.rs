@@ -1,19 +1,19 @@
+use nix::libc;
+use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
+use socket2::SockAddr;
 use std::future::Future;
 use std::io::Result;
 use std::marker::PhantomData;
-use std::{mem};
+use std::mem;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use nix::libc;
-use socket2::SockAddr;
 
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{RawFd, FromRawFd, AsRawFd};
-use crate::io::worker::{IoWorker, local_worker};
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::{AsRawFd, FromRawFd, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
+use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
 /// `accept` io operation.
@@ -22,7 +22,7 @@ pub struct Accept<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
     io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<S>
+    phantom_data: PhantomData<S>,
 }
 
 impl<S: FromRawFd> Accept<S> {
@@ -32,7 +32,7 @@ impl<S: FromRawFd> Accept<S> {
             fd,
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             io_request_data: None,
-            phantom_data: PhantomData
+            phantom_data: PhantomData,
         }
     }
 }
@@ -46,7 +46,12 @@ impl<S: FromRawFd> Future for Accept<S> {
         let ret;
 
         poll_for_io_request!((
-            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.accept(
+                this.fd,
+                this.addr.0.as_ptr() as _,
+                &mut this.addr.1,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
             (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
         ));
     }
@@ -59,7 +64,7 @@ pub struct AcceptWithDeadline<S: FromRawFd> {
     addr: (SockAddr, libc::socklen_t),
     time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
-    pin: PhantomData<S>
+    pin: PhantomData<S>,
 }
 
 impl<S: FromRawFd> AcceptWithDeadline<S> {
@@ -70,7 +75,7 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
-            pin: PhantomData
+            pin: PhantomData,
         }
     }
 }
@@ -84,7 +89,12 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.accept(this.fd, this.addr.0.as_ptr() as _, &mut this.addr.1, this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.accept(
+                this.fd,
+                this.addr.0.as_ptr() as _,
+                &mut this.addr.1,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
             (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
         ));
     }
@@ -177,10 +187,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn accept_with_deadline(
-        &mut self,
-        deadline: Instant
-    ) -> Result<(S, SocketAddr)> {
+    async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, SocketAddr)> {
         let (stream, sock_addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -213,10 +220,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn accept_with_timeout(
-        &mut self,
-        timeout: Duration
-    ) -> Result<(S, SocketAddr)> {
+    async fn accept_with_timeout(&mut self, timeout: Duration) -> Result<(S, SocketAddr)> {
         self.accept_with_deadline(Instant::now() + timeout).await
     }
 }
@@ -228,7 +232,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
 //         let (stream, addr) = Accept::<S>::new(self.as_raw_fd()).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
-// 
+//
 //     #[inline(always)]
 //     async fn accept_with_deadline(
 //         &mut self,
@@ -237,7 +241,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
 //         let (stream, addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
-// 
+//
 //     #[inline(always)]
 //     async fn accept_with_timeout(
 //         &mut self,

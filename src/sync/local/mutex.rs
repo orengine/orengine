@@ -302,13 +302,13 @@ mod tests {
 
         let mutex = Rc::new(LocalMutex::new(false));
         let mutex_clone = mutex.clone();
-        local_executor().exec_task(Task::from_future(async move {
+        local_executor().exec_local_future(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             sleep(SLEEP_DURATION).await;
             println!("3");
             *value = true;
-        }));
+        });
 
         println!("2");
         let value = mutex.lock().await;
@@ -326,13 +326,13 @@ mod tests {
         let start = Instant::now();
         let mutex = Rc::new(LocalMutex::new(false));
         let mutex_clone = mutex.clone();
-        local_executor().exec_task(Task::from_future(async move {
+        local_executor().exec_local_future(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             sleep(SLEEP_DURATION).await;
             println!("4");
             *value = true;
-        }));
+        });
 
         println!("2");
         let value = mutex.try_lock();

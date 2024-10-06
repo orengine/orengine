@@ -1,8 +1,9 @@
+use crate::runtime::task::task_data::TaskData;
+use crate::runtime::Task;
+use ahash::AHashMap;
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::size_of;
-use ahash::AHashMap;
-use crate::runtime::Task;
 
 /// A pool of tasks.
 pub struct TaskPool {
@@ -29,13 +30,13 @@ pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
 #[inline(always)]
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
-    { get_task_pool_ref().as_mut().expect(crate::BUG_MESSAGE) }
+    {
+        get_task_pool_ref().as_mut().expect(crate::BUG_MESSAGE)
+    }
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        get_task_pool_ref()
-            .as_mut()
-            .unwrap_unchecked()
+        get_task_pool_ref().as_mut().unwrap_unchecked()
     }
 }
 
@@ -50,32 +51,32 @@ impl TaskPool {
     }
 
     /// Returns a [`Task`] with the given future.
+    ///
+    /// # Panics
+    ///
+    /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F) -> Task {
+    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, is_local: usize) -> Task {
+        assert!(is_local < 2, "is_local must be 0 or 1");
         let size = size_of::<F>();
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         if let Some(slot_ptr) = pool.pop() {
             let future_ptr: *mut F = unsafe { &mut *(slot_ptr as *mut F) };
-            // TODO *slot = future; // Maybe rewrite, not write
             unsafe {
                 future_ptr.write(future);
             }
             Task {
-                future_ptr: future_ptr as *mut _,
+                data: TaskData::new(future_ptr as *mut _, is_local),
                 #[cfg(debug_assertions)]
                 executor_id: crate::local_executor().id(),
-                #[cfg(debug_assertions)]
-                is_local: true,
             }
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
             Task {
-                future_ptr: future_ptr as *mut _,
+                data: TaskData::new(future_ptr as *mut _, is_local),
                 #[cfg(debug_assertions)]
                 executor_id: crate::local_executor().id(),
-                #[cfg(debug_assertions)]
-                is_local: true,
             }
         }
     }

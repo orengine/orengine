@@ -27,10 +27,13 @@ impl Future for Sleep {
             let task = unsafe { (cx.waker().data() as *const Task).read() };
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
-            while !local_executor().sleeping_tasks().insert(sleeping_task) {
-                this.sleep_until += Duration::from_nanos(1);
-                sleeping_task = SleepingTask::new(this.sleep_until, task);
+            while !local_executor()
+                .sleeping_tasks()
+                .insert(sleeping_task.clone())
+            {
+                sleeping_task.increment_time_to_wake();
             }
+
             Poll::Pending
         }
     }
@@ -62,12 +65,10 @@ pub fn sleep(duration: Duration) -> Sleep {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::local::Local;
     use std::ops::Deref;
     use std::time::Duration;
-
-    use crate::local::Local;
-
-    use super::*;
 
     #[orengine_macros::test]
     fn test_sleep() {
@@ -78,10 +79,10 @@ mod tests {
 
         let arr = Local::new(Vec::new());
 
-        local_executor().exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.deref());

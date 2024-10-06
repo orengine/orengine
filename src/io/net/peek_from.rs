@@ -9,8 +9,8 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
+use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
@@ -48,7 +48,8 @@ impl<'fut> Future for PeekFrom<'fut> {
         poll_for_io_request!((
             worker.peek_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.msg_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -69,7 +70,12 @@ pub struct PeekFromWithDeadline<'fut> {
 
 impl<'fut> PeekFromWithDeadline<'fut> {
     /// Creates a new `peek_from` io operation with deadline.
-    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
+    pub fn new(
+        fd: RawFd,
+        buf: &'fut mut [u8],
+        addr: &'fut mut SockAddr,
+        deadline: Instant,
+    ) -> Self {
         Self {
             fd,
             msg_header: MessageRecvHeader::new(),
@@ -92,7 +98,8 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
         poll_for_time_bounded_io_request!((
             worker.peek_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.msg_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -147,14 +154,11 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_from(
-        &mut self,
-        buf: &mut [u8]
-    ) -> Result<(usize, SocketAddr)> {
-    let mut sock_addr = unsafe { std::mem::zeroed() };
-    let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
+    async fn peek_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        let mut sock_addr = unsafe { std::mem::zeroed() };
+        let n = PeekFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
-    Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
+        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously peeks into the incoming datagram with a deadline, without consuming it,
@@ -187,12 +191,12 @@ pub trait AsyncPeekFrom: AsRawFd {
     async fn peek_from_with_deadline(
         &mut self,
         buf: &mut [u8],
-        deadline: Instant
+        deadline: Instant,
     ) -> Result<(usize, SocketAddr)> {
-    let mut sock_addr = unsafe { std::mem::zeroed() };
-    let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+        let mut sock_addr = unsafe { std::mem::zeroed() };
+        let n = PeekFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
 
-    Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
+        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
     /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,
@@ -225,8 +229,9 @@ pub trait AsyncPeekFrom: AsRawFd {
     async fn peek_from_with_timeout(
         &mut self,
         buf: &mut [u8],
-        timeout: Duration
+        timeout: Duration,
     ) -> Result<(usize, SocketAddr)> {
-        self.peek_from_with_deadline(buf, Instant::now() + timeout).await
+        self.peek_from_with_deadline(buf, Instant::now() + timeout)
+            .await
     }
 }

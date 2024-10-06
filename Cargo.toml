@@ -2,7 +2,7 @@ cargo-features = ["edition2024"]
 
 [package]
 name = "orengine"
-version = "0.1.13"
+version = "0.2.1-unstable"
 license = "MIT"
 description = """
 Optimized ring engine for Rust.

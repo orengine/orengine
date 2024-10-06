@@ -161,7 +161,7 @@ impl Debug for TcpStream {
 impl Drop for TcpStream {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future.await.expect("Failed to close TCP stream");
         });
     }

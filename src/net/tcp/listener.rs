@@ -134,7 +134,7 @@ impl Debug for TcpListener {
 impl Drop for TcpListener {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future.await.expect("Failed to close tcp listener");
         });
     }
@@ -146,8 +146,8 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
 
-    use crate::local_yield_now;
     use crate::net::ReusePort;
+    use crate::yield_now;
 
     use super::*;
 
@@ -192,7 +192,7 @@ mod tests {
         }
 
         drop(listener);
-        local_yield_now().await;
+        yield_now().await;
     }
 
     #[orengine_macros::test]

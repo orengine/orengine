@@ -1,18 +1,18 @@
-use std::{io, mem};
-use std::path::{Path};
-use std::io::{Error, Result};
-use std::os::unix::ffi::OsStrExt;
-use crate::fs::{OpenOptions};
-use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
+use crate::fs::OpenOptions;
 use crate::io::fallocate::AsyncFallocate;
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
 use crate::io::sync_all::AsyncSyncAll;
 use crate::io::sync_data::AsyncSyncData;
-use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
+use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
 use crate::runtime::local_executor;
+use std::io::{Error, Result};
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+use std::{io, mem};
 
 /// An object providing access to an [`open`](File::open) file on the filesystem.
 /// An instance of a File can be read and/ or written depending on what options it was opened with.
@@ -35,7 +35,7 @@ use crate::runtime::local_executor;
 /// # }
 /// ```
 pub struct File {
-    fd: RawFd
+    fd: RawFd,
 }
 
 impl File {
@@ -89,13 +89,13 @@ impl File {
         }
         let os_path = match OsPath::new(path.as_os_str().as_bytes()) {
             Ok(path) => path,
-            Err(err) => return Err(Error::new(io::ErrorKind::InvalidInput, err))
+            Err(err) => return Err(Error::new(io::ErrorKind::InvalidInput, err)),
         };
         let os_open_options = open_options.into_os_options()?;
 
         match Open::new(os_path, os_open_options).await {
             Ok(file) => Ok(file),
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     }
 
@@ -123,7 +123,7 @@ impl File {
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
     where
         OldPath: AsRef<Path>,
-        NewPath: AsRef<Path>
+        NewPath: AsRef<Path>,
     {
         let old_path = get_os_path(old_path.as_ref())?;
         let new_path = get_os_path(new_path.as_ref())?;
@@ -173,7 +173,7 @@ impl Into<std::fs::File> for File {
 impl From<std::fs::File> for File {
     fn from(file: std::fs::File) -> Self {
         Self {
-            fd: file.into_raw_fd()
+            fd: file.into_raw_fd(),
         }
     }
 }
@@ -205,7 +205,7 @@ impl AsyncClose for File {}
 impl Drop for File {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future.await.expect("Failed to close file");
         });
     }
@@ -213,17 +213,18 @@ impl Drop for File {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::buf::buffer;
+    use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
     use std::fs::create_dir;
     use std::mem;
     use std::path::PathBuf;
-    use crate::buf::buffer;
-    use super::*;
-    use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
 
     #[orengine_macros::test]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
         let test_file_dir_path_: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
-        let test_file_dir_path = unsafe { mem::transmute::<&str, &'static str>(test_file_dir_path_) };
+        let test_file_dir_path =
+            unsafe { mem::transmute::<&str, &'static str>(test_file_dir_path_) };
 
         create_test_dir_if_not_exist();
 
@@ -233,10 +234,14 @@ mod tests {
             file_path_.push("test.txt");
             file_path_
         };
-        let options = OpenOptions::new().write(true).read(true).truncate(true).create(true);
+        let options = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .truncate(true)
+            .create(true);
         let mut file = match File::open(file_path.clone(), &options).await {
             Ok(file) => file,
-            Err(err) => panic!("Can't open (create) file: {}", err)
+            Err(err) => panic!("Can't open (create) file: {}", err),
         };
 
         assert!(is_exists(file_path.clone()));
@@ -247,39 +252,41 @@ mod tests {
 
         match file.write_all(buf.as_ref()).await {
             Ok(_) => (),
-            Err(err) => panic!("Can't write file: {}", err)
+            Err(err) => panic!("Can't write file: {}", err),
         }
 
         match file.read_exact(buf.as_mut()).await {
             Ok(_) => assert_eq!(buf.as_ref(), MSG),
-            Err(err) => panic!("Can't read file: {}", err)
+            Err(err) => panic!("Can't read file: {}", err),
         }
 
         buf.clear();
         buf.append("great World!".as_bytes());
         match file.pwrite_all(buf.as_ref(), 7).await {
             Ok(_) => (),
-            Err(err) => panic!("Can't pwrite file: {}", err)
+            Err(err) => panic!("Can't pwrite file: {}", err),
         }
 
         buf.clear();
         buf.set_len(MSG.len() + 6);
         match file.read_exact(buf.as_mut()).await {
             Ok(_) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
-            Err(err) => panic!("Can't read file: {}", err)
+            Err(err) => panic!("Can't read file: {}", err),
         }
 
         match File::rename(
             test_file_dir_path.to_string() + "test.txt",
-            test_file_dir_path.to_string() + "test2.txt"
-        ).await {
+            test_file_dir_path.to_string() + "test2.txt",
+        )
+        .await
+        {
             Ok(_) => assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt")),
-            Err(err) => panic!("Can't rename file: {}", err)
+            Err(err) => panic!("Can't rename file: {}", err),
         }
 
         match File::remove(test_file_dir_path.to_string() + "/test2.txt").await {
             Ok(_) => assert!(!is_exists(file_path)),
-            Err(err) => panic!("Can't remove file: {}", err)
+            Err(err) => panic!("Can't remove file: {}", err),
         }
 
         std::fs::remove_dir("./test/test_file").expect("failed to remove test file dir");

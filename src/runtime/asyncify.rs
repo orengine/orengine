@@ -1,13 +1,13 @@
+use crate::local_executor;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
 use std::task::Poll;
-use crate::local_executor;
 
 /// A function that must be executed in the blocking pool.
 pub struct Asyncify<'future> {
     f: &'future mut dyn Fn(),
-    was_called: bool
+    was_called: bool,
 }
 
 impl<'future> Asyncify<'future> {
@@ -15,7 +15,7 @@ impl<'future> Asyncify<'future> {
     pub fn new(f: &'future mut dyn Fn()) -> Self {
         Self {
             f,
-            was_called: false
+            was_called: false,
         }
     }
 }
@@ -60,15 +60,15 @@ impl<'future> Future for Asyncify<'future> {
 macro_rules! asyncify {
     ($f:expr) => {
         $crate::runtime::asyncify::Asyncify::new(&mut $f)
-    }
+    };
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time};
+    use crate::local_executor;
     use std::sync::Arc;
     use std::time::Duration;
-    use crate::local_executor;
+    use std::{thread, time};
 
     #[orengine_macros::test]
     fn test_asyncify() {
@@ -76,19 +76,20 @@ mod tests {
         let list = Arc::new(std::sync::Mutex::new(vec![]));
         let list_clone = list.clone();
 
-        local_executor().exec_future(async move {
+        local_executor().exec_local_future(async move {
             asyncify!(|| {
                 list_clone.lock().unwrap().push(1);
                 thread::sleep(Duration::from_millis(1));
                 assert!(start.elapsed() >= Duration::from_millis(1));
                 list_clone.lock().unwrap().push(2);
-            }).await;
+            })
+            .await;
         });
 
         assert_eq!(*list.lock().unwrap(), vec![]);
 
         thread::sleep(Duration::from_millis(2));
         assert_eq!(*list.lock().unwrap(), vec![1, 2]); // this executor was blocked for 2ms, and
-        // if assertion passes, other thread (from the thread pool) processed the list.
+                                                       // if assertion passes, other thread (from the thread pool) processed the list.
     }
 }
