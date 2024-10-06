@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::intrinsics::likely;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -19,7 +18,7 @@ impl SubscribedState {
     #[inline(always)]
     pub(crate) fn check_subscription(&mut self, executor_id: usize) {
         let current_version = self.current_version.load(Acquire);
-        if likely(self.processed_version == current_version) {
+        if self.processed_version == current_version {
             // The subscription has valid data
             return;
         }
@@ -169,10 +168,56 @@ pub(crate) fn register_local_executor() {
     global_state().register_local_executor()
 }
 
+/// Stops the executor with the given id.
+///
+/// # Examples
+///
+/// ## Correct Usage
+///
+/// ```no_run
+/// use orengine::{Executor, stop_executor, sleep};
+/// use std::time::Duration;
+///
+/// fn main() {
+///     let mut executor = Executor::init();
+///     let id = executor.id();
+///
+///     executor.spawn_local(async move {
+///         sleep(Duration::from_secs(3)).await;
+///         stop_executor(id); // stops the executor
+///     });
+///     executor.run();
+///
+///     println!("Hello from a sync runtime after at least 3 seconds");
+/// }
+/// ```
+///
+/// ## Incorrect Usage
+///
+/// You need to save an id when the executor starts because else the task can be moved
+/// (if it is global) to another executor, but it needs to stop the parent executor.
+///
+/// ```no_run
+/// use orengine::{Executor, stop_executor, sleep, local_executor};
+/// use std::time::Duration;
+///
+/// fn main() {
+///     let mut executor = Executor::init();
+///
+///     executor.spawn_global(async move {
+///         sleep(Duration::from_secs(3)).await;
+///         stop_executor(local_executor().id()); // Undefined behavior: stops an unknown executor
+///     });
+///     executor.run();
+///
+///     println!("Hello from a sync runtime after at least 3 seconds");
+/// }
+/// ```
 pub fn stop_executor(executor_id: usize) {
     global_state().stop_executor(executor_id);
 }
 
+/// Stops all executors after some time (at most 100ms).
 pub fn stop_all_executors() {
     global_state().stop_all_executors();
 }

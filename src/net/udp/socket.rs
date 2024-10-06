@@ -1,22 +1,80 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
-use std::net::ToSocketAddrs;
+use std::net::SocketAddr;
 
-use socket2::SockAddr;
+use socket2::{SockAddr, SockRef};
 
-use crate::each_addr;
+use crate::io::recv_from::AsyncRecvFrom;
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use crate::io::{
     AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
 };
-use crate::io::bind::BindConfig;
-use crate::io::recv_from::AsyncRecvFrom;
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd, AsFd, BorrowedFd, OwnedFd};
-use crate::net::{Datagram, Socket};
+use crate::net::BindConfig;
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
+use crate::net::{Datagram, Socket};
 use crate::runtime::local_executor;
 
+/// A UDP socket.
+///
+/// After creating a `UdpSocket` by [`bind`](UdpSocket::bind)ing it to a socket address, data can be
+/// [sent to](AsyncSendTo) and [received from](AsyncRecvFrom) any other socket address.
+///
+/// Although UDP is a connectionless protocol, this implementation provides an interface
+/// to set an address where data should be sent and received from.
+/// [`UdpSocket::connect`](AsyncConnectDatagram)
+/// returns [`UdpConnectedSocket`](UdpConnectedSocket) which implements
+/// [`ConnectedDatagram`](crate::net::connected_datagram::ConnectedDatagram),
+/// [`AsyncRecv`](crate::io::AsyncRecv), [`AsyncPeek`](crate::io::AsyncPeek),
+/// [`AsyncSend`](crate::io::AsyncSend).
+///
+/// # Examples
+///
+/// ## Usage without [`connect`](AsyncConnectDatagram)
+///
+/// ```no_run
+/// use orengine::net::UdpSocket;
+/// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
+/// use orengine::buf::full_buffer;
+///
+/// # async fn foo() {
+/// let mut socket = UdpSocket::bind("127.0.0.1:8081").await.unwrap();
+/// loop {
+///    socket.poll_recv().await.expect("poll failed");
+///    let mut buf = full_buffer();
+///    let (n, addr) = socket.recv_from(&mut buf).await.expect("recv_from failed");
+///    if n == 0 {
+///        continue;
+///    }
+///
+///    socket.send_to(&buf[..n], addr).await.expect("send_to failed");
+/// }
+/// # }
+/// ```
+///
+/// ## Usage with [`connect`](AsyncConnectDatagram)
+///
+/// ```no_run
+/// use orengine::buf::full_buffer;
+/// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::net::UdpSocket;
+///
+/// # async fn foo() {
+/// let socket = UdpSocket::bind("127.0.0.1:8081").await.unwrap();
+/// let mut connected_socket = socket.connect("127.0.0.1:8080").await.unwrap();
+/// loop {
+///    connected_socket.poll_recv().await.expect("poll failed");
+///    let mut buf = full_buffer();
+///    let n = connected_socket.recv(&mut buf).await.expect("recv_from failed");
+///    if n == 0 {
+///        break;
+///    }
+///
+///    connected_socket.send(&buf[..n]).await.expect("send_to failed");
+/// }
+/// # }
+/// ```
 pub struct UdpSocket {
     fd: RawFd,
 }
@@ -79,28 +137,16 @@ impl Into<OwnedFd> for UdpSocket {
 }
 
 impl AsyncBind for UdpSocket {
-    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, async move |addr| {
-            let fd = new_udp_socket(&addr).await?;
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_fd);
+    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+        new_udp_socket(&addr).await
+    }
 
-            if config.only_v6 {
-                socket_ref.set_only_v6(true)?;
-            }
-
-            if config.reuse_address {
-                socket_ref.set_reuse_address(true)?;
-            }
-
-            if config.reuse_port {
-                socket_ref.set_reuse_port(true)?;
-            }
-
-            socket_ref.bind(&SockAddr::from(addr))?;
-
-            Ok(Self { fd })
-        })
+    fn bind_and_listen_if_needed(
+        sock_ref: SockRef<'_>,
+        addr: SocketAddr,
+        _config: &BindConfig,
+    ) -> Result<()> {
+        sock_ref.bind(&SockAddr::from(addr))
     }
 }
 
@@ -118,7 +164,9 @@ impl AsyncClose for UdpSocket {}
 
 impl Socket for UdpSocket {}
 
-impl Datagram<UdpConnectedSocket> for UdpSocket {}
+impl Datagram for UdpSocket {
+    type ConnectedDatagram = UdpConnectedSocket;
+}
 
 impl Debug for UdpSocket {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -144,19 +192,20 @@ impl Drop for UdpSocket {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, thread};
     use std::net::SocketAddr;
     use std::ops::Deref;
     use std::rc::Rc;
     use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use std::{io, thread};
 
-    use crate::{Executor};
     use crate::io::AsyncBind;
+    use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
+    use crate::{Executor, local_yield_now};
 
     use super::*;
 
@@ -215,17 +264,17 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[orengine_macros::test]
-    fn test_server() {
+    async fn test_server_with_config(config: BindConfig) {
         const SERVER_ADDR: &str = "127.0.0.1:10082";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
 
         thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
-                let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
+            Executor::init().run_with_local_future(async move {
+                let mut server = UdpSocket::bind_with_config(SERVER_ADDR, &config)
+                    .await
+                    .expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
 
@@ -237,6 +286,9 @@ mod tests {
 
                     server.send_to(RESPONSE, &src).await.expect("send failed");
                 }
+
+                drop(server);
+                local_yield_now().await;
             });
         });
 
@@ -254,6 +306,14 @@ mod tests {
             stream.recv(&mut buf).expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
+    }
+
+    #[orengine_macros::test]
+    fn test_server() {
+        let config = BindConfig::default();
+        test_server_with_config(config.reuse_port(ReusePort::Disabled)).await;
+        test_server_with_config(config.reuse_port(ReusePort::Default)).await;
+        test_server_with_config(config.reuse_port(ReusePort::CPU)).await;
     }
 
     #[orengine_macros::test]

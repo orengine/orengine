@@ -1,3 +1,7 @@
+//! The io/net module provides a comprehensive set of asynchronous traits and utilities for working
+//! with network sockets. These abstractions facilitate the creation and management
+//! of TCP and UDP connections, along with supporting operations like connecting, accepting,
+//! sending, receiving, binding, and shutting down sockets.
 pub mod connect;
 pub mod accept;
 pub mod send;

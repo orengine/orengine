@@ -4,7 +4,6 @@ use std::io::Error;
 use io_uring::types::OpenHow;
 use nix::libc::{self, c_int};
 
-// TODO docs with examples
 /// Options and flags which can be used to configure how a file is opened.
 #[derive(Copy, Clone)]
 pub struct OpenOptions {
@@ -12,18 +11,26 @@ pub struct OpenOptions {
     read: bool,
     /// This option, when true, will indicate that the file should be write-able if opened.
     ///
-    /// If the file already exists, any write calls on it will overwrite its contents, without truncating it.
+    /// If the file already exists,
+    /// any write calls on it will overwrite its contents, without truncating it.
     write: bool,
-    /// This option, when true, means that writes will append to a file instead of overwriting previous contents.
-    /// Note that setting [`.write(true)`](OpenOptions::write)[`.append(true)`](OpenOptions::append)
-    /// has the same effect as setting only [`.append(true)`](OpenOptions::append).
+    /// This option, when true, means that writes will append
+    /// to a file instead of overwriting previous contents.
+    ///
+    /// Note that setting [`write(true)`](OpenOptions::write)[`append(true)`](OpenOptions::append)
+    /// has the same effect as setting only [`append(true)`](OpenOptions::append).
     append: bool,
-    /// If a file is successfully opened with this option set it will truncate the file to 0 length if it already exists.
+    /// If a file is successfully opened with this option set
+    /// it will truncate the file to 0 length if it already exists.
     ///
     /// The file must be opened with write access for truncate to work.
     truncate: bool,
-    /// This option, when true, will indicate that the file should be created if it does not exist. Else it will open the file.
-    /// In order for the file to be created, OpenOptions::write or OpenOptions::append access must be used.
+    /// This option, when true, will indicate that the file should be created if it does not exist.
+    /// Else it will open the file.
+    ///
+    /// In order for the file to be created,
+    /// [`OpenOptions::write`](OpenOptions::write)
+    /// or [`OpenOptions::append`](OpenOptions::append) access must be used.
     create: bool,
     /// This option, when true, will indicate that the file should be created if it does not exist.
     /// Else it will return an [`error`](io::ErrorKind::AlreadyExists).
@@ -67,7 +74,8 @@ impl OpenOptions {
     ///
     /// This option, when true, will indicate that the file should be write-able if opened.
     ///
-    /// If the file already exists, any write calls on it will overwrite its contents, without truncating it.
+    /// If the file already exists, any write calls on it will overwrite its contents,
+    /// without truncating it.
     pub fn write(mut self, write: bool) -> Self {
         self.write = write;
         self
@@ -75,9 +83,10 @@ impl OpenOptions {
 
     /// Sets the option for the append mode.
     ///
-    /// This option, when true, means that writes will append to a file instead of overwriting previous contents.
-    /// Note that setting [`.write(true)`](OpenOptions::write)[`.append(true)`](OpenOptions::append)
-    /// has the same effect as setting only [`.append(true)`](OpenOptions::append).
+    /// This option, when true, means that writes will append to a file
+    /// instead of overwriting previous contents.
+    /// Note that setting [`write(true)`](OpenOptions::write)[`append(true)`](OpenOptions::append)
+    /// has the same effect as setting only [`append(true)`](OpenOptions::append).
     pub fn append(mut self, append: bool) -> Self {
         self.append = append;
         self
@@ -85,7 +94,8 @@ impl OpenOptions {
 
     /// Sets the option for truncating a previous file.
     ///
-    /// If a file is successfully opened with this option set it will truncate the file to 0 length if it already exists.
+    /// If a file is successfully opened with this option set it will truncate
+    /// the file to 0 length if it already exists.
     ///
     /// The file must be opened with write access for truncate to work.
     pub fn truncate(mut self, truncate: bool) -> Self {
@@ -94,7 +104,8 @@ impl OpenOptions {
     }
 
     /// Sets the option to create a new file, or open it if it already exists.
-    /// In order for the file to be created, [`OpenOptions::write`] or [`OpenOptions::append`] access must be used.
+    /// In order for the file to be created,
+    /// [`OpenOptions::write`] or [`OpenOptions::append`] access must be used.
     pub fn create(mut self, create: bool) -> Self {
         self.create = create;
         self
@@ -102,15 +113,16 @@ impl OpenOptions {
 
     /// Sets the option to create a new file, failing if it already exists.
     ///
-    /// No file is allowed to exist at the target location, also no (dangling) symlink. In this way, if the call succeeds,
-    /// the file returned is guaranteed to be new. If a file exists at the target location, creating a new file will fail
-    /// with [`AlreadyExists`](io::ErrorKind::AlreadyExists) or another error based on the situation. See OpenOptions::open for a non-exhaustive list of likely errors.
+    /// If a file exists at the target location, creating a new file will fail
+    /// with [`AlreadyExists`](io::ErrorKind::AlreadyExists) or another error based on the situation.
+    /// See [`OpenOptions::open`](OpenOptions::open) for a non-exhaustive list of likely errors.
     ///
-    /// This option is useful because it is atomic. Otherwise, between checking whether a file exists and creating a new one,
+    /// This option is useful because it is atomic.
+    /// Otherwise, between checking whether a file exists and creating a new one,
     /// the file may have been created by another process (a TOCTOU race condition / attack).
     ///
-    /// If [`.create_new(true)`](OpenOptions::create_new) is set, [`.create()`](OpenOptions::create)
-    /// and [`.truncate()`](OpenOptions::truncate) are ignored.
+    /// If [`create_new(true)`](OpenOptions::create_new) is set, [`create()`](OpenOptions::create)
+    /// and [`truncate()`](OpenOptions::truncate) are ignored.
     ///
     /// The file must be opened with write or append access in order to create a new file.
     pub fn create_new(mut self, create_new: bool) -> Self {
@@ -123,7 +135,8 @@ impl OpenOptions {
     /// The bits that define the access mode are masked out with O_ACCMODE,
     /// to ensure they do not interfere with the access mode set by Rusts options.
     ///
-    /// Custom flags can only set flags, not remove flags set by Rusts options. This options overwrites any previously set custom flags.
+    /// Custom flags can only set flags, not remove flags set by Rusts options.
+    /// This options overwrites any previously set custom flags.
     pub fn custom_flags(mut self, flags: i32) -> Self {
         self.custom_flags = flags;
         self
@@ -136,6 +149,7 @@ impl OpenOptions {
     }
     
     #[cfg(unix)]
+    /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
     pub(crate) fn into_os_options(self) -> io::Result<OpenHow> {
         fn get_access_mode(opts: &OpenOptions) -> io::Result<c_int> {
             match (opts.read, opts.write, opts.append) {

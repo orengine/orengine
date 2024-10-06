@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+/// [`TimeBoundedIoTask`] contains the deadline and user data for cancelling the task.
 #[derive(Clone)]
 pub(crate) struct TimeBoundedIoTask {
     deadline: Instant,
@@ -8,6 +9,7 @@ pub(crate) struct TimeBoundedIoTask {
 }
 
 impl TimeBoundedIoTask {
+    /// Creates a new [`TimeBoundedIoTask`]
     #[inline(always)]
     pub(crate) fn new(deadline: Instant, user_data: u64) -> Self {
         Self {
@@ -16,21 +18,25 @@ impl TimeBoundedIoTask {
         }
     }
 
+    /// Increments the deadline by 1 nanosecond
     #[inline(always)]
     pub(crate) fn inc_deadline(&mut self) {
         self.deadline = self.deadline + Duration::from_nanos(1);
     }
 
+    /// Returns the user data.
     #[inline(always)]
     pub(crate) fn user_data(&self) -> u64 {
         self.user_data
     }
 
+    /// Sets the user data.
     #[inline(always)]
     pub(crate) fn set_user_data(&mut self, user_data: u64) {
         self.user_data = user_data
     }
 
+    /// Returns the deadline.
     #[inline(always)]
     pub(crate) fn deadline(&self) -> Instant {
         self.deadline

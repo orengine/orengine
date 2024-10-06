@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -8,6 +7,8 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use crate::sleep::sleeping_task::SleepingTask;
 
+/// `Sleep` implements the [`Future`] trait. It waits at least until `sleep_until` and works only
+/// in `orengine` runtime.
 pub struct Sleep {
     was_yielded: bool,
     sleep_until: Instant,
@@ -26,7 +27,7 @@ impl Future for Sleep {
             let task = unsafe { (cx.waker().data() as *const Task).read() };
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
-            while unlikely(!local_executor().sleeping_tasks().insert(sleeping_task)) {
+            while !local_executor().sleeping_tasks().insert(sleeping_task) {
                 this.sleep_until += Duration::from_nanos(1);
                 sleeping_task = SleepingTask::new(this.sleep_until, task);
             }
@@ -35,6 +36,21 @@ impl Future for Sleep {
     }
 }
 
+/// Sleeps at least until `Instant::now() + duration`. It works only in `orengine` runtime.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::sleep;
+/// use std::time::Duration;
+///
+/// fn main() {
+///     orengine::Executor::init().run_with_local_future(async {
+///         sleep(Duration::from_millis(100)).await;
+///         println!("Hello after at least 100 millis!");
+///     });
+/// }
+/// ```
 #[inline(always)]
 #[must_use]
 pub fn sleep(duration: Duration) -> Sleep {
@@ -46,6 +62,7 @@ pub fn sleep(duration: Duration) -> Sleep {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
     use std::time::Duration;
 
     use crate::local::Local;
@@ -67,7 +84,7 @@ mod tests {
         local_executor().exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.get());
+        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
 
         let arr = Local::new(Vec::new());
 
@@ -78,6 +95,6 @@ mod tests {
         executor.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.get());
+        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
     }
 }

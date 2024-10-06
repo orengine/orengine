@@ -1,18 +1,17 @@
 //! This module contains [`TcpListener`].
 use std::ffi::c_int;
 use std::fmt::{Debug, Formatter};
-use std::io::{Result};
-use std::net::ToSocketAddrs;
+use std::io::Result;
 use std::mem;
-use socket2::SockAddr;
+use std::net::SocketAddr;
 
-use crate::each_addr;
-use crate::io::bind::BindConfig;
-use crate::io::sys::{AsRawFd, RawFd, AsFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
-use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
+use socket2::{SockAddr, SockRef};
+
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::{AsyncAccept, AsyncBind, AsyncClose};
 use crate::net::creators_of_sockets::new_tcp_socket;
-use crate::net::Listener;
 use crate::net::tcp::TcpStream;
+use crate::net::{BindConfig, Listener};
 use crate::runtime::local_executor;
 
 /// A TCP socket server, listening for connections.
@@ -20,6 +19,21 @@ use crate::runtime::local_executor;
 /// # Close
 ///
 /// [`TcpListener`] is automatically closed after it is dropped.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::io::{AsyncAccept, AsyncBind};
+/// use orengine::net::TcpListener;
+///
+/// # async fn foo() -> std::io::Result<()> {
+/// let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+/// while let Ok((stream, addr)) = listener.accept().await {
+///     // process the stream
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct TcpListener {
     pub(crate) fd: RawFd,
 }
@@ -76,31 +90,19 @@ impl Into<OwnedFd> for TcpListener {
 }
 
 impl AsyncBind for TcpListener {
-    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, async move |addr| {
-            let fd = new_tcp_socket(&addr).await?;
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_fd);
+    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+        new_tcp_socket(addr).await
+    }
 
-            if config.only_v6 {
-                socket_ref.set_only_v6(true)?;
-            }
+    fn bind_and_listen_if_needed(
+        sock_ref: SockRef,
+        addr: SocketAddr,
+        config: &BindConfig,
+    ) -> Result<()> {
+        sock_ref.bind(&SockAddr::from(addr))?;
+        sock_ref.listen(config.backlog_size as c_int)?;
 
-            if config.reuse_address {
-                socket_ref.set_reuse_address(true)?;
-            }
-
-            if config.reuse_port {
-                socket_ref.set_reuse_port(true)?;
-            }
-
-            socket_ref.bind(&SockAddr::from(addr))?;
-            socket_ref.listen(config.backlog_size as c_int)?;
-
-            Ok(Self {
-                fd
-            })
-        })
+        Ok(())
     }
 }
 
@@ -144,11 +146,16 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
 
+    use crate::local_yield_now;
+    use crate::net::ReusePort;
+
     use super::*;
 
     #[orengine_macros::test]
     fn test_listener() {
-        let listener = TcpListener::bind("127.0.0.1:8080").await.expect("bind call failed");
+        let listener = TcpListener::bind("127.0.0.1:8080")
+            .await
+            .expect("bind call failed");
         assert_eq!(
             listener.local_addr().unwrap(),
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
@@ -165,9 +172,10 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
-    fn test_accept() {
-        let mut listener = TcpListener::bind("127.0.0.1:4063").await.expect("bind call failed");
+    async fn test_listener_accept_with_config(config: &BindConfig) {
+        let mut listener = TcpListener::bind_with_config("127.0.0.1:4063", config)
+            .await
+            .expect("bind call failed");
         match listener.accept_with_timeout(Duration::from_micros(1)).await {
             Ok(_) => panic!("accept_with_timeout call failed"),
             Err(err) => {
@@ -175,13 +183,23 @@ mod tests {
             }
         }
 
-        let stream =
-            std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
+        let stream = std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
         match listener.accept_with_timeout(Duration::from_secs(1)).await {
             Ok((_, addr)) => {
                 assert_eq!(addr, stream.local_addr().unwrap())
             }
             Err(_) => panic!("accept_with_timeout call failed"),
         }
+
+        drop(listener);
+        local_yield_now().await;
+    }
+
+    #[orengine_macros::test]
+    fn test_accept() {
+        let config = BindConfig::default();
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::Default)).await;
+        test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU)).await;
     }
 }

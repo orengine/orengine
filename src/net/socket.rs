@@ -2,9 +2,36 @@ use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
 use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncClose};
+use crate::io::{AsyncClose, AsyncPollFd};
 
-pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncClose {
+/// The `Socket` trait defines common socket-related operations and is intended to be implemented
+/// for types that represent network sockets. It provides methods for querying and configuring
+/// socket settings, such as TTL and obtaining the local address
+/// or pending socket errors.
+///
+/// # Implemented traits
+///
+/// - [`AsyncPollFd`]
+/// - [`AsyncClose`]
+/// - [`IntoRawFd`]
+/// - [`FromRawFd`]
+/// - [`AsFd`]
+/// - [`AsRawFd`]
+pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncClose {
+    /// Returns the local socket address that the socket is bound to.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::io::AsyncBind;
+    /// use orengine::net::Socket;
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let socket = orengine::net::UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let addr = socket.local_addr()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     fn local_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
@@ -15,6 +42,9 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncClose {
         ))
     }
 
+    /// Sets the TTL (Time-To-Live) value for outgoing packets.
+    /// The TTL value determines how many hops (routers) a packet can pass through
+    /// before being discarded.
     #[inline(always)]
     fn set_ttl(&self, ttl: u32) -> io::Result<()> {
         let borrow_fd = self.as_fd();
@@ -22,6 +52,7 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncClose {
         socket_ref.set_ttl(ttl)
     }
 
+    /// Returns the current TTL value for outgoing packets.
     #[inline(always)]
     fn ttl(&self) -> io::Result<u32> {
         let borrow_fd = self.as_fd();
@@ -29,6 +60,9 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncClose {
         socket_ref.ttl()
     }
 
+    /// Retrieves and clears the pending socket error, if any.
+    /// This can be used to check if the socket has encountered any errors while
+    /// performing operations like sending or receiving data.
     #[inline(always)]
     fn take_error(&self) -> io::Result<Option<Error>> {
         let borrow_fd = self.as_fd();

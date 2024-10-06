@@ -1,14 +1,13 @@
-use std::future::Future;
 use std::time::Duration;
 
-pub struct Bencher {
+pub(crate) struct Bencher {
     n: usize,
     name: String,
 }
 
 impl Bencher {
     #[inline(always)]
-    pub fn new(name: &str) -> Self {
+    fn new(name: &str) -> Self {
         Self {
             n: 1,
             name: name.to_string(),
@@ -16,7 +15,7 @@ impl Bencher {
     }
 
     #[inline(always)]
-    pub fn iter<F: Fn()>(&mut self, f: F) {
+    pub(crate) fn iter<F: Fn()>(&mut self, f: F) {
         // region warm up
 
         loop {
@@ -27,7 +26,9 @@ impl Bencher {
             let elapsed = start.elapsed();
             if elapsed >= Duration::from_millis(10) {
                 if self.n > 10 {
-                    self.n = (self.n as f64 / (elapsed.as_nanos() as f64 / Duration::from_millis(10).as_nanos() as f64)) as usize;
+                    self.n = (self.n as f64
+                        / (elapsed.as_nanos() as f64 / Duration::from_millis(10).as_nanos() as f64))
+                        as usize;
                 } else {
                     println!("{:?} takes a lot of time!", self.name);
                 }
@@ -59,17 +60,27 @@ impl Bencher {
             }
             1_000..1_000_000 => {
                 let average_micros = average_nanos / 1_000;
-                println!("{:?} took {}.{} microseconds", self.name, average_micros, (average_nanos % 1_000) / 100);
+                println!(
+                    "{:?} took {}.{} microseconds",
+                    self.name,
+                    average_micros,
+                    (average_nanos % 1_000) / 100
+                );
             }
             _ => {
                 let average_millis = average_nanos / 1_000_000;
-                println!("{:?} took {}.{} milliseconds", self.name, average_millis, (average_nanos % 1_000_000) / 1_000);
+                println!(
+                    "{:?} took {}.{} milliseconds",
+                    self.name,
+                    average_millis,
+                    (average_nanos % 1_000_000) / 1_000
+                );
             }
         }
     }
 
     #[inline(always)]
-    pub async fn iter_async<T, Fut: Future<Output = T>, F: Fn() -> Fut>(&mut self, f: F) {
+    pub(crate) async fn iter_async<T, Fut: Future<Output = T>, F: Fn() -> Fut>(&mut self, f: F) {
         // region warm up
 
         loop {
@@ -80,7 +91,9 @@ impl Bencher {
             let elapsed = start.elapsed();
             if elapsed >= Duration::from_millis(3) {
                 if self.n > 10 {
-                    self.n = (self.n as f64 / (elapsed.as_nanos() as f64 / Duration::from_millis(10).as_nanos() as f64)) as usize;
+                    self.n = (self.n as f64
+                        / (elapsed.as_nanos() as f64 / Duration::from_millis(10).as_nanos() as f64))
+                        as usize;
                 } else {
                     println!("{:?} takes a lot of time!", self.name);
                 }
@@ -112,17 +125,27 @@ impl Bencher {
             }
             1_000..1_000_000 => {
                 let average_micros = average_nanos / 1_000;
-                println!("{:?} took {}.{} microseconds", self.name, average_micros, (average_nanos % 1_000) / 100);
+                println!(
+                    "{:?} took {}.{} microseconds",
+                    self.name,
+                    average_micros,
+                    (average_nanos % 1_000) / 100
+                );
             }
             _ => {
                 let average_millis = average_nanos / 1_000_000;
-                println!("{:?} took {}.{} milliseconds", self.name, average_millis, (average_nanos % 1_000_000) / 1_000);
+                println!(
+                    "{:?} took {}.{} milliseconds",
+                    self.name,
+                    average_millis,
+                    (average_nanos % 1_000_000) / 1_000
+                );
             }
         }
     }
 }
 
-pub fn bench<F: FnOnce(Bencher)>(name: &str, f: F) {
+pub(crate) fn bench<F: FnOnce(Bencher)>(name: &str, f: F) {
     let b = Bencher::new(name);
     f(b);
 }

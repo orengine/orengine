@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::thread;
-use crate::atomic_task_queue::AtomicTaskList;
+use crate::sync_task_queue::SyncTaskList;
 use crate::runtime::Task;
 
 pub(crate) struct ThreadWorkerTask {
@@ -22,11 +22,11 @@ impl ThreadWorkerTask {
 
 struct ThreadWorker {
     task_list: crossbeam::channel::Receiver<ThreadWorkerTask>,
-    result_list: Arc<AtomicTaskList>
+    result_list: Arc<SyncTaskList>
 }
 
 impl ThreadWorker {
-    pub(crate) fn new(result_list: Arc<AtomicTaskList>) -> (
+    pub(crate) fn new(result_list: Arc<SyncTaskList>) -> (
         Self,
         crossbeam::channel::Sender<ThreadWorkerTask>
     ) {
@@ -62,13 +62,13 @@ impl ThreadWorker {
 pub(crate) struct LocalThreadWorkerPool {
     wait: usize,
     workers: Vec<crossbeam::channel::Sender<ThreadWorkerTask>>,
-    result_list: Arc<AtomicTaskList>
+    result_list: Arc<SyncTaskList>
 }
 
 impl LocalThreadWorkerPool {
     pub(crate) fn new(number_of_workers: usize) -> Self {
         let mut workers = Vec::with_capacity(number_of_workers);
-        let result_list = Arc::new(AtomicTaskList::new());
+        let result_list = Arc::new(SyncTaskList::new());
         for _ in 0..number_of_workers {
             let (
                 mut worker,
@@ -103,14 +103,17 @@ impl LocalThreadWorkerPool {
         self.wait += 1;
     }
 
+    /// Returns whether the [`LocalThreadWorkerPool`] has work to do.
     #[inline(always)]
-    pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) {
+    pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) -> bool {
         if self.wait == 0 {
-            return;
+            return false;
         }
 
         let prev_len = other_list.len();
         self.result_list.take_batch(other_list, usize::MAX);
         self.wait -= other_list.len() - prev_len;
+
+        true
     }
 }

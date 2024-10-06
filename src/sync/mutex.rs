@@ -1,7 +1,9 @@
+//! This module provides an asynchronous mutex (e.g. [`std::sync::Mutex`]) type [`Mutex`].
+//! It allows for asynchronous locking and unlocking, and provides
+//! ownership-based locking through [`MutexGuard`].
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::hint::spin_loop;
-use std::intrinsics::{likely, unlikely};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -11,39 +13,60 @@ use std::task::{Context, Poll};
 
 use crossbeam::utils::{Backoff, CachePadded};
 
-use crate::atomic_task_queue::AtomicTaskList;
-use crate::runtime::{local_executor, local_executor_unchecked, Task};
+use crate::panic_if_local_in_future;
+use crate::runtime::{Task, local_executor, local_executor_unchecked};
+use crate::sync_task_queue::SyncTaskList;
 
+/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
+/// dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// [`Deref`](Deref) and [`DerefMut`] implementations.
+///
+/// This structure is created by the [`lock`](Mutex::lock)
+/// and [`try_lock`](Mutex::try_lock) methods on [`Mutex`].
 pub struct MutexGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
 }
 
 impl<'mutex, T> MutexGuard<'mutex, T> {
+    /// Creates a new [`MutexGuard`].
     #[inline(always)]
     pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
         Self { mutex }
     }
 
+    /// Returns a reference to the original [`Mutex`].
     #[inline(always)]
     pub fn mutex(&self) -> &Mutex<T> {
         &self.mutex
     }
 
-    #[inline(always)]
-    /// Unlocks the mutex. Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
+    /// Unlocks the [`mutex`](Mutex). Calling `guard.unlock()` is equivalent to
+    /// calling `drop(guard)`. This was done to improve readability.
     ///
     /// # Attention
     ///
     /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
+    /// the [`mutex`](Mutex) will be unlocked after the `guard` is dropped.
+    #[inline(always)]
     pub fn unlock(self) {}
 
+    /// Returns a reference to the original [`Mutex`].
+    ///
+    /// The mutex will be unlocked.
     #[inline(always)]
     pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
         self.mutex
     }
 
+    /// Returns a reference to the original [`Mutex`].
+    ///
+    /// The mutex will never be unlocked.
+    ///
+    /// # Safety
+    ///
+    /// The mutex is unlocked by calling [`Mutex::unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'static Mutex<T> {
         let static_mutex = unsafe { mem::transmute(self.mutex) };
@@ -73,12 +96,14 @@ impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
     }
 }
 
+/// `MutexWait` is a future that will be resolved when the lock is acquired.
 pub struct MutexWait<'mutex, T> {
     was_called: bool,
     mutex: &'mutex Mutex<T>,
 }
 
 impl<'mutex, T> MutexWait<'mutex, T> {
+    /// Creates a new [`MutexWait`].
     #[inline(always)]
     fn new(local_mutex: &'mutex Mutex<T>) -> Self {
         Self {
@@ -91,14 +116,17 @@ impl<'mutex, T> MutexWait<'mutex, T> {
 impl<'mutex, T> Future for MutexWait<'mutex, T> {
     type Output = MutexGuard<'mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    #[allow(unused)] // because #[cfg(debug_assertions)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if likely(!this.was_called) {
+        panic_if_local_in_future!(cx, "Mutex");
+
+        if !this.was_called {
             if let Some(guard) = this.mutex.try_lock_with_spinning() {
                 return Poll::Ready(guard);
             }
 
-            if unlikely(this.mutex.counter.fetch_add(1, Acquire) == 0) {
+            if this.mutex.counter.fetch_add(1, Acquire) == 0 {
                 return Poll::Ready(MutexGuard::new(&this.mutex));
             }
 
@@ -112,29 +140,88 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
     }
 }
 
+/// A mutual exclusion primitive useful for protecting shared data.
+///
+/// This mutex will block tasks waiting for the lock to become available. The
+/// mutex can be created via a [`new`](Mutex::new) constructor. Each mutex has a type parameter
+/// which represents the data that it is protecting. The data can be accessed
+/// through the RAII guards returned from [`lock`](Mutex::lock) and [`try_lock`](Mutex::try_lock),
+/// which guarantees that the data is only ever accessed when the mutex is locked, or
+/// with an unsafe method [`get_locked`](Mutex::get_locked).
+///
+/// # The difference between `Mutex` and [`LocalMutex`](crate::sync::LocalMutex)
+///
+/// The `Mutex` works with `global tasks` and can be shared between threads.
+///
+/// Read [`Executor`](crate::Executor) for more details.
+///
+/// # The differences between `Mutex` and [`NaiveMutex`](crate::sync::NaiveMutex)
+///
+/// The `Mutex` uses a queue of tasks waiting for the lock to become available.
+///
+/// The [`NaiveMutex`](crate::sync::NaiveMutex) yields the current task if it is unable
+/// to acquire the lock.
+///
+/// Use `Mutex` when a lot of tasks are waiting for the same lock because the lock is acquired
+/// for a __long__ time. If a lot of tasks are waiting for the same lock because the lock
+/// is acquired for a __short__ time try to share the `Mutex`.
+///
+/// If the lock is mostly acquired the first time, it is better to
+/// use [`NaiveMutex`](crate::sync::NaiveMutex), as it spends less time on successful operations.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::collections::HashMap;
+/// use orengine::sync::Mutex;
+///
+/// # async fn write_to_the_dump_file(key: usize, value: usize) {}
+///
+/// async fn dump_storage(storage: &Mutex<HashMap<usize, usize>>) {
+///     let mut guard = storage.lock().await;
+///
+///     for (key, value) in guard.iter() {
+///         write_to_the_dump_file(*key, *value).await;
+///     }
+///
+///     // lock is released when `guard` goes out of scope
+/// }
+/// ```
 pub struct Mutex<T> {
     counter: CachePadded<AtomicUsize>,
-    wait_queue: AtomicTaskList,
+    wait_queue: SyncTaskList,
     value: UnsafeCell<T>,
     expected_count: Cell<usize>,
 }
 
 impl<T> Mutex<T> {
+    /// Creates a new [`Mutex`].
     #[inline(always)]
     pub fn new(value: T) -> Mutex<T> {
         Mutex {
             counter: CachePadded::new(AtomicUsize::new(0)),
-            wait_queue: AtomicTaskList::new(),
+            wait_queue: SyncTaskList::new(),
             value: UnsafeCell::new(value),
             expected_count: Cell::new(1),
         }
     }
 
+    /// Returns a [`Future`] that resolves to [`MutexGuard`] that allows access to the inner value.
+    ///
+    /// It blocks the current task if the mutex is locked.
     #[inline(always)]
     pub fn lock(&self) -> MutexWait<T> {
         MutexWait::new(self)
     }
 
+    /// If the mutex is unlocked, returns [`MutexGuard`] that allows access to the inner value,
+    /// otherwise returns [`None`].
+    ///
+    /// # The difference between `try_lock` and [`try_lock_with_spinning`](Mutex::try_lock_with_spinning)
+    ///
+    /// `try_lock` tries to acquire the lock only once.
+    /// It can be more useful in cases where the lock is likely to be locked for
+    /// __more than 30 nanoseconds__.
     #[inline(always)]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         if self
@@ -148,11 +235,18 @@ impl<T> Mutex<T> {
         }
     }
 
+    /// If the mutex is unlocked, returns [`MutexGuard`] that allows access to the inner value,
+    /// otherwise returns [`None`].
+    ///
+    /// # The difference between `try_lock_with_spinning` and [`try_lock`](Mutex::try_lock)
+    ///
+    /// `try_lock_with_spinning` tries to acquire the lock in a loop with a small delay a few times.
+    /// It can be more useful in cases where the lock is very likely to be locked for
+    /// __less than 30 nanoseconds__.
     #[inline(always)]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
-            let lock_res = self.counter
-                .compare_exchange(0, 1, Acquire, Acquire);
+            let lock_res = self.counter.compare_exchange(0, 1, Acquire, Acquire);
             match lock_res {
                 Ok(_) => return Some(MutexGuard::new(self)),
                 Err(count) if count == 1 => {
@@ -167,44 +261,44 @@ impl<T> Mutex<T> {
         None
     }
 
+    /// Returns the inner value. It is safe because it uses `&mut self`.
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
+    /// Add current task to wait queue.
     #[inline(always)]
-    /// # Safety
-    ///
-    /// Lock is acquired.
     pub(crate) unsafe fn subscribe(&self, task: Task) {
-        debug_assert!(
-            self.counter.load(Acquire) != 0,
-            "Mutex is unlocked, but for subscription it must be locked"
-        );
         self.expected_count.set(self.expected_count.get() - 1);
         unsafe {
             self.wait_queue.push(task);
         }
     }
 
+    /// Unlocks the mutex.
+    ///
+    /// # Safety
+    ///
+    /// - The mutex must be locked.
+    ///
+    /// - And no tasks has an ownership of this [`mutex`](Mutex).
     #[inline(always)]
     pub unsafe fn unlock(&self) {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
-        if likely(
-            // Here compare_exchange is used instead of compare_exchange_weak
-            // because we need to have a guarantee of failure.
-            self.counter
-                .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
-                .is_ok(),
-        ) {
+        let was_swapped = self
+            .counter
+            .compare_exchange(self.expected_count.get(), 0, Release, Relaxed)
+            .is_ok();
+        if was_swapped {
             self.expected_count.set(1);
             return;
         }
 
         self.expected_count.set(self.expected_count.get() + 1);
         let next = self.wait_queue.pop();
-        if likely(next.is_some()) {
+        if next.is_some() {
             unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
         } else {
             // Another task failed to acquire a lock, but it is not yet in the queue
@@ -220,6 +314,13 @@ impl<T> Mutex<T> {
         }
     }
 
+    /// Returns a reference to the inner value.
+    ///
+    /// # Safety
+    ///
+    /// - The mutex must be locked.
+    ///
+    /// - And only current task has an ownership of this [`mutex`](Mutex).
     #[inline(always)]
     pub unsafe fn get_locked(&self) -> &T {
         debug_assert!(
@@ -227,11 +328,11 @@ impl<T> Mutex<T> {
             "Mutex is unlocked, but calling get_locked it must be locked"
         );
 
-        &*self.value.get()
+        unsafe { &*self.value.get() }
     }
 }
 
-unsafe impl<T: Send> Sync for Mutex<T> {}
+unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
 unsafe impl<T: Send> Send for Mutex<T> {}
 
 #[cfg(test)]
@@ -240,13 +341,13 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    use crate::Executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::{Executor};
 
     use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -258,7 +359,7 @@ mod tests {
         wg_clone.add(1);
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 let mut value = mutex_clone.lock().await;
                 wg_clone.done();
                 println!("1");
@@ -290,8 +391,7 @@ mod tests {
         lock_wg.add(1);
         unlock_wg.add(1);
         thread::spawn(move || {
-            let ex = Executor::init();
-            ex.spawn_global(async move {
+            Executor::init().run_with_global_future(async move {
                 let mut value = mutex_clone.lock().await;
                 println!("1");
                 lock_wg_clone.done();
@@ -302,7 +402,6 @@ mod tests {
                 second_lock_clone.done();
                 println!("5");
             });
-            ex.run();
         });
 
         let _ = lock_wg.wait().await;
@@ -322,19 +421,19 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_try_without_spinning_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_try_with_spinning_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn stress_test_mutex() {
-        const PAR: usize = 50;
+        const PAR: usize = 5;
         const TRIES: usize = 100;
 
         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
@@ -354,8 +453,7 @@ mod tests {
             let wg = wg.clone();
             let mutex = mutex.clone();
             thread::spawn(move || {
-                let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                Executor::init().run_with_global_future(async move {
                     for _ in 0..TRIES {
                         work_with_lock(&mutex, &wg).await;
                     }

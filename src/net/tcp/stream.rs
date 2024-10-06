@@ -3,11 +3,12 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
+
 use socket2::{Domain, Type};
 
-use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd, OwnedFd};
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
@@ -16,6 +17,38 @@ use crate::runtime::local_executor;
 /// # Close
 ///
 /// [`TcpStream`] is automatically closed after it is dropped.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::buf::full_buffer;
+/// use orengine::io::{AsyncAccept, AsyncBind};
+/// use orengine::local_executor;
+/// use orengine::net::{Stream, TcpListener};
+///
+/// async fn handle_stream<S: Stream>(mut stream: S) {
+///     loop {
+///         stream.poll_recv().await.expect("poll_recv was failed");
+///         let mut buf = full_buffer();
+///         let n = stream.recv(&mut buf).await.expect("recv was failed");
+///         if n == 0 {
+///             break;
+///         }
+///
+///         stream.send_all(b"pong").await.expect("send_all was failed");
+///     }
+/// }
+///
+/// async fn run_server() -> std::io::Result<()> {
+///     let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+///     while let Ok((stream, addr)) = listener.accept().await {
+///         local_executor().spawn_local(async move {
+///             handle_stream(stream).await;
+///         });
+///     }
+///     Ok(())
+/// }
+/// ```
 pub struct TcpStream {
     fd: RawFd,
 }
@@ -136,19 +169,19 @@ impl Drop for TcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, thread};
     use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+    use std::{io, thread};
 
-    use crate::{Executor};
     use crate::io::{AsyncAccept, AsyncBind};
-    use crate::io::bind::BindConfig;
-    use crate::net::Socket;
     use crate::net::tcp::TcpListener;
+    use crate::net::BindConfig;
+    use crate::net::Socket;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
+    use crate::Executor;
 
     use super::*;
 
@@ -213,8 +246,7 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            Executor::init().run_with_local_future(async move {
                 let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
                 is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);

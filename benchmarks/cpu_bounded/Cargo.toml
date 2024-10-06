@@ -1,11 +1,12 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "cpu-bounded"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-orengine = "0.1.0"
-tools = { path = "../tools" }
+orengine = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 smol = "2.0.0"
 async-std = "1.12.0"

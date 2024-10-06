@@ -2,16 +2,21 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::atomic_task_queue::AtomicTaskList;
-use crate::runtime::{local_executor, Task};
+use crate::panic_if_local_in_future;
+use crate::runtime::{Task, local_executor};
 use crate::sync::{Mutex, MutexGuard};
+use crate::sync_task_queue::SyncTaskList;
 
+/// Current state of the [`WaitCondVar`].
 enum State {
     WaitSleep,
     WaitWake,
     WaitLock,
 }
 
+/// `WaitCondVar` represents a future returned by the [`CondVar::wait`] method.
+///
+/// It is used to wait for a notification from a condition variable.
 pub struct WaitCondVar<'mutex, 'cond_var, T> {
     state: State,
     cond_var: &'cond_var CondVar,
@@ -19,6 +24,7 @@ pub struct WaitCondVar<'mutex, 'cond_var, T> {
 }
 
 impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
+    /// Creates a new [`WaitCondVar`].
     #[inline(always)]
     pub fn new(
         cond_var: &'cond_var CondVar,
@@ -37,6 +43,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "CondVar");
 
         match this.state {
             State::WaitSleep => {
@@ -60,19 +67,91 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
     }
 }
 
-// TODO: in docs say to drop(guard) before notify
+/// `CondVar` is a condition variable that allows tasks to wait until
+/// notified by another task.
+///
+/// It is designed to be used in conjunction with a [`Mutex`] to provide a way for tasks
+/// to wait for a specific condition to occur.
+///
+/// # Attention
+///
+/// Drop a lock before call [`notify_one`](LocalCondVar::notify_one)
+/// or [`notify_all`](LocalCondVar::notify_all) to improve performance.
+///
+/// # The difference between `CondVar` and [`LocalCondVar`](crate::sync::LocalCondVar)
+///
+/// The `CondVar` works with `global tasks` and can be shared between threads.
+///
+/// Read [`Executor`](crate::Executor) for more details.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::sync::{CondVar, Mutex, global_scope};
+/// use orengine::sleep;
+/// use std::time::Duration;
+///
+/// # async fn test() {
+/// let cvar = CondVar::new();
+/// let is_ready = Mutex::new(false);
+///
+/// global_scope(|scope| async {
+///     scope.spawn(async {
+///         sleep(Duration::from_secs(1)).await;
+///         let mut lock = is_ready.lock().await;
+///         *lock = true;
+///         lock.unlock();
+///         cvar.notify_one();
+///     });
+///
+///     let mut lock = is_ready.lock().await;
+///     while !*lock {
+///         lock = cvar.wait(lock).await; // wait 1 second
+///     }
+/// }).await;
+/// # }
+/// ```
 pub struct CondVar {
-    wait_queue: AtomicTaskList,
+    wait_queue: SyncTaskList,
 }
 
 impl CondVar {
+    /// Creates a new [`CondVar`].
     #[inline(always)]
     pub fn new() -> CondVar {
         CondVar {
-            wait_queue: AtomicTaskList::new(),
+            wait_queue: SyncTaskList::new(),
         }
     }
 
+    /// Wait a notification.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::{CondVar, Mutex, global_scope};
+    /// use orengine::sleep;
+    /// use std::time::Duration;
+    ///
+    /// # async fn test() {
+    /// let cvar = CondVar::new();
+    /// let is_ready = Mutex::new(false);
+    ///
+    /// global_scope(|scope| async {
+    ///     scope.spawn(async {
+    ///         sleep(Duration::from_secs(1)).await;
+    ///         let mut lock = is_ready.lock().await;
+    ///         *lock = true;
+    ///         lock.unlock();
+    ///         cvar.notify_one();
+    ///     });
+    ///
+    ///     let mut lock = is_ready.lock().await;
+    ///     while !*lock {
+    ///         lock = cvar.wait(lock).await; // wait 1 second
+    ///     }
+    /// }).await;
+    /// # }
     #[inline(always)]
     pub fn wait<'mutex, 'cond_var, T>(
         &'cond_var self,
@@ -81,6 +160,24 @@ impl CondVar {
         WaitCondVar::new(self, mutex_guard.into_mutex())
     }
 
+    /// Notifies one waiting task.
+    ///
+    /// # Attention
+    ///
+    /// Drop a lock before call [`notify_one`](CondVar::notify_one).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::{Mutex, CondVar};
+    ///
+    /// async fn inc_counter_and_notify(counter: &Mutex<i32>, cvar: &CondVar) {
+    ///     let mut lock = counter.lock().await;
+    ///     *lock += 1;
+    ///     lock.unlock();
+    ///     cvar.notify_one();
+    /// }
+    /// ```
     #[inline(always)]
     pub fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
@@ -88,6 +185,24 @@ impl CondVar {
         }
     }
 
+    /// Notifies all waiting tasks.
+    ///
+    /// # Attention
+    ///
+    /// Drop a lock before call [`notify_one`](CondVar::notify_one).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::{Mutex, CondVar};
+    ///
+    /// async fn inc_counter_and_notify_all(counter: &Mutex<i32>, cvar: &CondVar) {
+    ///     let mut lock = counter.lock().await;
+    ///     *lock += 1;
+    ///     lock.unlock();
+    ///     cvar.notify_all();
+    /// }
+    /// ```
     #[inline(always)]
     pub fn notify_all(&self) {
         let executor = local_executor();
@@ -107,10 +222,10 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use crate::Executor;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::{Executor};
 
     use super::*;
 
@@ -122,7 +237,7 @@ mod tests {
         let pair2 = pair.clone();
         thread::spawn(move || {
             let ex = Executor::init();
-            let _ = ex.run_and_block_on(async move {
+            ex.run_with_global_future(async move {
                 let (lock, cvar) = pair2.deref();
                 let mut started = lock.lock().await;
                 sleep(TIME_TO_SLEEP).await;
@@ -149,7 +264,7 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        local_executor().spawn_local(async move {
+        local_executor().spawn_global(async move {
             let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
@@ -167,7 +282,7 @@ mod tests {
             wg.add(1);
             thread::spawn(move || {
                 let executor = Executor::init();
-                let _ = executor.run_and_block_on(async move {
+                executor.spawn_global(async move {
                     let (lock, cvar) = pair.deref();
                     let mut started = lock.lock().await;
                     while !*started {
@@ -175,6 +290,7 @@ mod tests {
                     }
                     wg.done();
                 });
+                executor.run();
             });
         }
 
@@ -183,22 +299,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_with_drop_guard() {
         test_one(true).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_all_with_drop_guard() {
         test_all(true).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_without_drop_guard() {
         test_one(false).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_all_without_drop_guard() {
         test_all(false).await;
     }

@@ -14,20 +14,74 @@ use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd};
 use crate::io::sys::OsPath::{get_os_path, OsPath};
 use crate::runtime::local_executor;
 
-// TODO docs
+/// An object providing access to an [`open`](File::open) file on the filesystem.
+/// An instance of a File can be read and/ or written depending on what options it was opened with.
+///
+/// # Close
+///
+/// Files are automatically closed when they go out of scope.
+/// Errors detected on closing are ignored by the implementation of Drop.
+/// Use the method [`sync_all`](File::sync_all) if these errors must be manually handled.
+///
+/// # Examples
+///
+/// ```no_run
+/// use orengine::fs::{File, OpenOptions};
+///
+/// # async fn foo() -> std::io::Result<()> {
+/// let open_options = OpenOptions::new().read(true).write(true);
+/// let file = File::open("example.txt", &open_options).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct File {
     fd: RawFd
 }
 
 impl File {
-    /// Returns the state_ptr of the [`File`].
+    /// Returns the file descriptor [`RawFd`] of the [`File`].
     ///
-    /// Uses for low-level work with the scheduler. If you don't know what it is, don't use it.
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let file = File::open("foo.txt", &OpenOptions::new()).await?;
+    /// let fd = file.fd();
+    /// # Ok(())
+    /// # }
     #[inline(always)]
-    pub fn fd(&mut self) -> RawFd {
+    pub fn fd(&self) -> RawFd {
         self.fd
     }
 
+    /// Opens a file at the given path with the specified options.
+    ///
+    /// This function takes an asynchronous approach to file opening.
+    /// The `as_path` argument specifies the path
+    /// to the file, and `open_options` contains various settings such as read/write access,
+    /// append mode, and more.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an `Err` if:
+    /// - The provided path is empty.
+    /// - There is an issue converting the path to an OS-specific format.
+    /// - The file could not be opened due to other I/O errors
+    /// (e.g., permission denied, file not found).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let open_options = OpenOptions::new().read(true).write(true);
+    /// let file = File::open("foo.txt", &open_options).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
@@ -45,6 +99,26 @@ impl File {
         }
     }
 
+    /// Renames a file from one path to another.
+    ///
+    /// This method renames the file at `old_path` to `new_path`. Both paths must be valid.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an `Err` if:
+    /// - Either `old_path` or `new_path` cannot be converted into an OS path.
+    /// - The rename operation fails due to I/O issues such as permission errors or file not found.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let file = File::rename("foo.txt", "bar.txt").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
     where
@@ -56,6 +130,30 @@ impl File {
         Rename::new(old_path, new_path).await
     }
 
+    /// Removes (deletes) the file at the specified path.
+    ///
+    /// This method asynchronously deletes the file located at `path`.
+    /// If the file does not exist,
+    /// or if the operation fails for any other reason, an `Err` is returned.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an `Err` if:
+    /// - The provided path cannot be converted into an OS path.
+    /// - The file removal operation fails due to I/O issues such as permission errors
+    /// or file not found.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let file = File::remove("foo.txt").await?;
+    /// assert!(!std::fs::exists("foo.txt")?);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[inline(always)]
     pub async fn remove<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = get_os_path(path.as_ref())?;

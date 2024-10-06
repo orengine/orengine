@@ -1,23 +1,25 @@
+use crate::panic_if_local_in_future;
+use crate::runtime::local_executor;
+use crate::sync_task_queue::SyncTaskList;
 use std::future::Future;
-use std::intrinsics::unlikely;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
-use crate::atomic_task_queue::AtomicTaskList;
-use crate::runtime::local_executor;
 
+/// A [`Future`] to wait for all tasks in the [`WaitGroup`] to complete.
 pub struct Wait<'wait_group> {
     wait_group: &'wait_group WaitGroup,
-    was_called: bool
+    was_called: bool,
 }
 
 impl<'wait_group> Wait<'wait_group> {
+    /// Creates a new [`Wait`] future.
     #[inline(always)]
     pub(crate) fn new(wait_group: &'wait_group WaitGroup) -> Self {
         Self {
             wait_group,
-            was_called: false
+            was_called: false,
         }
     }
 }
@@ -25,8 +27,11 @@ impl<'wait_group> Wait<'wait_group> {
 impl<'wait_group> Future for Wait<'wait_group> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+    #[allow(unused)] // because #[cfg(debug_assertions)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        panic_if_local_in_future!(cx, "WaitGroup");
+
         if !this.was_called {
             this.was_called = true;
 
@@ -43,7 +48,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
                 local_executor().push_current_task_to_and_remove_it_if_counter_is_zero(
                     &this.wait_group.waited_tasks,
                     &this.wait_group.counter,
-                    Acquire
+                    Acquire,
                 );
             }
 
@@ -54,42 +59,177 @@ impl<'wait_group> Future for Wait<'wait_group> {
     }
 }
 
+/// `WaitGroup` is a synchronization primitive that allows to wait
+/// until all tasks are completed.
+///
+/// # The difference between `WaitGroup` and [`LocalWaitGroup`](crate::sync::LocalWaitGroup)
+///
+/// The `WaitGroup` works with `global tasks` and can be shared between threads.
+///
+/// Read [`Executor`](crate::Executor) for more details.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+/// use orengine::sleep;
+/// use orengine::sync::{global_scope, WaitGroup};
+///
+/// # async fn foo() {
+/// let wait_group = WaitGroup::new();
+/// let number_executed_tasks = AtomicUsize::new(0);
+///
+/// global_scope(|scope| async {
+///     for i in 0..10 {
+///         wait_group.inc();
+///         scope.spawn(async {
+///             sleep(Duration::from_millis(i)).await;
+///             number_executed_tasks.fetch_add(1, SeqCst);
+///             wait_group.done();
+///         });
+///     }
+///
+///     wait_group.wait().await; // wait until all tasks are completed
+///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
+/// }).await;
+/// # }
+/// ```
 pub struct WaitGroup {
     counter: AtomicUsize,
-    waited_tasks: AtomicTaskList
+    waited_tasks: SyncTaskList,
 }
 
 impl WaitGroup {
+    /// Creates a new `WaitGroup`.
     pub fn new() -> Self {
         Self {
             counter: AtomicUsize::new(0),
-            waited_tasks: AtomicTaskList::new()
+            waited_tasks: SyncTaskList::new(),
         }
     }
 
+    /// Adds `count` to the `WaitGroup` counter.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    /// use orengine::sleep;
+    /// use orengine::sync::{global_scope, WaitGroup};
+    ///
+    /// # async fn foo() {
+    /// let wait_group = WaitGroup::new();
+    /// let number_executed_tasks = AtomicUsize::new(0);
+    ///
+    /// global_scope(|scope| async {
+    ///     wait_group.add(10);
+    ///     for i in 0..10 {
+    ///         scope.spawn(async {
+    ///             sleep(Duration::from_millis(i)).await;
+    ///             number_executed_tasks.fetch_add(1, SeqCst);
+    ///             wait_group.done();
+    ///         });
+    ///     }
+    ///
+    ///     wait_group.wait().await; // wait until 10 tasks are completed
+    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
+    /// }).await;
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn add(&self, count: usize) {
         self.counter.fetch_add(count, Acquire);
     }
 
+    /// Adds 1 to the `WaitGroup` counter.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    /// use orengine::sleep;
+    /// use orengine::sync::{global_scope, WaitGroup};
+    ///
+    /// # async fn foo() {
+    /// let wait_group = WaitGroup::new();
+    /// let number_executed_tasks = AtomicUsize::new(0);
+    ///
+    /// global_scope(|scope| async {
+    ///     for i in 0..10 {
+    ///         wait_group.inc();
+    ///         scope.spawn(async {
+    ///             sleep(Duration::from_millis(i)).await;
+    ///             number_executed_tasks.fetch_add(1, SeqCst);
+    ///             wait_group.done();
+    ///         });
+    ///     }
+    ///
+    ///     wait_group.wait().await; // wait until all tasks are completed
+    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
+    /// }).await;
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn inc(&self) {
         self.add(1);
     }
 
+    /// Returns the `WaitGroup` counter.
+    ///
+    /// Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::WaitGroup;
+    ///
+    /// # async fn foo() {
+    /// let wait_group = WaitGroup::new();
+    /// assert_eq!(wait_group.count(), 0);
+    /// wait_group.inc();
+    /// assert_eq!(wait_group.count(), 1);
+    /// wait_group.done();
+    /// assert_eq!(wait_group.count(), 0);
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn count(&self) -> usize {
         self.counter.load(Acquire)
     }
 
+    /// Decreases the `WaitGroup` counter by 1 and wakes up all tasks that are waiting
+    /// if the counter reaches 0.
+    ///
+    /// Returns the previous value of the counter.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::{global_scope, WaitGroup};
+    ///
+    /// # async fn foo() {
+    /// let wait_group = WaitGroup::new();
+    ///
+    /// global_scope(|scope| async {
+    ///     wait_group.inc();
+    ///     scope.spawn(async {
+    ///         // wake up the waiting task, because a current and the only one task is done
+    ///         wait_group.done();
+    ///     });
+    ///
+    ///     wait_group.wait().await; // wait until all tasks are completed
+    /// }).await;
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
-        if unlikely(prev_count == 0) {
+        if prev_count == 0 {
             panic!("WaitGroup::done called after counter reached 0");
         }
 
-        if unlikely(prev_count == 1) {
+        if prev_count == 1 {
             let executor = local_executor();
             while let Some(task) = self.waited_tasks.pop() {
                 executor.spawn_global_task(task);
@@ -99,8 +239,37 @@ impl WaitGroup {
         prev_count
     }
 
+    /// Waits until the `WaitGroup` counter reaches 0.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    /// use orengine::sleep;
+    /// use orengine::sync::{global_scope, WaitGroup};
+    ///
+    /// # async fn foo() {
+    /// let wait_group = WaitGroup::new();
+    /// let number_executed_tasks = AtomicUsize::new(0);
+    ///
+    /// global_scope(|scope| async {
+    ///     for i in 0..10 {
+    ///         wait_group.inc();
+    ///         scope.spawn(async {
+    ///             sleep(Duration::from_millis(i)).await;
+    ///             number_executed_tasks.fetch_add(1, SeqCst);
+    ///             wait_group.done();
+    ///         });
+    ///     }
+    ///
+    ///     wait_group.wait().await; // wait until all tasks are completed
+    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
+    /// }).await;
+    /// # }
+    /// ```
     #[inline(always)]
-    #[must_use="Future must be awaited to start the wait"]
+    #[must_use = "Future must be awaited to start the wait"]
     pub async fn wait(&self) {
         Wait::new(self).await
     }
@@ -111,15 +280,15 @@ unsafe impl Send for WaitGroup {}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{Executor, sleep, stop_executor};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
-    use crate::{sleep, stop_executor, Executor};
-    use super::*;
 
-    const PAR: usize = 40;
+    const PAR: usize = 10;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_many_wait_one() {
         let check_value = Arc::new(Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
@@ -130,14 +299,12 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                ex.spawn_global(async move {
+                Executor::init().run_with_global_future(async move {
                     let _ = wait_group.wait().await;
                     if !*check_value.lock().unwrap() {
                         panic!("not waited");
                     }
                 });
-                ex.run();
             });
         }
 
@@ -147,7 +314,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -158,15 +325,13 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                ex.spawn_global(async move {
+                Executor::init().run_with_global_future(async move {
                     sleep(Duration::from_millis(1)).await;
                     *check_value.lock().unwrap() -= 1;
                     if wait_group.done() != 1 {
                         stop_executor(local_executor().id());
                     }
                 });
-                ex.run();
             });
         }
 
@@ -176,7 +341,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -187,8 +352,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             thread::spawn(move || {
-                let ex = Executor::init();
-                let _ = ex.run_and_block_on(async move {
+                Executor::init().run_with_global_future(async move {
                     *check_value.lock().unwrap() -= 1;
                     wait_group.done();
                 });

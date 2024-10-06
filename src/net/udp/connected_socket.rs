@@ -6,6 +6,37 @@ use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, As
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 
+/// A UDP socket.
+///
+/// After creating a `UdpConnectedSocket` by [`connect`](crate::net::UdpSocket::connect)ing
+/// it to a socket address, data can be [sent](AsyncSend) and [received](AsyncRecv)
+/// any other socket address.
+///
+/// Although UDP is a connectionless protocol, this implementation provides an interface
+/// to set an address where data should be sent and received from.
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::buf::full_buffer;
+/// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::net::UdpSocket;
+///
+/// # async fn foo() {
+/// let socket = UdpSocket::bind("127.0.0.1:8081").await.unwrap();
+/// let mut connected_socket = socket.connect("127.0.0.1:8080").await.unwrap();
+/// loop {
+///    connected_socket.poll_recv().await.expect("poll failed");
+///    let mut buf = full_buffer();
+///    let n = connected_socket.recv(&mut buf).await.expect("recv_from failed");
+///    if n == 0 {
+///        break;
+///    }
+///
+///    connected_socket.send(&buf[..n]).await.expect("send_to failed");
+/// }
+/// # }
+/// ```
 pub struct UdpConnectedSocket {
     fd: RawFd,
 }

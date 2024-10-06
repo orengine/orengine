@@ -1,3 +1,4 @@
+//! Helper for work with the system.
 pub(crate) mod unix;
 
 pub(crate) use unix::fd::*;
