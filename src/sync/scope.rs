@@ -66,7 +66,7 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        let global_task = crate::runtime::Task::from_future(handle, false);
+        let global_task = crate::runtime::Task::from_future(handle, 0);
         local_executor().exec_task(global_task);
     }
 

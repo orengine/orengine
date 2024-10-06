@@ -256,7 +256,11 @@ impl IoWorker for IoUringWorker {
             }
 
             self.number_of_active_tasks -= 1;
-            executor.exec_task(io_request.task());
+            if io_request.task().is_local() {
+                executor.exec_task(io_request.task());
+            } else {
+                executor.spawn_global_task(io_request.task());
+            }
         }
 
         true

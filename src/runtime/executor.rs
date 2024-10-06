@@ -25,6 +25,15 @@ use crate::utils::CoreId;
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
 
+macro_rules! shrink {
+    ($list:expr) => {
+        if $list.capacity() > 512 && $list.len() * 3 < $list.capacity() {
+            let new_len = $list.len() * 2 + 1;
+            $list.shrink_to(new_len);
+        }
+    };
+}
+
 thread_local! {
     /// Thread local [`Executor`]. So, it is lockless.
     pub(crate) static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = UnsafeCell::new(None);
@@ -154,7 +163,7 @@ pub struct Executor {
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
     current_call: Call,
-    sleeping_tasks: BTreeSet<SleepingTask>,
+    local_sleeping_tasks: BTreeSet<SleepingTask>,
 }
 
 /// The next id of the executor. It is used to generate the unique executor id.
@@ -228,7 +237,7 @@ impl Executor {
                 exec_series: 0,
                 local_worker: get_local_worker_ref(),
                 thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
-                sleeping_tasks: BTreeSet::new(),
+                local_sleeping_tasks: BTreeSet::new(),
             });
 
             register_local_executor();
@@ -541,7 +550,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, true);
+        let task = Task::from_future(future, 1);
         self.exec_task(task);
     }
 
@@ -556,7 +565,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, false);
+        let task = Task::from_future(future, 0);
         self.exec_task(task);
     }
 
@@ -574,7 +583,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, true);
+        let task = Task::from_future(future, 1);
         self.spawn_local_task(task);
     }
 
@@ -606,7 +615,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, false);
+        let task = Task::from_future(future, 0);
         self.spawn_global_task(task);
     }
 
@@ -626,11 +635,15 @@ impl Executor {
                 if self.global_tasks.len() <= self.config.work_sharing_level {
                     self.global_tasks.push_back(task);
                 } else {
-                    let mut shared_tasks_list =
-                        unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
-                    let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
-                    for task in self.global_tasks.drain(..number_of_shared) {
-                        shared_tasks_list.push(task);
+                    if let Some(mut shared_tasks_list) =
+                        unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() }
+                    {
+                        let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
+                        for task in self.global_tasks.drain(..number_of_shared) {
+                            shared_tasks_list.push(task);
+                        }
+                    } else {
+                        self.global_tasks.push_back(task);
                     }
                 }
             }
@@ -649,7 +662,7 @@ impl Executor {
     /// Returns a reference to the `sleeping_tasks`.
     #[inline(always)]
     pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
-        &mut self.sleeping_tasks
+        &mut self.local_sleeping_tasks
     }
 
     /// Tries to take a batch of tasks from the global tasks queue if needed.
@@ -659,8 +672,11 @@ impl Executor {
             return;
         }
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
-            if !shared_task_list.is_empty() {
-                return;
+            if let Some(mut shared_task_list) = shared_task_list.as_vec() {
+                shrink!(shared_task_list);
+                if shared_task_list.is_empty() {
+                    return;
+                }
             }
 
             let lists = unsafe { self.subscribed_state.tasks_lists() };
@@ -709,35 +725,25 @@ impl Executor {
             None => true,
         };
 
-        if self.sleeping_tasks.len() > 0 {
-            let instant = Instant::now();
-            while let Some(sleeping_task) = self.sleeping_tasks.pop_first() {
-                if sleeping_task.time_to_wake() <= instant {
-                    self.exec_task(sleeping_task.task());
+        if self.local_sleeping_tasks.len() > 0 {
+            let instant = Some(Instant::now());
+            while let Some(sleeping_task) = self.local_sleeping_tasks.pop_first() {
+                if sleeping_task.time_to_wake() <= unsafe { instant.unwrap_unchecked() } {
+                    let task = sleeping_task.task();
+                    if task.is_local() {
+                        self.exec_task(task);
+                    } else {
+                        self.spawn_global_task(task);
+                    }
                 } else {
-                    self.sleeping_tasks.insert(sleeping_task);
+                    self.local_sleeping_tasks.insert(sleeping_task);
                     break;
                 }
             }
         }
 
-        // TODO think about it
-        // macro_rules! shrink {
-        //     ($list:expr) => {
-        //         if unlikely($list.capacity() > 512 && $list.len() * 3 < $list.capacity()) {
-        //             $list.shrink_to(self.local_tasks.len() * 2 + 1);
-        //         }
-        //     };
-        // }
-        //
-        // shrink!(self.local_tasks);
-        // shrink!(self.global_tasks);
-        // if self.shared_tasks_list.is_some() {
-        //     let mut shared_tasks_list =
-        //         unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() };
-        //
-        //     shrink!(shared_tasks_list);
-        // }
+        shrink!(self.local_tasks);
+        shrink!(self.global_tasks);
 
         false
     }

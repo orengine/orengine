@@ -27,10 +27,13 @@ impl Future for Sleep {
             let task = unsafe { (cx.waker().data() as *const Task).read() };
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
-            while !local_executor().sleeping_tasks().insert(sleeping_task) {
-                this.sleep_until += Duration::from_nanos(1);
-                sleeping_task = SleepingTask::new(this.sleep_until, task);
+            while !local_executor()
+                .sleeping_tasks()
+                .insert(sleeping_task.clone())
+            {
+                sleeping_task.increment_time_to_wake();
             }
+
             Poll::Pending
         }
     }
@@ -62,12 +65,10 @@ pub fn sleep(duration: Duration) -> Sleep {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::local::Local;
     use std::ops::Deref;
     use std::time::Duration;
-
-    use crate::local::Local;
-
-    use super::*;
 
     #[orengine_macros::test]
     fn test_sleep() {

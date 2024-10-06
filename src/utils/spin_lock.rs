@@ -1,13 +1,14 @@
+use crossbeam::utils::{Backoff, CachePadded};
+// TODO docs
 use std::cell::UnsafeCell;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
-use crossbeam::utils::{Backoff, CachePadded};
 
 pub struct SpinLockGuard<'spin_lock, T> {
-    spin_lock: &'spin_lock SpinLock<T>
+    spin_lock: &'spin_lock SpinLock<T>,
 }
 
 impl<'spin_lock, T> SpinLockGuard<'spin_lock, T> {
@@ -75,7 +76,6 @@ impl<T> SpinLock<T> {
     }
 
     #[inline(always)]
-    #[cfg(not(debug_assertions))]
     pub fn lock(&self) -> SpinLockGuard<T> {
         let backoff = Backoff::new();
         loop {
@@ -84,34 +84,16 @@ impl<T> SpinLock<T> {
                 return guard;
             }
             backoff.spin();
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(debug_assertions)]
-    pub fn lock(&self) -> SpinLockGuard<T> {
-        let backoff = Backoff::new();
-        let start = std::time::Instant::now();
-        let mut was_println = false;
-        loop {
-            if let Some(guard) = self.try_lock() {
-                atomic::fence(Acquire);
-                return guard;
-            }
-            backoff.spin();
-            if backoff.is_completed() && !was_println {
-                let elapsed = start.elapsed();
-                if elapsed > std::time::Duration::from_nanos(200) {
-                    was_println = true;
-                    println!("SpinLock is locked for too long. Use Mutex instead.");
-                }
-            }
         }
     }
 
     #[inline(always)]
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        if self.is_locked.compare_exchange_weak(false, true, Relaxed, Relaxed).is_ok() {
+        if self
+            .is_locked
+            .compare_exchange_weak(false, true, Relaxed, Relaxed)
+            .is_ok()
+        {
             Some(SpinLockGuard::new(self))
         } else {
             None

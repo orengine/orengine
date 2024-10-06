@@ -1,3 +1,4 @@
+use crate::runtime::task::task_data::TaskData;
 use crate::runtime::Task;
 use ahash::AHashMap;
 use std::cell::UnsafeCell;
@@ -50,8 +51,13 @@ impl TaskPool {
     }
 
     /// Returns a [`Task`] with the given future.
+    ///
+    /// # Panics
+    ///
+    /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, is_local: bool) -> Task {
+    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, is_local: usize) -> Task {
+        assert!(is_local < 2, "is_local must be 0 or 1");
         let size = size_of::<F>();
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
@@ -61,18 +67,16 @@ impl TaskPool {
                 future_ptr.write(future);
             }
             Task {
-                future_ptr: future_ptr as *mut _,
+                data: TaskData::new(future_ptr as *mut _, is_local),
                 #[cfg(debug_assertions)]
                 executor_id: crate::local_executor().id(),
-                is_local,
             }
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
             Task {
-                future_ptr: future_ptr as *mut _,
+                data: TaskData::new(future_ptr as *mut _, is_local),
                 #[cfg(debug_assertions)]
                 executor_id: crate::local_executor().id(),
-                is_local,
             }
         }
     }
