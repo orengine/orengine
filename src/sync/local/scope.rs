@@ -214,7 +214,7 @@ where
 mod tests {
     use super::*;
     use crate::local::Local;
-    use crate::{local_yield_now, sleep};
+    use crate::{sleep, yield_now};
     use std::ops::Deref;
     use std::time::Duration;
 
@@ -226,7 +226,7 @@ mod tests {
             scope.exec(async {
                 assert_eq!(*local_a.deref(), 0);
                 *local_a.get_mut() += 1;
-                local_yield_now().await;
+                yield_now().await;
                 assert_eq!(*local_a.deref(), 3);
                 *local_a.get_mut() += 1;
             });
@@ -255,7 +255,7 @@ mod tests {
             scope.spawn(async {
                 assert_eq!(*local_a.deref(), 2);
                 *local_a.get_mut() += 1;
-                local_yield_now().await;
+                yield_now().await;
                 assert_eq!(*local_a.deref(), 3);
                 *local_a.get_mut() += 1;
             });

@@ -213,7 +213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{global_yield_now, sleep};
+    use crate::{sleep, yield_now};
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
     use std::time::Duration;
@@ -226,7 +226,7 @@ mod tests {
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
-                global_yield_now().await;
+                yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });
@@ -255,7 +255,7 @@ mod tests {
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 2);
                 a.fetch_add(1, SeqCst);
-                global_yield_now().await;
+                yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });

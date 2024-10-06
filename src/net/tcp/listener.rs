@@ -146,8 +146,8 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
 
-    use crate::local_yield_now;
     use crate::net::ReusePort;
+    use crate::yield_now;
 
     use super::*;
 
@@ -192,7 +192,7 @@ mod tests {
         }
 
         drop(listener);
-        local_yield_now().await;
+        yield_now().await;
     }
 
     #[orengine_macros::test]

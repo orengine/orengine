@@ -326,6 +326,22 @@ impl Executor {
         self.executor_id
     }
 
+    /// Add a task to the beginning of the local lifo queue.
+    #[inline(always)]
+    pub(crate) fn add_task_at_the_start_of_lifo_local_queue(&mut self, task: Task) {
+        debug_assert!(task.is_local());
+
+        self.local_tasks.push_front(task);
+    }
+
+    /// Add a task to the beginning of the global lifo queue.
+    #[inline(always)]
+    pub(crate) fn add_task_at_the_start_of_lifo_global_queue(&mut self, task: Task) {
+        debug_assert!(!task.is_local());
+
+        self.global_tasks.push_back(task);
+    }
+
     /// Returns a reference to the subscribed state of the executor.
     pub(crate) fn subscribed_state(&self) -> &SubscribedState {
         &self.subscribed_state
@@ -982,7 +998,7 @@ impl Executor {
 mod tests {
     use crate::local::Local;
     use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
-    use crate::yield_now::local_yield_now;
+    use crate::yield_now::yield_now;
     use std::ops::Deref;
 
     use super::*;
@@ -1000,7 +1016,7 @@ mod tests {
         executor.spawn_local(insert(20, arr.clone()));
         executor.spawn_local(insert(30, arr.clone()));
 
-        local_yield_now().await;
+        yield_now().await;
 
         assert_eq!(&vec![10, 30, 20], arr.deref()); // 30, 20 because of LIFO
 

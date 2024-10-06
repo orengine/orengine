@@ -273,8 +273,8 @@ unsafe impl Sync for LocalWaitGroup {}
 mod tests {
     use super::*;
     use crate::local::Local;
-    use crate::local_yield_now;
     use crate::runtime::local_executor;
+    use crate::yield_now;
     use std::rc::Rc;
 
     #[orengine_macros::test]
@@ -294,7 +294,7 @@ mod tests {
             });
         }
 
-        local_yield_now().await;
+        yield_now().await;
 
         *check_value.get_mut() = true;
         wait_group.done();
@@ -310,7 +310,7 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
-                local_yield_now().await;
+                yield_now().await;
                 *check_value.get_mut() -= 1;
                 wait_group.done();
             });

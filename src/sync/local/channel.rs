@@ -1,4 +1,4 @@
-use crate::runtime::{Task, local_executor};
+use crate::runtime::{local_executor, Task};
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -761,10 +761,10 @@ unsafe impl<T> Sync for LocalChannel<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local_yield_now;
     use crate::sync::local_scope;
-    use crate::utils::SpinLock;
     use crate::utils::droppable_element::DroppableElement;
+    use crate::utils::SpinLock;
+    use crate::yield_now;
     use std::sync::Arc;
 
     #[orengine_macros::test]
@@ -776,7 +776,7 @@ mod tests {
             scope.spawn(async move {
                 ch_ref.send(1).await.expect("closed");
 
-                local_yield_now().await;
+                yield_now().await;
 
                 ch_ref.send(2).await.expect("closed");
                 ch_ref.close();
@@ -804,7 +804,7 @@ mod tests {
             scope.spawn(async move {
                 ch_ref.send(1).await.expect("closed");
 
-                local_yield_now().await;
+                yield_now().await;
 
                 for i in 2..100 {
                     ch_ref.send(i).await.expect("closed");
@@ -843,7 +843,7 @@ mod tests {
                     ch_ref.send(i).await.expect("closed");
                 }
 
-                local_yield_now().await;
+                yield_now().await;
 
                 ch_ref.close();
             });
@@ -880,7 +880,7 @@ mod tests {
                 let _ = ch.send(i).await.expect("closed");
             }
 
-            local_yield_now().await;
+            yield_now().await;
 
             let _ = ch.send(N).await.expect("closed");
         })
@@ -899,7 +899,7 @@ mod tests {
                     assert_eq!(res, i);
                 }
 
-                local_yield_now().await;
+                yield_now().await;
 
                 let res = ch_ref.recv().await.expect("closed");
                 assert_eq!(res, N);

@@ -205,7 +205,7 @@ mod tests {
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
-    use crate::{local_yield_now, Executor};
+    use crate::{yield_now, Executor};
 
     use super::*;
 
@@ -288,7 +288,7 @@ mod tests {
                 }
 
                 drop(server);
-                local_yield_now().await;
+                yield_now().await;
             });
         });
 
