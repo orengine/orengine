@@ -526,7 +526,7 @@ mod tests {
 
         for i in 1..=30 {
             let mutex = mutex.clone();
-            local_executor().exec_future(async move {
+            local_executor().exec_local_future(async move {
                 let value = mutex.read().await;
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
@@ -541,7 +541,7 @@ mod tests {
             let read_wg = read_wg.clone();
             wg.add(1);
             let mutex = mutex.clone();
-            local_executor().exec_future(async move {
+            local_executor().exec_local_future(async move {
                 assert_eq!(mutex.get_inner().number_of_readers, 30);
                 let mut value = mutex.write().await;
                 {
@@ -549,7 +549,7 @@ mod tests {
                     let mutex = mutex.clone();
                     read_wg.add(1);
 
-                    local_executor().exec_future(async move {
+                    local_executor().exec_local_future(async move {
                         assert_eq!(mutex.get_inner().number_of_readers, -1);
                         let value = mutex.read().await;
                         assert_ne!(*value, 0);
@@ -585,7 +585,7 @@ mod tests {
 
         for i in 1..=100 {
             let mutex = mutex.clone();
-            local_executor().exec_future(async move {
+            local_executor().exec_local_future(async move {
                 let value = mutex.try_read().expect("try_read failed");
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
@@ -598,7 +598,7 @@ mod tests {
             let read_wg = read_wg.clone();
             wg.add(1);
             let mutex = mutex.clone();
-            local_executor().exec_future(async move {
+            local_executor().exec_local_future(async move {
                 assert_eq!(mutex.get_inner().number_of_readers, 100);
                 assert!(mutex.try_write().is_none());
                 sleep(2 * SLEEP_DURATION).await;
@@ -607,7 +607,7 @@ mod tests {
                 {
                     let mutex = mutex.clone();
 
-                    local_executor().exec_future(async move {
+                    local_executor().exec_local_future(async move {
                         assert_eq!(mutex.get_inner().number_of_readers, -1);
                         assert!(mutex.try_read().is_none());
                         sleep(SLEEP_DURATION * 2).await;

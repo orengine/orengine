@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Formatter};
 use std::mem;
 
-use crate::io::sys::{AsRawFd, RawFd, FromRawFd, IntoRawFd, AsFd, BorrowedFd, OwnedFd};
-use crate::io::{AsyncClose, AsyncPollFd, AsyncShutdown, AsyncRecv, AsyncPeek, AsyncSend};
+use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::{AsyncClose, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncShutdown};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 
@@ -134,7 +134,7 @@ impl Debug for UdpConnectedSocket {
 impl Drop for UdpConnectedSocket {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future
                 .await
                 .expect("Failed to close UDP connected socket");
@@ -144,13 +144,13 @@ impl Drop for UdpConnectedSocket {
 
 #[cfg(test)]
 mod tests {
+    use crate::io::{AsyncBind, AsyncConnectDatagram};
+    use crate::net::udp::UdpSocket;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
-    use std::{io, thread};
     use std::time::Duration;
-    use crate::io::{AsyncBind, AsyncConnectDatagram};
-    use crate::net::udp::UdpSocket;
+    use std::{io, thread};
 
     use super::*;
 

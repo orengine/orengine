@@ -66,17 +66,8 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        #[cfg(debug_assertions)]
-        {
-            let mut global_task = crate::runtime::Task::from_future(handle);
-            global_task.is_local = false;
-            local_executor().exec_task(global_task);
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            local_executor().exec_future(handle);
-        }
+        let global_task = crate::runtime::Task::from_future(handle, false);
+        local_executor().exec_task(global_task);
     }
 
     /// Spawns a new global task within a scope.

@@ -68,7 +68,7 @@ impl<'scope> LocalScope<'scope> {
             no_send_marker: std::marker::PhantomData,
         };
 
-        local_executor().exec_future(handle);
+        local_executor().exec_local_future(handle);
     }
 
     /// Spawns a new local task within a scope.

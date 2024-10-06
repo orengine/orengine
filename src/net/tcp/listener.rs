@@ -134,7 +134,7 @@ impl Debug for TcpListener {
 impl Drop for TcpListener {
     fn drop(&mut self) {
         let close_future = self.close();
-        local_executor().exec_future(async {
+        local_executor().exec_local_future(async {
             close_future.await.expect("Failed to close tcp listener");
         });
     }

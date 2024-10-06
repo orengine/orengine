@@ -3,22 +3,22 @@ use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{IoWorker, get_local_worker_ref, init_local_worker, uninit_local_worker};
+use crate::io::worker::{get_local_worker_ref, init_local_worker, uninit_local_worker, IoWorker};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
-use crate::runtime::global_state::{SubscribedState, register_local_executor};
+use crate::runtime::global_state::{register_local_executor, SubscribedState};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
-use crate::runtime::{SharedExecutorTaskList, get_core_id_for_executor};
+use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
@@ -490,19 +490,6 @@ impl Executor {
             }
             Poll::Pending => {
                 let old_call = mem::take(&mut self.current_call);
-                #[cfg(debug_assertions)]
-                {
-                    if !matches!(old_call, Call::None) && task.is_local {
-                        if !matches!(old_call, Call::PushFnToThreadPool(_)) {
-                            panic!(
-                                "You cannot call a local task in Call! It is useless and dangerous."
-                            );
-                        } else {
-                            // all is ok, this task can be local
-                        }
-                    }
-                }
-
                 match old_call {
                     Call::None => {}
                     Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
@@ -543,18 +530,33 @@ impl Executor {
         }
     }
 
-    /// Creates a [`task`](Task) from a provided [`future`](Future)
+    /// Creates a `local` [`task`](Task) from a provided [`future`](Future)
     /// and executes it in the current [`executor`](Executor).
     ///
     /// # Attention
     ///
     /// Execute [`Future`] only by this method!
     #[inline(always)]
-    pub fn exec_future<F>(&mut self, future: F)
+    pub fn exec_local_future<F>(&mut self, future: F)
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future);
+        let task = Task::from_future(future, true);
+        self.exec_task(task);
+    }
+
+    /// Creates a `global` [`task`](Task) from a provided [`future`](Future)
+    /// and executes it in the current [`executor`](Executor).
+    ///
+    /// # Attention
+    ///
+    /// Execute [`Future`] only by this method!
+    #[inline(always)]
+    pub fn exec_global_future<F>(&mut self, future: F)
+    where
+        F: Future<Output = ()> + Send,
+    {
+        let task = Task::from_future(future, false);
         self.exec_task(task);
     }
 
@@ -572,7 +574,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future);
+        let task = Task::from_future(future, true);
         self.spawn_local_task(task);
     }
 
@@ -604,7 +606,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future);
+        let task = Task::from_future(future, false);
         self.spawn_global_task(task);
     }
 
@@ -618,12 +620,7 @@ impl Executor {
     ///
     /// Read it in [`Executor`].
     #[inline(always)]
-    #[allow(unused_mut)] // because #[cfg(debug_assertions)]
-    pub fn spawn_global_task(&mut self, mut task: Task) {
-        #[cfg(debug_assertions)]
-        {
-            task.is_local = false;
-        }
+    pub fn spawn_global_task(&mut self, task: Task) {
         match self.config.is_work_sharing_enabled() {
             true => {
                 if self.global_tasks.len() <= self.config.work_sharing_level {
@@ -1004,8 +1001,8 @@ mod tests {
         let arr = Local::new(Vec::new());
 
         insert(10, arr.clone()).await;
-        local_executor().exec_future(insert(20, arr.clone()));
-        local_executor().exec_future(insert(30, arr.clone()));
+        local_executor().exec_local_future(insert(20, arr.clone()));
+        local_executor().exec_local_future(insert(30, arr.clone()));
 
         assert_eq!(&vec![10, 20, 30], arr.deref()); // 20, 30 because we don't use the list here
     }

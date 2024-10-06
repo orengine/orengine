@@ -1,21 +1,20 @@
-use std::future::Future;
 use crate::runtime::task_pool;
+use std::future::Future;
 
 /// `Task` is a wrapper of a future.
 #[derive(Copy, Clone)]
 pub struct Task {
-    pub(crate) future_ptr: *mut dyn Future<Output=()>,
+    pub(crate) future_ptr: *mut dyn Future<Output = ()>,
     #[cfg(debug_assertions)]
     pub(crate) executor_id: usize,
-    #[cfg(debug_assertions)]
-    pub(crate) is_local: bool
+    pub(crate) is_local: bool,
 }
 
 impl Task {
     /// Returns a [`Task`] with the given future.
     #[inline(always)]
-    pub fn from_future<F: Future<Output=()>>(future: F) -> Self {
-        task_pool().acquire(future)
+    pub fn from_future<F: Future<Output = ()>>(future: F, is_local: bool) -> Self {
+        task_pool().acquire(future, is_local)
     }
 
     /// Returns the future that are wrapped by this [`Task`].
@@ -26,8 +25,13 @@ impl Task {
     ///
     /// Deref it only if you know what you are doing.
     #[inline(always)]
-    pub fn future_ptr(self) -> *mut dyn Future<Output=()> {
+    pub fn future_ptr(self) -> *mut dyn Future<Output = ()> {
         self.future_ptr
+    }
+
+    #[inline(always)]
+    pub fn is_local(self) -> bool {
+        self.is_local
     }
 
     /// Drops the wrapped future.
@@ -62,7 +66,7 @@ macro_rules! panic_if_local_in_future {
         #[cfg(debug_assertions)]
         {
             let task = unsafe { &mut *($cx.waker().data() as *mut crate::runtime::Task) };
-            if task.is_local {
+            if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \
                     Use global task instead or use local structures if it is possible.",

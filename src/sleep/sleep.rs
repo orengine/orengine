@@ -78,10 +78,10 @@ mod tests {
 
         let arr = Local::new(Vec::new());
 
-        local_executor().exec_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        local_executor().exec_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        local_executor().exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.deref());
