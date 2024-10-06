@@ -1,12 +1,14 @@
 #![allow(internal_features)]
 #![feature(core_intrinsics)]
 
+mod tools;
+
+use orengine::Executor;
+use orengine::runtime::{local_executor, stop_all_executors};
+use orengine::sync::{LocalChannel, local_scope};
+use smol::future;
 use std::intrinsics::black_box;
 use std::thread;
-use smol::future;
-use orengine::Executor;
-use orengine::runtime::{stop_all_executors, local_executor};
-use orengine::sync::{local_scope, LocalChannel};
 use tools::bench;
 
 fn bench_yield_task() {
@@ -18,33 +20,43 @@ fn bench_yield_task() {
                 let a = async_std::task::spawn(async {
                     async_std::task::yield_now().await;
                     black_box(0)
-                }).await;
+                })
+                .await;
                 black_box(a);
-            }).await;
+            })
+            .await;
         });
     });
 
     bench("tokio small yield_task", |mut b| {
-        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
-            b.iter_async(|| async {
-                let a = tokio::spawn(async {
-                    tokio::task::yield_now().await;
-                    black_box(0)
-                }).await.unwrap();
-                black_box(a);
-            }).await;
-        });
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                b.iter_async(|| async {
+                    let a = tokio::spawn(async {
+                        tokio::task::yield_now().await;
+                        black_box(0)
+                    })
+                    .await
+                    .unwrap();
+                    black_box(a);
+                })
+                .await;
+            });
     });
 
     bench("smol small yield_task", |mut b| {
         future::block_on(smol::LocalExecutor::new().run(async move {
             b.iter_async(|| async {
-                let a= smol::spawn(async  {
+                let a = smol::spawn(async {
                     future::yield_now().await;
                     black_box(0)
-                }).await;
+                })
+                .await;
                 black_box(a);
-            }).await;
+            })
+            .await;
         }));
     });
 
@@ -54,13 +66,15 @@ fn bench_yield_task() {
                 let ret_ch = LocalChannel::bounded(0);
                 local_scope(|scope| async {
                     scope.spawn(async {
-                        orengine::yield_now().await;
+                        orengine::local_yield_now().await;
                         let _ = ret_ch.send(0).await;
                     });
 
                     let _ = black_box(ret_ch.recv().await);
-                }).await;
-            }).await;
+                })
+                .await;
+            })
+            .await;
             stop_all_executors();
         });
         local_executor().run();
@@ -71,7 +85,9 @@ fn bench_yield_task() {
             let a = thread::spawn(|| {
                 thread::yield_now();
                 black_box(1)
-            }).join().unwrap();
+            })
+            .join()
+            .unwrap();
             black_box(a);
         });
     });
@@ -83,35 +99,45 @@ fn bench_yield_task() {
                     let a = black_box([0u8; LARGE_SIZE]);
                     async_std::task::yield_now().await;
                     black_box(a.len())
-                }).await;
+                })
+                .await;
                 black_box(a);
-            }).await;
+            })
+            .await;
         });
     });
 
     bench("tokio large yield_task", |mut b| {
-        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
-            b.iter_async(|| async {
-                let a = tokio::spawn(async {
-                    let a = black_box([0u8; LARGE_SIZE]);
-                    tokio::task::yield_now().await;
-                    black_box(a.len())
-                }).await.unwrap();
-                black_box(a);
-            }).await;
-        });
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                b.iter_async(|| async {
+                    let a = tokio::spawn(async {
+                        let a = black_box([0u8; LARGE_SIZE]);
+                        tokio::task::yield_now().await;
+                        black_box(a.len())
+                    })
+                    .await
+                    .unwrap();
+                    black_box(a);
+                })
+                .await;
+            });
     });
 
     bench("smol large yield_task", |mut b| {
         future::block_on(smol::LocalExecutor::new().run(async move {
             b.iter_async(|| async {
-                let a= smol::spawn(async {
+                let a = smol::spawn(async {
                     let a = black_box([0u8; LARGE_SIZE]);
                     future::yield_now().await;
                     black_box(a.len())
-                }).await;
+                })
+                .await;
                 black_box(a);
-            }).await;
+            })
+            .await;
         }));
     });
 
@@ -122,13 +148,15 @@ fn bench_yield_task() {
                 local_scope(|scope| async {
                     scope.spawn(async {
                         let a = black_box([0u8; LARGE_SIZE]);
-                        orengine::yield_now().await;
+                        orengine::local_yield_now().await;
                         let _ = ret_ch.send(black_box(a.len())).await;
                     });
 
                     let _ = black_box(ret_ch.recv().await);
-                }).await;
-            }).await;
+                })
+                .await;
+            })
+            .await;
             stop_all_executors();
         });
         local_executor().run();
@@ -140,7 +168,9 @@ fn bench_yield_task() {
                 let a = black_box([0u8; LARGE_SIZE]);
                 thread::yield_now();
                 black_box(a.len())
-            }).join().unwrap();
+            })
+            .join()
+            .unwrap();
             black_box(a);
         });
     });
@@ -163,15 +193,19 @@ fn bench_mutex() {
 
     fn bench_tokio() {
         bench("tokio mutex", |mut b| {
-            tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async move {
-                b.iter_async(|| async {
-                    let mutex = tokio::sync::Mutex::new(0);
-                    for _ in 0..N {
-                        let mut guard = mutex.lock().await;
-                        *guard += 1;
-                    }
-                }).await;
-            });
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    b.iter_async(|| async {
+                        let mutex = tokio::sync::Mutex::new(0);
+                        for _ in 0..N {
+                            let mut guard = mutex.lock().await;
+                            *guard += 1;
+                        }
+                    })
+                    .await;
+                });
         });
     }
 
@@ -184,7 +218,8 @@ fn bench_mutex() {
                         let mut guard = mutex.lock().await;
                         *guard += 1;
                     }
-                }).await;
+                })
+                .await;
             }));
         });
     }
@@ -198,7 +233,8 @@ fn bench_mutex() {
                         let mut guard = mutex.lock().await;
                         *guard += 1;
                     }
-                }).await;
+                })
+                .await;
                 stop_all_executors();
             });
             local_executor().run();
@@ -212,7 +248,8 @@ fn bench_mutex() {
                         let mut guard = mutex.lock().await;
                         *guard += 1;
                     }
-                }).await;
+                })
+                .await;
                 stop_all_executors();
             });
             local_executor().run();
@@ -226,6 +263,6 @@ fn bench_mutex() {
 }
 
 fn main() {
-    //bench_yield_task();
+    bench_yield_task();
     bench_mutex();
 }
