@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `recv` io operation.
@@ -255,7 +255,9 @@ pub trait AsyncRecv: AsRawFd {
         let mut received = 0;
 
         while received < buf.len() {
-            received += self.recv_with_deadline(&mut buf[received..], deadline).await?;
+            received += self
+                .recv_with_deadline(&mut buf[received..], deadline)
+                .await?;
         }
         Ok(())
     }
@@ -286,6 +288,7 @@ pub trait AsyncRecv: AsRawFd {
     /// ```
     #[inline(always)]
     async fn recv_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
-        self.recv_exact_with_deadline(buf, Instant::now() + timeout).await
+        self.recv_exact_with_deadline(buf, Instant::now() + timeout)
+            .await
     }
 }

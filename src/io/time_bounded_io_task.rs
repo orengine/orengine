@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 pub(crate) struct TimeBoundedIoTask {
     deadline: Instant,
     /// User data is used to cancel the task if needed.
-    user_data: u64
+    user_data: u64,
 }
 
 impl TimeBoundedIoTask {
@@ -14,7 +14,7 @@ impl TimeBoundedIoTask {
     pub(crate) fn new(deadline: Instant, user_data: u64) -> Self {
         Self {
             deadline,
-            user_data
+            user_data,
         }
     }
 

@@ -10,8 +10,8 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsRawFd, RawFd, MessageRecvHeader};
+use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
@@ -49,7 +49,8 @@ impl<'fut> Future for RecvFrom<'fut> {
         poll_for_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.msg_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -70,7 +71,12 @@ pub struct RecvFromWithDeadline<'fut> {
 
 impl<'fut> RecvFromWithDeadline<'fut> {
     /// Creates a new `recv_from` io operation with deadline.
-    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr, deadline: Instant) -> Self {
+    pub fn new(
+        fd: RawFd,
+        buf: &'fut mut [u8],
+        addr: &'fut mut SockAddr,
+        deadline: Instant,
+    ) -> Self {
         Self {
             fd,
             msg_header: MessageRecvHeader::new(),
@@ -93,7 +99,8 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
         poll_for_time_bounded_io_request!((
             worker.recv_from(
                 this.fd,
-                this.msg_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                this.msg_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -148,10 +155,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_from(
-        &mut self,
-        buf: &mut [u8]
-    ) -> Result<(usize, SocketAddr)> {
+    async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
 
@@ -188,7 +192,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     async fn recv_from_with_deadline(
         &mut self,
         buf: &mut [u8],
-        deadline: Instant
+        deadline: Instant,
     ) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
@@ -226,8 +230,9 @@ pub trait AsyncRecvFrom: AsRawFd {
     async fn recv_from_with_timeout(
         &mut self,
         buf: &mut [u8],
-        timeout: Duration
+        timeout: Duration,
     ) -> Result<(usize, SocketAddr)> {
-        self.recv_from_with_deadline(buf, Instant::now() + timeout).await
+        self.recv_from_with_deadline(buf, Instant::now() + timeout)
+            .await
     }
 }

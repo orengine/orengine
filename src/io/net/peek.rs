@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `peek` io operation.
@@ -254,7 +254,9 @@ pub trait AsyncPeek: AsRawFd {
         let mut peeked = 0;
 
         while peeked < buf.len() {
-            peeked += self.peek_with_deadline(&mut buf[peeked..], deadline).await?;
+            peeked += self
+                .peek_with_deadline(&mut buf[peeked..], deadline)
+                .await?;
         }
         Ok(())
     }
@@ -285,6 +287,7 @@ pub trait AsyncPeek: AsRawFd {
     /// ```
     #[inline(always)]
     async fn peek_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
-        self.peek_exact_with_deadline(buf, Instant::now() + timeout).await
+        self.peek_exact_with_deadline(buf, Instant::now() + timeout)
+            .await
     }
 }

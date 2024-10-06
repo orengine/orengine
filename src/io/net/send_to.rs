@@ -10,8 +10,8 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
-use crate::io::sys::{AsRawFd, RawFd, MessageSendHeader};
+use crate::io::sys::{AsRawFd, MessageSendHeader, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send_to` io operation.
@@ -47,7 +47,8 @@ impl<'fut> Future for SendTo<'fut> {
         poll_for_io_request!((
             worker.send_to(
                 this.fd,
-                this.message_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                this.message_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -91,7 +92,8 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
         poll_for_time_bounded_io_request!((
             worker.send_to(
                 this.fd,
-                this.message_header.get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                this.message_header
+                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
                 this.io_request_data.as_mut().unwrap_unchecked()
             ),
             ret
@@ -108,7 +110,10 @@ fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAdd
             None => {}
         }
 
-        return Err(io::Error::new(ErrorKind::InvalidInput, "no addresses to send data to"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "no addresses to send data to",
+        ));
     }
 }
 
@@ -154,11 +159,7 @@ pub trait AsyncSendTo: AsRawFd {
     /// ```
     #[inline(always)]
     async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
-        SendTo::new(
-            self.as_raw_fd(),
-            buf,
-            &sock_addr_from_to_socket_addr(addr)?
-        ).await
+        SendTo::new(self.as_raw_fd(), buf, &sock_addr_from_to_socket_addr(addr)?).await
     }
 
     /// Asynchronously sends data to the specified address with a deadline. Only the first resolved
@@ -185,13 +186,19 @@ pub trait AsyncSendTo: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn send_to_with_deadline<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, deadline: Instant) -> Result<usize> {
+    async fn send_to_with_deadline<A: ToSocketAddrs>(
+        &mut self,
+        buf: &[u8],
+        addr: A,
+        deadline: Instant,
+    ) -> Result<usize> {
         SendToWithDeadline::new(
             self.as_raw_fd(),
             buf,
             &sock_addr_from_to_socket_addr(addr)?,
-            deadline
-        ).await
+            deadline,
+        )
+        .await
     }
 
     /// Asynchronously sends data to the specified address with a timeout.
@@ -218,13 +225,19 @@ pub trait AsyncSendTo: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn send_to_with_timeout<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A, timeout: Duration) -> Result<usize> {
+    async fn send_to_with_timeout<A: ToSocketAddrs>(
+        &mut self,
+        buf: &[u8],
+        addr: A,
+        timeout: Duration,
+    ) -> Result<usize> {
         SendToWithDeadline::new(
             self.as_raw_fd(),
             buf,
             &sock_addr_from_to_socket_addr(addr)?,
-            Instant::now() + timeout
-        ).await
+            Instant::now() + timeout,
+        )
+        .await
     }
 
     /// Asynchronously sends all the data in the buffer to the specified address. The method
@@ -250,15 +263,11 @@ pub trait AsyncSendTo: AsRawFd {
     async fn send_all_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
         let mut sent = 0;
         let addr = sock_addr_from_to_socket_addr(addr)?;
-        
+
         while sent < buf.len() {
-            sent += SendTo::new(
-                self.as_raw_fd(),
-                buf,
-                &addr
-            ).await?;
+            sent += SendTo::new(self.as_raw_fd(), buf, &addr).await?;
         }
-        
+
         Ok(sent)
     }
 
@@ -288,22 +297,18 @@ pub trait AsyncSendTo: AsRawFd {
     /// ```
     #[inline(always)]
     async fn send_all_to_with_deadline<A: ToSocketAddrs>(
-        &mut self, buf: &[u8],
+        &mut self,
+        buf: &[u8],
         addr: A,
-        deadline: Instant
+        deadline: Instant,
     ) -> Result<usize> {
         let mut sent = 0;
         let addr = sock_addr_from_to_socket_addr(addr)?;
-        
+
         while sent < buf.len() {
-            sent += SendToWithDeadline::new(
-                self.as_raw_fd(),
-                buf,
-                &addr,
-                deadline
-            ).await?;
+            sent += SendToWithDeadline::new(self.as_raw_fd(), buf, &addr, deadline).await?;
         }
-        
+
         Ok(sent)
     }
 
@@ -336,8 +341,9 @@ pub trait AsyncSendTo: AsRawFd {
         &mut self,
         buf: &[u8],
         addr: A,
-        timeout: Duration
+        timeout: Duration,
     ) -> Result<usize> {
-        self.send_all_to_with_deadline(buf, addr, Instant::now() + timeout).await
+        self.send_all_to_with_deadline(buf, addr, Instant::now() + timeout)
+            .await
     }
 }

@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
-use crate::io::io_sleeping_task::TimeBoundedIoTask;
 use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send` io operation.
@@ -260,6 +260,7 @@ pub trait AsyncSend: AsRawFd {
     /// ```
     #[inline(always)]
     async fn send_all_with_timeout(&mut self, buf: &[u8], timeout: Duration) -> Result<()> {
-        self.send_all_with_deadline(buf, Instant::now() + timeout).await
+        self.send_all_with_deadline(buf, Instant::now() + timeout)
+            .await
     }
 }
