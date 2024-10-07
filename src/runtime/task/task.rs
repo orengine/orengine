@@ -18,7 +18,6 @@ impl Task {
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
     pub fn from_future<F: Future<Output = ()>>(future: F, is_local: usize) -> Self {
-        assert!(is_local < 2, "is_local must be 0 or 1");
         task_pool().acquire(future, is_local)
     }
 

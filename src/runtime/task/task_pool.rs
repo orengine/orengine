@@ -57,7 +57,7 @@ impl TaskPool {
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
     pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, is_local: usize) -> Task {
-        assert!(is_local < 2, "is_local must be 0 or 1");
+        debug_assert!(is_local < 2, "is_local must be 0 or 1");
         let size = size_of::<F>();
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());

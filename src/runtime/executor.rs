@@ -488,14 +488,19 @@ impl Executor {
         self.exec_task_now(task);
     }
 
-    // TODO real docs
     /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
+    ///
+    /// # The difference between `exec_task_now` and [`exec_task`](Executor::exec_task)
+    ///
+    /// If the stack of calls is too big, [`exec_task`](Executor::exec_task)
+    /// spawns a new task and returns.
+    /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task any way.
     ///
     /// # Attention
     ///
     /// Execute [`tasks`](Task) only by this method!
     #[inline(always)]
-    pub fn exec_task_now(&mut self, mut task: Task) {
+    pub(crate) fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
 
         let task_ref = &mut task;

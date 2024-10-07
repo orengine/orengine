@@ -114,7 +114,7 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
 ///
 /// # The differences between `NaiveMutex` and [`Mutex`](crate::sync::Mutex)
 ///
-/// The [`NaiveMutex`](crate::sync::NaiveMutex) yields the current task if it is unable
+/// The [`NaiveMutex`](NaiveMutex) yields the current task if it is unable
 /// to acquire the lock.
 ///
 /// The `Mutex` uses a queue of tasks waiting for the lock to become available.
@@ -124,7 +124,7 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
 /// is acquired for a __short__ time try to share the `Mutex`.
 ///
 /// If the lock is mostly acquired the first time, it is better to
-/// use [`NaiveMutex`](crate::sync::NaiveMutex), as it spends less time on successful operations.
+/// use [`NaiveMutex`](NaiveMutex), as it spends less time on successful operations.
 ///
 /// # Example
 ///

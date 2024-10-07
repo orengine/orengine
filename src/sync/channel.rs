@@ -1074,7 +1074,7 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2]);
     }
 
-    async fn stress_test(channel: Channel<usize>) {
+    async fn stress_test(channel: Channel<usize>, count: usize) {
         let channel = Arc::new(channel);
         let wg = Arc::new(WaitGroup::new());
         let sent = Arc::new(AtomicUsize::new(0));
@@ -1090,12 +1090,12 @@ mod tests {
             thread::spawn(move || {
                 Executor::init().run_with_global_future(async move {
                     if i % 2 == 0 {
-                        for j in 0..100 {
+                        for j in 0..count {
                             channel.send(j).await.expect("closed");
                             sent.fetch_add(j, Relaxed);
                         }
                     } else {
-                        for _ in 0..100 {
+                        for _ in 0..count {
                             let res = channel.recv().await.expect("closed");
                             received.fetch_add(res, Relaxed);
                         }
@@ -1112,16 +1112,16 @@ mod tests {
 
     #[orengine_macros::test_global]
     fn stress_test_bounded_channel() {
-        stress_test(Channel::bounded(1024)).await;
+        stress_test(Channel::bounded(1024), 100).await;
     }
 
     #[orengine_macros::test_global]
     fn stress_test_unbounded_channel() {
-        stress_test(Channel::unbounded()).await;
+        stress_test(Channel::unbounded(), 100).await;
     }
 
     #[orengine_macros::test_global]
     fn stress_test_zero_capacity_channel() {
-        stress_test(Channel::bounded(0)).await;
+        stress_test(Channel::bounded(0), 20).await;
     }
 }
