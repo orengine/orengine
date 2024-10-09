@@ -102,6 +102,7 @@ macro_rules! new_local_pool {
 
         impl $guard_name {
             /// Returns the value from the guard, consuming the guard.
+            #[allow(dead_code)]
             #[inline(always)]
             $vis fn into_inner(mut self) -> $value_type {
                 let value = unsafe { std::mem::ManuallyDrop::take(&mut self.value) };
@@ -196,6 +197,7 @@ macro_rules! new_local_pool {
             /// When the guard is dropped the value is released back to the pool.
             ///
             /// If you want to get value from guard you can use the guard's method `into_inner`.
+            #[allow(dead_code)]
             #[inline(always)]
             $vis fn acquire() -> $guard_name {
                 $pool_thread_static_name.with(|pool_cell| -> $guard_name {

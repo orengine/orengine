@@ -1,6 +1,8 @@
 use crate::runtime::local_executor;
 use crate::sync::LocalWaitGroup;
+use crate::yield_now;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Poll;
 
@@ -15,9 +17,8 @@ use std::task::Poll;
 /// See [`local_scope`] for details.
 pub struct LocalScope<'scope> {
     wg: LocalWaitGroup,
-    _scope: std::marker::PhantomData<&'scope ()>,
-    // impl !Send
-    no_send_marker: std::marker::PhantomData<*const ()>,
+    _scope: PhantomData<&'scope ()>,
+    no_send_marker: PhantomData<*mut ()>,
 }
 
 impl<'scope> LocalScope<'scope> {
@@ -65,10 +66,11 @@ impl<'scope> LocalScope<'scope> {
         let handle = LocalScopedHandle {
             scope: self,
             fut: future,
-            no_send_marker: std::marker::PhantomData,
+            no_send_marker: PhantomData,
         };
 
-        local_executor().exec_local_future(handle);
+        let local_task = crate::runtime::Task::from_future(handle, 1);
+        local_executor().exec_task(local_task);
     }
 
     /// Spawns a new local task within a scope.
@@ -113,7 +115,7 @@ impl<'scope> LocalScope<'scope> {
         let handle = LocalScopedHandle {
             scope: self,
             fut: future,
-            no_send_marker: std::marker::PhantomData,
+            no_send_marker: PhantomData,
         };
 
         local_executor().spawn_local(handle);
@@ -126,7 +128,7 @@ pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     scope: &'scope LocalScope<'scope>,
     fut: Fut,
     // impl !Send
-    no_send_marker: std::marker::PhantomData<*const ()>,
+    no_send_marker: PhantomData<*const ()>,
 }
 
 impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
@@ -200,14 +202,16 @@ where
 {
     let scope = LocalScope {
         wg: LocalWaitGroup::new(),
-        _scope: std::marker::PhantomData,
-        no_send_marker: std::marker::PhantomData,
+        _scope: PhantomData,
+        no_send_marker: PhantomData,
     };
     let static_scope = unsafe { std::mem::transmute::<&_, &'static LocalScope<'static>>(&scope) };
 
     f(static_scope).await;
 
-    scope.wg.wait().await;
+    let _ = static_scope.wg.wait().await;
+
+    yield_now().await // FIXME: you can't call 2 local_scopes in the same task if you don't yield
 }
 
 #[cfg(test)]
@@ -227,6 +231,29 @@ mod tests {
                 assert_eq!(*local_a.deref(), 0);
                 *local_a.get_mut() += 1;
                 yield_now().await;
+                assert_eq!(*local_a.deref(), 2);
+                *local_a.get_mut() += 1;
+            });
+
+            scope.exec(async {
+                assert_eq!(*local_a.deref(), 1);
+                *local_a.get_mut() += 1;
+                yield_now().await;
+                assert_eq!(*local_a.deref(), 3);
+                *local_a.get_mut() += 1;
+            });
+        })
+        .await;
+
+        assert_eq!(*local_a.deref(), 4);
+
+        let local_a = Local::new(0);
+
+        local_scope(|scope| async {
+            scope.exec(async {
+                assert_eq!(*local_a.deref(), 0);
+                *local_a.get_mut() += 1;
+                yield_now().await;
                 assert_eq!(*local_a.deref(), 3);
                 *local_a.get_mut() += 1;
             });
@@ -234,7 +261,7 @@ mod tests {
             scope.exec(async {
                 assert_eq!(*local_a.deref(), 1);
                 *local_a.get_mut() += 1;
-                sleep(Duration::from_millis(1)).await;
+                yield_now().await;
                 assert_eq!(*local_a.deref(), 4);
                 *local_a.get_mut() += 1;
             });
@@ -274,5 +301,28 @@ mod tests {
         .await;
 
         assert_eq!(*local_a.deref(), 5);
+
+        let local_a = Local::new(0);
+
+        local_scope(|scope| async {
+            scope.spawn(async {
+                assert_eq!(*local_a.deref(), 1);
+                *local_a.get_mut() += 1;
+                yield_now().await;
+                assert_eq!(*local_a.deref(), 2);
+                *local_a.get_mut() += 1;
+            });
+
+            scope.spawn(async {
+                assert_eq!(*local_a.deref(), 0);
+                *local_a.get_mut() += 1;
+                sleep(Duration::from_millis(1)).await;
+                assert_eq!(*local_a.deref(), 3);
+                *local_a.get_mut() += 1;
+            });
+        })
+        .await;
+
+        assert_eq!(*local_a.deref(), 4);
     }
 }

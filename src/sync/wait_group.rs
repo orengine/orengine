@@ -43,7 +43,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
             // Otherwise, I'd have to keep track of how many tasks are in the queue,
             // which means calling out one more atomic operation in each done call.
             //
-            // So I queue the task first, and only then do the check.
+            // So I enqueue the task first, and only then do the check.
             unsafe {
                 local_executor().push_current_task_to_and_remove_it_if_counter_is_zero(
                     &this.wait_group.waited_tasks,
@@ -281,7 +281,7 @@ unsafe impl Send for WaitGroup {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Executor, sleep, stop_executor};
+    use crate::{sleep, stop_executor, Executor};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;

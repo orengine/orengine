@@ -11,10 +11,10 @@ use std::intrinsics::black_box;
 use std::thread;
 use tools::bench;
 
-fn bench_yield_task() {
+fn bench_create_task_and_yield() {
     const LARGE_SIZE: usize = 9000;
 
-    bench("async_std small yield_task", |mut b| {
+    bench("async_std small create_task_and_yield", |mut b| {
         async_std::task::block_on(async move {
             b.iter_async(|| async {
                 let a = async_std::task::spawn(async {
@@ -28,7 +28,7 @@ fn bench_yield_task() {
         });
     });
 
-    bench("tokio small yield_task", |mut b| {
+    bench("tokio small create_task_and_yield", |mut b| {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
@@ -46,7 +46,7 @@ fn bench_yield_task() {
             });
     });
 
-    bench("smol small yield_task", |mut b| {
+    bench("smol small create_task_and_yield", |mut b| {
         future::block_on(smol::LocalExecutor::new().run(async move {
             b.iter_async(|| async {
                 let a = smol::spawn(async {
@@ -60,7 +60,7 @@ fn bench_yield_task() {
         }));
     });
 
-    bench("orengine small yield_task", |mut b| {
+    bench("orengine small create_task_and_yield", |mut b| {
         let cfg = orengine::runtime::Config::default()
             .disable_work_sharing()
             .disable_io_worker()
@@ -84,7 +84,7 @@ fn bench_yield_task() {
         local_executor().run();
     });
 
-    bench("sync small yield_task", |mut b| {
+    bench("sync small create_task_and_yield", |mut b| {
         b.iter(|| {
             let a = thread::spawn(|| {
                 thread::yield_now();
@@ -96,7 +96,7 @@ fn bench_yield_task() {
         });
     });
 
-    bench("async_std large yield_task", |mut b| {
+    bench("async_std large create_task_and_yield", |mut b| {
         async_std::task::block_on(async move {
             b.iter_async(|| async {
                 let a = async_std::task::spawn(async {
@@ -111,7 +111,7 @@ fn bench_yield_task() {
         });
     });
 
-    bench("tokio large yield_task", |mut b| {
+    bench("tokio large create_task_and_yield", |mut b| {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
@@ -130,7 +130,7 @@ fn bench_yield_task() {
             });
     });
 
-    bench("smol large yield_task", |mut b| {
+    bench("smol large create_task_and_yield", |mut b| {
         future::block_on(smol::LocalExecutor::new().run(async move {
             b.iter_async(|| async {
                 let a = smol::spawn(async {
@@ -145,7 +145,7 @@ fn bench_yield_task() {
         }));
     });
 
-    bench("orengine large yield_task", |mut b| {
+    bench("orengine large create_task_and_yield", |mut b| {
         let cfg = orengine::runtime::Config::default()
             .disable_work_sharing()
             .disable_io_worker()
@@ -170,7 +170,7 @@ fn bench_yield_task() {
         local_executor().run();
     });
 
-    bench("sync large yield_task", |mut b| {
+    bench("sync large create_task_and_yield", |mut b| {
         b.iter(|| {
             let a = thread::spawn(|| {
                 let a = black_box([0u8; LARGE_SIZE]);
@@ -180,6 +180,129 @@ fn bench_yield_task() {
             .join()
             .unwrap();
             black_box(a);
+        });
+    });
+}
+
+fn bench_yield_task() {
+    const NUMBER_TASKS: usize = 1;
+    const YIELDS: usize = 100_000;
+    const YIELDS_PER_TASK: usize = YIELDS / NUMBER_TASKS;
+
+    // bench("async_std small yield_task", |mut b| {
+    //     async_std::task::block_on(async move {
+    //         b.iter_async(|| async {
+    //             let (tx, rx) = async_std::channel::bounded(NUMBER_TASKS);
+    //             for _ in 0..NUMBER_TASKS {
+    //                 let tx = tx.clone();
+    //                 async_std::task::spawn(async move {
+    //                     for _ in 0..YIELDS_PER_TASK {
+    //                         async_std::task::yield_now().await;
+    //                     }
+    //
+    //                     tx.send(()).await.unwrap();
+    //                 });
+    //             }
+    //
+    //             for _ in 0..NUMBER_TASKS {
+    //                 rx.recv().await.unwrap();
+    //             }
+    //         })
+    //             .await;
+    //     });
+    // });
+    //
+    // bench("tokio small yield_task", |mut b| {
+    //     tokio::runtime::Builder::new_current_thread()
+    //         .build()
+    //         .unwrap()
+    //         .block_on(async move {
+    //             b.iter_async(|| async {
+    //                 let (tx, mut rx) = tokio::sync::mpsc::channel(NUMBER_TASKS);
+    //                 for _ in 0..NUMBER_TASKS {
+    //                     let tx = tx.clone();
+    //                     tokio::spawn(async move {
+    //                         for _ in 0..YIELDS_PER_TASK {
+    //                             tokio::task::yield_now().await;
+    //                         }
+    //
+    //                         tx.send(()).await.unwrap();
+    //                     });
+    //                 }
+    //
+    //                 for _ in 0..NUMBER_TASKS {
+    //                     rx.recv().await.unwrap();
+    //                 }
+    //             })
+    //                 .await;
+    //         });
+    // });
+    //
+    // bench("smol small yield_task", |mut b| {
+    //     future::block_on(smol::LocalExecutor::new().run(async move {
+    //         b.iter_async(|| async {
+    //             let (tx, rx) = smol::channel::bounded(NUMBER_TASKS);
+    //             for _ in 0..NUMBER_TASKS {
+    //                 let tx = tx.clone();
+    //                 smol::spawn(async move {
+    //                     for _ in 0..YIELDS_PER_TASK {
+    //                         future::yield_now().await;
+    //                     }
+    //
+    //                     tx.send(()).await.unwrap();
+    //                 })
+    //                     .detach();
+    //             }
+    //
+    //             for _ in 0..NUMBER_TASKS {
+    //                 rx.recv().await.unwrap();
+    //             }
+    //         })
+    //             .await;
+    //     }));
+    // });
+
+    bench("orengine small yield_task", |mut b| {
+        let cfg = orengine::runtime::Config::default()
+            .disable_work_sharing()
+            .disable_io_worker()
+            .set_numbers_of_thread_workers(0);
+        Executor::init_with_config(cfg).spawn_local(async move {
+            b.iter_async(|| async {
+                println!("1");
+                local_scope(|scope| async {
+                    for i in 0..NUMBER_TASKS {
+                        println!("2");
+                        scope.exec(async move {
+                            for _ in 0..YIELDS_PER_TASK {
+                                orengine::yield_now().await;
+                            }
+
+                            println!("ready {i}");
+                        });
+                        println!("3");
+                    }
+                })
+                .await;
+                println!("4");
+            })
+            .await;
+            stop_all_executors();
+        });
+        local_executor().run();
+    });
+
+    bench("sync small yield_task", |mut b| {
+        b.iter(|| {
+            thread::scope(|scope| {
+                for _ in 0..NUMBER_TASKS {
+                    scope.spawn(move || {
+                        for _ in 0..YIELDS_PER_TASK {
+                            thread::yield_now();
+                        }
+                    });
+                }
+            });
         });
     });
 }
@@ -279,6 +402,7 @@ fn bench_mutex() {
 }
 
 fn main() {
+    // TODO bench_create_task_and_yield();
+    // TODO bench_mutex();
     bench_yield_task();
-    bench_mutex();
 }

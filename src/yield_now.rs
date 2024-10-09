@@ -24,10 +24,11 @@ impl Future for LocalYield {
             this.was_yielded = true;
             let task = unsafe { (cx.waker().data() as *mut Task).read() };
             if task.is_local() {
-                local_executor().add_task_at_the_start_of_lifo_local_queue(task)
-            } else {
-                local_executor().add_task_at_the_start_of_lifo_global_queue(task)
+                local_executor().add_task_at_the_start_of_lifo_local_queue(task);
+                return Poll::Pending;
             }
+
+            local_executor().add_task_at_the_start_of_lifo_global_queue(task);
             Poll::Pending
         }
     }

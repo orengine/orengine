@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 use crossbeam::utils::{Backoff, CachePadded};
 
 use crate::panic_if_local_in_future;
-use crate::runtime::{Task, local_executor, local_executor_unchecked};
+use crate::runtime::{local_executor, local_executor_unchecked, Task};
 use crate::sync_task_queue::SyncTaskList;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
@@ -341,9 +341,9 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    use crate::Executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
+    use crate::Executor;
 
     use super::*;
 
@@ -434,7 +434,7 @@ mod tests {
     #[orengine_macros::test_global]
     fn stress_test_mutex() {
         const PAR: usize = 5;
-        const TRIES: usize = 100;
+        const TRIES: usize = 400;
 
         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
