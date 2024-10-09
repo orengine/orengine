@@ -147,9 +147,16 @@ fn orengine() {
 }
 
 fn main() {
-    //std_server();
-    //tokio();
-    //async_std();
-    //may();
-    orengine();
+    let server = std::env::var("SERVER").expect("Environment variable 'SERVER' is not set.");
+    match server.as_str() {
+        "std" => std_server(),
+        "tokio" => tokio(),
+        "async_std" => async_std(),
+        "may" => may(),
+        "orengine" => orengine(),
+        _ => {
+            println!("Unknown server: {}, use one of: std, may, tokio, async_std, orengine", server);
+            std::process::exit(1);
+        }
+    }
 }

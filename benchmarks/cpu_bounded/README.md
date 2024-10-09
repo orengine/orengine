@@ -11,9 +11,11 @@ and return it. In the second case, the tasks contain a buffer that contains
 __Less is better__
 
 __All__
+
 ![create_task_and_yield.png](images/create_task_and_yield.png)
 
 __Favorites only__
+
 ![images/create_task_and_yield_favorites.png](images/create_task_and_yield_favorites.png)
 
 ## Task switch
@@ -41,7 +43,9 @@ or even the `Layout`.
 __Less is better__
 
 __All__
+
 ![images/memory_usage_per_task_all.png](images/memory_usage_per_task_all.png)
 
 __Favorites only__
+
 ![images/memory_usage_per_task_favorites_only.png](images/memory_usage_per_task_favorites_only.png)

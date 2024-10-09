@@ -4,6 +4,8 @@ services:
       context: server
       dockerfile: Dockerfile-alpine
       target: final
+    environment:
+      - SERVER=orengine
     ports:
       - "8083:8083"
 
@@ -12,6 +14,8 @@ services:
       context: client
       dockerfile: Dockerfile-bullseye
       target: final
+    environment:
+      - CLIENT=orengine
     ports:
       - "8081:8081"
     depends_on:
