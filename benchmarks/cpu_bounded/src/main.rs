@@ -185,106 +185,100 @@ fn bench_create_task_and_yield() {
 }
 
 fn bench_yield_task() {
-    const NUMBER_TASKS: usize = 1;
-    const YIELDS: usize = 100_000;
+    const NUMBER_TASKS: usize = 10;
+    const YIELDS: usize = 10_000;
     const YIELDS_PER_TASK: usize = YIELDS / NUMBER_TASKS;
 
-    // bench("async_std small yield_task", |mut b| {
-    //     async_std::task::block_on(async move {
-    //         b.iter_async(|| async {
-    //             let (tx, rx) = async_std::channel::bounded(NUMBER_TASKS);
-    //             for _ in 0..NUMBER_TASKS {
-    //                 let tx = tx.clone();
-    //                 async_std::task::spawn(async move {
-    //                     for _ in 0..YIELDS_PER_TASK {
-    //                         async_std::task::yield_now().await;
-    //                     }
-    //
-    //                     tx.send(()).await.unwrap();
-    //                 });
-    //             }
-    //
-    //             for _ in 0..NUMBER_TASKS {
-    //                 rx.recv().await.unwrap();
-    //             }
-    //         })
-    //             .await;
-    //     });
-    // });
-    //
-    // bench("tokio small yield_task", |mut b| {
-    //     tokio::runtime::Builder::new_current_thread()
-    //         .build()
-    //         .unwrap()
-    //         .block_on(async move {
-    //             b.iter_async(|| async {
-    //                 let (tx, mut rx) = tokio::sync::mpsc::channel(NUMBER_TASKS);
-    //                 for _ in 0..NUMBER_TASKS {
-    //                     let tx = tx.clone();
-    //                     tokio::spawn(async move {
-    //                         for _ in 0..YIELDS_PER_TASK {
-    //                             tokio::task::yield_now().await;
-    //                         }
-    //
-    //                         tx.send(()).await.unwrap();
-    //                     });
-    //                 }
-    //
-    //                 for _ in 0..NUMBER_TASKS {
-    //                     rx.recv().await.unwrap();
-    //                 }
-    //             })
-    //                 .await;
-    //         });
-    // });
-    //
-    // bench("smol small yield_task", |mut b| {
-    //     future::block_on(smol::LocalExecutor::new().run(async move {
-    //         b.iter_async(|| async {
-    //             let (tx, rx) = smol::channel::bounded(NUMBER_TASKS);
-    //             for _ in 0..NUMBER_TASKS {
-    //                 let tx = tx.clone();
-    //                 smol::spawn(async move {
-    //                     for _ in 0..YIELDS_PER_TASK {
-    //                         future::yield_now().await;
-    //                     }
-    //
-    //                     tx.send(()).await.unwrap();
-    //                 })
-    //                     .detach();
-    //             }
-    //
-    //             for _ in 0..NUMBER_TASKS {
-    //                 rx.recv().await.unwrap();
-    //             }
-    //         })
-    //             .await;
-    //     }));
-    // });
+    bench("async_std task switch", |mut b| {
+        async_std::task::block_on(async move {
+            b.iter_async(|| async {
+                let (tx, rx) = async_std::channel::bounded(NUMBER_TASKS);
+                for _ in 0..NUMBER_TASKS {
+                    let tx = tx.clone();
+                    async_std::task::spawn(async move {
+                        for _ in 0..YIELDS_PER_TASK {
+                            async_std::task::yield_now().await;
+                        }
 
-    bench("orengine small yield_task", |mut b| {
+                        tx.send(()).await.unwrap();
+                    });
+                }
+
+                for _ in 0..NUMBER_TASKS {
+                    rx.recv().await.unwrap();
+                }
+            })
+            .await;
+        });
+    });
+
+    bench("tokio task switch", |mut b| {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                b.iter_async(|| async {
+                    let (tx, mut rx) = tokio::sync::mpsc::channel(NUMBER_TASKS);
+                    for _ in 0..NUMBER_TASKS {
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            for _ in 0..YIELDS_PER_TASK {
+                                tokio::task::yield_now().await;
+                            }
+
+                            tx.send(()).await.unwrap();
+                        });
+                    }
+
+                    for _ in 0..NUMBER_TASKS {
+                        rx.recv().await.unwrap();
+                    }
+                })
+                .await;
+            });
+    });
+
+    bench("smol task switch", |mut b| {
+        future::block_on(smol::LocalExecutor::new().run(async move {
+            b.iter_async(|| async {
+                let (tx, rx) = smol::channel::bounded(NUMBER_TASKS);
+                for _ in 0..NUMBER_TASKS {
+                    let tx = tx.clone();
+                    smol::spawn(async move {
+                        for _ in 0..YIELDS_PER_TASK {
+                            future::yield_now().await;
+                        }
+
+                        tx.send(()).await.unwrap();
+                    })
+                    .detach();
+                }
+
+                for _ in 0..NUMBER_TASKS {
+                    rx.recv().await.unwrap();
+                }
+            })
+            .await;
+        }));
+    });
+
+    bench("orengine task switch", |mut b| {
         let cfg = orengine::runtime::Config::default()
             .disable_work_sharing()
             .disable_io_worker()
             .set_numbers_of_thread_workers(0);
         Executor::init_with_config(cfg).spawn_local(async move {
             b.iter_async(|| async {
-                println!("1");
                 local_scope(|scope| async {
-                    for i in 0..NUMBER_TASKS {
-                        println!("2");
+                    for _ in 0..NUMBER_TASKS {
                         scope.exec(async move {
                             for _ in 0..YIELDS_PER_TASK {
                                 orengine::yield_now().await;
                             }
-
-                            println!("ready {i}");
                         });
-                        println!("3");
                     }
                 })
                 .await;
-                println!("4");
             })
             .await;
             stop_all_executors();
@@ -292,7 +286,7 @@ fn bench_yield_task() {
         local_executor().run();
     });
 
-    bench("sync small yield_task", |mut b| {
+    bench("sync task switch", |mut b| {
         b.iter(|| {
             thread::scope(|scope| {
                 for _ in 0..NUMBER_TASKS {
@@ -402,7 +396,7 @@ fn bench_mutex() {
 }
 
 fn main() {
-    // TODO bench_create_task_and_yield();
-    // TODO bench_mutex();
+    bench_create_task_and_yield();
+    bench_mutex();
     bench_yield_task();
 }
