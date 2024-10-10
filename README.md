@@ -60,6 +60,10 @@ that have excess work, ensuring optimal utilization of all available resources.
 This system ensures that no executor is idle while others are overloaded,
 leading to improved efficiency and balanced execution across multiple threads.
 
+# Examples
+
+See the [Echo Server](examples/echo-server) and [fs](examples/fs) examples.
+
 # Benchmarking
 
 Extensive benchmarking has been done to prove Orengine’s superiority.
@@ -73,3 +77,12 @@ Extensive benchmarking has been done to prove Orengine’s superiority.
 ![benchmarks/cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png](benchmarks/cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png)
 
 Read more about the benchmarks in the [benchmarks](benchmarks) directory.
+
+# License
+
+This project is licensed under the [`MIT license`](LICENSE).
+
+# Contributors
+
+Feel free to offer your ideas, flag bugs, or create new functionality.
+We welcome any help in development or promotion.
