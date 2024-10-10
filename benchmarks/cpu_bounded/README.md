@@ -36,7 +36,7 @@ __Less is better__
 
 ## Memory usage per task
 
-This benchmark measures the memory usage per task. This was measured by creating 10,000,000 dormant tasks,
+This benchmark measures the memory usage per task. This was measured by creating 10,000,000 sleeping tasks,
 so the result cannot be less than 16 bytes (required for `std::time::Instant`).
 In fact, it cannot be less than 32 bytes, since you need to keep at least a `wide pointer` to the `Future`
 or even the `Layout`.
@@ -44,8 +44,8 @@ __Less is better__
 
 __All__
 
-![images/memory_usage_per_task_all.png](images/memory_usage_per_task_all.png)
+![images/memory_usage_per_10m_tasks_all.png](images/memory_usage_per_10m_tasks_all.png)
 
 __Favorites only__
 
-![images/memory_usage_per_task_favorites_only.png](images/memory_usage_per_task_favorites_only.png)
+![images/memory_usage_per_10m_tasks_favorites_only.png](images/memory_usage_per_10m_tasks_favorites_only.png)
