@@ -20,3 +20,9 @@ Cargo.lock
 /benchmarks/fs/target/
 /benchmarks/fs/Cargo.lock
 
+/examples/echo-server/Cargo.lock
+/examples/echo-server/target
+
+/examples/fs/Cargo.lock
+/examples/fs/target
+/examples/fs/foo
