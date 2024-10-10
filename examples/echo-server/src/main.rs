@@ -20,9 +20,7 @@ async fn run_listener<L: Listener>() {
     let mut listener = L::bind("127.0.0.1:8080").await.expect("bind failed");
 
     while let Ok((stream, _addr)) = listener.accept().await {
-        local_executor().spawn_local(async move {
-            handle_stream(stream).await;
-        });
+        local_executor().spawn_local(handle_stream(stream));
     }
 }
 
