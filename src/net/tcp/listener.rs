@@ -116,7 +116,9 @@ impl FromRawFd for TcpListener {
 
 impl AsyncClose for TcpListener {}
 
-impl Listener<TcpStream> for TcpListener {}
+impl Listener for TcpListener {
+    type Stream = TcpStream;
+}
 
 impl Debug for TcpListener {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

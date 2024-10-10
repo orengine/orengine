@@ -1,9 +1,9 @@
+use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
+use crate::io::{AsyncAccept, AsyncBind, AsyncClose};
+use crate::net::Stream;
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
-use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncAccept, AsyncClose, AsyncBind};
-use crate::net::Stream;
 
 /// The `Listener` trait defines common socket-related operations for types that implement
 /// listening functionality, such as [`TCP socket listeners`](crate::net::TcpListener).
@@ -25,8 +25,11 @@ use crate::net::Stream;
 /// - [`IntoRawFd`]
 /// - [`AsFd`]
 /// - [`AsRawFd`]
-pub trait Listener<S: Stream>:
-    AsyncAccept<S> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd {
+pub trait Listener:
+    AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
+{
+    type Stream: Stream;
+
     /// Returns the local socket address that the listener is bound to.
     ///
     /// This method provides the local address, such as the IP and port, that the listener is
