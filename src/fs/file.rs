@@ -239,7 +239,7 @@ mod tests {
             .read(true)
             .truncate(true)
             .create(true);
-        let mut file = match File::open(file_path.clone(), &options).await {
+        let mut file = match File::open(&file_path, &options).await {
             Ok(file) => file,
             Err(err) => panic!("Can't open (create) file: {}", err),
         };

@@ -74,7 +74,9 @@ mod tests {
     fn test_asyncify() {
         let start = time::Instant::now();
         let list = Arc::new(std::sync::Mutex::new(vec![]));
+        let cond_var = Arc::new(std::sync::Condvar::new());
         let list_clone = list.clone();
+        let cond_var_clone = cond_var.clone();
 
         local_executor().exec_local_future(async move {
             asyncify!(|| {
@@ -82,14 +84,16 @@ mod tests {
                 thread::sleep(Duration::from_millis(1));
                 assert!(start.elapsed() >= Duration::from_millis(1));
                 list_clone.lock().unwrap().push(2);
+                cond_var_clone.notify_one();
             })
             .await;
         });
 
-        assert_eq!(*list.lock().unwrap(), vec![]);
+        let mut guard = list.lock().unwrap();
+        assert_eq!(*guard, vec![]);
+        guard = cond_var.wait(guard).unwrap();
 
-        thread::sleep(Duration::from_millis(2));
-        assert_eq!(*list.lock().unwrap(), vec![1, 2]); // this executor was blocked for 2ms, and
-                                                       // if assertion passes, other thread (from the thread pool) processed the list.
+        assert_eq!(*guard, vec![1, 2]); // this executor was blocked, and
+                                        // if assertion passes, other thread (from the thread pool) processed the list.
     }
 }

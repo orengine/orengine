@@ -516,7 +516,7 @@ impl Executor {
         {
             Poll::Ready(()) => {
                 debug_assert_eq!(self.current_call, Call::None);
-                unsafe { task.drop_future() };
+                unsafe { task.release_future() };
             }
             Poll::Pending => {
                 let old_call = mem::take(&mut self.current_call);

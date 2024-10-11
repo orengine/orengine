@@ -7,18 +7,14 @@ use std::task::{Context, Poll};
 
 /// A [`Future`] to wait for all tasks in the [`WaitGroup`] to complete.
 pub struct Wait<'wait_group> {
-    need_wait: bool,
     wait_group: &'wait_group LocalWaitGroup,
 }
 
 impl<'wait_group> Wait<'wait_group> {
     /// Creates a new [`Wait`] future.
     #[inline(always)]
-    pub fn new(need_wait: bool, wait_group: &'wait_group LocalWaitGroup) -> Self {
-        Self {
-            need_wait,
-            wait_group,
-        }
+    pub fn new(wait_group: &'wait_group LocalWaitGroup) -> Self {
+        Self { wait_group }
     }
 }
 
@@ -27,14 +23,15 @@ impl<'wait_group> Future for Wait<'wait_group> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if !this.need_wait {
-            return Poll::Ready(());
+        let inner = this.wait_group.get_inner();
+        if inner.count != 0 {
+            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            inner.waited_tasks.push(task);
+
+            return Poll::Pending;
         }
 
-        this.need_wait = false;
-        let task = unsafe { (cx.waker().data() as *const Task).read() };
-        this.wait_group.get_inner().waited_tasks.push(task);
-        Poll::Pending
+        Poll::Ready(())
     }
 }
 
@@ -193,7 +190,7 @@ impl LocalWaitGroup {
     /// Decreases the `LocalWaitGroup` counter by 1 and wakes up all tasks that are waiting
     /// if the counter reaches 0.
     ///
-    /// Returns the previous value of the counter.
+    /// Returns the current value of the counter.
     ///
     /// # Example
     ///
@@ -207,7 +204,8 @@ impl LocalWaitGroup {
     ///     wait_group.inc();
     ///     scope.spawn(async {
     ///         // wake up the waiting task, because a current and the only one task is done
-    ///         wait_group.done();
+    ///         let count = wait_group.done();
+    ///         assert_eq!(count, 0);
     ///     });
     ///
     ///     wait_group.wait().await; // wait until all tasks are completed
@@ -220,13 +218,15 @@ impl LocalWaitGroup {
         inner.count -= 1;
         if inner.count == 0 {
             let executor = local_executor();
+
             for task in inner.waited_tasks.iter() {
                 executor.exec_task(*task);
             }
+
             unsafe { inner.waited_tasks.set_len(0) };
         }
 
-        inner.count + 1
+        inner.count
     }
 
     /// Waits until the `LocalWaitGroup` counter reaches 0.
@@ -260,10 +260,7 @@ impl LocalWaitGroup {
     #[inline(always)]
     #[must_use = "Future must be awaited to start the wait"]
     pub fn wait(&self) -> Wait {
-        if self.get_inner().count == 0 {
-            return Wait::new(false, self);
-        }
-        Wait::new(true, self)
+        Wait::new(self)
     }
 }
 

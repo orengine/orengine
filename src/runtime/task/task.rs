@@ -38,9 +38,9 @@ impl Task {
         self.data.is_local()
     }
 
-    /// Drops the wrapped future.
+    /// Releases the wrapped future.
     #[inline(always)]
-    pub unsafe fn drop_future(&mut self) {
+    pub unsafe fn release_future(&mut self) {
         task_pool().put(self.data.future_ptr());
     }
 }
@@ -55,7 +55,7 @@ macro_rules! check_task_local_safety {
             if $task.is_local() && crate::local_executor().id() != $task.executor_id {
                 panic!(
                     "[BUG] Local task has been moved to another executor.\
-                    Please report it. Provide details about the place where the problem occurred\
+                    Please report it. Provide details about the place where the problem occurred \
                     and the conditions under which it happened. \
                     Thank you for helping us make orengine better!"
                 );
