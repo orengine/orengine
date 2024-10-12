@@ -1,18 +1,17 @@
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::RawFd;
+use crate::io::worker::{local_worker, IoWorker};
+use orengine_macros::poll_for_io_request;
+use socket2::{Domain, Type};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::poll_for_io_request;
-use socket2::{Domain, Type};
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::RawFd;
-use crate::io::worker::{IoWorker, local_worker};
 
 /// `socket` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
-pub struct Socket{
+pub struct Socket {
     domain: Domain,
     socket_type: Type,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl Socket {
@@ -21,7 +20,7 @@ impl Socket {
         Self {
             domain,
             socket_type,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -35,7 +34,11 @@ impl Future for Socket {
         let ret;
 
         poll_for_io_request!((
-            worker.socket(this.domain, this.socket_type, this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.socket(
+                this.domain,
+                this.socket_type,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
             ret as RawFd
         ));
     }

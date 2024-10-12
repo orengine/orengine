@@ -104,17 +104,18 @@ pub(crate) trait IoWorker {
         addrlen: *mut libc::socklen_t,
         request_ptr: *mut IoRequestData,
     );
-    // TODO fn accept_with_deadline(
-    //     &mut self,
-    //     listen_fd: RawFd,
-    //     addr: *mut sockaddr,
-    //     addrlen: *mut libc::socklen_t,
-    //     request_ptr: *mut IoRequestData,
-    //     deadline: Instant
-    // ) {
-    //     self.register_time_bounded_io_task();
-    //     self.accept(listen_fd, addr, addrlen, request_ptr);
-    // }
+    /// Registers a new `accept` io operation with deadline.
+    fn accept_with_deadline(
+        &mut self,
+        listen_fd: RawFd,
+        addr: *mut sockaddr,
+        addrlen: *mut libc::socklen_t,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.accept(listen_fd, addr, addrlen, request_ptr);
+    }
     /// Registers a new `connect` io operation.
     fn connect(
         &mut self,
@@ -123,12 +124,56 @@ pub(crate) trait IoWorker {
         addr_len: libc::socklen_t,
         request_ptr: *mut IoRequestData,
     );
+    /// Registers a new `connect` io operation with deadline.
+    fn connect_with_deadline(
+        &mut self,
+        socket_fd: RawFd,
+        addr_ptr: *const sockaddr,
+        addr_len: libc::socklen_t,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.connect(socket_fd, addr_ptr, addr_len, request_ptr);
+    }
     /// Registers a new `poll` for readable io operation.
     fn poll_fd_read(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
+    /// Registers a new `poll` for readable io operation with deadline.
+    fn poll_fd_read_with_deadline(
+        &mut self,
+        fd: RawFd,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.poll_fd_read(fd, request_ptr);
+    }
     /// Registers a new `poll` for writable io operation.
     fn poll_fd_write(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
+    /// Registers a new `poll` for writable io operation with deadline.
+    fn poll_fd_write_with_deadline(
+        &mut self,
+        fd: RawFd,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.poll_fd_write(fd, request_ptr);
+    }
     /// Registers a new `recv` io operation.
     fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    /// Registers a new `recv` io operation with deadline.
+    fn recv_with_deadline(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *mut u8,
+        len: usize,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.recv(fd, buf_ptr, len, request_ptr);
+    }
     /// Registers a new `recv_from` io operation.
     fn recv_from(
         &mut self,
@@ -136,8 +181,31 @@ pub(crate) trait IoWorker {
         msg_header: *mut OsMessageHeader,
         request_ptr: *mut IoRequestData,
     );
+    /// Registers a new `recv_from` io operation with deadline.
+    fn recv_from_with_deadline(
+        &mut self,
+        fd: RawFd,
+        msg_header: *mut OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.recv_from(fd, msg_header, request_ptr);
+    }
     /// Registers a new `send` io operation.
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData);
+    /// Registers a new `send` io operation with deadline.
+    fn send_with_deadline(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *const u8,
+        len: usize,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.send(fd, buf_ptr, len, request_ptr);
+    }
     /// Registers a new `send_to` io operation.
     fn send_to(
         &mut self,
@@ -145,10 +213,44 @@ pub(crate) trait IoWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     );
+    /// Registers a new `send_to` io operation with deadline.
+    fn send_to_with_deadline(
+        &mut self,
+        fd: RawFd,
+        msg_header: *const OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.send_to(fd, msg_header, request_ptr);
+    }
     /// Registers a new `peek` io operation.
     fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    /// Registers a new `peek` io operation with deadline.
+    fn peek_with_deadline(
+        &mut self,
+        fd: RawFd,
+        buf_ptr: *mut u8,
+        len: usize,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.peek(fd, buf_ptr, len, request_ptr);
+    }
     /// Registers a new `peek_from` io operation.
     fn peek_from(&mut self, fd: RawFd, msg: *mut OsMessageHeader, request_ptr: *mut IoRequestData);
+    /// Registers a new `peek_from` io operation with deadline.
+    fn peek_from_with_deadline(
+        &mut self,
+        fd: RawFd,
+        msg: *mut OsMessageHeader,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.peek_from(fd, msg, request_ptr);
+    }
     /// Registers a new `shutdown` io operation.
     fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequestData);
     /// Registers a new `open` io operation.

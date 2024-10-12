@@ -1,25 +1,24 @@
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::OsPath::OsPath;
+use crate::io::worker::{local_worker, IoWorker};
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::poll_for_io_request;
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::sys::OsPath::OsPath;
-use crate::io::worker::{IoWorker, local_worker};
 
 /// `remove` io operation which allows to remove a file from a given path.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Remove {
     path: OsPath,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
-impl Remove{
+impl Remove {
     /// Creates a new `remove` io operation.
     pub fn new(path: OsPath) -> Self {
         Self {
             path,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -34,7 +33,10 @@ impl Future for Remove {
         let ret;
 
         poll_for_io_request!((
-            worker.remove_file(this.path.as_ptr(), this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.remove_file(
+                this.path.as_ptr(),
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
             ()
         ));
     }

@@ -1,18 +1,17 @@
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
-use std::pin::Pin;
 use std::io::Result;
+use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::{poll_for_io_request};
 
+use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::worker::{IoWorker, local_worker};
+use crate::io::worker::{local_worker, IoWorker};
 
 /// `sync_all` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SyncAll {
     fd: RawFd,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl SyncAll {
@@ -20,7 +19,7 @@ impl SyncAll {
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -34,8 +33,8 @@ impl Future for SyncAll {
         let ret;
 
         poll_for_io_request!((
-             worker.sync_all(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
-             ret
+            worker.sync_all(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
+            ret
         ));
     }
 }

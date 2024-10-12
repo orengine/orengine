@@ -16,7 +16,6 @@ use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
 /// `accept` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Accept<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
@@ -57,7 +56,6 @@ impl<S: FromRawFd> Future for Accept<S> {
 }
 
 /// `accept` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct AcceptWithDeadline<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
@@ -88,11 +86,12 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.accept(
+            worker.accept_with_deadline(
                 this.fd,
                 this.addr.0.as_ptr() as _,
                 &mut this.addr.1,
-                this.io_request_data.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked(),
+                &mut this.deadline
             ),
             (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
         ));

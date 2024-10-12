@@ -11,7 +11,6 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Send<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
@@ -49,7 +48,6 @@ impl<'buf> Future for Send<'buf> {
 }
 
 /// `send` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
@@ -78,11 +76,12 @@ impl<'buf> Future for SendWithDeadline<'buf> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.send(
+            worker.send_with_deadline(
                 this.fd,
                 this.buf.as_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked(),
+                &mut this.deadline
             ),
             ret
         ));

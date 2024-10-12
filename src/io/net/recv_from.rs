@@ -15,7 +15,6 @@ use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
 /// `recv_from` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct RecvFrom<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
@@ -58,7 +57,6 @@ impl<'fut> Future for RecvFrom<'fut> {
 }
 
 /// `recv_from` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct RecvFromWithDeadline<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
@@ -96,11 +94,12 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.recv_from(
+            worker.recv_from_with_deadline(
                 this.fd,
                 this.msg_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked(),
+                &mut this.deadline
             ),
             ret
         ));

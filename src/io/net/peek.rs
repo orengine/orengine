@@ -11,7 +11,6 @@ use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `peek` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Peek<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
@@ -50,7 +49,6 @@ impl<'buf> Future for Peek<'buf> {
 }
 
 /// `peek` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PeekWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
@@ -79,11 +77,12 @@ impl<'buf> Future for PeekWithDeadline<'buf> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.peek(
+            worker.peek_with_deadline(
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                this.io_request_data.as_mut().unwrap_unchecked(),
+                &mut this.deadline
             ),
             ret
         ));

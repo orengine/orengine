@@ -1,18 +1,17 @@
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::worker::{local_worker, IoWorker};
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::poll_for_io_request;
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::worker::{IoWorker, local_worker};
 
 /// Future for the `read` operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Read<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> Read<'buf> {
@@ -21,7 +20,7 @@ impl<'buf> Read<'buf> {
         Self {
             fd,
             buf,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -35,8 +34,13 @@ impl<'buf> Future for Read<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.io_request_data.as_mut().unwrap_unchecked()),
-             ret
+            worker.read(
+                this.fd,
+                this.buf.as_mut_ptr(),
+                this.buf.len(),
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }
@@ -47,12 +51,11 @@ impl<'buf> Future for Read<'buf> {
 ///
 /// This is a variation of `read` that allows
 /// to specify the offset from which the data should be read.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct PositionedRead<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     offset: usize,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> PositionedRead<'buf> {
@@ -62,7 +65,7 @@ impl<'buf> PositionedRead<'buf> {
             fd,
             buf,
             offset,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -76,8 +79,14 @@ impl<'buf> Future for PositionedRead<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.pread(this.fd, this.buf.as_mut_ptr(), this.buf.len(), this.offset, this.io_request_data.as_mut().unwrap_unchecked()),
-             ret
+            worker.pread(
+                this.fd,
+                this.buf.as_mut_ptr(),
+                this.buf.len(),
+                this.offset,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }

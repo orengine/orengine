@@ -1,21 +1,20 @@
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
-use std::pin::Pin;
 use std::io::Result;
+use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::{poll_for_io_request};
 
+use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::worker::{IoWorker, local_worker};
+use crate::io::worker::{local_worker, IoWorker};
 
 /// `fallocate` io operation which allows to allocate space in a file from a given offset.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Fallocate {
     fd: RawFd,
     offset: usize,
     len: usize,
     flags: i32,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl Fallocate {
@@ -26,7 +25,7 @@ impl Fallocate {
             len,
             offset,
             flags,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }

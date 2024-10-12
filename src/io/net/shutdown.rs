@@ -1,19 +1,18 @@
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::worker::{local_worker, IoWorker};
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use orengine_macros::{poll_for_io_request};
 use std::io::Result;
 use std::net::Shutdown as ShutdownHow;
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::worker::{IoWorker, local_worker};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// `shutdown` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Shutdown {
     fd: RawFd,
     how: ShutdownHow,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl Shutdown {
@@ -22,7 +21,7 @@ impl Shutdown {
         Self {
             fd,
             how,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -37,8 +36,12 @@ impl Future for Shutdown {
         let ret;
 
         poll_for_io_request!((
-             worker.shutdown(this.fd, this.how, this.io_request_data.as_mut().unwrap_unchecked()),
-             ()
+            worker.shutdown(
+                this.fd,
+                this.how,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
+            ()
         ));
     }
 }

@@ -1,18 +1,17 @@
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::OsPath::OsPath;
+use crate::io::worker::{local_worker, IoWorker};
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
-use std::io::{Result};
+use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::poll_for_io_request;
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::sys::OsPath::OsPath;
-use crate::io::worker::{IoWorker, local_worker};
 
 /// Create a directory at the given path.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct CreateDir {
     mode: u32,
     os_path: OsPath,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl CreateDir {
@@ -21,7 +20,7 @@ impl CreateDir {
         Self {
             mode,
             os_path: path,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }

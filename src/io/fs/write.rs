@@ -1,50 +1,55 @@
+use orengine_macros::poll_for_io_request;
 use std::future::Future;
-use std::pin::Pin;
 use std::io::Result;
+use std::pin::Pin;
 use std::task::{Context, Poll};
-use orengine_macros::{poll_for_io_request};
 
+use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::io_request_data::{IoRequestData};
-use crate::io::worker::{IoWorker, local_worker};
+use crate::io::worker::{local_worker, IoWorker};
 
-#[must_use = "Future must be awaited to drive the IO operation"]     
+// TODO docs
+
 pub struct Write<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
-    io_request_data: Option<IoRequestData>
-}     
+    io_request_data: Option<IoRequestData>,
+}
 
 impl<'buf> Write<'buf> {
     pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
-        Self {               
-            fd,              
+        Self {
+            fd,
             buf,
-            io_request_data: None
-        } 
-    }  
-}   
+            io_request_data: None,
+        }
+    }
+}
 
 impl<'buf> Future for Write<'buf> {
-    type Output = Result<usize>; 
+    type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = unsafe { local_worker() };
         let ret;
 
         poll_for_io_request!((
-             worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), this.io_request_data.as_mut().unwrap_unchecked()),
-             ret
+            worker.write(
+                this.fd,
+                this.buf.as_ptr(),
+                this.buf.len(),
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
-    }  
+    }
 }
-
-#[must_use = "Future must be awaited to drive the IO operation"]
+// TODO docs
 pub struct PositionedWrite<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
     offset: usize,
-    io_request_data: Option<IoRequestData>
+    io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> PositionedWrite<'buf> {
@@ -53,7 +58,7 @@ impl<'buf> PositionedWrite<'buf> {
             fd,
             buf,
             offset,
-            io_request_data: None
+            io_request_data: None,
         }
     }
 }
@@ -67,8 +72,14 @@ impl<'buf> Future for PositionedWrite<'buf> {
         let ret;
 
         poll_for_io_request!((
-             worker.pwrite(this.fd, this.buf.as_ptr(), this.buf.len(), this.offset, this.io_request_data.as_mut().unwrap_unchecked()),
-             ret
+            worker.pwrite(
+                this.fd,
+                this.buf.as_ptr(),
+                this.buf.len(),
+                this.offset,
+                this.io_request_data.as_mut().unwrap_unchecked()
+            ),
+            ret
         ));
     }
 }

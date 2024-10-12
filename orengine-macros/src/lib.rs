@@ -212,6 +212,10 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
 
 /// Generates code for [`Future::poll`](std::future::Future::poll).
 ///
+/// # The difference between `poll_for_io_request` and `poll_for_time_bounded_io_request`
+///
+/// `poll_for_time_bounded_io_request` deregisters the time bounded task after execution.
+///
 /// # Must have above
 ///
 /// * `this` with `io_request_data` (`Option<IoRequestData>`) and `deadline`
@@ -257,10 +261,6 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
             let task = (cx.waker().data() as *const crate::runtime::Task).read();
             this.io_request_data = Some(IoRequestData::new(task));
 
-            worker.register_time_bounded_io_task(
-                unsafe { this.io_request_data.as_ref().unwrap_unchecked() },
-                &mut this.deadline,
-            );
             #do_request;
 
             return Poll::Pending;
