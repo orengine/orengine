@@ -11,7 +11,6 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `connect` io operation.
@@ -59,8 +58,8 @@ impl<'fut> Future for Connect<'fut> {
 pub struct ConnectWithDeadline<'fut> {
     fd: RawFd,
     addr: &'fut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'fut> ConnectWithDeadline<'fut> {
@@ -69,8 +68,8 @@ impl<'fut> ConnectWithDeadline<'fut> {
         Self {
             fd,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }

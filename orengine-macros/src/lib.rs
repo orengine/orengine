@@ -214,8 +214,8 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
 ///
 /// # Must have above
 ///
-/// * `this` with `io_request_data` (`Option<IoRequestData>`) and `time_bounded_io_task`
-/// (`TimeBoundedIoTask`) fields;
+/// * `this` with `io_request_data` (`Option<IoRequestData>`) and `deadline`
+/// ([`Instant`](std::time::Instant)) fields;
 ///
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
 /// `*const crate::runtime::Task` in [`data`](std::task::Waker::data);
@@ -239,13 +239,13 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
                 Ok(io_request_data_ret) => {
                     unsafe {
                         ret = io_request_data_ret;
-                        worker.deregister_time_bounded_io_task(&this.time_bounded_io_task);
+                        worker.deregister_time_bounded_io_task(&this.deadline);
                         return Poll::Ready(Ok(#ret_statement));
                     }
                 }
                 Err(err) => {
                     if err.kind() != std::io::ErrorKind::TimedOut {
-                        worker.deregister_time_bounded_io_task(&this.time_bounded_io_task);
+                        worker.deregister_time_bounded_io_task(&this.deadline);
                     }
 
                     return Poll::Ready(Err(err));
@@ -257,11 +257,10 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
             let task = (cx.waker().data() as *const crate::runtime::Task).read();
             this.io_request_data = Some(IoRequestData::new(task));
 
-            unsafe {
-                this.time_bounded_io_task.set_user_data(this.io_request_data.as_mut().unwrap_unchecked() as *const _ as u64);
-            }
-
-            worker.register_time_bounded_io_task(&mut this.time_bounded_io_task);
+            worker.register_time_bounded_io_task(
+                unsafe { this.io_request_data.as_ref().unwrap_unchecked() },
+                &mut this.deadline,
+            );
             #do_request;
 
             return Poll::Pending;

@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, FromRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
@@ -62,8 +61,8 @@ impl<S: FromRawFd> Future for Accept<S> {
 pub struct AcceptWithDeadline<S: FromRawFd> {
     fd: RawFd,
     addr: (SockAddr, libc::socklen_t),
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
     pin: PhantomData<S>,
 }
 
@@ -73,8 +72,8 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
         Self {
             fd,
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
             pin: PhantomData,
         }
     }

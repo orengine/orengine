@@ -11,7 +11,6 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
@@ -65,7 +64,7 @@ pub struct RecvFromWithDeadline<'fut> {
     msg_header: MessageRecvHeader<'fut>,
     buf: &'fut mut [u8],
     addr: &'fut mut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
+    deadline: Instant,
     io_request_data: Option<IoRequestData>,
 }
 
@@ -82,7 +81,7 @@ impl<'fut> RecvFromWithDeadline<'fut> {
             msg_header: MessageRecvHeader::new(),
             buf,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
+            deadline,
             io_request_data: None,
         }
     }

@@ -205,18 +205,21 @@ impl IoWorker for IoUringWorker {
     }
 
     #[inline(always)]
-    fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask) {
-        while !self
-            .time_bounded_io_task_queue
-            .insert(time_bounded_io_task.clone())
-        {
-            time_bounded_io_task.inc_deadline();
+    fn register_time_bounded_io_task(
+        &mut self,
+        io_request_data: &IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        let mut time_bounded_io_task = TimeBoundedIoTask::new(io_request_data, *deadline);
+        while !self.time_bounded_io_task_queue.insert(time_bounded_io_task) {
+            *deadline += Duration::from_nanos(1);
+            time_bounded_io_task = TimeBoundedIoTask::new(io_request_data, *deadline);
         }
     }
 
     #[inline(always)]
-    fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask) {
-        self.time_bounded_io_task_queue.remove(time_bounded_io_task);
+    fn deregister_time_bounded_io_task(&mut self, deadline: &Instant) {
+        self.time_bounded_io_task_queue.remove(deadline);
     }
 
     #[inline(always)]

@@ -1,13 +1,12 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{OpenHow, OsMessageHeader, RawFd, WorkerSys};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::BUG_MESSAGE;
 use nix::libc;
 use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::net::Shutdown;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 thread_local! {
     /// Thread-local worker for async io operations.
@@ -71,9 +70,19 @@ pub(crate) trait IoWorker {
     /// Creates a new worker.
     fn new(config: IoWorkerConfig) -> Self;
     /// Registers a new time-bounded io task. It will be cancelled if the deadline is reached.
-    fn register_time_bounded_io_task(&mut self, time_bounded_io_task: &mut TimeBoundedIoTask);
-    /// Deregisters a time-bounded io task. It is used to say [`IoWorker`] to not cancel the task.
-    fn deregister_time_bounded_io_task(&mut self, time_bounded_io_task: &TimeBoundedIoTask);
+    ///
+    /// It takes `&mut Instant` as a deadline because it increments the deadline by 1 nanosecond
+    /// if it is not unique.
+    fn register_time_bounded_io_task(
+        &mut self,
+        io_request_data: &IoRequestData,
+        deadline: &mut Instant,
+    );
+    /// Deregisters a time-bounded io task.
+    /// It is used to say [`IoWorker`] to not cancel the task.
+    ///
+    /// Deadline is always unique, therefore we can use it as a key.
+    fn deregister_time_bounded_io_task(&mut self, deadline: &Instant);
     /// Submits an accumulated tasks to the kernel and polls it for completion if needed.
     ///
     /// Returns `true` if the worker has polled.
@@ -95,6 +104,17 @@ pub(crate) trait IoWorker {
         addrlen: *mut libc::socklen_t,
         request_ptr: *mut IoRequestData,
     );
+    // TODO fn accept_with_deadline(
+    //     &mut self,
+    //     listen_fd: RawFd,
+    //     addr: *mut sockaddr,
+    //     addrlen: *mut libc::socklen_t,
+    //     request_ptr: *mut IoRequestData,
+    //     deadline: Instant
+    // ) {
+    //     self.register_time_bounded_io_task();
+    //     self.accept(listen_fd, addr, addrlen, request_ptr);
+    // }
     /// Registers a new `connect` io operation.
     fn connect(
         &mut self,

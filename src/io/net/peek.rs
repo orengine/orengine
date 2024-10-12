@@ -8,7 +8,6 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `peek` io operation.
@@ -55,8 +54,8 @@ impl<'buf> Future for Peek<'buf> {
 pub struct PeekWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'buf> PeekWithDeadline<'buf> {
@@ -65,8 +64,8 @@ impl<'buf> PeekWithDeadline<'buf> {
         Self {
             fd,
             buf,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }

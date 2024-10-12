@@ -1,4 +1,6 @@
-use std::time::{Duration, Instant};
+use crate::io::io_request_data::IoRequestData;
+use std::borrow::Borrow;
+use std::time::Instant;
 
 /// [`TimeBoundedIoTask`] contains the deadline and user data for cancelling the task.
 #[derive(Clone)]
@@ -11,29 +13,17 @@ pub(crate) struct TimeBoundedIoTask {
 impl TimeBoundedIoTask {
     /// Creates a new [`TimeBoundedIoTask`]
     #[inline(always)]
-    pub(crate) fn new(deadline: Instant, user_data: u64) -> Self {
+    pub(crate) fn new(io_request_data: &IoRequestData, deadline: Instant) -> Self {
         Self {
             deadline,
-            user_data,
+            user_data: io_request_data as *const _ as u64,
         }
-    }
-
-    /// Increments the deadline by 1 nanosecond
-    #[inline(always)]
-    pub(crate) fn inc_deadline(&mut self) {
-        self.deadline = self.deadline + Duration::from_nanos(1);
     }
 
     /// Returns the user data.
     #[inline(always)]
     pub(crate) fn user_data(&self) -> u64 {
         self.user_data
-    }
-
-    /// Sets the user data.
-    #[inline(always)]
-    pub(crate) fn set_user_data(&mut self, user_data: u64) {
-        self.user_data = user_data
     }
 
     /// Returns the deadline.
@@ -63,5 +53,12 @@ impl Ord for TimeBoundedIoTask {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.deadline.cmp(&other.deadline)
+    }
+}
+
+impl Borrow<Instant> for TimeBoundedIoTask {
+    #[inline(always)]
+    fn borrow(&self) -> &Instant {
+        &self.deadline
     }
 }

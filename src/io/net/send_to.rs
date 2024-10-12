@@ -11,7 +11,6 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageSendHeader, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send_to` io operation.
@@ -63,8 +62,8 @@ pub struct SendToWithDeadline<'fut> {
     message_header: MessageSendHeader<'fut>,
     buf: &'fut [u8],
     addr: &'fut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'fut> SendToWithDeadline<'fut> {
@@ -75,8 +74,8 @@ impl<'fut> SendToWithDeadline<'fut> {
             message_header: MessageSendHeader::new(),
             buf,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }

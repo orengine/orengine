@@ -10,7 +10,6 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
@@ -64,8 +63,8 @@ pub struct PeekFromWithDeadline<'fut> {
     msg_header: MessageRecvHeader<'fut>,
     buf: &'fut mut [u8],
     addr: &'fut mut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'fut> PeekFromWithDeadline<'fut> {
@@ -81,8 +80,8 @@ impl<'fut> PeekFromWithDeadline<'fut> {
             msg_header: MessageRecvHeader::new(),
             buf,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }
