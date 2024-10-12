@@ -8,8 +8,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
 
-// TODO docs
-
+/// `write` io operation.
 pub struct Write<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
@@ -17,6 +16,7 @@ pub struct Write<'buf> {
 }
 
 impl<'buf> Write<'buf> {
+    /// Creates a new `write` io operation.
     pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
         Self {
             fd,
@@ -44,7 +44,8 @@ impl<'buf> Future for Write<'buf> {
         ));
     }
 }
-// TODO docs
+
+/// `pwrite` io operation.
 pub struct PositionedWrite<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
@@ -53,6 +54,7 @@ pub struct PositionedWrite<'buf> {
 }
 
 impl<'buf> PositionedWrite<'buf> {
+    /// Creates a new `pwrite` io operation.
     pub fn new(fd: RawFd, buf: &'buf [u8], offset: usize) -> Self {
         Self {
             fd,
