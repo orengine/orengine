@@ -1,11 +1,10 @@
+use crate::get_task_from_context;
+use crate::runtime::local_executor;
+use crate::sleep::sleeping_task::SleepingTask;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-
-use crate::runtime::local_executor;
-use crate::runtime::task::Task;
-use crate::sleep::sleeping_task::SleepingTask;
 
 /// `Sleep` implements the [`Future`] trait. It waits at least until `sleep_until` and works only
 /// in `orengine` runtime.
@@ -24,7 +23,7 @@ impl Future for Sleep {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            let task = get_task_from_context!(cx);
             let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
             while !local_executor()
