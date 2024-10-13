@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
@@ -742,7 +742,7 @@ impl Executor {
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
         match self.local_worker {
-            Some(io_worker) => io_worker.must_poll(Duration::ZERO),
+            Some(io_worker) => io_worker.must_poll(),
             None => true,
         };
 

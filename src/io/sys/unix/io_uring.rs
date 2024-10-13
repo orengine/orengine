@@ -141,8 +141,8 @@ impl IoUringWorker {
     ///
     /// Returns Ok(true) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
-    fn submit(&mut self, duration: Duration) -> Result<bool, Error> {
-        if self.number_of_active_tasks == 0 && Duration::ZERO == duration {
+    fn submit(&mut self) -> Result<bool, Error> {
+        if self.number_of_active_tasks == 0 {
             return Ok(false);
         }
 
@@ -168,11 +168,7 @@ impl IoUringWorker {
             }
         }
 
-        let res = if duration == Duration::ZERO {
-            submitter.submit_with_args(1, &self.timeout)
-        } else {
-            submitter.submit_with_args(1, &SubmitArgs::new().timespec(&Timespec::from(duration)))
-        };
+        let res = submitter.submit_with_args(1, &self.timeout);
 
         match res {
             Ok(_) => (),
@@ -224,12 +220,9 @@ impl IoWorker for IoUringWorker {
 
     #[inline(always)]
     #[must_use]
-    fn must_poll(&mut self, duration: Duration) -> bool {
+    fn must_poll(&mut self) -> bool {
         self.check_deadlines();
-        if !self
-            .submit(duration)
-            .expect("IoUringWorker::submit() failed")
-        {
+        if !self.submit().expect("IoUringWorker::submit() failed") {
             return false;
         }
 
