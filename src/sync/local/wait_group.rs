@@ -1,3 +1,4 @@
+use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
@@ -25,7 +26,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
         let this = unsafe { self.get_unchecked_mut() };
         let inner = this.wait_group.get_inner();
         if inner.count != 0 {
-            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            let task = get_task_from_context!(cx);
             inner.waited_tasks.push(task);
 
             return Poll::Pending;

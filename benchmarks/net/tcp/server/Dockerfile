@@ -1,16 +1,11 @@
+ARG RUST_VERSION=1.81.0
 ARG APP_NAME=server
 
-FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.3.0 AS xx
-
-FROM --platform=$BUILDPLATFORM rustlang/rust:nightly-bullseye-slim AS build
+FROM rust:${RUST_VERSION}-alpine AS build
 ARG APP_NAME
 WORKDIR /app
 
-COPY --from=xx / /
-
-RUN apt-get update && apt-get install -y clang lld musl-dev git file gcc
-
-ARG TARGETPLATFORM
+RUN apk add --no-cache clang lld musl-dev git
 
 RUN --mount=type=bind,source=src,target=src \
     --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
@@ -21,9 +16,18 @@ RUN --mount=type=bind,source=src,target=src \
 cargo build --locked --release && \
 cp ./target/release/$APP_NAME /bin/app
 
-FROM debian:bullseye-slim AS final
+FROM alpine:3.18 AS final
 
-USER root
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+USER appuser
 
 COPY --from=build /bin/app /bin/
 

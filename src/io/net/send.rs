@@ -8,11 +8,9 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Send<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
@@ -38,24 +36,20 @@ impl<'buf> Future for Send<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.send(
-                this.fd,
-                this.buf.as_ptr(),
-                this.buf.len(),
+            worker.send(this.fd, this.buf.as_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
 }
 
 /// `send` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf [u8],
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'buf> SendWithDeadline<'buf> {
@@ -64,8 +58,8 @@ impl<'buf> SendWithDeadline<'buf> {
         Self {
             fd,
             buf,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }
@@ -79,11 +73,12 @@ impl<'buf> Future for SendWithDeadline<'buf> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.send(
+            worker.send_with_deadline(
                 this.fd,
                 this.buf.as_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
             ),
             ret
         ));

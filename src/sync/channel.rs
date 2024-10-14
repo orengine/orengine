@@ -1,6 +1,6 @@
-use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
 use crate::sync::naive_mutex::NaiveMutex;
+use crate::{get_task_from_context, panic_if_local_in_future};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
@@ -211,7 +211,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                 let len = inner_lock.storage.len();
                 if len >= inner_lock.capacity {
-                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
+                    let task = get_task_from_context!(cx);
                     inner_lock.senders.push_back((task, &mut this.call_state));
                     return_pending_and_release_lock!(local_executor(), inner_lock);
                 }
@@ -310,7 +310,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                         }
                     }
 
-                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
+                    let task = get_task_from_context!(cx);
                     inner_lock
                         .receivers
                         .push_back((task, this.slot, &mut this.call_state));

@@ -11,11 +11,9 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `connect` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Connect<'fut> {
     fd: RawFd,
     addr: &'fut SockAddr,
@@ -43,24 +41,20 @@ impl<'fut> Future for Connect<'fut> {
         let ret;
 
         poll_for_io_request!((
-            worker.connect(
-                this.fd,
-                this.addr.as_ptr(),
-                this.addr.len(),
+            worker.connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }
 }
 
 /// `connect` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct ConnectWithDeadline<'fut> {
     fd: RawFd,
     addr: &'fut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'fut> ConnectWithDeadline<'fut> {
@@ -69,8 +63,8 @@ impl<'fut> ConnectWithDeadline<'fut> {
         Self {
             fd,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }
@@ -85,11 +79,12 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.connect(
+            worker.connect_with_deadline(
                 this.fd,
                 this.addr.as_ptr(),
                 this.addr.len(),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
             ),
             ()
         ));

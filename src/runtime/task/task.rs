@@ -69,7 +69,7 @@ macro_rules! panic_if_local_in_future {
     ($cx:expr, $name_of_future:expr) => {
         #[cfg(debug_assertions)]
         {
-            let task = unsafe { &mut *($cx.waker().data() as *mut crate::runtime::Task) };
+            let task = crate::get_task_from_context!($cx);
             if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \

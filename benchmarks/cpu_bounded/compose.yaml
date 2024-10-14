@@ -2,5 +2,4 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile-bullseye
       target: final

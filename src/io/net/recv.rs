@@ -8,11 +8,9 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `recv` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct Recv<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
@@ -39,24 +37,20 @@ impl<'buf> Future for Recv<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.recv(
-                this.fd,
-                this.buf.as_mut_ptr(),
-                this.buf.len(),
+            worker.recv(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
 }
 
 /// `recv` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct RecvWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'buf> RecvWithDeadline<'buf> {
@@ -65,8 +59,8 @@ impl<'buf> RecvWithDeadline<'buf> {
         Self {
             fd,
             buf,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }
@@ -80,11 +74,12 @@ impl<'buf> Future for RecvWithDeadline<'buf> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.recv(
+            worker.recv_with_deadline(
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
             ),
             ret
         ));

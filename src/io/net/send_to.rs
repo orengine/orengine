@@ -11,11 +11,9 @@ use socket2::SockAddr;
 
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageSendHeader, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `send_to` io operation.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendTo<'fut> {
     fd: RawFd,
     message_header: MessageSendHeader<'fut>,
@@ -49,7 +47,7 @@ impl<'fut> Future for SendTo<'fut> {
                 this.fd,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));
@@ -57,14 +55,13 @@ impl<'fut> Future for SendTo<'fut> {
 }
 
 /// `send_to` io operation with deadline.
-#[must_use = "Future must be awaited to drive the IO operation"]
 pub struct SendToWithDeadline<'fut> {
     fd: RawFd,
     message_header: MessageSendHeader<'fut>,
     buf: &'fut [u8],
     addr: &'fut SockAddr,
-    time_bounded_io_task: TimeBoundedIoTask,
     io_request_data: Option<IoRequestData>,
+    deadline: Instant,
 }
 
 impl<'fut> SendToWithDeadline<'fut> {
@@ -75,8 +72,8 @@ impl<'fut> SendToWithDeadline<'fut> {
             message_header: MessageSendHeader::new(),
             buf,
             addr,
-            time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
             io_request_data: None,
+            deadline,
         }
     }
 }
@@ -90,11 +87,12 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
         let ret;
 
         poll_for_time_bounded_io_request!((
-            worker.send_to(
+            worker.send_to_with_deadline(
                 this.fd,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
             ),
             ret
         ));

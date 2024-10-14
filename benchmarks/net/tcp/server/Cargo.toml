@@ -1,12 +1,10 @@
-cargo-features = ["edition2024"]
-
 [package]
 name = "server"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-orengine = "0.2.5"
+orengine = "0.3.0-unstable"
 socket2 = { version = "0.5.7", features = ["all"] }
 may = "0.3.46"
 tokio = { version = "1", features = ["full"] }

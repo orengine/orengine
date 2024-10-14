@@ -1,6 +1,5 @@
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use std::future::Future;
@@ -9,9 +8,8 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 macro_rules! generate_poll {
-    ($name: ident, $name_with_deadline: ident, $method: expr) => {
+    ($name:ident, $name_with_deadline:ident, $method:expr, $method_with_deadline:expr) => {
         /// `poll_fd` io operation.
-        #[must_use = "Future must be awaited to drive the IO operation"]
         pub struct $name {
             fd: RawFd,
             io_request_data: Option<IoRequestData>,
@@ -37,18 +35,19 @@ macro_rules! generate_poll {
                 let ret;
 
                 poll_for_io_request!((
-                    worker.$method(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
+                    worker.$method(this.fd, unsafe {
+                        this.io_request_data.as_mut().unwrap_unchecked()
+                    }),
                     ()
                 ));
             }
         }
 
         /// `poll_fd` io operation with deadline.
-        #[must_use = "Future must be awaited to drive the IO operation"]
         pub struct $name_with_deadline {
             fd: RawFd,
-            time_bounded_io_task: TimeBoundedIoTask,
             io_request_data: Option<IoRequestData>,
+            deadline: Instant,
         }
 
         impl $name_with_deadline {
@@ -56,8 +55,8 @@ macro_rules! generate_poll {
             pub fn new(fd: RawFd, deadline: Instant) -> Self {
                 Self {
                     fd,
-                    time_bounded_io_task: TimeBoundedIoTask::new(deadline, 0),
                     io_request_data: None,
+                    deadline,
                 }
             }
         }
@@ -72,7 +71,11 @@ macro_rules! generate_poll {
                 let ret;
 
                 poll_for_time_bounded_io_request!((
-                    worker.$method(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
+                    worker.$method_with_deadline(
+                        this.fd,
+                        unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                        &mut this.deadline
+                    ),
                     ()
                 ));
             }
@@ -80,8 +83,18 @@ macro_rules! generate_poll {
     };
 }
 
-generate_poll!(PollRecv, PollRecvWithDeadline, poll_fd_read);
-generate_poll!(PollSend, PollSendWithDeadline, poll_fd_write);
+generate_poll!(
+    PollRecv,
+    PollRecvWithDeadline,
+    poll_fd_read,
+    poll_fd_read_with_deadline
+);
+generate_poll!(
+    PollSend,
+    PollSendWithDeadline,
+    poll_fd_write,
+    poll_fd_write_with_deadline
+);
 
 /// The AsyncPollFd trait provides non-blocking polling methods for readiness in receiving
 /// and sending data on file descriptors. It enables polling with deadlines, timeouts,

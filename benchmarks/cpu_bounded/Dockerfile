@@ -1,7 +1,7 @@
-ARG RUST_VERSION=1.83.0-nightly
-ARG APP_NAME=server
+ARG RUST_VERSION=1.81.0
+ARG APP_NAME=cpu-bounded
 
-FROM rustlang/rust:nightly-alpine AS build
+FROM rust:${RUST_VERSION}-alpine AS build
 ARG APP_NAME
 WORKDIR /app
 
@@ -14,7 +14,8 @@ RUN --mount=type=bind,source=src,target=src \
     --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
 cargo build --locked --release && \
-cp ./target/release/$APP_NAME /bin/app
+cp ./target/release/$APP_NAME /bin/server
+
 
 FROM alpine:3.18 AS final
 
@@ -29,6 +30,6 @@ RUN adduser \
     appuser
 USER appuser
 
-COPY --from=build /bin/app /bin/
+COPY --from=build /bin/server /bin/
 
-CMD ["/bin/app"]
+CMD ["/bin/server"]

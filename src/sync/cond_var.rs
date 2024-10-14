@@ -2,10 +2,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::panic_if_local_in_future;
-use crate::runtime::{Task, local_executor};
+use crate::runtime::local_executor;
 use crate::sync::{Mutex, MutexGuard};
 use crate::sync_task_queue::SyncTaskList;
+use crate::{get_task_from_context, panic_if_local_in_future};
 
 /// Current state of the [`WaitCondVar`].
 enum State {
@@ -55,7 +55,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 Some(guard) => Poll::Ready(guard),
                 None => {
                     this.state = State::WaitLock;
-                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
+                    let task = get_task_from_context!(cx);
                     unsafe {
                         this.mutex.subscribe(task);
                     }
@@ -222,10 +222,10 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use crate::Executor;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
+    use crate::Executor;
 
     use super::*;
 

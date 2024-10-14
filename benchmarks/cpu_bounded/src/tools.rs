@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 pub(crate) struct Bencher {
