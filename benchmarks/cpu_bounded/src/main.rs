@@ -1,13 +1,12 @@
 #![allow(internal_features)]
-#![feature(core_intrinsics)]
 
 mod tools;
 
-use orengine::Executor;
 use orengine::runtime::{local_executor, stop_all_executors};
-use orengine::sync::{LocalChannel, local_scope};
+use orengine::sync::{local_scope, LocalChannel};
+use orengine::Executor;
 use smol::future;
-use std::intrinsics::black_box;
+use std::hint::black_box;
 use std::thread;
 use tools::bench;
 

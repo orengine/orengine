@@ -1,7 +1,7 @@
-// TODO docs
-// FIXME: update code to std::task::Waker::data when it will be stabilized
+// TODO: update code to std::task::Waker::data when it will be stabilized
 use std::task::RawWakerVTable;
 
+/// [`Waker`](std::task::Waker) with public `data` field.
 pub struct WakerWithPubData {
     pub data: *const (),
     #[allow(dead_code)]

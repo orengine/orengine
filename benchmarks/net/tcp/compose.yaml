@@ -2,7 +2,7 @@ services:
   server:
     build:
       context: server
-      dockerfile: Dockerfile-alpine
+      dockerfile: Dockerfile
       target: final
     environment:
       - SERVER=orengine
@@ -12,7 +12,7 @@ services:
   client:
     build:
       context: client
-      dockerfile: Dockerfile-bullseye
+      dockerfile: Dockerfile
       target: final
     environment:
       - CLIENT=orengine
