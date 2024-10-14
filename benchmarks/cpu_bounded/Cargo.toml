@@ -1,12 +1,10 @@
-cargo-features = ["edition2024"]
-
 [package]
 name = "cpu-bounded"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-orengine = "0.2.5"
+orengine = "0.3.0-unstable"
 tokio = { version = "1", features = ["full"] }
 smol = "2.0.0"
 async-std = "1.12.0"

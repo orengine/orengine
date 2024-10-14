@@ -1,6 +1,6 @@
-use std::future::Future;
-use crate::{Executor, utils};
 use crate::runtime::{local_executor, Config};
+use crate::{utils, Executor};
+use std::future::Future;
 
 /// It does next steps on each core:
 ///
@@ -54,15 +54,13 @@ where
     for i in 1..cores.len() {
         let core = cores[i];
         let creator = creator.clone();
-        unsafe {
-            std::thread::Builder::new()
-                .name(format!("worker on core: {}", i))
-                .spawn_unchecked(move || {
-                    Executor::init_on_core_with_config(core, cfg);
-                    local_executor().spawn_local(creator());
-                    local_executor().run();
-                }).expect("failed to create worker thread");
-        }
+        std::thread::Builder::new()
+            .name(format!("worker on core: {}", i))
+            .spawn(move || {
+                Executor::init_on_core_with_config(core, cfg);
+                local_executor().spawn_local(creator());
+                local_executor().run();
+            }).expect("failed to create worker thread");
     }
 
     Executor::init_on_core(cores[0]);
