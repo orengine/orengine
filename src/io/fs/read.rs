@@ -34,12 +34,9 @@ impl<'buf> Future for Read<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.read(
-                this.fd,
-                this.buf.as_mut_ptr(),
-                this.buf.len(),
+            worker.read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
@@ -84,7 +81,7 @@ impl<'buf> Future for PositionedRead<'buf> {
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
                 this.offset,
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));

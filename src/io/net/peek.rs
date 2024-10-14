@@ -37,12 +37,9 @@ impl<'buf> Future for Peek<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.peek(
-                this.fd,
-                this.buf.as_mut_ptr(),
-                this.buf.len(),
+            worker.peek(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
@@ -81,7 +78,7 @@ impl<'buf> Future for PeekWithDeadline<'buf> {
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ret

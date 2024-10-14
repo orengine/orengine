@@ -33,10 +33,9 @@ impl Future for Remove {
         let ret;
 
         poll_for_io_request!((
-            worker.remove_file(
-                this.path.as_ptr(),
+            worker.remove_file(this.path.as_ptr(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }

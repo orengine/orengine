@@ -48,9 +48,9 @@ impl<S: FromRawFd> Future for Accept<S> {
                 this.fd,
                 this.addr.0.as_ptr() as _,
                 &mut this.addr.1,
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
-            (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
+            unsafe { (S::from_raw_fd(ret as RawFd), this.addr.0.clone()) }
         ));
     }
 }
@@ -90,10 +90,10 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
                 this.fd,
                 this.addr.0.as_ptr() as _,
                 &mut this.addr.1,
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
-            (S::from_raw_fd(ret as RawFd), this.addr.0.clone())
+            unsafe { (S::from_raw_fd(ret as RawFd), this.addr.0.clone()) }
         ));
     }
 }

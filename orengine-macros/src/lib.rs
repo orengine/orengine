@@ -16,7 +16,6 @@ use syn::{parse_macro_input, Expr, Lit};
 ///
 /// let timeout = get_timeout_name(quote! { timeout_secs = "123" }); // core::time::Duration::from_secs(123)
 /// ```
-///
 fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
     let mut timeout = quote! { core::time::Duration::from_secs(1) };
     match syn::parse::<syn::ExprAssign>(attr) {
@@ -184,10 +183,8 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
         if let Some(mut io_request_data) = this.io_request_data.take() {
             match io_request_data.ret() {
                 Ok(io_request_data_ret) => {
-                    unsafe {
-                        ret = io_request_data_ret;
-                        return Poll::Ready(Ok(#ret_statement));
-                    }
+                    ret = io_request_data_ret;
+                    return Poll::Ready(Ok(#ret_statement));
                 }
                 Err(err) => {
                     unsafe {
@@ -197,14 +194,12 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        unsafe {
-            let task = (cx.waker().data() as *const crate::runtime::Task).read();
-            this.io_request_data = Some(IoRequestData::new(task));
+        let task = crate::get_task_from_context!(cx);
+        this.io_request_data = Some(IoRequestData::new(task));
 
-            #do_request;
+        #do_request;
 
-            return Poll::Pending;
-        }
+        return Poll::Pending;
     };
 
     TokenStream::from(expanded)
@@ -241,11 +236,10 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
         if let Some(mut io_request_data) = this.io_request_data.take() {
             match io_request_data.ret() {
                 Ok(io_request_data_ret) => {
-                    unsafe {
-                        ret = io_request_data_ret;
-                        worker.deregister_time_bounded_io_task(&this.deadline);
-                        return Poll::Ready(Ok(#ret_statement));
-                    }
+                    ret = io_request_data_ret;
+                    worker.deregister_time_bounded_io_task(&this.deadline);
+
+                    return Poll::Ready(Ok(#ret_statement));
                 }
                 Err(err) => {
                     if err.kind() != std::io::ErrorKind::TimedOut {
@@ -257,14 +251,12 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        unsafe {
-            let task = (cx.waker().data() as *const crate::runtime::Task).read();
-            this.io_request_data = Some(IoRequestData::new(task));
+        let task = crate::get_task_from_context!(cx);
+        this.io_request_data = Some(IoRequestData::new(task));
 
-            #do_request;
+        #do_request;
 
-            return Poll::Pending;
-        }
+        return Poll::Pending;
     };
 
     TokenStream::from(expanded)

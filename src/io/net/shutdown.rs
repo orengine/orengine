@@ -36,11 +36,9 @@ impl Future for Shutdown {
         let ret;
 
         poll_for_io_request!((
-            worker.shutdown(
-                this.fd,
-                this.how,
+            worker.shutdown(this.fd, this.how, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }

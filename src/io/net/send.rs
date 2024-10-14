@@ -36,12 +36,9 @@ impl<'buf> Future for Send<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.send(
-                this.fd,
-                this.buf.as_ptr(),
-                this.buf.len(),
+            worker.send(this.fd, this.buf.as_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
@@ -80,7 +77,7 @@ impl<'buf> Future for SendWithDeadline<'buf> {
                 this.fd,
                 this.buf.as_ptr(),
                 this.buf.len(),
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ret

@@ -35,11 +35,9 @@ impl Future for CreateDir {
         let ret;
 
         poll_for_io_request!((
-            worker.create_dir(
-                this.os_path.as_ptr(),
-                this.mode,
+            worker.create_dir(this.os_path.as_ptr(), this.mode, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }

@@ -34,11 +34,9 @@ impl Future for Socket {
         let ret;
 
         poll_for_io_request!((
-            worker.socket(
-                this.domain,
-                this.socket_type,
+            worker.socket(this.domain, this.socket_type, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret as RawFd
         ));
     }

@@ -48,7 +48,7 @@ impl<'fut> Future for PeekFrom<'fut> {
                 this.fd,
                 this.msg_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));
@@ -97,7 +97,7 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
                 this.fd,
                 this.msg_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ret

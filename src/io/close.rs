@@ -33,7 +33,9 @@ impl Future for Close {
         let ret;
 
         poll_for_io_request!((
-            worker.close(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.close(this.fd, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ()
         ));
     }

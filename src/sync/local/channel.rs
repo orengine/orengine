@@ -1,3 +1,4 @@
+use crate::get_task_from_context;
 use crate::runtime::{local_executor, Task};
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
@@ -105,7 +106,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 
                 let len = this.inner.storage.len();
                 if len >= this.inner.capacity {
-                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
+                    let task = get_task_from_context!(cx);
                     this.inner.senders.push_back((task, &mut this.call_state));
                     return Poll::Pending;
                 }
@@ -195,7 +196,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
                         }
                     }
 
-                    let task = unsafe { (cx.waker().data() as *mut Task).read() };
+                    let task = get_task_from_context!(cx);
                     this.inner
                         .receivers
                         .push_back((task, this.slot, &mut this.call_state));

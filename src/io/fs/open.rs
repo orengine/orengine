@@ -39,12 +39,10 @@ impl<F: FromRawFd> Future for Open<F> {
         let ret;
 
         poll_for_io_request!((
-            worker.open(
-                this.path.as_ptr(),
-                &this.os_open_options,
+            worker.open(this.path.as_ptr(), &this.os_open_options, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
-            F::from_raw_fd(ret as RawFd)
+            }),
+            unsafe { F::from_raw_fd(ret as RawFd) }
         ));
     }
 }

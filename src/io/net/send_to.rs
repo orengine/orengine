@@ -47,7 +47,7 @@ impl<'fut> Future for SendTo<'fut> {
                 this.fd,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));
@@ -91,7 +91,7 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
                 this.fd,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ret

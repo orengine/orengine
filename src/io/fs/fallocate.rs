@@ -44,7 +44,7 @@ impl Future for Fallocate {
                 this.offset as u64,
                 this.len as u64,
                 this.flags,
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));

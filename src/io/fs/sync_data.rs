@@ -32,7 +32,9 @@ impl Future for SyncData {
         let ret;
 
         poll_for_io_request!((
-            worker.sync_data(this.fd, this.io_request_data.as_mut().unwrap_unchecked()),
+            worker.sync_data(this.fd, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ret
         ));
     }

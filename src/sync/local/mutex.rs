@@ -1,6 +1,7 @@
 //! This module provides an asynchronous mutex (e.g. [`std::sync::Mutex`]) type [`LocalMutex`].
 //! It allows for asynchronous locking and unlocking, and provides
 //! ownership-based locking through [`LocalMutexGuard`].
+use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
@@ -117,7 +118,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
-            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            let task = get_task_from_context!(cx);
             let wait_queue = unsafe { &mut *this.local_mutex.wait_queue.get() };
             wait_queue.push(task);
             this.was_called = true;

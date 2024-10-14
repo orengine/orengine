@@ -1,6 +1,7 @@
 //! This module provides an asynchronous rw_lock (e.g. [`std::sync::RwLock`]) type [`LocalRWLock`].
 //! It allows for asynchronous read or write locking and unlocking, and provides
 //! ownership-based locking through [`LocalReadLockGuard`] and [`LocalWriteLockGuard`].
+use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::cell::UnsafeCell;
@@ -9,7 +10,6 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
 // region guards
 
 /// RAII structure used to release the shared read access of a lock when
@@ -185,7 +185,7 @@ impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
-            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            let task = get_task_from_context!(cx);
             this.local_rw_lock.get_inner().wait_queue_read.push(task);
             this.was_called = true;
             return Poll::Pending;
@@ -218,7 +218,7 @@ impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
-            let task = unsafe { (cx.waker().data() as *const Task).read() };
+            let task = get_task_from_context!(cx);
             this.local_rw_lock.get_inner().wait_queue_write.push(task);
             this.was_called = true;
             return Poll::Pending;

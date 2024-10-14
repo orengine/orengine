@@ -33,10 +33,9 @@ impl Future for RemoveDir {
         let ret;
 
         poll_for_io_request!((
-            worker.remove_dir(
-                this.path.as_ptr(),
+            worker.remove_dir(this.path.as_ptr(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }

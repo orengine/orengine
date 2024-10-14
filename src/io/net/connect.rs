@@ -41,12 +41,9 @@ impl<'fut> Future for Connect<'fut> {
         let ret;
 
         poll_for_io_request!((
-            worker.connect(
-                this.fd,
-                this.addr.as_ptr(),
-                this.addr.len(),
+            worker.connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }
@@ -86,7 +83,7 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
                 this.fd,
                 this.addr.as_ptr(),
                 this.addr.len(),
-                this.io_request_data.as_mut().unwrap_unchecked(),
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ()

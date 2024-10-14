@@ -34,12 +34,9 @@ impl<'buf> Future for Write<'buf> {
         let ret;
 
         poll_for_io_request!((
-            worker.write(
-                this.fd,
-                this.buf.as_ptr(),
-                this.buf.len(),
+            worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ret
         ));
     }
@@ -79,7 +76,7 @@ impl<'buf> Future for PositionedWrite<'buf> {
                 this.buf.as_ptr(),
                 this.buf.len(),
                 this.offset,
-                this.io_request_data.as_mut().unwrap_unchecked()
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
         ));

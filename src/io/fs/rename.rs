@@ -35,11 +35,9 @@ impl Future for Rename {
         let ret;
 
         poll_for_io_request!((
-            worker.rename(
-                this.old_path.as_ptr(),
-                this.new_path.as_ptr(),
+            worker.rename(this.old_path.as_ptr(), this.new_path.as_ptr(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
-            ),
+            }),
             ()
         ));
     }
