@@ -10,18 +10,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  build-debug:
+    name: Build Debug
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
-    - name: Build debug
+    - name: Build Debug
       run: cargo build --verbose
-    - name: Run tests debug
-      run: cargo test --verbose
+
+  test-debug:
+    name: Test Debug
+    runs-on: ubuntu-latest
+    steps:
     - uses: actions/checkout@v4
-    - name: Build debug
+    - name: Build Debug
       run: cargo build --verbose
-    - name: Run tests debug
+    - name: Run Tests Debug
       run: cargo test --verbose
+
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Release
+      run: cargo build --release --verbose
+
+  test-release:
+    name: Test Release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Release
+      run: cargo build --release --verbose
+    - name: Run Tests Release
+      run: cargo test --release --verbose
