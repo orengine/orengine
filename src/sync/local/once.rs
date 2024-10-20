@@ -159,8 +159,9 @@ unsafe impl Sync for LocalOnce {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_once() {
         let once = LocalOnce::new();
         assert_eq!(once.state(), OnceState::NotCalled);
@@ -173,7 +174,7 @@ mod tests {
         assert_eq!(once.call_once_sync(|| ()), Err(()));
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_once_async() {
         let async_once = LocalOnce::new();
         assert_eq!(async_once.state(), OnceState::NotCalled);

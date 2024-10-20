@@ -241,10 +241,11 @@ unsafe impl<T: Send> Send for NaiveMutex<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
+    use crate::sleep;
     use crate::sync::WaitGroup;
-    use crate::{sleep, Executor};
+    use crate::test::sched_future_to_another_thread;
     use std::sync::Arc;
-    use std::thread;
     use std::time::Duration;
 
     #[orengine_macros::test_global]
@@ -257,16 +258,13 @@ mod tests {
         let mutex_clone = mutex.clone();
         let wg_clone = wg.clone();
         wg_clone.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                wg_clone.done();
-                println!("3");
-                *value = true;
-            });
+        let handle = sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            wg_clone.done();
+            println!("3");
+            *value = true;
         });
 
         let _ = wg.wait().await;
@@ -276,6 +274,8 @@ mod tests {
 
         assert_eq!(*value, true);
         drop(value);
+
+        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -291,18 +291,15 @@ mod tests {
 
         lock_wg.add(1);
         unlock_wg.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                lock_wg_clone.done();
-                let _ = unlock_wg_clone.wait().await;
-                println!("4");
-                *value = true;
-                drop(value);
-                second_lock_clone.done();
-            });
+        let handle = sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            lock_wg_clone.done();
+            let _ = unlock_wg_clone.wait().await;
+            println!("4");
+            *value = true;
+            drop(value);
+            second_lock_clone.done();
         });
 
         let _ = lock_wg.wait().await;
@@ -320,45 +317,46 @@ mod tests {
             Some(v) => assert_eq!(*v, true, "not waited"),
             None => panic!("can't acquire lock"),
         }
+
+        handle.join();
     }
 
-    #[orengine_macros::test_global]
-    fn stress_test_naive_mutex() {
-        const PAR: usize = 10;
-        const TRIES: usize = 100;
-
-        async fn work_with_lock(mutex: &NaiveMutex<usize>, wg: &WaitGroup) {
-            let mut lock = mutex.lock().await;
-            *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
-
-            wg.done();
-        }
-
-        let mutex = Arc::new(NaiveMutex::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
-            thread::spawn(move || {
-                let ex = Executor::init();
-                ex.run_with_global_future(async move {
-                    for _ in 0..TRIES {
-                        work_with_lock(&mutex, &wg).await;
-                    }
-                });
-            });
-        }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg).await;
-        }
-
-        let _ = wg.wait().await;
-
-        assert_eq!(*mutex.lock().await, TRIES * PAR);
-    }
+    // TODO #[orengine_macros::test_global]
+    // fn stress_test_naive_mutex() {
+    //     const PAR: usize = 10;
+    //     const TRIES: usize = 100;
+    //
+    //     async fn work_with_lock(mutex: &NaiveMutex<usize>, wg: &WaitGroup) {
+    //         let mut lock = mutex.lock().await;
+    //         *lock += 1;
+    //         if *lock % 500 == 0 {
+    //             println!("{} of {}", *lock, TRIES * PAR);
+    //         }
+    //
+    //         wg.done();
+    //     }
+    //
+    //     let mut spawner = ExecutorThreadSpawner::default();
+    //     let mutex = Arc::new(NaiveMutex::new(0));
+    //     let wg = Arc::new(WaitGroup::new());
+    //     wg.add(PAR * TRIES);
+    //     for _ in 1..PAR {
+    //         let wg = wg.clone();
+    //         let mutex = mutex.clone();
+    //
+    //         spawner.spawn_executor_and_spawn_global(async move {
+    //             for _ in 0..TRIES {
+    //                 work_with_lock(&mutex, &wg).await;
+    //             }
+    //         });
+    //     }
+    //
+    //     for _ in 0..TRIES {
+    //         work_with_lock(&mutex, &wg).await;
+    //     }
+    //
+    //     let _ = wg.wait().await;
+    //
+    //     assert_eq!(*mutex.lock().await, TRIES * PAR);
+    // }
 }

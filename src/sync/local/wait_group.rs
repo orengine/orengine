@@ -270,12 +270,13 @@ unsafe impl Sync for LocalWaitGroup {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::local::Local;
     use crate::runtime::local_executor;
     use crate::yield_now;
     use std::rc::Rc;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_many_wait_one() {
         let check_value = Local::new(false);
         let wait_group = Rc::new(LocalWaitGroup::new());
@@ -298,7 +299,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_one_wait_many() {
         let check_value = Local::new(5);
         let wait_group = Rc::new(LocalWaitGroup::new());

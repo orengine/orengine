@@ -220,6 +220,7 @@ macro_rules! new_local_pool {
 
 #[cfg(test)]
 mod tests {
+    use crate as orengine;
     use std::ops::Deref;
 
     new_local_pool! {
@@ -231,7 +232,7 @@ mod tests {
         { 0 }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_new_local_pool() {
         let mut guard = TestPool::acquire();
         assert_eq!(*guard.deref(), 0);

@@ -1,10 +1,10 @@
-use std::ffi::OsStr;
-use std::{io};
-use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
-use smallvec::SmallVec;
 use crate::io::create_dir::CreateDir;
 use crate::io::sys::OsPath::get_os_path;
+use smallvec::SmallVec;
+use std::ffi::OsStr;
+use std::io;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 
 #[derive(Debug)]
 /// A builder used to create directories in various manners.
@@ -35,7 +35,10 @@ impl DirBuilder {
     /// platforms and also non-recursive.
     #[must_use]
     pub fn new() -> DirBuilder {
-        DirBuilder { mode: 0o666, recursive: false }
+        DirBuilder {
+            mode: 0o666,
+            recursive: false,
+        }
     }
 
     /// Indicates that directories should be created recursively, creating all
@@ -96,7 +99,7 @@ impl DirBuilder {
         #[inline(always)]
         fn get_offset<const STACK_CAP: usize>(
             offsets: &mut SmallVec<usize, STACK_CAP>,
-            path: &Path
+            path: &Path,
         ) -> Result<usize, ()> {
             let mut path_index;
             if offsets.is_empty() {
@@ -109,7 +112,9 @@ impl DirBuilder {
             loop {
                 if path_index == 1 || bytes[path_index] == b'.' || bytes[path_index] == b':' {
                     if bytes[path_index] == b'.' {
-                        if path_index + 1 == bytes.len() || bytes[path_index + 1] == std::path::MAIN_SEPARATOR as u8 {
+                        if path_index + 1 == bytes.len()
+                            || bytes[path_index + 1] == std::path::MAIN_SEPARATOR as u8
+                        {
                             break Err(());
                         }
                     } else {
@@ -138,7 +143,7 @@ impl DirBuilder {
             match CreateDir::new(get_os_path(tmp_path)?, tmp_mode).await {
                 Ok(()) => {
                     if path_stack.is_empty() {
-                        return Ok(())
+                        return Ok(());
                     }
                     if path_stack.len() == 1 {
                         tmp_mode = mode;
@@ -149,32 +154,35 @@ impl DirBuilder {
                     path_stack.pop();
                     unsafe {
                         tmp_path = Path::new(OsStr::from_bytes(
-                            &path.as_os_str().as_encoded_bytes()[..*path_stack.get_unchecked(path_stack.len() - 1)]
+                            &path.as_os_str().as_encoded_bytes()
+                                [..*path_stack.get_unchecked(path_stack.len() - 1)],
                         ))
                     }
-                },
+                }
                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
                     match get_offset(&mut path_stack, path) {
                         Ok(offset) => {
-                            tmp_path = Path::new(OsStr::from_bytes(&path.as_os_str().as_encoded_bytes()[..offset]));
+                            tmp_path = Path::new(OsStr::from_bytes(
+                                &path.as_os_str().as_encoded_bytes()[..offset],
+                            ));
                             tmp_mode = 0o777;
-                        },
+                        }
                         Err(_) => {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
                                 "failed to create path tree",
                             ));
-                        },
+                        }
                     }
-                },
+                }
                 Err(_) if path.is_dir() => {
                     if path_stack.is_empty() {
-                        return Ok(())
+                        return Ok(());
                     }
                 }
                 Err(err) => {
                     return Err(err);
-                },
+                }
             }
         }
     }
@@ -182,11 +190,12 @@ impl DirBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
     use super::*;
+    use crate as orengine;
+    use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
+    use std::path::PathBuf;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_dir_builder() {
         let dir_builder = DirBuilder::new();
         assert_eq!(dir_builder.mode, 0o666);
@@ -197,7 +206,7 @@ mod tests {
         assert_eq!(dir_builder.recursive, true);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_dir_builder_create() {
         create_test_dir_if_not_exist();
 
@@ -206,7 +215,7 @@ mod tests {
         path.push("test_dir");
         match dir_builder.create(path.clone()).await {
             Ok(_) => assert!(is_exists(path)),
-            Err(err) => panic!("Can't create dir: {}", err)
+            Err(err) => panic!("Can't create dir: {}", err),
         }
 
         let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
@@ -218,7 +227,7 @@ mod tests {
         path.push("test_dir5");
         match dir_builder.create(path.clone()).await {
             Ok(_) => assert!(is_exists(path)),
-            Err(err) => panic!("Can't create dir all: {}", err)
+            Err(err) => panic!("Can't create dir all: {}", err),
         }
 
         let mut path = PathBuf::from(TEST_DIR_PATH);

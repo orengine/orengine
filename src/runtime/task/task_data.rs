@@ -20,6 +20,11 @@ const IS_LOCAL_SHIFT: i128 = 127;
 const TASK_MASK: i128 = !(1 << IS_LOCAL_SHIFT);
 #[cfg(any(target_pointer_width = "64"))]
 const IS_LOCAL_MASK: i128 = 1 << IS_LOCAL_SHIFT;
+// TODO
+#[cfg(any(target_pointer_width = "64"))]
+pub const LOCAL: u128 = 0;
+#[cfg(any(target_pointer_width = "64"))]
+pub const GLOBAL: u128 = 1 << IS_LOCAL_SHIFT;
 
 impl TaskData {
     /// Creates a new `TaskData`.

@@ -5,12 +5,12 @@ use std::collections::VecDeque;
 /// `SharedExecutorTaskList` is a list of tasks that can be shared between executors.
 ///
 /// All tasks in the list must be `global` and their futures must implement `Send`.
-pub(crate) struct SharedExecutorTaskList {
+pub(crate) struct ExecutorSharedTaskList {
     executor_id: usize,
     list: SpinLock<Vec<Task>>,
 }
 
-impl SharedExecutorTaskList {
+impl ExecutorSharedTaskList {
     /// Creates a new `SharedExecutorTaskList`
     pub(crate) const fn new(executor_id: usize) -> Self {
         Self {
@@ -42,5 +42,5 @@ impl SharedExecutorTaskList {
     }
 }
 
-unsafe impl Send for SharedExecutorTaskList {}
-unsafe impl Sync for SharedExecutorTaskList {}
+unsafe impl Send for ExecutorSharedTaskList {}
+unsafe impl Sync for ExecutorSharedTaskList {}

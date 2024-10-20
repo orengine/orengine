@@ -219,15 +219,15 @@ unsafe impl Send for CondVar {}
 mod tests {
     use std::ops::Deref;
     use std::sync::Arc;
-    use std::thread;
     use std::time::{Duration, Instant};
 
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::Executor;
 
     use super::*;
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
@@ -235,18 +235,16 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                let (lock, cvar) = pair2.deref();
-                let mut started = lock.lock().await;
-                sleep(TIME_TO_SLEEP).await;
-                *started = true;
-                if need_drop {
-                    drop(started);
-                }
-                cvar.notify_one();
-            });
+
+        let handle = sched_future_to_another_thread(async move {
+            let (lock, cvar) = pair2.deref();
+            let mut started = lock.lock().await;
+            sleep(TIME_TO_SLEEP).await;
+            *started = true;
+            if need_drop {
+                drop(started);
+            }
+            cvar.notify_one();
         });
 
         let (lock, cvar) = pair.deref();
@@ -256,6 +254,8 @@ mod tests {
         }
 
         assert!(start.elapsed() >= TIME_TO_SLEEP);
+
+        handle.join();
     }
 
     async fn test_all(need_drop: bool) {
@@ -276,27 +276,29 @@ mod tests {
         });
 
         let wg = Arc::new(WaitGroup::new());
+        let mut handles = Vec::new();
         for _ in 0..NUMBER_OF_WAITERS {
             let pair = pair.clone();
             let wg = wg.clone();
             wg.add(1);
-            thread::spawn(move || {
-                let executor = Executor::init();
-                executor.spawn_global(async move {
-                    let (lock, cvar) = pair.deref();
-                    let mut started = lock.lock().await;
-                    while !*started {
-                        started = cvar.wait(started).await;
-                    }
-                    wg.done();
-                });
-                executor.run();
-            });
+
+            handles.push(sched_future_to_another_thread(async move {
+                let (lock, cvar) = pair.deref();
+                let mut started = lock.lock().await;
+                while !*started {
+                    started = cvar.wait(started).await;
+                }
+                wg.done();
+            }));
         }
 
         let _ = wg.wait().await;
 
         assert!(start.elapsed() >= TIME_TO_SLEEP);
+
+        for handle in handles {
+            handle.join();
+        }
     }
 
     #[orengine_macros::test_global]

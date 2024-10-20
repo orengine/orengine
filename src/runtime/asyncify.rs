@@ -65,12 +65,13 @@ macro_rules! asyncify {
 
 #[cfg(test)]
 mod tests {
+    use crate as orengine;
     use crate::local_executor;
     use std::sync::Arc;
     use std::time::Duration;
     use std::{thread, time};
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_asyncify() {
         let start = time::Instant::now();
         let list = Arc::new(std::sync::Mutex::new(vec![]));

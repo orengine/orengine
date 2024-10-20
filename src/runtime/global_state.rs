@@ -1,17 +1,19 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use crate::local_executor;
+use crate::runtime::ExecutorSharedTaskList;
+#[cfg(test)]
+use crate::test::is_executor_id_in_pool;
+use crate::utils::{SpinLock, SpinLockGuard};
+use crossbeam::utils::CachePadded;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
-use crossbeam::utils::CachePadded;
-use crate::local_executor;
-use crate::runtime::SharedExecutorTaskList;
-use crate::utils::{SpinLock, SpinLockGuard};
+// TODO docs
+use std::sync::Arc;
 
 pub(crate) struct SubscribedState {
     current_version: CachePadded<AtomicUsize>,
     processed_version: usize,
     is_stopped: bool,
-    tasks_lists: Option<Vec<Arc<SharedExecutorTaskList>>>
+    tasks_lists: Option<Vec<Arc<ExecutorSharedTaskList>>>,
 }
 
 impl SubscribedState {
@@ -25,8 +27,13 @@ impl SubscribedState {
 
         self.processed_version = current_version;
         let global_state = global_state();
+        let found = global_state
+            .states_of_alive_executors
+            .iter()
+            .position(|(alive_executor_id, _)| *alive_executor_id == executor_id)
+            .is_some();
 
-        if !global_state.states_of_alive_executors.contains_key(&executor_id) {
+        if !found {
             self.is_stopped = true;
             return;
         }
@@ -70,7 +77,7 @@ impl SubscribedState {
             current_version: CachePadded::new(AtomicUsize::new(1)),
             processed_version: 0,
             is_stopped: false,
-            tasks_lists: None
+            tasks_lists: None,
         }
     }
 
@@ -81,30 +88,26 @@ impl SubscribedState {
     /// # Safety
     ///
     /// Tasks list must be not None
-    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<SharedExecutorTaskList>> {
+    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<ExecutorSharedTaskList>> {
         unsafe { self.tasks_lists.as_ref().unwrap_unchecked() }
     }
 }
 
 struct GlobalState {
     version: usize,
-    /// key is a worker id
-    states_of_alive_executors: BTreeMap<usize, &'static SubscribedState>,
-    lists: Vec<Arc<SharedExecutorTaskList>>
+    /// 0 - id
+    ///
+    /// 1 - state
+    states_of_alive_executors: Vec<(usize, &'static SubscribedState)>,
+    lists: Vec<Arc<ExecutorSharedTaskList>>,
 }
 
 impl GlobalState {
     const fn new() -> Self {
         Self {
             version: 0,
-            states_of_alive_executors: BTreeMap::new(),
-            lists: Vec::new()
-        }
-    }
-
-    fn notify_all(&self) {
-        for (_, state) in self.states_of_alive_executors.iter() {
-            state.current_version.store(self.version, Release);
+            states_of_alive_executors: Vec::new(),
+            lists: Vec::new(),
         }
     }
 
@@ -112,45 +115,40 @@ impl GlobalState {
     pub(crate) fn register_local_executor(&mut self) {
         self.version += 1;
         let executor = local_executor();
-
         if let Some(shared_task_list) = executor.shared_task_list() {
             self.lists.push(shared_task_list.clone());
             executor.subscribed_state_mut().tasks_lists = Some(self.lists.clone());
             let executor_id = executor.id();
-            executor.subscribed_state_mut().validate_tasks_lists(executor_id);
+            executor
+                .subscribed_state_mut()
+                .validate_tasks_lists(executor_id);
         }
 
-        // No need `executor.subscribed_state_mut().current_version.store(self.version, Relaxed)`
-        // because notify_all() will set the version
         executor.subscribed_state_mut().processed_version = self.version;
+        self.states_of_alive_executors
+            .push((executor.id(), executor.subscribed_state()));
 
-        self.states_of_alive_executors.insert(
-            executor.id(),
-            executor.subscribed_state()
-        );
-
-        self.notify_all();
+        for (_, state) in &mut self.states_of_alive_executors {
+            state.current_version.store(self.version, Release);
+        }
     }
 
     #[inline(always)]
     pub(crate) fn stop_executor(&mut self, id: usize) {
-        let subscribed_state = match self.states_of_alive_executors.remove(&id) {
-            Some(state) => state,
-            None => return
-        };
-
         self.version += 1;
-
+        self.states_of_alive_executors
+            .retain(|(alive_executor_id, state)| {
+                state.current_version.store(self.version, Release);
+                *alive_executor_id != id
+            });
         self.lists.retain(|list| list.executor_id() != id);
-
-        subscribed_state.current_version.store(self.version, Release);
-        self.notify_all();
     }
 
     #[inline(always)]
+    #[cfg(not(test))]
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
-        self.states_of_alive_executors.retain(|_, state| {
+        self.states_of_alive_executors.retain(|(_, state)| {
             state.current_version.store(self.version, Release);
             false
         });
@@ -214,32 +212,44 @@ pub(crate) fn register_local_executor() {
 /// }
 /// ```
 pub fn stop_executor(executor_id: usize) {
+    #[cfg(test)]
+    {
+        if is_executor_id_in_pool(executor_id) {
+            return;
+        }
+    }
+
     global_state().stop_executor(executor_id);
 }
 
 /// Stops all executors after some time (at most 100ms).
 pub fn stop_all_executors() {
+    #[cfg(test)]
+    todo!();
+
+    #[cfg(not(test))]
     global_state().stop_all_executors();
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::runtime::Config;
+    use crate::{local_executor, sleep, Executor};
     use std::thread;
     use std::time::Duration;
-    use crate::{local_executor, sleep, Executor};
-    use crate::runtime::Config;
-    use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_stop_executor() {
         thread::spawn(move || {
             let ex = Executor::init_with_config(
                 Config::default()
                     .disable_work_sharing()
                     .disable_io_worker()
-                    .disable_io_worker()
+                    .disable_io_worker(),
             );
-            ex.spawn_local(async  {
+            ex.spawn_local(async {
                 println!("2");
                 stop_executor(local_executor().id());
             });

@@ -367,6 +367,7 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
 
     #[orengine_macros::test_global]
     fn test_rw_lock() {

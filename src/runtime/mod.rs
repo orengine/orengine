@@ -10,7 +10,7 @@ mod local_thread_pool;
 pub mod task;
 pub mod waker;
 
-pub use executor::{local_executor, local_executor_unchecked, Executor};
+pub use executor::{local_executor, Executor};
 
 pub use asyncify::*;
 pub use config::Config;

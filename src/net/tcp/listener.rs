@@ -152,8 +152,9 @@ mod tests {
     use crate::yield_now;
 
     use super::*;
+    use crate as orengine;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_listener() {
         let listener = TcpListener::bind("127.0.0.1:8080")
             .await
@@ -197,7 +198,7 @@ mod tests {
         yield_now().await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_accept() {
         let config = BindConfig::default();
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;

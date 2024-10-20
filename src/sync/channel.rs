@@ -858,27 +858,25 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::Relaxed;
     use std::sync::Arc;
-    use std::thread;
     use std::time::Duration;
 
+    use crate as orengine;
+    use crate::sleep;
     use crate::sync::channel::Channel;
     use crate::sync::WaitGroup;
+    use crate::test::sched_future_to_another_thread;
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
-    use crate::{sleep, Executor};
 
     #[orengine_macros::test_global]
     fn test_zero_capacity() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
 
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                ch_clone.send(1).await.expect("closed");
-                ch_clone.send(2).await.expect("closed");
-                ch_clone.close().await;
-            });
+        let handle = sched_future_to_another_thread(async move {
+            ch_clone.send(1).await.expect("closed");
+            ch_clone.send(2).await.expect("closed");
+            ch_clone.close().await;
         });
 
         let res = ch.recv().await.expect("closed");
@@ -893,6 +891,8 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
+
+        handle.join();
     }
 
     const N: usize = 10_025;
@@ -906,16 +906,13 @@ mod tests {
 
         wg.add(N);
 
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                for i in 0..N {
-                    ch_clone.send(i).await.expect("closed");
-                }
+        let handle = sched_future_to_another_thread(async move {
+            for i in 0..N {
+                ch_clone.send(i).await.expect("closed");
+            }
 
-                let _ = wg_clone.wait().await;
-                ch_clone.close().await;
-            });
+            let _ = wg_clone.wait().await;
+            ch_clone.close().await;
         });
 
         for i in 0..N {
@@ -928,6 +925,8 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
+
+        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -935,23 +934,15 @@ mod tests {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                sleep(Duration::from_millis(1)).await;
-                ch_clone.send(1).await.expect("closed");
-
-                ch_clone.close().await;
-            });
+        let handle = sched_future_to_another_thread(async move {
+            sleep(Duration::from_millis(1)).await;
+            ch_clone.send(1).await.expect("closed");
         });
 
         let res = ch.recv().await.expect("closed");
         assert_eq!(res, 1);
 
-        match ch.recv().await {
-            Err(_) => assert!(true),
-            _ => panic!("should be closed"),
-        };
+        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -959,16 +950,13 @@ mod tests {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                ch_clone.send(1).await.expect("closed");
-                ch_clone.send(2).await.expect("closed");
+        let handle = sched_future_to_another_thread(async move {
+            ch_clone.send(1).await.expect("closed");
+            ch_clone.send(2).await.expect("closed");
 
-                sleep(Duration::from_millis(1)).await;
+            sleep(Duration::from_millis(1)).await;
 
-                ch_clone.close().await;
-            });
+            ch_clone.close().await;
         });
 
         sleep(Duration::from_millis(1)).await;
@@ -983,6 +971,8 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
+
+        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -993,17 +983,14 @@ mod tests {
         let wg_clone = wg.clone();
 
         wg.inc();
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                for i in 0..N {
-                    ch_clone.send(i).await.expect("closed");
-                }
+        let handle = sched_future_to_another_thread(async move {
+            for i in 0..N {
+                ch_clone.send(i).await.expect("closed");
+            }
 
-                let _ = wg_clone.wait().await;
+            let _ = wg_clone.wait().await;
 
-                ch_clone.close().await;
-            });
+            ch_clone.close().await;
         });
 
         for i in 0..N {
@@ -1017,6 +1004,8 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
+
+        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -1079,6 +1068,7 @@ mod tests {
         let wg = Arc::new(WaitGroup::new());
         let sent = Arc::new(AtomicUsize::new(0));
         let received = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
 
         for i in 0..get_core_ids().unwrap().len() * 4 {
             let channel = channel.clone();
@@ -1087,27 +1077,29 @@ mod tests {
             let received = received.clone();
             wg.add(1);
 
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    if i % 2 == 0 {
-                        for j in 0..count {
-                            channel.send(j).await.expect("closed");
-                            sent.fetch_add(j, Relaxed);
-                        }
-                    } else {
-                        for _ in 0..count {
-                            let res = channel.recv().await.expect("closed");
-                            received.fetch_add(res, Relaxed);
-                        }
+            handles.push(sched_future_to_another_thread(async move {
+                if i % 2 == 0 {
+                    for j in 0..count {
+                        channel.send(j).await.expect("closed");
+                        sent.fetch_add(j, Relaxed);
                     }
+                } else {
+                    for _ in 0..count {
+                        let res = channel.recv().await.expect("closed");
+                        received.fetch_add(res, Relaxed);
+                    }
+                }
 
-                    wg.done();
-                });
-            });
+                wg.done();
+            }));
         }
 
         let _ = wg.wait().await;
         assert_eq!(sent.load(Relaxed), received.load(Relaxed));
+
+        for handle in handles {
+            handle.join();
+        }
     }
 
     #[orengine_macros::test_global]

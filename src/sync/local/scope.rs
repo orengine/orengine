@@ -217,12 +217,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::local::Local;
     use crate::{sleep, yield_now};
     use std::ops::Deref;
     use std::time::Duration;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_scope_exec() {
         let local_a = Local::new(0);
 
@@ -274,9 +275,10 @@ mod tests {
         assert_eq!(*local_a.deref(), 5);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_scope_spawn() {
         let local_a = Local::new(0);
+        let wg = LocalWaitGroup::new();
 
         local_scope(|scope| async {
             scope.spawn(async {
@@ -285,12 +287,14 @@ mod tests {
                 yield_now().await;
                 assert_eq!(*local_a.deref(), 3);
                 *local_a.get_mut() += 1;
+                wg.done();
             });
 
             scope.spawn(async {
                 assert_eq!(*local_a.deref(), 1);
                 *local_a.get_mut() += 1;
-                sleep(Duration::from_millis(1)).await;
+                wg.inc();
+                wg.wait().await;
                 assert_eq!(*local_a.deref(), 4);
                 *local_a.get_mut() += 1;
             });

@@ -3,7 +3,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{IntoRawFd, OsMessageHeader, RawFd};
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
-use crate::runtime::local_executor_unchecked;
+use crate::runtime::local_executor;
 use crate::BUG_MESSAGE;
 use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
@@ -229,7 +229,7 @@ impl IoWorker for IoUringWorker {
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
         cq.sync();
-        let executor = unsafe { local_executor_unchecked() };
+        let executor = local_executor();
 
         for cqe in &mut cq {
             if cqe.user_data() == 0 {
@@ -281,7 +281,7 @@ impl IoWorker for IoUringWorker {
         let socket_ = socket2::Socket::new(domain, sock_type, None);
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
-        unsafe { local_executor_unchecked().spawn_local_task(request.task()) };
+        local_executor().spawn_local_task(request.task());
     }
 
     #[inline(always)]

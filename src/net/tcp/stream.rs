@@ -175,21 +175,21 @@ mod tests {
     use std::time::{Duration, Instant};
     use std::{io, thread};
 
+    use super::*;
+    use crate as orengine;
     use crate::io::{AsyncAccept, AsyncBind};
     use crate::net::tcp::TcpListener;
     use crate::net::BindConfig;
     use crate::net::Socket;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
-    use crate::Executor;
-
-    use super::*;
+    use crate::test::sched_future_to_another_thread;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_client() {
         const ADDR: &str = "127.0.0.1:6086";
 
@@ -238,30 +238,28 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_server() {
         const ADDR: &str = "127.0.0.1:6081";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
 
-        thread::spawn(move || {
-            Executor::init().run_with_local_future(async move {
-                let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
+        let handle = sched_future_to_another_thread(async move {
+            let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
-                is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+            is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
 
-                let mut stream = listener.accept().await.expect("accept failed").0;
+            let mut stream = listener.accept().await.expect("accept failed").0;
 
-                for _ in 0..TIMES {
-                    stream.poll_recv().await.expect("poll failed");
-                    let mut buf = vec![0u8; REQUEST.len()];
-                    stream.recv_exact(&mut buf).await.expect("recv failed");
-                    assert_eq!(REQUEST, buf);
+            for _ in 0..TIMES {
+                stream.poll_recv().await.expect("poll failed");
+                let mut buf = vec![0u8; REQUEST.len()];
+                stream.recv_exact(&mut buf).await.expect("recv failed");
+                assert_eq!(REQUEST, buf);
 
-                    stream.send_all(RESPONSE).await.expect("send failed");
-                }
-            });
+                stream.send_all(RESPONSE).await.expect("send failed");
+            }
         });
 
         use std::io::{Read, Write};
@@ -278,9 +276,11 @@ mod tests {
             stream.read_exact(&mut buf).expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
+
+        handle.join();
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_stream() {
         const ADDR: &str = "127.0.0.1:6082";
 
@@ -361,7 +361,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_timeout() {
         const ADDR: &str = "127.0.0.1:6083";
         const BACKLOG_SIZE: isize = 256;

@@ -18,7 +18,7 @@ use crate::runtime::global_state::{register_local_executor, SubscribedState};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
-use crate::runtime::{get_core_id_for_executor, SharedExecutorTaskList};
+use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList};
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
@@ -118,16 +118,6 @@ pub fn local_executor() -> &'static mut Executor {
     }
 }
 
-/// Returns the [`Executor`] that is running in the current thread.
-///
-/// # Undefined Behavior
-///
-/// If the local executor is not initialized.
-#[inline(always)]
-pub unsafe fn local_executor_unchecked() -> &'static mut Executor {
-    unsafe { get_local_executor_ref().as_mut().unwrap_unchecked() }
-}
-
 /// The executor that runs futures in the current thread.
 ///
 /// # The difference between `local` and `global` task and futures
@@ -157,7 +147,7 @@ pub struct Executor {
 
     local_tasks: VecDeque<Task>,
     global_tasks: VecDeque<Task>,
-    shared_tasks_list: Option<Arc<SharedExecutorTaskList>>,
+    shared_tasks_list: Option<Arc<ExecutorSharedTaskList>>,
 
     exec_series: usize,
     local_worker: &'static mut Option<WorkerSys>,
@@ -211,7 +201,7 @@ impl Executor {
         TaskPool::init();
         let (shared_tasks, global_tasks_list_cap) = match valid_config.is_work_sharing_enabled() {
             true => (
-                Some(Arc::new(SharedExecutorTaskList::new(executor_id))),
+                Some(Arc::new(ExecutorSharedTaskList::new(executor_id))),
                 MAX_NUMBER_OF_TASKS_TAKEN,
             ),
             false => (None, 0),
@@ -242,7 +232,7 @@ impl Executor {
 
             register_local_executor();
 
-            local_executor_unchecked()
+            local_executor()
         }
     }
 
@@ -363,7 +353,7 @@ impl Executor {
     }
 
     /// Returns a reference to the shared tasks list of the executor.
-    pub(crate) fn shared_task_list(&self) -> Option<&Arc<SharedExecutorTaskList>> {
+    pub(crate) fn shared_task_list(&self) -> Option<&Arc<ExecutorSharedTaskList>> {
         self.shared_tasks_list.as_ref()
     }
 
@@ -492,7 +482,7 @@ impl Executor {
     ///
     /// # The difference between `exec_task_now` and [`exec_task`](Executor::exec_task)
     ///
-    /// If the stack of calls is too big, [`exec_task`](Executor::exec_task)
+    /// If the stack of calls is too large, [`exec_task`](Executor::exec_task)
     /// spawns a new task and returns.
     /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task any way.
     ///
@@ -764,7 +754,6 @@ impl Executor {
         }
 
         shrink!(self.local_tasks);
-        shrink!(self.global_tasks);
 
         false
     }
@@ -1001,14 +990,14 @@ impl Executor {
 
 #[cfg(test)]
 mod tests {
+    use crate as orengine;
     use crate::local::Local;
-    use crate::utils::global_test_lock::GLOBAL_TEST_LOCK;
     use crate::yield_now::yield_now;
     use std::ops::Deref;
 
     use super::*;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_spawn_local_and_exec_future() {
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
             arr.get_mut().push(number);
@@ -1036,14 +1025,12 @@ mod tests {
 
     #[test]
     fn test_run_and_block_on() {
-        let lock = GLOBAL_TEST_LOCK.lock();
         async fn async_42() -> u32 {
             42
         }
 
-        Executor::init();
+        Executor::init_with_config(Config::default().disable_work_sharing());
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
-        drop(lock);
     }
 
     // #[test]

@@ -226,6 +226,7 @@ unsafe impl Sync for LocalCondVar {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::LocalWaitGroup;
@@ -301,22 +302,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_one_with_drop_guard() {
         test_one(true).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_all_with_drop_guard() {
         test_all(true).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_one_without_drop_guard() {
         test_one(false).await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_all_without_drop_guard() {
         test_all(false).await;
     }

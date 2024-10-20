@@ -54,6 +54,8 @@ impl<'fut> Future for SendTo<'fut> {
     }
 }
 
+unsafe impl Send for SendTo<'_> {}
+
 /// `send_to` io operation with deadline.
 pub struct SendToWithDeadline<'fut> {
     fd: RawFd,
@@ -98,6 +100,8 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
         ));
     }
 }
+
+unsafe impl Send for SendToWithDeadline<'_> {}
 
 #[inline(always)]
 /// Returns first resolved address from `ToSocketAddrs`.

@@ -213,6 +213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::{sleep, yield_now};
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
@@ -221,6 +222,7 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_global_scope_exec() {
         let a = AtomicUsize::new(0);
+        let wg = WaitGroup::new();
 
         global_scope(|scope| async {
             scope.exec(async {
@@ -229,12 +231,14 @@ mod tests {
                 yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
+                wg.done();
             });
 
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 1);
                 a.fetch_add(1, SeqCst);
-                sleep(Duration::from_millis(1)).await;
+                wg.inc();
+                wg.wait().await;
                 assert_eq!(a.load(SeqCst), 4);
                 a.fetch_add(1, SeqCst);
             });
@@ -247,6 +251,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 5);
 
         let a = AtomicUsize::new(0);
+        let wg = WaitGroup::new();
 
         global_scope(|scope| async {
             scope.exec(async {
@@ -255,12 +260,14 @@ mod tests {
                 yield_now().await;
                 assert_eq!(a.load(SeqCst), 2);
                 a.fetch_add(1, SeqCst);
+                wg.done();
             });
 
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 1);
                 a.fetch_add(1, SeqCst);
-                sleep(Duration::from_millis(1)).await;
+                wg.inc();
+                wg.wait().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });
@@ -273,20 +280,23 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_global_scope_spawn() {
         let a = AtomicUsize::new(0);
+        let wg = WaitGroup::new();
 
         global_scope(|scope| async {
+            wg.add(1);
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 2);
                 a.fetch_add(1, SeqCst);
                 yield_now().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
+                wg.done();
             });
 
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 1);
                 a.fetch_add(1, SeqCst);
-                sleep(Duration::from_millis(1)).await;
+                wg.wait().await;
                 assert_eq!(a.load(SeqCst), 4);
                 a.fetch_add(1, SeqCst);
             });
