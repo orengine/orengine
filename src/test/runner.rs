@@ -1,11 +1,15 @@
 // TODO docs
 
-use crate::runtime::Config;
+use crate::bug_message::BUG_MESSAGE;
+use crate::runtime::{Config, Task};
 use crate::Executor;
+use crossbeam::channel::bounded;
+use std::collections::BTreeMap;
 use std::future::Future;
+use std::thread;
 
 pub struct TestRunner {
-    cfg: Config,
+    executor_senders: BTreeMap<Config, Task>
 }
 
 pub(crate) static WORK_SHARING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -27,8 +31,49 @@ macro_rules! generate_start_test_body {
 }
 
 impl TestRunner {
-    pub const fn new(cfg: Config) -> Self {
-        Self { cfg }
+    pub const fn new() -> Self {
+        Self {
+            executor_senders: BTreeMap::new()
+        }
+    }
+
+    fn start_executor(&mut self, config: Config) {
+        if self.executor_senders.contains_key(&config) {
+            panic!("{BUG_MESSAGE}");
+        }
+        let (sender, receiver) = bounded(0);
+        self.executor_senders.insert(config, sender).unwrap();
+
+        thread::spawn(move || {
+            let ex = Executor::init_with_config(config);
+            ex.run_and_block_on_global(async move {
+                loop {
+                    let task = receiver.recv().unwrap();
+                    ex.exec_task(task);
+                }
+            }).expect(BUG_MESSAGE);
+        });
+    }
+
+    fn exec_future(&mut self, task: Task, config: Config, is_local: usize) {
+        let lock = if config.is_work_sharing_enabled() {
+            Some(WORK_SHARING_TEST_LOCK.lock().unwrap())
+        } else {
+            None
+        };
+        
+        let ex_sender;
+        if let Some(sender) = self.executor_senders.get(&config) {
+            ex_sender = sender;
+        } else {
+            self.start_executor(config);
+            ex_sender = self.executor_senders.get(&config).expect(BUG_MESSAGE);
+        };
+
+        let (res_sender, res_receiver) = bounded(0);
+        ex_sender.send(task).unwrap();
+
+        drop(lock);
     }
 
     pub fn block_on_local<Ret, Fut, F>(&self, func: F) -> Ret

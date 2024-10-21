@@ -1,6 +1,8 @@
 use crate::io::IoWorkerConfig;
 use crate::utils::SpinLock;
 use crate::BUG_MESSAGE;
+use std::cmp::Ordering;
+use std::mem::discriminant;
 
 /// A global config of state of the all runtime.
 /// It is used to prevent unsafe behavior in the runtime.
@@ -333,6 +335,49 @@ impl From<&ValidConfig> for Config {
         }
     }
 }
+
+impl PartialOrd for Config {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if discriminant(&self.io_worker_config) != discriminant(&other.io_worker_config) {
+            return Some(if self.io_worker_config.is_some() {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            });
+        }
+
+        if self.work_sharing_level != other.work_sharing_level {
+            return Some(self.work_sharing_level.cmp(&other.work_sharing_level));
+        }
+
+        if self.number_of_thread_workers != other.number_of_thread_workers {
+            return Some(self.number_of_thread_workers.cmp(&other.number_of_thread_workers));
+        }
+
+        if self.buffer_cap != other.buffer_cap {
+            return Some(self.buffer_cap.cmp(&other.buffer_cap));
+        }
+
+        Some(Ordering::Equal)
+    }
+}
+
+impl Ord for Config {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer_cap == other.buffer_cap
+            && discriminant(&self.io_worker_config) == discriminant(&other.io_worker_config)
+            && self.number_of_thread_workers == other.number_of_thread_workers
+            && self.work_sharing_level == other.work_sharing_level
+    }
+}
+
+impl Eq for Config {}
 
 #[cfg(test)]
 mod tests {
