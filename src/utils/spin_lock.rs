@@ -261,17 +261,16 @@ mod tests {
         }
 
         let mutex = Arc::new(SpinLock::new(0));
-        let mut handles = Vec::new();
         let wg = Arc::new(WaitGroup::new());
         wg.add(PAR * TRIES);
         for _ in 1..PAR {
             let wg = wg.clone();
             let mutex = mutex.clone();
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 for _ in 0..TRIES {
                     work_with_lock(&mutex, &wg).await;
                 }
-            }));
+            });
         }
 
         for _ in 0..TRIES {

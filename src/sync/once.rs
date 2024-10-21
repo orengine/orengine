@@ -139,48 +139,18 @@ unsafe impl Send for Once {}
 mod tests {
     use super::*;
     use crate as orengine;
+    use crate::sleep;
     use crate::sync::WaitGroup;
     use crate::test::sched_future_to_another_thread;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
-
-    // TODO #[orengine_macros::test_global]
-    // fn test_async_once() {
-    //     let mut spawner = ExecutorThreadSpawner::default();
-    //     let a = Arc::new(AtomicBool::new(false));
-    //     let wg = Arc::new(WaitGroup::new());
-    //     let once = Arc::new(Once::new());
-    //     assert_eq!(once.state(), OnceState::NotCalled);
-    //     assert!(!once.was_called());
-    //
-    //     for _ in 0..10 {
-    //         let a = a.clone();
-    //         let wg = wg.clone();
-    //         wg.add(1);
-    //         let once = once.clone();
-    //         spawner.spawn_executor_and_spawn_global(async move {
-    //             let _ = once
-    //                 .call_once(async move {
-    //                     sleep(Duration::from_millis(1)).await;
-    //                     assert!(!a.load(SeqCst));
-    //                     a.store(true, SeqCst);
-    //                 })
-    //                 .await;
-    //             wg.done();
-    //         });
-    //     }
-    //
-    //     let _ = wg.wait().await;
-    //     assert!(once.was_called());
-    //     assert_eq!(once.call_once(async {}).await, Err(()));
-    // }
+    use std::time::Duration;
 
     #[orengine_macros::test_global]
-    fn test_sync_once() {
+    fn test_async_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
-        let mut handles = Vec::new();
         let once = Arc::new(Once::new());
         assert_eq!(once.state(), OnceState::NotCalled);
         assert!(!once.was_called());
@@ -190,13 +160,43 @@ mod tests {
             let wg = wg.clone();
             wg.add(1);
             let once = once.clone();
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
+                let _ = once
+                    .call_once(async move {
+                        sleep(Duration::from_millis(1)).await;
+                        assert!(!a.load(SeqCst));
+                        a.store(true, SeqCst);
+                    })
+                    .await;
+                wg.done();
+            });
+        }
+
+        let _ = wg.wait().await;
+        assert!(once.was_called());
+        assert_eq!(once.call_once(async {}).await, Err(()));
+    }
+
+    #[orengine_macros::test_global]
+    fn test_sync_once() {
+        let a = Arc::new(AtomicBool::new(false));
+        let wg = Arc::new(WaitGroup::new());
+        let once = Arc::new(Once::new());
+        assert_eq!(once.state(), OnceState::NotCalled);
+        assert!(!once.was_called());
+
+        for _ in 0..10 {
+            let a = a.clone();
+            let wg = wg.clone();
+            wg.add(1);
+            let once = once.clone();
+            sched_future_to_another_thread(async move {
                 let _ = once.call_once_sync(|| {
                     assert!(!a.load(SeqCst));
                     a.store(true, SeqCst);
                 });
                 wg.done();
-            }));
+            });
         }
 
         let _ = wg.wait().await;

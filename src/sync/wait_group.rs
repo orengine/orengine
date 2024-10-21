@@ -296,7 +296,6 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_many_wait_one() {
         let check_value = Arc::new(Mutex::new(false));
-        let mut handles = Vec::new();
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.inc();
 
@@ -304,12 +303,12 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 let _ = wait_group.wait().await;
                 if !*check_value.lock().unwrap() {
                     panic!("not waited");
                 }
-            }));
+            });
         }
 
         yield_now().await;
@@ -321,8 +320,6 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
-        // TODO remove all handles
-        let mut handles = Vec::new();
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
 
@@ -330,11 +327,11 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 *check_value.lock().unwrap() -= 1;
                 sleep(Duration::from_millis(100)).await;
                 wait_group.done();
-            }));
+            });
         }
 
         let _ = wait_group.wait().await;
@@ -346,7 +343,6 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
-        let mut handles = Vec::new();
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
 
@@ -354,10 +350,10 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 *check_value.lock().unwrap() -= 1;
                 wait_group.done();
-            }));
+            });
         }
 
         let _ = wait_group.wait().await;

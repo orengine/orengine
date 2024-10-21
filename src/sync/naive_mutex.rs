@@ -317,42 +317,41 @@ mod tests {
         }
     }
 
-    // TODO #[orengine_macros::test_global]
-    // fn stress_test_naive_mutex() {
-    //     const PAR: usize = 10;
-    //     const TRIES: usize = 100;
-    //
-    //     async fn work_with_lock(mutex: &NaiveMutex<usize>, wg: &WaitGroup) {
-    //         let mut lock = mutex.lock().await;
-    //         *lock += 1;
-    //         if *lock % 500 == 0 {
-    //             println!("{} of {}", *lock, TRIES * PAR);
-    //         }
-    //
-    //         wg.done();
-    //     }
-    //
-    //     let mut spawner = ExecutorThreadSpawner::default();
-    //     let mutex = Arc::new(NaiveMutex::new(0));
-    //     let wg = Arc::new(WaitGroup::new());
-    //     wg.add(PAR * TRIES);
-    //     for _ in 1..PAR {
-    //         let wg = wg.clone();
-    //         let mutex = mutex.clone();
-    //
-    //         spawner.spawn_executor_and_spawn_global(async move {
-    //             for _ in 0..TRIES {
-    //                 work_with_lock(&mutex, &wg).await;
-    //             }
-    //         });
-    //     }
-    //
-    //     for _ in 0..TRIES {
-    //         work_with_lock(&mutex, &wg).await;
-    //     }
-    //
-    //     let _ = wg.wait().await;
-    //
-    //     assert_eq!(*mutex.lock().await, TRIES * PAR);
-    // }
+    #[orengine_macros::test_global]
+    fn stress_test_naive_mutex() {
+        const PAR: usize = 10;
+        const TRIES: usize = 100;
+
+        async fn work_with_lock(mutex: &NaiveMutex<usize>, wg: &WaitGroup) {
+            let mut lock = mutex.lock().await;
+            *lock += 1;
+            if *lock % 500 == 0 {
+                println!("{} of {}", *lock, TRIES * PAR);
+            }
+
+            wg.done();
+        }
+
+        let mutex = Arc::new(NaiveMutex::new(0));
+        let wg = Arc::new(WaitGroup::new());
+        wg.add(PAR * TRIES);
+        for _ in 1..PAR {
+            let wg = wg.clone();
+            let mutex = mutex.clone();
+
+            sched_future_to_another_thread(async move {
+                for _ in 0..TRIES {
+                    work_with_lock(&mutex, &wg).await;
+                }
+            });
+        }
+
+        for _ in 0..TRIES {
+            work_with_lock(&mutex, &wg).await;
+        }
+
+        let _ = wg.wait().await;
+
+        assert_eq!(*mutex.lock().await, TRIES * PAR);
+    }
 }

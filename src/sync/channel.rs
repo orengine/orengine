@@ -1058,7 +1058,6 @@ mod tests {
         let wg = Arc::new(WaitGroup::new());
         let sent = Arc::new(AtomicUsize::new(0));
         let received = Arc::new(AtomicUsize::new(0));
-        let mut handles = Vec::new();
 
         for i in 0..get_core_ids().unwrap().len() * 4 {
             let channel = channel.clone();
@@ -1067,7 +1066,7 @@ mod tests {
             let received = received.clone();
             wg.add(1);
 
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 if i % 2 == 0 {
                     for j in 0..count {
                         channel.send(j).await.expect("closed");
@@ -1081,7 +1080,7 @@ mod tests {
                 }
 
                 wg.done();
-            }));
+            });
         }
 
         let _ = wg.wait().await;

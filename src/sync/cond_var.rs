@@ -274,20 +274,19 @@ mod tests {
         });
 
         let wg = Arc::new(WaitGroup::new());
-        let mut handles = Vec::new();
         for _ in 0..NUMBER_OF_WAITERS {
             let pair = pair.clone();
             let wg = wg.clone();
             wg.add(1);
 
-            handles.push(sched_future_to_another_thread(async move {
+            sched_future_to_another_thread(async move {
                 let (lock, cvar) = pair.deref();
                 let mut started = lock.lock().await;
                 while !*started {
                     started = cvar.wait(started).await;
                 }
                 wg.done();
-            }));
+            });
         }
 
         let _ = wg.wait().await;
