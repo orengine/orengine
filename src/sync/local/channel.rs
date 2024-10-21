@@ -759,254 +759,253 @@ unsafe impl<T> Sync for LocalChannel<T> {}
 
 // endregion
 
-// TODO
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate as orengine;
-//     use crate::sync::local_scope;
-//     use crate::utils::droppable_element::DroppableElement;
-//     use crate::utils::SpinLock;
-//     use crate::yield_now;
-//     use std::sync::Arc;
-//
-//     #[orengine_macros::test_local]
-//     fn test_zero_capacity() {
-//         let ch = LocalChannel::bounded(0);
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 ch_ref.send(1).await.expect("closed");
-//
-//                 yield_now().await;
-//
-//                 ch_ref.send(2).await.expect("closed");
-//                 ch_ref.close();
-//             });
-//
-//             let res = ch.recv().await.expect("closed");
-//             assert_eq!(res, 1);
-//             let res = ch.recv().await.expect("closed");
-//             assert_eq!(res, 2);
-//
-//             match ch.send(2).await {
-//                 Err(_) => assert!(true),
-//                 _ => panic!("should be closed"),
-//             };
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_unbounded() {
-//         let ch = LocalChannel::unbounded();
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 ch_ref.send(1).await.expect("closed");
-//
-//                 yield_now().await;
-//
-//                 for i in 2..100 {
-//                     ch_ref.send(i).await.expect("closed");
-//                 }
-//                 ch_ref.close();
-//             });
-//
-//             for i in 1..100 {
-//                 let res = ch.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//
-//             match ch.recv().await {
-//                 Err(_) => assert!(true),
-//                 _ => panic!("should be closed"),
-//             };
-//         })
-//         .await;
-//     }
-//
-//     const N: usize = 125;
-//
-//     // case 1 - send N and recv N. No wait
-//     // case 2 - send N and recv (N + 1). Wait for recv
-//     // case 3 - send (N + 1) and recv N. Wait for send
-//     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
-//
-//     #[orengine_macros::test_local]
-//     fn test_local_channel_case1() {
-//         let ch = LocalChannel::bounded(N);
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 for i in 0..N {
-//                     ch_ref.send(i).await.expect("closed");
-//                 }
-//
-//                 yield_now().await;
-//
-//                 ch_ref.close();
-//             });
-//
-//             for i in 0..N {
-//                 let res = ch.recv().await.expect("closed");
-//                 assert_eq!(res, i);
-//             }
-//
-//             match ch.recv().await {
-//                 Err(_) => assert!(true),
-//                 _ => panic!("should be closed"),
-//             };
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_local_channel_case2() {
-//         let ch = LocalChannel::bounded(N);
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 for i in 0..=N {
-//                     let res = ch_ref.recv().await.expect("closed");
-//                     assert_eq!(res, i);
-//                 }
-//
-//                 ch_ref.close();
-//             });
-//
-//             for i in 0..N {
-//                 let _ = ch.send(i).await.expect("closed");
-//             }
-//
-//             yield_now().await;
-//
-//             let _ = ch.send(N).await.expect("closed");
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_local_channel_case3() {
-//         let ch = LocalChannel::bounded(N);
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 for i in 0..N {
-//                     let res = ch_ref.recv().await.expect("closed");
-//                     assert_eq!(res, i);
-//                 }
-//
-//                 yield_now().await;
-//
-//                 let res = ch_ref.recv().await.expect("closed");
-//                 assert_eq!(res, N);
-//             });
-//
-//             for i in 0..=N {
-//                 ch.send(i).await.expect("closed");
-//             }
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_local_channel_case4() {
-//         let ch = LocalChannel::bounded(N);
-//         let ch_ref = &ch;
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async move {
-//                 for i in 0..=N {
-//                     let res = ch_ref.recv().await.expect("closed");
-//                     assert_eq!(res, i);
-//                 }
-//             });
-//
-//             for i in 0..=N {
-//                 ch.send(i).await.expect("closed");
-//             }
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_local_channel_split() {
-//         let ch = LocalChannel::bounded(N);
-//         let (tx, rx) = ch.split();
-//
-//         local_scope(|scope| async {
-//             scope.spawn(async {
-//                 for i in 0..=N * 2 {
-//                     let res = rx.recv().await.expect("closed");
-//                     assert_eq!(res, i);
-//                 }
-//             });
-//
-//             for i in 0..=N * 3 {
-//                 tx.send(i).await.expect("closed");
-//             }
-//         })
-//         .await;
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_drop_channel() {
-//         let dropped = Arc::new(SpinLock::new(Vec::new()));
-//         let channel = LocalChannel::bounded(1);
-//
-//         let _ = channel
-//             .send(DroppableElement::new(1, dropped.clone()))
-//             .await;
-//         let mut prev_elem = DroppableElement::new(2, dropped.clone());
-//         channel.recv_in(&mut prev_elem).await.expect("closed");
-//         assert_eq!(prev_elem.value, 1);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//
-//         let _ = channel
-//             .send(DroppableElement::new(3, dropped.clone()))
-//             .await;
-//         unsafe { channel.recv_in_ptr(&mut prev_elem).await.expect("closed") };
-//         assert_eq!(prev_elem.value, 3);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//
-//         channel.close();
-//         let elem = channel
-//             .send(DroppableElement::new(5, dropped.clone()))
-//             .await
-//             .unwrap_err();
-//         assert_eq!(elem.value, 5);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_drop_channel_split() {
-//         let channel = LocalChannel::bounded(1);
-//         let dropped = Arc::new(SpinLock::new(Vec::new()));
-//         let (sender, receiver) = channel.split();
-//
-//         let _ = sender.send(DroppableElement::new(1, dropped.clone())).await;
-//         let mut prev_elem = DroppableElement::new(2, dropped.clone());
-//         receiver.recv_in(&mut prev_elem).await.expect("closed");
-//         assert_eq!(prev_elem.value, 1);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//
-//         let _ = sender.send(DroppableElement::new(3, dropped.clone())).await;
-//         unsafe { receiver.recv_in_ptr(&mut prev_elem).await.expect("closed") };
-//         assert_eq!(prev_elem.value, 3);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//
-//         sender.close();
-//         let elem = sender
-//             .send(DroppableElement::new(5, dropped.clone()))
-//             .await
-//             .unwrap_err();
-//         assert_eq!(elem.value, 5);
-//         assert_eq!(dropped.lock().as_slice(), [2]);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::sync::local_scope;
+    use crate::utils::droppable_element::DroppableElement;
+    use crate::utils::SpinLock;
+    use crate::yield_now;
+    use std::sync::Arc;
+
+    #[orengine_macros::test_local]
+    fn test_zero_capacity() {
+        let ch = LocalChannel::bounded(0);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                ch_ref.send(1).await.expect("closed");
+
+                yield_now().await;
+
+                ch_ref.send(2).await.expect("closed");
+                ch_ref.close();
+            });
+
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, 1);
+            let res = ch.recv().await.expect("closed");
+            assert_eq!(res, 2);
+
+            match ch.send(2).await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed"),
+            };
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_unbounded() {
+        let ch = LocalChannel::unbounded();
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                ch_ref.send(1).await.expect("closed");
+
+                yield_now().await;
+
+                for i in 2..100 {
+                    ch_ref.send(i).await.expect("closed");
+                }
+                ch_ref.close();
+            });
+
+            for i in 1..100 {
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
+            }
+
+            match ch.recv().await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed"),
+            };
+        })
+        .await;
+    }
+
+    const N: usize = 125;
+
+    // case 1 - send N and recv N. No wait
+    // case 2 - send N and recv (N + 1). Wait for recv
+    // case 3 - send (N + 1) and recv N. Wait for send
+    // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
+
+    #[orengine_macros::test_local]
+    fn test_local_channel_case1() {
+        let ch = LocalChannel::bounded(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..N {
+                    ch_ref.send(i).await.expect("closed");
+                }
+
+                yield_now().await;
+
+                ch_ref.close();
+            });
+
+            for i in 0..N {
+                let res = ch.recv().await.expect("closed");
+                assert_eq!(res, i);
+            }
+
+            match ch.recv().await {
+                Err(_) => assert!(true),
+                _ => panic!("should be closed"),
+            };
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_channel_case2() {
+        let ch = LocalChannel::bounded(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..=N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+
+                ch_ref.close();
+            });
+
+            for i in 0..N {
+                let _ = ch.send(i).await.expect("closed");
+            }
+
+            yield_now().await;
+
+            let _ = ch.send(N).await.expect("closed");
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_channel_case3() {
+        let ch = LocalChannel::bounded(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+
+                yield_now().await;
+
+                let res = ch_ref.recv().await.expect("closed");
+                assert_eq!(res, N);
+            });
+
+            for i in 0..=N {
+                ch.send(i).await.expect("closed");
+            }
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_channel_case4() {
+        let ch = LocalChannel::bounded(N);
+        let ch_ref = &ch;
+
+        local_scope(|scope| async {
+            scope.spawn(async move {
+                for i in 0..=N {
+                    let res = ch_ref.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+            });
+
+            for i in 0..=N {
+                ch.send(i).await.expect("closed");
+            }
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_channel_split() {
+        let ch = LocalChannel::bounded(N);
+        let (tx, rx) = ch.split();
+
+        local_scope(|scope| async {
+            scope.spawn(async {
+                for i in 0..=N * 2 {
+                    let res = rx.recv().await.expect("closed");
+                    assert_eq!(res, i);
+                }
+            });
+
+            for i in 0..=N * 3 {
+                tx.send(i).await.expect("closed");
+            }
+        })
+        .await;
+    }
+
+    #[orengine_macros::test_local]
+    fn test_drop_channel() {
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let channel = LocalChannel::bounded(1);
+
+        let _ = channel
+            .send(DroppableElement::new(1, dropped.clone()))
+            .await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        channel.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = channel
+            .send(DroppableElement::new(3, dropped.clone()))
+            .await;
+        unsafe { channel.recv_in_ptr(&mut prev_elem).await.expect("closed") };
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        channel.close();
+        let elem = channel
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+    }
+
+    #[orengine_macros::test_local]
+    fn test_drop_channel_split() {
+        let channel = LocalChannel::bounded(1);
+        let dropped = Arc::new(SpinLock::new(Vec::new()));
+        let (sender, receiver) = channel.split();
+
+        let _ = sender.send(DroppableElement::new(1, dropped.clone())).await;
+        let mut prev_elem = DroppableElement::new(2, dropped.clone());
+        receiver.recv_in(&mut prev_elem).await.expect("closed");
+        assert_eq!(prev_elem.value, 1);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        let _ = sender.send(DroppableElement::new(3, dropped.clone())).await;
+        unsafe { receiver.recv_in_ptr(&mut prev_elem).await.expect("closed") };
+        assert_eq!(prev_elem.value, 3);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+
+        sender.close();
+        let elem = sender
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(elem.value, 5);
+        assert_eq!(dropped.lock().as_slice(), [2]);
+    }
+}

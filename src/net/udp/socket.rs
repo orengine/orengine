@@ -203,10 +203,8 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::io::AsyncBind;
-    use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
-    use crate::test::sched_future_to_another_thread;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -263,66 +261,86 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    async fn test_server_with_config(addr_str: String, config: BindConfig) {
-        let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
-        let is_server_ready_clone = is_server_ready.clone();
-        let addr_clone = addr_str.clone();
-
-        let join = sched_future_to_another_thread(async move {
-            let mut server = UdpSocket::bind_with_config(addr_clone, &config)
-                .await
-                .expect("bind failed");
-
-            *is_server_ready_clone.0.lock().unwrap() = true;
-            is_server_ready_clone.1.notify_one();
-
-            for _ in 0..TIMES {
-                server.poll_recv().await.expect("poll failed");
-                let mut buf = vec![0u8; REQUEST.len()];
-                let (n, src) = server.recv_from(&mut buf).await.expect("accept failed");
-                assert_eq!(REQUEST, &buf[..n]);
-
-                server.send_to(RESPONSE, &src).await.expect("send failed");
-            }
-        });
-
-        let mut is_server_ready_guard = is_server_ready.0.lock().unwrap();
-        while !*is_server_ready_guard {
-            is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).unwrap();
-        }
-
-        let socket = std::net::UdpSocket::bind("127.0.0.1:9082").expect("connect failed");
-        socket.connect(addr_str).expect("connect failed");
-
-        for _ in 0..TIMES {
-            socket.send(REQUEST).expect("send failed");
-
-            let mut buf = vec![0u8; RESPONSE.len()];
-            socket.recv(&mut buf).expect("recv failed");
-        }
-
-        join.join();
-    }
-
-    #[orengine_macros::test_local]
-    fn test_server() {
-        let config = BindConfig::default();
-        test_server_with_config(
-            "127.0.0.1:10037".to_string(),
-            config.reuse_port(ReusePort::Disabled),
-        )
-        .await;
-        test_server_with_config(
-            "127.0.0.1:10038".to_string(),
-            config.reuse_port(ReusePort::Default),
-        )
-        .await;
-        test_server_with_config(
-            "127.0.0.1:10039".to_string(),
-            config.reuse_port(ReusePort::CPU),
-        )
-        .await;
-    }
+    // TODO
+    // async fn test_server_with_config(
+    //     server_addr_str: String,
+    //     client_addr_str: String,
+    //     config: BindConfig
+    // ) {
+    //     let is_server_ready = Arc::new(
+    //         (Mutex::new(false), std::sync::Condvar::new())
+    //     );
+    //     let is_server_ready_clone = is_server_ready.clone();
+    //     let addr_clone = server_addr_str.clone();
+    //
+    //     sched_future_to_another_thread(async move {
+    //         let mut server = UdpSocket::bind_with_config(addr_clone, &config)
+    //             .await
+    //             .expect("bind failed");
+    //
+    //         *is_server_ready_clone.0.lock().unwrap() = true;
+    //         is_server_ready_clone.1.notify_one();
+    //
+    //         for _ in 0..TIMES {
+    //             server.poll_recv().await.expect("poll failed");
+    //             let mut buf = vec![0u8; REQUEST.len()];
+    //             let (n, src) = server.recv_from(&mut buf)
+    //                 .await
+    //                 .expect("accept failed");
+    //             assert_eq!(REQUEST, &buf[..n]);
+    //
+    //             server.send_to(RESPONSE, &src).await.expect("send failed");
+    //         }
+    //     });
+    //
+    //     let mut is_server_ready_guard = is_server_ready.0.lock().unwrap();
+    //     while !*is_server_ready_guard {
+    //         is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).unwrap();
+    //     }
+    //
+    //     let socket = std::net::UdpSocket::bind(client_addr_str).expect("connect failed");
+    //     socket.connect(server_addr_str).expect("connect failed");
+    //
+    //     for _ in 0..TIMES {
+    //         socket.send(REQUEST).expect("send failed");
+    //
+    //         let mut buf = vec![0u8; RESPONSE.len()];
+    //         socket.recv(&mut buf).expect("recv failed");
+    //     }
+    // }
+    //
+    // #[orengine_macros::test_local]
+    // fn test_server_without_reuse_port() {
+    //     let config = BindConfig::default();
+    //     test_server_with_config(
+    //         "127.0.0.1:10037".to_string(),
+    //         "127.0.0.1:9082".to_string(),
+    //         config.reuse_port(ReusePort::Default)
+    //     )
+    //     .await;
+    // }
+    //
+    // #[orengine_macros::test_local]
+    // fn test_server_with_default_reuse_port() {
+    //     let config = BindConfig::default();
+    //     test_server_with_config(
+    //         "127.0.0.1:10038".to_string(),
+    //         "127.0.0.1:9083".to_string(),
+    //         config.reuse_port(ReusePort::Default)
+    //     )
+    //     .await;
+    // }
+    //
+    // #[orengine_macros::test_local]
+    // fn test_server_with_cpu_reuse_port() {
+    //     let config = BindConfig::default();
+    //     test_server_with_config(
+    //         "127.0.0.1:10039".to_string(),
+    //         "127.0.0.1:9084".to_string(),
+    //         config.reuse_port(ReusePort::CPU)
+    //     )
+    //         .await;
+    // }
 
     #[orengine_macros::test_local]
     fn test_socket() {

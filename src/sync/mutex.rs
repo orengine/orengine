@@ -335,136 +335,132 @@ impl<T> Mutex<T> {
 unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
 unsafe impl<T: Send> Send for Mutex<T> {}
 
-// TODO
-// #[cfg(test)]
-// mod tests {
-//     use std::sync::Arc;
-//     use std::time::Duration;
-//
-//     use crate::sleep::sleep;
-//     use crate::sync::WaitGroup;
-//
-//     use super::*;
-//     use crate as orengine;
-//     use crate::test::ExecutorThreadSpawner;
-//
-//     #[orengine_macros::test_global]
-//     fn test_mutex() {
-//         const SLEEP_DURATION: Duration = Duration::from_millis(1);
-//
-//         let mut spawner = ExecutorThreadSpawner::default();
-//         let mutex = Arc::new(Mutex::new(false));
-//         let wg = Arc::new(WaitGroup::new());
-//
-//         let mutex_clone = mutex.clone();
-//         let wg_clone = wg.clone();
-//         wg_clone.add(1);
-//         spawner.spawn_executor_and_spawn_global(async move {
-//             let mut value = mutex_clone.lock().await;
-//             wg_clone.done();
-//             println!("1");
-//             sleep(SLEEP_DURATION).await;
-//             println!("3");
-//             *value = true;
-//         });
-//
-//         let _ = wg.wait().await;
-//         println!("2");
-//         let value = mutex.lock().await;
-//         println!("4");
-//
-//         assert_eq!(*value, true);
-//         drop(value);
-//     }
-//
-//     async fn test_try_mutex<F: Fn(&Mutex<bool>) -> Option<MutexGuard<'_, bool>>>(try_lock: F) {
-//         let mut spawner = ExecutorThreadSpawner::default();
-//         let mutex = Arc::new(Mutex::new(false));
-//         let mutex_clone = mutex.clone();
-//         let lock_wg = Arc::new(WaitGroup::new());
-//         let lock_wg_clone = lock_wg.clone();
-//         let unlock_wg = Arc::new(WaitGroup::new());
-//         let unlock_wg_clone = unlock_wg.clone();
-//         let second_lock = Arc::new(WaitGroup::new());
-//         let second_lock_clone = second_lock.clone();
-//
-//         lock_wg.add(1);
-//         unlock_wg.add(1);
-//
-//         spawner.spawn_executor_and_spawn_global(async move {
-//             let mut value = mutex_clone.lock().await;
-//             println!("1");
-//             lock_wg_clone.done();
-//             let _ = unlock_wg_clone.wait().await;
-//             println!("4");
-//             *value = true;
-//             drop(value);
-//             second_lock_clone.done();
-//             println!("5");
-//         });
-//
-//         let _ = lock_wg.wait().await;
-//         println!("2");
-//         let value = try_lock(&mutex);
-//         println!("3");
-//         assert!(value.is_none());
-//         second_lock.inc();
-//         unlock_wg.done();
-//
-//         let _ = second_lock.wait().await;
-//         let value = try_lock(&mutex);
-//         println!("6");
-//         match value {
-//             Some(v) => assert_eq!(*v, true, "not waited"),
-//             None => panic!("can't acquire lock"),
-//         }
-//     }
-//
-//     #[orengine_macros::test_global]
-//     fn test_try_without_spinning_mutex() {
-//         test_try_mutex(Mutex::try_lock).await;
-//     }
-//
-//     #[orengine_macros::test_global]
-//     fn test_try_with_spinning_mutex() {
-//         test_try_mutex(Mutex::try_lock_with_spinning).await;
-//     }
-//
-//     #[orengine_macros::test_global]
-//     fn stress_test_mutex() {
-//         const PAR: usize = 5;
-//         const TRIES: usize = 400;
-//
-//         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
-//             let mut lock = mutex.lock().await;
-//             *lock += 1;
-//             if *lock % 500 == 0 {
-//                 println!("{} of {}", *lock, TRIES * PAR);
-//             }
-//
-//             wg.done();
-//         }
-//
-//         let mut spawner = ExecutorThreadSpawner::default();
-//         let mutex = Arc::new(Mutex::new(0));
-//         let wg = Arc::new(WaitGroup::new());
-//         wg.add(PAR * TRIES);
-//         for _ in 1..PAR {
-//             let wg = wg.clone();
-//             let mutex = mutex.clone();
-//             spawner.spawn_executor_and_spawn_global(async move {
-//                 for _ in 0..TRIES {
-//                     work_with_lock(&mutex, &wg).await;
-//                 }
-//             });
-//         }
-//
-//         for _ in 0..TRIES {
-//             work_with_lock(&mutex, &wg).await;
-//         }
-//
-//         let _ = wg.wait().await;
-//
-//         assert_eq!(*mutex.lock().await, TRIES * PAR);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use crate::sleep::sleep;
+    use crate::sync::WaitGroup;
+
+    use super::*;
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
+
+    #[orengine_macros::test_global]
+    fn test_mutex() {
+        const SLEEP_DURATION: Duration = Duration::from_millis(1);
+
+        let mutex = Arc::new(Mutex::new(false));
+        let wg = Arc::new(WaitGroup::new());
+
+        let mutex_clone = mutex.clone();
+        let wg_clone = wg.clone();
+        wg_clone.add(1);
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            wg_clone.done();
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            println!("3");
+            *value = true;
+        });
+
+        let _ = wg.wait().await;
+        println!("2");
+        let value = mutex.lock().await;
+        println!("4");
+
+        assert_eq!(*value, true);
+        drop(value);
+    }
+
+    async fn test_try_mutex<F: Fn(&Mutex<bool>) -> Option<MutexGuard<'_, bool>>>(try_lock: F) {
+        let mutex = Arc::new(Mutex::new(false));
+        let mutex_clone = mutex.clone();
+        let lock_wg = Arc::new(WaitGroup::new());
+        let lock_wg_clone = lock_wg.clone();
+        let unlock_wg = Arc::new(WaitGroup::new());
+        let unlock_wg_clone = unlock_wg.clone();
+        let second_lock = Arc::new(WaitGroup::new());
+        let second_lock_clone = second_lock.clone();
+
+        lock_wg.add(1);
+        unlock_wg.add(1);
+
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            lock_wg_clone.done();
+            let _ = unlock_wg_clone.wait().await;
+            println!("4");
+            *value = true;
+            drop(value);
+            second_lock_clone.done();
+            println!("5");
+        });
+
+        let _ = lock_wg.wait().await;
+        println!("2");
+        let value = try_lock(&mutex);
+        println!("3");
+        assert!(value.is_none());
+        second_lock.inc();
+        unlock_wg.done();
+
+        let _ = second_lock.wait().await;
+        let value = try_lock(&mutex);
+        println!("6");
+        match value {
+            Some(v) => assert_eq!(*v, true, "not waited"),
+            None => panic!("can't acquire lock"),
+        }
+    }
+
+    #[orengine_macros::test_global]
+    fn test_try_without_spinning_mutex() {
+        test_try_mutex(Mutex::try_lock).await;
+    }
+
+    #[orengine_macros::test_global]
+    fn test_try_with_spinning_mutex() {
+        test_try_mutex(Mutex::try_lock_with_spinning).await;
+    }
+
+    #[orengine_macros::test_global]
+    fn stress_test_mutex() {
+        const PAR: usize = 5;
+        const TRIES: usize = 400;
+
+        async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
+            let mut lock = mutex.lock().await;
+            *lock += 1;
+            if *lock % 500 == 0 {
+                println!("{} of {}", *lock, TRIES * PAR);
+            }
+
+            wg.done();
+        }
+
+        let mutex = Arc::new(Mutex::new(0));
+        let wg = Arc::new(WaitGroup::new());
+        wg.add(PAR * TRIES);
+        for _ in 1..PAR {
+            let wg = wg.clone();
+            let mutex = mutex.clone();
+            sched_future_to_another_thread(async move {
+                for _ in 0..TRIES {
+                    work_with_lock(&mutex, &wg).await;
+                }
+            });
+        }
+
+        for _ in 0..TRIES {
+            work_with_lock(&mutex, &wg).await;
+        }
+
+        let _ = wg.wait().await;
+
+        assert_eq!(*mutex.lock().await, TRIES * PAR);
+    }
+}

@@ -316,15 +316,12 @@ mod tests {
 
         *check_value.lock().unwrap() = true;
         wait_group.done();
-
-        for handle in handles {
-            handle.join();
-        }
     }
 
     #[orengine_macros::test_global]
     fn test_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
+        // TODO remove all handles
         let mut handles = Vec::new();
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
@@ -343,10 +340,6 @@ mod tests {
         let _ = wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
-        }
-
-        for handle in handles {
-            handle.join();
         }
     }
 
@@ -370,10 +363,6 @@ mod tests {
         let _ = wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
-        }
-
-        for handle in handles {
-            handle.join();
         }
     }
 }

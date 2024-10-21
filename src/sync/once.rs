@@ -202,9 +202,5 @@ mod tests {
         let _ = wg.wait().await;
         assert!(once.was_called());
         assert_eq!(once.call_once_sync(|| ()), Err(()));
-
-        for handle in handles {
-            handle.join();
-        }
     }
 }

@@ -1,127 +1,63 @@
 // TODO docs
 
 use crate::bug_message::BUG_MESSAGE;
-use crate::runtime::{Config, Task};
-use crate::Executor;
-use crossbeam::channel::bounded;
-use std::collections::BTreeMap;
+use crate::runtime::Config;
+use crate::{local_executor, Executor};
+use std::cell::Cell;
 use std::future::Future;
-use std::thread;
 
 pub struct TestRunner {
-    executor_senders: BTreeMap<Config, Task>
-}
-
-pub(crate) static WORK_SHARING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-macro_rules! generate_start_test_body {
-    ($cfg:expr, $method:expr, $func:expr, $handle_result_fn:expr) => {{
-        let lock = if $cfg.is_work_sharing_enabled() {
-            Some(WORK_SHARING_TEST_LOCK.lock().unwrap())
-        } else {
-            None
-        };
-
-        let ex = crate::Executor::init_with_config($cfg);
-        let res = $method(ex, $func());
-        drop(lock);
-
-        $handle_result_fn(res)
-    }};
+    was_executor_init: Cell<bool>,
 }
 
 impl TestRunner {
     pub const fn new() -> Self {
         Self {
-            executor_senders: BTreeMap::new()
+            was_executor_init: Cell::new(false),
         }
     }
 
-    fn start_executor(&mut self, config: Config) {
-        if self.executor_senders.contains_key(&config) {
-            panic!("{BUG_MESSAGE}");
+    pub fn get_local_executor(&self) -> &'static mut Executor {
+        if !self.was_executor_init.get() {
+            let cfg = Config::default().disable_work_sharing();
+            Executor::init_with_config(cfg);
+            self.was_executor_init.set(true);
         }
-        let (sender, receiver) = bounded(0);
-        self.executor_senders.insert(config, sender).unwrap();
 
-        thread::spawn(move || {
-            let ex = Executor::init_with_config(config);
-            ex.run_and_block_on_global(async move {
-                loop {
-                    let task = receiver.recv().unwrap();
-                    ex.exec_task(task);
-                }
-            }).expect(BUG_MESSAGE);
-        });
+        local_executor()
     }
 
-    fn exec_future(&mut self, task: Task, config: Config, is_local: usize) {
-        let lock = if config.is_work_sharing_enabled() {
-            Some(WORK_SHARING_TEST_LOCK.lock().unwrap())
-        } else {
-            None
-        };
-        
-        let ex_sender;
-        if let Some(sender) = self.executor_senders.get(&config) {
-            ex_sender = sender;
-        } else {
-            self.start_executor(config);
-            ex_sender = self.executor_senders.get(&config).expect(BUG_MESSAGE);
-        };
-
-        let (res_sender, res_receiver) = bounded(0);
-        ex_sender.send(task).unwrap();
-
-        drop(lock);
-    }
-
-    pub fn block_on_local<Ret, Fut, F>(&self, func: F) -> Ret
+    pub fn block_on_local<Fut>(&self, future: Fut)
     where
-        Fut: Future<Output = Ret> + 'static,
-        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()> + 'static,
     {
-        generate_start_test_body!(
-            self.cfg,
-            Executor::run_and_block_on_local,
-            func,
-            |res: Result<Ret, &'static str>| -> Ret {
-                res.expect("Spawned executor has panicked!")
-            }
-        )
+        let executor = self.get_local_executor();
+        executor.run_and_block_on_local(future).expect(BUG_MESSAGE);
     }
 
-    pub fn block_on_global<Ret, Fut, F>(&self, func: F) -> Ret
+    pub fn block_on_global<Fut>(&self, future: Fut)
     where
-        Fut: Future<Output = Ret> + Send + 'static,
-        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
     {
-        generate_start_test_body!(
-            self.cfg,
-            Executor::run_and_block_on_global,
-            func,
-            |res: Result<Ret, &'static str>| -> Ret {
-                res.expect("Spawned executor has panicked!")
-            }
-        )
+        let executor = self.get_local_executor();
+        executor.run_and_block_on_global(future).expect(BUG_MESSAGE);
     }
 }
 
-pub static DEFAULT_TEST_RUNNER: TestRunner =
-    TestRunner::new(Config::default().set_work_sharing_level(usize::MAX));
-
-pub fn run_test_and_block_on_local<Ret, Fut, F>(func: F) -> Ret
-where
-    Fut: Future<Output = Ret> + 'static,
-    F: FnOnce() -> Fut,
-{
-    DEFAULT_TEST_RUNNER.block_on_local(func)
+thread_local! {
+    static LOCAL_TEST_RUNNER: TestRunner = TestRunner::new();
 }
 
-pub fn run_test_and_block_on_global<Ret, Fut, F>(func: F) -> Ret
+pub fn run_test_and_block_on_local<Fut>(future: Fut)
 where
-    Fut: Future<Output = Ret> + Send + 'static,
-    F: FnOnce() -> Fut,
+    Fut: Future<Output = ()> + 'static,
 {
-    DEFAULT_TEST_RUNNER.block_on_global(func)
+    LOCAL_TEST_RUNNER.with(|runner| runner.block_on_local(future));
+}
+
+pub fn run_test_and_block_on_global<Fut>(future: Fut)
+where
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    LOCAL_TEST_RUNNER.with(|runner| runner.block_on_global(future));
 }

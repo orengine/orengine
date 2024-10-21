@@ -1,3 +1,4 @@
+// TODO docs
 use crate::local_executor;
 use crate::runtime::ExecutorSharedTaskList;
 #[cfg(test)]
@@ -6,7 +7,6 @@ use crate::utils::{SpinLock, SpinLockGuard};
 use crossbeam::utils::CachePadded;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
-// TODO docs
 use std::sync::Arc;
 
 pub(crate) struct SubscribedState {
@@ -224,8 +224,9 @@ pub fn stop_executor(executor_id: usize) {
 
 /// Stops all executors after some time (at most 100ms).
 pub fn stop_all_executors() {
-    #[cfg(test)]
-    todo!();
+    if cfg!(test) {
+        panic!("stop_all_executors is not supported in test mode");
+    }
 
     #[cfg(not(test))]
     global_state().stop_all_executors();

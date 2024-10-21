@@ -1,7 +1,8 @@
+use crate::local_executor;
+use crate::runtime::global_state::stop_executor;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::{local_executor, stop_executor};
 
 /// `EndLocalThreadAndWriteIntoPtr` is a wrapper of a future. After the future is done,
 /// a result of the future is written into the pointer.
@@ -14,7 +15,7 @@ use crate::{local_executor, stop_executor};
 pub(crate) struct EndLocalThreadAndWriteIntoPtr<R, Fut: Future<Output = R>> {
     res_ptr: *mut Option<R>,
     future: Fut,
-    local_executor_id: usize
+    local_executor_id: usize,
 }
 
 impl<R, Fut: Future<Output = R>> EndLocalThreadAndWriteIntoPtr<R, Fut> {
@@ -23,7 +24,7 @@ impl<R, Fut: Future<Output = R>> EndLocalThreadAndWriteIntoPtr<R, Fut> {
         Self {
             res_ptr,
             future,
-            local_executor_id: local_executor().id()
+            local_executor_id: local_executor().id(),
         }
     }
 }

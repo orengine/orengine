@@ -873,7 +873,7 @@ mod tests {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             ch_clone.send(1).await.expect("closed");
             ch_clone.send(2).await.expect("closed");
             ch_clone.close().await;
@@ -891,8 +891,6 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
-
-        handle.join();
     }
 
     const N: usize = 10_025;
@@ -906,7 +904,7 @@ mod tests {
 
         wg.add(N);
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             for i in 0..N {
                 ch_clone.send(i).await.expect("closed");
             }
@@ -925,8 +923,6 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
-
-        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -934,15 +930,13 @@ mod tests {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             sleep(Duration::from_millis(1)).await;
             ch_clone.send(1).await.expect("closed");
         });
 
         let res = ch.recv().await.expect("closed");
         assert_eq!(res, 1);
-
-        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -950,7 +944,7 @@ mod tests {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             ch_clone.send(1).await.expect("closed");
             ch_clone.send(2).await.expect("closed");
 
@@ -971,8 +965,6 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
-
-        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -983,7 +975,7 @@ mod tests {
         let wg_clone = wg.clone();
 
         wg.inc();
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             for i in 0..N {
                 ch_clone.send(i).await.expect("closed");
             }
@@ -1004,8 +996,6 @@ mod tests {
             Err(_) => assert!(true),
             _ => panic!("should be closed"),
         };
-
-        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -1096,10 +1086,6 @@ mod tests {
 
         let _ = wg.wait().await;
         assert_eq!(sent.load(Relaxed), received.load(Relaxed));
-
-        for handle in handles {
-            handle.join();
-        }
     }
 
     #[orengine_macros::test_global]

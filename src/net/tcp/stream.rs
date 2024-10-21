@@ -245,7 +245,7 @@ mod tests {
         let is_server_ready = Arc::new(AtomicBool::new(false));
         let is_server_ready_server_clone = is_server_ready.clone();
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
 
             is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -276,8 +276,6 @@ mod tests {
             stream.read_exact(&mut buf).expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
-
-        handle.join();
     }
 
     #[orengine_macros::test_local]

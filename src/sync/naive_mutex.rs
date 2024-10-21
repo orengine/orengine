@@ -258,7 +258,7 @@ mod tests {
         let mutex_clone = mutex.clone();
         let wg_clone = wg.clone();
         wg_clone.add(1);
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             sleep(SLEEP_DURATION).await;
@@ -274,8 +274,6 @@ mod tests {
 
         assert_eq!(*value, true);
         drop(value);
-
-        handle.join();
     }
 
     #[orengine_macros::test_global]
@@ -291,7 +289,7 @@ mod tests {
 
         lock_wg.add(1);
         unlock_wg.add(1);
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             let mut value = mutex_clone.lock().await;
             println!("1");
             lock_wg_clone.done();
@@ -317,8 +315,6 @@ mod tests {
             Some(v) => assert_eq!(*v, true, "not waited"),
             None => panic!("can't acquire lock"),
         }
-
-        handle.join();
     }
 
     // TODO #[orengine_macros::test_global]

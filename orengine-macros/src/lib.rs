@@ -131,7 +131,7 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
         #(#attrs)*
         fn #name() {
             println!("Test {} started!", #name_str.to_string());
-            #spawn_fn(|| async {
+            #spawn_fn(async {
                 #body
             });
             println!("Test {} finished!", #name_str.to_string());

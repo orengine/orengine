@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
-use crate::io::worker::{get_local_worker_ref, init_local_worker, uninit_local_worker, IoWorker};
+use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
@@ -44,12 +44,6 @@ thread_local! {
 /// It is `None` if the executor is not initialized.
 fn get_local_executor_ref() -> &'static mut Option<Executor> {
     LOCAL_EXECUTOR.with(|local_executor| unsafe { &mut *local_executor.get() })
-}
-
-/// Change the state of local thread to pre-initialized.
-fn uninit_local_executor() {
-    *get_local_executor_ref() = None;
-    uninit_local_worker();
 }
 
 /// Message that prints out when local executor is not initialized
@@ -841,8 +835,6 @@ impl Executor {
             number_of_local_tasks_in_this_round = self.local_tasks.len();
             number_of_global_tasks_in_this_round = self.global_tasks.len();
         }
-
-        uninit_local_executor();
     }
 
     /// Runs the executor with a local task.

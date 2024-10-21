@@ -27,11 +27,6 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     *get_local_worker_ref() = Some(WorkerSys::new(config));
 }
 
-/// Uninitializes the thread-local worker.
-pub(crate) fn uninit_local_worker() {
-    *get_local_worker_ref() = None;
-}
-
 /// Returns the thread-local worker.
 ///
 /// # Panics

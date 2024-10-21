@@ -236,7 +236,7 @@ mod tests {
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
 
-        let handle = sched_future_to_another_thread(async move {
+        sched_future_to_another_thread(async move {
             let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
@@ -254,8 +254,6 @@ mod tests {
         }
 
         assert!(start.elapsed() >= TIME_TO_SLEEP);
-
-        handle.join();
     }
 
     async fn test_all(need_drop: bool) {
@@ -295,10 +293,6 @@ mod tests {
         let _ = wg.wait().await;
 
         assert!(start.elapsed() >= TIME_TO_SLEEP);
-
-        for handle in handles {
-            handle.join();
-        }
     }
 
     #[orengine_macros::test_global]
