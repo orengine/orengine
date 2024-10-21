@@ -1,3 +1,4 @@
+use crate::runtime::{Locality, IS_LOCAL_MASK, TASK_MASK};
 // TODO docs
 use std::future::Future;
 
@@ -14,18 +15,6 @@ pub(crate) struct TaskData {
     future_tagged_ptr: *mut dyn Future<Output = ()>,
 }
 
-#[cfg(any(target_pointer_width = "64"))]
-const IS_LOCAL_SHIFT: i128 = 127;
-#[cfg(any(target_pointer_width = "64"))]
-const TASK_MASK: i128 = !(1 << IS_LOCAL_SHIFT);
-#[cfg(any(target_pointer_width = "64"))]
-const IS_LOCAL_MASK: i128 = 1 << IS_LOCAL_SHIFT;
-// TODO
-#[cfg(any(target_pointer_width = "64"))]
-pub const LOCAL: u128 = 0;
-#[cfg(any(target_pointer_width = "64"))]
-pub const GLOBAL: u128 = 1 << IS_LOCAL_SHIFT;
-
 impl TaskData {
     /// Creates a new `TaskData`.
     ///
@@ -33,20 +22,19 @@ impl TaskData {
     ///
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub(crate) fn new(future: *mut dyn Future<Output = ()>, is_local: usize) -> Self {
+    pub(crate) fn new(future: *mut dyn Future<Output = ()>, locality: Locality) -> Self {
         #[cfg(not(target_pointer_width = "64"))]
         return Self {
             future_ptr: future,
-            is_local: is_local != 0,
+            is_local: locality.value,
         };
 
         #[cfg(any(target_pointer_width = "64"))]
         {
-            assert!(is_local < 2, "is_local must be 0 or 1");
             let mut tagged_ptr =
                 unsafe { std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(future) };
 
-            tagged_ptr |= (is_local as i128) << IS_LOCAL_SHIFT;
+            tagged_ptr |= locality.value;
 
             Self {
                 future_tagged_ptr: unsafe {

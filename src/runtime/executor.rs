@@ -18,7 +18,7 @@ use crate::runtime::global_state::{register_local_executor, SubscribedState};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
-use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList};
+use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
 use crate::sleep::sleeping_task::SleepingTask;
 use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
@@ -555,7 +555,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, 1);
+        let task = Task::from_future(future, Locality::local());
         self.exec_task(task);
     }
 
@@ -570,7 +570,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, 0);
+        let task = Task::from_future(future, Locality::global());
         self.exec_task(task);
     }
 
@@ -588,7 +588,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, 1);
+        let task = Task::from_future(future, Locality::local());
         self.spawn_local_task(task);
     }
 
@@ -620,7 +620,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, 0);
+        let task = Task::from_future(future, Locality::global());
         self.spawn_global_task(task);
     }
 

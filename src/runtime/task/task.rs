@@ -1,5 +1,5 @@
 use crate::runtime::task::task_data::TaskData;
-use crate::runtime::task_pool;
+use crate::runtime::{task_pool, Locality};
 use std::future::Future;
 
 /// `Task` is a wrapper of a future.
@@ -17,8 +17,8 @@ impl Task {
     ///
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub fn from_future<F: Future<Output = ()>>(future: F, is_local: usize) -> Self {
-        task_pool().acquire(future, is_local)
+    pub fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
+        task_pool().acquire(future, locality)
     }
 
     /// Returns the future that are wrapped by this [`Task`].

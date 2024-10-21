@@ -1,7 +1,7 @@
 // TODO docs
 
 use crate::bug_message::BUG_MESSAGE;
-use crate::runtime::{Config, Task};
+use crate::runtime::{Config, Locality, Task};
 use crate::sync::Channel;
 use crate::{local_executor, Executor};
 use crossbeam::queue::SegQueue;
@@ -171,7 +171,7 @@ impl ExecutorPool {
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let task = Task::from_future(future, 0);
+        let task = Task::from_future(future, Locality::global());
         let result_channel = Arc::new(Channel::bounded(1));
         let sender = self
             .senders_to_executors

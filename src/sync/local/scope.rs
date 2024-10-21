@@ -1,4 +1,4 @@
-use crate::runtime::local_executor;
+use crate::runtime::{local_executor, Locality};
 use crate::sync::LocalWaitGroup;
 use crate::yield_now;
 use std::future::Future;
@@ -69,7 +69,7 @@ impl<'scope> LocalScope<'scope> {
             no_send_marker: PhantomData,
         };
 
-        let local_task = crate::runtime::Task::from_future(handle, 1);
+        let local_task = crate::runtime::Task::from_future(handle, Locality::local());
         local_executor().exec_task(local_task);
     }
 

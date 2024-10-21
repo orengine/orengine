@@ -1,5 +1,5 @@
 use crate::panic_if_local_in_future;
-use crate::runtime::local_executor;
+use crate::runtime::{local_executor, Locality};
 use crate::sync::WaitGroup;
 use std::future::Future;
 use std::pin::Pin;
@@ -66,7 +66,7 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        let global_task = crate::runtime::Task::from_future(handle, 0);
+        let global_task = crate::runtime::Task::from_future(handle, Locality::global());
         local_executor().exec_task(global_task);
     }
 
