@@ -4,15 +4,15 @@ use std::task::{Context, Poll};
 
 use crate::{get_task_from_context, local_executor};
 
-/// `LocalYield` implements the [`Future`] trait for yielding the current task.
+/// `Yield` implements the [`Future`] trait for yielding the current task.
 ///
 /// When [`Future::poll`] is called, it will add current task to
-/// the beginning of the `local` LIFO queue.
-pub struct LocalYield {
+/// the beginning of the LIFO queue.
+pub struct Yield {
     was_yielded: bool,
 }
 
-impl Future for LocalYield {
+impl Future for Yield {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -34,7 +34,7 @@ impl Future for LocalYield {
 }
 
 /// `yield_now` transfers control to the executor and adds the current task
-/// to the beginning of the `local` LIFO queue.
+/// to the beginning of the LIFO queue.
 ///
 /// # Example
 ///
@@ -48,8 +48,8 @@ impl Future for LocalYield {
 ///     }
 /// }
 /// ```
-pub fn yield_now() -> LocalYield {
-    LocalYield { was_yielded: false }
+pub fn yield_now() -> Yield {
+    Yield { was_yielded: false }
 }
 
 #[cfg(test)]

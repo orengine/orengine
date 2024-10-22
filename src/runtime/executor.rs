@@ -323,7 +323,7 @@ impl Executor {
     pub(crate) fn add_task_at_the_start_of_lifo_global_queue(&mut self, task: Task) {
         debug_assert!(!task.is_local());
 
-        self.global_tasks.push_back(task);
+        self.global_tasks.push_front(task);
     }
 
     /// Returns a reference to the subscribed state of the executor.
@@ -458,22 +458,6 @@ impl Executor {
 
     /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
     ///
-    /// # Attention
-    ///
-    /// Execute [`tasks`](Task) only by this method!
-    #[inline(always)]
-    pub fn exec_task(&mut self, task: Task) {
-        if self.exec_series >= 106 {
-            self.exec_series = 0;
-            self.spawn_local_task(task);
-            return;
-        }
-
-        self.exec_task_now(task);
-    }
-
-    /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
-    ///
     /// # The difference between `exec_task_now` and [`exec_task`](Executor::exec_task)
     ///
     /// If the stack of calls is too large, [`exec_task`](Executor::exec_task)
@@ -542,6 +526,22 @@ impl Executor {
                 }
             }
         }
+    }
+
+    /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
+    ///
+    /// # Attention
+    ///
+    /// Execute [`tasks`](Task) only by this method!
+    #[inline(always)]
+    pub fn exec_task(&mut self, task: Task) {
+        if self.exec_series >= 106 {
+            self.exec_series = 0;
+            self.spawn_local_task(task);
+            return;
+        }
+
+        self.exec_task_now(task);
     }
 
     /// Creates a `local` [`task`](Task) from a provided [`future`](Future)

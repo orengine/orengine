@@ -236,7 +236,9 @@ impl WaitGroup {
 
         if prev_count == 1 {
             let executor = local_executor();
-            while let Some(task) = self.waited_tasks.pop() {
+            let mut tasks = Vec::new();
+            self.waited_tasks.pop_all_in(&mut tasks);
+            for task in tasks {
                 executor.spawn_global_task(task);
             }
         }

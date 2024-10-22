@@ -511,27 +511,23 @@ unsafe impl<T: Sync> Sync for LocalRWLock<T> {}
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::sleep::sleep;
     use crate::sync::LocalWaitGroup;
+    use crate::yield_now;
     use std::rc::Rc;
-    use std::time::{Duration, Instant};
 
     #[orengine_macros::test_local]
     fn test_rw_lock() {
-        const SLEEP_DURATION: Duration = Duration::from_millis(1);
-
-        let start = Instant::now();
-        let mutex = Rc::new(LocalRWLock::new(0));
+        let rw_lock = Rc::new(LocalRWLock::new(0));
         let wg = Rc::new(LocalWaitGroup::new());
         let read_wg = Rc::new(LocalWaitGroup::new());
 
         for i in 1..=30 {
-            let mutex = mutex.clone();
+            let mutex = rw_lock.clone();
             local_executor().exec_local_future(async move {
                 let value = mutex.read().await;
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 assert_eq!(*value, 0);
-                sleep(SLEEP_DURATION).await;
+                yield_now().await;
                 assert_eq!(mutex.get_inner().number_of_readers, 31 - i);
                 assert_eq!(*value, 0);
             });
@@ -541,7 +537,7 @@ mod tests {
             let wg = wg.clone();
             let read_wg = read_wg.clone();
             wg.add(1);
-            let mutex = mutex.clone();
+            let mutex = rw_lock.clone();
             local_executor().exec_local_future(async move {
                 assert_eq!(mutex.get_inner().number_of_readers, 30);
                 let mut value = mutex.write().await;
@@ -558,8 +554,7 @@ mod tests {
                         read_wg.done();
                     });
                 }
-                let elapsed = start.elapsed();
-                assert!(elapsed >= SLEEP_DURATION);
+
                 assert_eq!(mutex.get_inner().number_of_readers, -1);
                 *value += 1;
 
@@ -570,67 +565,47 @@ mod tests {
         wg.wait().await;
         read_wg.wait().await;
 
-        let value = mutex.read().await;
+        let value = rw_lock.read().await;
         assert_eq!(*value, 30);
-        assert_ne!(mutex.get_inner().number_of_readers, 0);
+        assert_ne!(rw_lock.get_inner().number_of_readers, 0);
     }
 
-    // TODO
-    // #[orengine_macros::test_local]
-    // fn test_try_rw_lock() {
-    //     let start = Instant::now();
-    //     let mutex = Rc::new(LocalRWLock::new(0));
-    //     let wg = Rc::new(LocalWaitGroup::new());
-    //     let read_wg = Rc::new(LocalWaitGroup::new());
-    //
-    //     for i in 1..=100 {
-    //         let mutex = mutex.clone();
-    //         local_executor().exec_local_future(async move {
-    //             let value = mutex.try_read().expect("try_read failed");
-    //             assert_eq!(mutex.get_inner().number_of_readers, i);
-    //             assert_eq!(*value, 0);
-    //             sleep(SLEEP_DURATION).await;
-    //         });
-    //     }
-    //
-    //     for _i in 1..=100 {
-    //         let wg = wg.clone();
-    //         let read_wg = read_wg.clone();
-    //         wg.add(1);
-    //         let mutex = mutex.clone();
-    //         local_executor().exec_local_future(async move {
-    //             assert_eq!(mutex.get_inner().number_of_readers, 100);
-    //             assert!(mutex.try_write().is_none());
-    //             sleep(2 * SLEEP_DURATION).await;
-    //             let mut value = mutex.try_write().expect("try_write failed");
-    //             read_wg.add(1);
-    //             {
-    //                 let mutex = mutex.clone();
-    //
-    //                 local_executor().exec_local_future(async move {
-    //                     assert_eq!(mutex.get_inner().number_of_readers, -1);
-    //                     assert!(mutex.try_read().is_none());
-    //                     sleep(SLEEP_DURATION * 2).await;
-    //                     let value = mutex.try_read().expect("try_read failed");
-    //                     assert_ne!(*value, 0);
-    //                     assert_ne!(mutex.get_inner().number_of_readers, 0);
-    //                     read_wg.done();
-    //                 });
-    //             }
-    //             let elapsed = start.elapsed();
-    //             assert!(elapsed >= SLEEP_DURATION);
-    //             assert_eq!(mutex.get_inner().number_of_readers, -1);
-    //             *value += 1;
-    //
-    //             wg.done();
-    //         });
-    //     }
-    //
-    //     wg.wait().await;
-    //     read_wg.wait().await;
-    //
-    //     let value = mutex.try_read().expect("try_read failed");
-    //     assert_eq!(*value, 100);
-    //     assert_ne!(mutex.get_inner().number_of_readers, 0);
-    // }
+    #[orengine_macros::test_local]
+    fn test_try_rw_lock() {
+        const NUMBER_OF_READERS: isize = 5;
+        let rw_lock = Rc::new(LocalRWLock::new(0));
+
+        for i in 1..=NUMBER_OF_READERS {
+            let mutex = rw_lock.clone();
+            local_executor().exec_local_future(async move {
+                let lock = mutex.try_read().expect("Failed to get read lock!");
+                assert_eq!(mutex.get_inner().number_of_readers, i);
+                yield_now().await;
+                lock.unlock();
+            });
+        }
+
+        assert_eq!(rw_lock.get_inner().number_of_readers, NUMBER_OF_READERS);
+        assert!(
+            rw_lock.try_write().is_none(),
+            "Successful attempt to acquire write lock when rw_lock locked for read"
+        );
+
+        yield_now().await;
+
+        assert_eq!(rw_lock.get_inner().number_of_readers, 0);
+        let mut write_lock = rw_lock.try_write().expect("Failed to get write lock!");
+        *write_lock += 1;
+        assert_eq!(*write_lock, 1);
+
+        assert_eq!(rw_lock.get_inner().number_of_readers, -1);
+        assert!(
+            rw_lock.try_read().is_none(),
+            "Successful attempt to acquire read lock when rw_lock locked for write"
+        );
+        assert!(
+            rw_lock.try_write().is_none(),
+            "Successful attempt to acquire write lock when rw_lock locked for write"
+        );
+    }
 }
