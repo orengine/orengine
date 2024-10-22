@@ -770,7 +770,7 @@ mod tests {
     use std::sync::Arc;
 
     #[orengine_macros::test_local]
-    fn test_zero_capacity() {
+    fn test_local_zero_capacity() {
         let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
 
@@ -798,7 +798,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_unbounded() {
+    fn test_local_unbounded() {
         let ch = LocalChannel::unbounded();
         let ch_ref = &ch;
 
@@ -955,7 +955,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_drop_channel() {
+    fn test_drop_local_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = LocalChannel::bounded(1);
 
@@ -984,7 +984,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_drop_channel_split() {
+    fn test_drop_local_channel_split() {
         let channel = LocalChannel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let (sender, receiver) = channel.split();

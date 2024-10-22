@@ -376,7 +376,7 @@ mod tests {
     use std::time::Duration;
 
     #[orengine_macros::test_global]
-    fn test_rw_lock() {
+    fn test_naive_rw_lock() {
         const PAR: isize = 3;
 
         let rw_lock = Arc::new(RWLock::new(0));
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_try_rw_lock() {
+    fn test_try_naive_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = RWLock::new(0);
 

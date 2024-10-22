@@ -516,7 +516,7 @@ mod tests {
     use std::rc::Rc;
 
     #[orengine_macros::test_local]
-    fn test_rw_lock() {
+    fn test_local_rw_lock() {
         let rw_lock = Rc::new(LocalRWLock::new(0));
         let wg = Rc::new(LocalWaitGroup::new());
         let read_wg = Rc::new(LocalWaitGroup::new());
@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_try_rw_lock() {
+    fn test_try_local_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = Rc::new(LocalRWLock::new(0));
 

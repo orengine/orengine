@@ -298,7 +298,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[orengine_macros::test_local]
-    fn test_mutex() {
+    fn test_local_mutex() {
         let start = Instant::now();
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_try_mutex() {
+    fn test_try_local_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let start = Instant::now();

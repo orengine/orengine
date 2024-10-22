@@ -148,7 +148,7 @@ mod tests {
     use std::time::Duration;
 
     #[orengine_macros::test_global]
-    fn test_async_once() {
+    fn test_async_global_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_sync_once() {
+    fn test_sync_global_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());

@@ -231,7 +231,7 @@ mod tests {
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
-    async fn test_one(need_drop: bool) {
+    async fn test_notify_one(need_drop: bool) {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
@@ -256,7 +256,7 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    async fn test_all(need_drop: bool) {
+    async fn test_notify_all(need_drop: bool) {
         const NUMBER_OF_WAITERS: usize = 10;
 
         let start = Instant::now();
@@ -295,22 +295,22 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_one_with_drop_guard() {
-        test_one(true).await;
+    fn test_global_cond_var_notify_one_with_drop_guard() {
+        test_notify_one(true).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_all_with_drop_guard() {
-        test_all(true).await;
+    fn test_global_cond_var_notify_all_with_drop_guard() {
+        test_notify_all(true).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_one_without_drop_guard() {
-        test_one(false).await;
+    fn test_global_cond_var_notify_one_without_drop_guard() {
+        test_notify_one(false).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_all_without_drop_guard() {
-        test_all(false).await;
+    fn test_global_cond_var_notify_all_without_drop_guard() {
+        test_notify_all(false).await;
     }
 }

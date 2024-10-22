@@ -869,7 +869,7 @@ mod tests {
     use crate::utils::{get_core_ids, SpinLock};
 
     #[orengine_macros::test_global]
-    fn test_zero_capacity() {
+    fn test_zero_capacity_global_channel() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
 
@@ -896,7 +896,7 @@ mod tests {
     const N: usize = 10_025;
 
     #[orengine_macros::test_global]
-    fn test_channel() {
+    fn test_global_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let wg = Arc::new(WaitGroup::new());
         let ch_clone = ch.clone();
@@ -926,7 +926,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_wait_recv() {
+    fn test_global_channel_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
@@ -940,7 +940,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_wait_send() {
+    fn test_global_channel_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
 
@@ -968,7 +968,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_unbounded_channel() {
+    fn test_unbounded_global_channel() {
         let ch = Arc::new(Channel::unbounded());
         let wg = Arc::new(WaitGroup::new());
         let ch_clone = ch.clone();
@@ -999,7 +999,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_drop_channel() {
+    fn test_drop_global_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = Channel::bounded(1);
 
@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_drop_channel_split() {
+    fn test_drop_global_channel_split() {
         let channel = Channel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let (sender, receiver) = channel.split();
@@ -1088,17 +1088,17 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn stress_test_bounded_channel() {
+    fn stress_test_bounded_global_channel() {
         stress_test(Channel::bounded(1024), 100).await;
     }
 
     #[orengine_macros::test_global]
-    fn stress_test_unbounded_channel() {
+    fn stress_test_unbounded_global_channel() {
         stress_test(Channel::unbounded(), 100).await;
     }
 
     #[orengine_macros::test_global]
-    fn stress_test_zero_capacity_channel() {
+    fn stress_test_zero_capacity_global_channel() {
         stress_test(Channel::bounded(0), 20).await;
     }
 }

@@ -277,7 +277,7 @@ mod tests {
     use std::rc::Rc;
 
     #[orengine_macros::test_local]
-    fn test_many_wait_one() {
+    fn test_local_wg_many_wait_one() {
         let check_value = Local::new(false);
         let wait_group = Rc::new(LocalWaitGroup::new());
         wait_group.inc();
@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_one_wait_many() {
+    fn test_local_wg_one_wait_many() {
         let check_value = Local::new(5);
         let wait_group = Rc::new(LocalWaitGroup::new());
         wait_group.add(5);

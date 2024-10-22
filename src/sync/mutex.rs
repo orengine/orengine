@@ -348,7 +348,7 @@ mod tests {
     use crate::test::sched_future_to_another_thread;
 
     #[orengine_macros::test_global]
-    fn test_mutex() {
+    fn test_global_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let mutex = Arc::new(Mutex::new(false));
@@ -418,17 +418,17 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_try_without_spinning_mutex() {
+    fn test_try_without_spinning_global_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_try_with_spinning_mutex() {
+    fn test_try_with_spinning_global_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
     #[orengine_macros::test_global]
-    fn stress_test_mutex() {
+    fn stress_test_global_mutex() {
         const PAR: usize = 5;
         const TRIES: usize = 400;
 

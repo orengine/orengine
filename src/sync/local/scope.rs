@@ -224,7 +224,7 @@ mod tests {
     use std::time::Duration;
 
     #[orengine_macros::test_local]
-    fn test_scope_exec() {
+    fn test_local_scope_exec() {
         let local_a = Local::new(0);
 
         local_scope(|scope| async {
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_scope_spawn() {
+    fn test_local_scope_spawn() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();
 
