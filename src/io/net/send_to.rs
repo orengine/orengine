@@ -39,7 +39,7 @@ impl<'fut> Future for SendTo<'fut> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
+        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
@@ -85,7 +85,7 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
+        let worker = local_worker();
         let ret;
 
         poll_for_time_bounded_io_request!((

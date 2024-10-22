@@ -170,6 +170,7 @@ impl Drop for TcpStream {
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
+    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
     use std::{io, thread};
@@ -236,46 +237,44 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    // TODO
-    // #[orengine_macros::test_local]
-    // fn test_server() {
-    //     const ADDR: &str = "127.0.0.1:6081";
-    //
-    //     let is_server_ready = Arc::new(AtomicBool::new(false));
-    //     let is_server_ready_server_clone = is_server_ready.clone();
-    //
-    //     sched_future_to_another_thread(async move {
-    //         let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
-    //
-    //         is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
-    //
-    //         let mut stream = listener.accept().await.expect("accept failed").0;
-    //
-    //         for _ in 0..TIMES {
-    //             stream.poll_recv().await.expect("poll failed");
-    //             let mut buf = vec![0u8; REQUEST.len()];
-    //             stream.recv_exact(&mut buf).await.expect("recv failed");
-    //             assert_eq!(REQUEST, buf);
-    //
-    //             stream.send_all(RESPONSE).await.expect("send failed");
-    //         }
-    //     });
-    //
-    //     use std::io::{Read, Write};
-    //     while is_server_ready.load(std::sync::atomic::Ordering::Relaxed) == false {
-    //         thread::sleep(Duration::from_millis(1));
-    //     }
-    //
-    //     let mut stream = std::net::TcpStream::connect(ADDR).expect("connect failed");
-    //
-    //     for _ in 0..TIMES {
-    //         stream.write_all(REQUEST).expect("send failed");
-    //
-    //         let mut buf = vec![0u8; RESPONSE.len()];
-    //         stream.read_exact(&mut buf).expect("recv failed");
-    //         assert_eq!(RESPONSE, buf);
-    //     }
-    // }
+    #[orengine_macros::test_local]
+    fn test_server() {
+        const ADDR: &str = "127.0.0.1:6081";
+
+        let is_server_ready = Arc::new(AtomicBool::new(false));
+        let is_server_ready_server_clone = is_server_ready.clone();
+        thread::spawn(move || {
+            use std::io::{Read, Write};
+            while is_server_ready.load(std::sync::atomic::Ordering::Relaxed) == false {
+                thread::sleep(Duration::from_millis(1));
+            }
+
+            let mut stream = std::net::TcpStream::connect(ADDR).expect("connect failed");
+
+            for _ in 0..TIMES {
+                stream.write_all(REQUEST).expect("send failed");
+
+                let mut buf = vec![0u8; RESPONSE.len()];
+                stream.read_exact(&mut buf).expect("recv failed");
+                assert_eq!(RESPONSE, buf);
+            }
+        });
+
+        let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
+
+        is_server_ready_server_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let mut stream = listener.accept().await.expect("accept failed").0;
+
+        for _ in 0..TIMES {
+            stream.poll_recv().await.expect("poll failed");
+            let mut buf = vec![0u8; REQUEST.len()];
+            stream.recv_exact(&mut buf).await.expect("recv failed");
+            assert_eq!(REQUEST, buf);
+
+            stream.send_all(RESPONSE).await.expect("send failed");
+        }
+    }
 
     #[orengine_macros::test_local]
     fn test_stream() {
