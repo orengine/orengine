@@ -109,7 +109,7 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Generates a test function with a [`timeout`](get_timeout_name) argument.
+/// Generates a test function with provided locality.
 fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemFn);
     let body = &input.block;
@@ -158,17 +158,34 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
 ///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
 /// }
 /// ```
+///
+/// # Note
+///
+/// Code above is equal to:
+///
+/// ```ignore
+/// #[test]
+/// fn test_sleep() {
+///     println!("Test sleep started!");
+///     orengine::test::run_test_and_block_on_local(async {
+///         let start = std::time::Instant::now();
+///         orengine::sleep(std::time::Duration::from_secs(1)).await;
+///         assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+///     });
+///     println!("Test sleep finished!");
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
     generate_test(input, true)
 }
 
-/// Generates a test function with running an `Executor` with `global` task.
+/// Generates a test function with running an `Executor` with `local` task.
 ///
 /// # The difference between `test_global` and [`test_local`]
 ///
-/// `test_global` generates a test function that runs an `Executor` with `global` task.
-/// [`test_local`] generates a test function that runs an `Executor` with `local` task.
+/// [`test_global`] generates a test function that runs an `Executor` with `global` task.
+/// `test_local` generates a test function that runs an `Executor` with `local` task.
 ///
 /// # Example
 ///
@@ -178,6 +195,23 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 ///     let start = std::time::Instant::now();
 ///     orengine::sleep(std::time::Duration::from_secs(1)).await;
 ///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+/// }
+/// ```
+///
+/// # Note
+///
+/// Code above is equal to:
+///
+/// ```ignore
+/// #[test]
+/// fn test_sleep() {
+///     println!("Test sleep started!");
+///     orengine::test::run_test_and_block_on_global(async {
+///         let start = std::time::Instant::now();
+///         orengine::sleep(std::time::Duration::from_secs(1)).await;
+///         assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+///     });
+///     println!("Test sleep finished!");
 /// }
 /// ```
 #[proc_macro_attribute]
