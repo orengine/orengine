@@ -146,11 +146,12 @@ impl File {
     /// # Example
     ///
     /// ```no_run
+    /// use std::path::Path;
     /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let file = File::remove("foo.txt").await?;
-    /// assert!(!std::fs::exists("foo.txt")?);
+    /// assert!(!Path::new("foo.txt").exists());
     /// # Ok(())
     /// # }
     /// ```

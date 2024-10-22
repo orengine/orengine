@@ -40,11 +40,12 @@ pub async fn open_file<P: AsRef<Path>>(path: P, open_options: &OpenOptions) -> R
 /// # Example
 ///
 /// ```no_run
+/// use std::path::Path;
 /// use orengine::fs::create_dir;
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// create_dir("new_directory").await?;
-/// assert!(std::fs::exists("new_directory")?);
+/// assert!(Path::new("new_directory").exists());
 /// # Ok(())
 /// # }
 /// ```
@@ -91,11 +92,12 @@ pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 /// # Example
 ///
 /// ```no_run
+/// use std::path::Path;
 /// use orengine::fs::remove_dir;
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// remove_dir("empty_directory").await?;
-/// assert!(!std::fs::exists("empty_directory")?);
+/// assert!(!Path::new("empty_directory").exists());
 /// # Ok(())
 /// # }
 /// ```
@@ -118,11 +120,12 @@ pub async fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 /// # Example
 ///
 /// ```no_run
+/// use std::path::Path;
 /// use orengine::fs::remove_file;
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// remove_file("example.txt").await?;
-/// assert!(!std::fs::exists("example.txt")?);
+/// assert!(!Path::new("example.txt").exists());
 /// # Ok(())
 /// # }
 /// ```
@@ -144,12 +147,13 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 /// # Example
 ///
 /// ```no_run
+/// use std::path::Path;
 /// use orengine::fs::rename;
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// rename("old_name.txt", "new_name.txt").await?;
-/// assert!(!std::fs::exists("old_name.txt")?);
-/// assert!(std::fs::exists("new_name.txt")?);
+/// assert!(!Path::new("old_name.txt").exists());
+/// assert!(Path::new("new_name.txt").exists());
 /// # Ok(())
 /// # }
 /// ```

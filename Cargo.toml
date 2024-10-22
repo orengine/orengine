@@ -21,7 +21,7 @@ socket2 = { version = "0.5.7", features = ["all"] }
 smallvec = "2.0.0-alpha.7"
 ahash = "0.8.11"
 fastrand = "2.1.1"
-orengine-macros = { path = "orengine-macros", version = "2.0.0" }
+orengine-macros = "2.0.0"
 crossbeam = "0.8.4"
 flume = "0.11.1"
 
