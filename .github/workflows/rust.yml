@@ -26,7 +26,7 @@ jobs:
       - name: Build Debug
         run: cargo build --verbose
       - name: Run Tests Debug
-        run: cargo test --verbose
+        run: cargo test --verbose --nocapture
 
   build-release:
     name: Build Release
@@ -44,4 +44,4 @@ jobs:
       - name: Build Release
         run: cargo build --release --verbose
       - name: Run Tests Release
-        run: cargo test --release --verbose
+        run: cargo test --release --verbose --nocapture
