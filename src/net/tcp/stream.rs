@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_server() {
+    fn test_tcp_server() {
         const ADDR: &str = "127.0.0.1:6081";
 
         let is_server_ready = Arc::new(AtomicBool::new(false));
@@ -277,7 +277,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_stream() {
+    fn test_tcp_stream() {
         const ADDR: &str = "127.0.0.1:6082";
 
         let wg = Rc::new(LocalWaitGroup::new());
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_timeout() {
+    fn test_tcp_timeout() {
         const ADDR: &str = "127.0.0.1:6083";
         const BACKLOG_SIZE: isize = 256;
 
