@@ -201,7 +201,7 @@ mod tests {
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
-                let mut is_ready = is_ready_mu.lock().unwrap();
+                let mut is_ready = is_ready_mu.lock().expect("lock failed");
                 *is_ready = true;
                 condvar.notify_one();
             }
@@ -218,9 +218,9 @@ mod tests {
         });
 
         let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-        let mut is_server_ready = is_server_ready_mu.lock().unwrap();
+        let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
         while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).unwrap();
+            is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
         }
 
         let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
