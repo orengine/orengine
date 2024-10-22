@@ -160,7 +160,7 @@ mod tests {
     const TIMES: usize = 20;
 
     #[orengine_macros::test_local]
-    fn test_client() {
+    fn test_connected_udp_client() {
         const SERVER_ADDR: &str = "127.0.0.1:11086";
         const CLIENT_ADDR: &str = "127.0.0.1:11091";
 

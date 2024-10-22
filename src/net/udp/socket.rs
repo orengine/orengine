@@ -211,7 +211,7 @@ mod tests {
     const TIMES: usize = 20;
 
     #[orengine_macros::test_local]
-    fn test_client() {
+    fn test_udp_client() {
         const SERVER_ADDR: &str = "127.0.0.1:10086";
 
         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
