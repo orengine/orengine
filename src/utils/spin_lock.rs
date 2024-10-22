@@ -195,12 +195,12 @@ unsafe impl<T: Send> Send for SpinLock<T> {}
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::thread;
 
     use crate::sync::WaitGroup;
-    use crate::Executor;
 
     use super::*;
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
 
     #[orengine_macros::test_global]
     fn test_try_mutex() {
@@ -215,18 +215,16 @@ mod tests {
 
         lock_wg.add(1);
         unlock_wg.add(1);
-        thread::spawn(move || {
-            Executor::init().run_with_global_future(async move {
-                let mut value = mutex_clone.lock();
-                println!("1");
-                lock_wg_clone.done();
-                let _ = unlock_wg_clone.wait().await;
-                println!("4");
-                *value = true;
-                drop(value);
-                second_lock_clone.done();
-                println!("5");
-            });
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock();
+            println!("1");
+            lock_wg_clone.done();
+            let _ = unlock_wg_clone.wait().await;
+            println!("4");
+            *value = true;
+            drop(value);
+            second_lock_clone.done();
+            println!("5");
         });
 
         let _ = lock_wg.wait().await;
@@ -268,12 +266,10 @@ mod tests {
         for _ in 1..PAR {
             let wg = wg.clone();
             let mutex = mutex.clone();
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    for _ in 0..TRIES {
-                        work_with_lock(&mutex, &wg).await;
-                    }
-                });
+            sched_future_to_another_thread(async move {
+                for _ in 0..TRIES {
+                    work_with_lock(&mutex, &wg).await;
+                }
             });
         }
 

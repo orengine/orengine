@@ -3,7 +3,7 @@ use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{IntoRawFd, OsMessageHeader, RawFd};
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
-use crate::runtime::local_executor_unchecked;
+use crate::runtime::local_executor;
 use crate::BUG_MESSAGE;
 use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
@@ -17,33 +17,33 @@ use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
 
-/// Configuration for [`IoUringWorker`].
+/// Configuration for [`IOUringWorker`].
 ///
 /// # Fields
 ///
 /// - `number_of_entries`: number of entries in `io_uring`. Must be greater than 0.
-/// Every entry is 64 bytes, but [`IoUringWorker`] can't process more requests at a one time
+/// Every entry is 64 bytes, but [`IOUringWorker`] can't process more requests at a one time
 /// than the number of entries.
 #[derive(Clone, Copy)]
-pub struct IoUringConfig {
+pub struct IOUringConfig {
     /// Number of entries in `io_uring`. Must be greater than 0. Every entry is 64 bytes, but
-    /// [`IoUringWorker`] can't process more requests at a one time than the number of entries.
+    /// [`IOUringWorker`] can't process more requests at a one time than the number of entries.
     number_of_entries: u32,
 }
 
-impl IoUringConfig {
-    /// Creates new `IoUringConfig` with default values.
+impl IOUringConfig {
+    /// Creates new `IOUringConfig` with default values.
     pub const fn default() -> Self {
         Self {
             number_of_entries: 256,
         }
     }
 
-    /// Checks if [`IoUringConfig`] is valid.
+    /// Checks if [`IOUringConfig`] is valid.
     ///
     /// # Errors
     ///
-    /// - [`IoUringConfig.number_of_entries`](#field.number_of_entries) must be greater than 0.
+    /// - [`IOUringConfig.number_of_entries`](#field.number_of_entries) must be greater than 0.
     pub const fn validate(&self) -> Result<(), &'static str> {
         if self.number_of_entries > 0 {
             Ok(())
@@ -56,8 +56,8 @@ impl IoUringConfig {
 /// Timeout in microseconds for `io_uring`.
 const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
 
-/// [`IoUringWorker`] implements [`IoWorker`] using `io_uring`.
-pub(crate) struct IoUringWorker {
+/// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
+pub(crate) struct IOUringWorker {
     timeout: SubmitArgs<'static, 'static>,
     /// # Why we need some cell?
     ///
@@ -68,9 +68,9 @@ pub(crate) struct IoUringWorker {
     /// # Why we use UnsafeCell?
     ///
     /// Because we can guarantee that:
-    /// * only one thread can borrow the [`IoUringWorker`] at the same time
+    /// * only one thread can borrow the [`IOUringWorker`] at the same time
     /// * only in the [`poll`] method we borrow the `ring` field for [`CompletionQueue`] and [`SubmissionQueue`],
-    /// but only after the [`SubmissionQueue`] is submitted we start using the [`CompletionQueue`] that can call the [`IoUringWorker::push_sqe`]
+    /// but only after the [`SubmissionQueue`] is submitted we start using the [`CompletionQueue`] that can call the [`IOUringWorker::push_sqe`]
     /// but it is safe, because the [`SubmissionQueue`] has already been read and submitted.
     ring: UnsafeCell<IoUring<Entry, cqueue::Entry>>,
     backlog: VecDeque<Entry>,
@@ -79,7 +79,7 @@ pub(crate) struct IoUringWorker {
     number_of_active_tasks: usize,
 }
 
-impl IoUringWorker {
+impl IOUringWorker {
     /// Get whether a specific opcode is supported.
     #[inline(always)]
     fn is_supported(&self, opcode: u8) -> bool {
@@ -183,7 +183,7 @@ impl IoUringWorker {
 
 // TODO opcode::ProvideBuffers. Read tokio-uring::io::pool for more information
 
-impl IoWorker for IoUringWorker {
+impl IoWorker for IOUringWorker {
     fn new(config: IoWorkerConfig) -> Self {
         let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
@@ -222,14 +222,14 @@ impl IoWorker for IoUringWorker {
     #[must_use]
     fn must_poll(&mut self) -> bool {
         self.check_deadlines();
-        if !self.submit().expect("IoUringWorker::submit() failed") {
+        if !self.submit().expect("IOUringWorker::submit() failed") {
             return false;
         }
 
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
         cq.sync();
-        let executor = unsafe { local_executor_unchecked() };
+        let executor = local_executor();
 
         for cqe in &mut cq {
             if cqe.user_data() == 0 {
@@ -281,7 +281,7 @@ impl IoWorker for IoUringWorker {
         let socket_ = socket2::Socket::new(domain, sock_type, None);
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
-        unsafe { local_executor_unchecked().spawn_local_task(request.task()) };
+        local_executor().spawn_local_task(request.task());
     }
 
     #[inline(always)]

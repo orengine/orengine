@@ -137,18 +137,18 @@ unsafe impl Send for Once {}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::sleep;
     use crate::sync::WaitGroup;
-    use crate::{sleep, Executor};
+    use crate::test::sched_future_to_another_thread;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::SeqCst;
     use std::sync::Arc;
-    use std::thread;
     use std::time::Duration;
 
-    use super::*;
-
     #[orengine_macros::test_global]
-    fn test_async_once() {
+    fn test_async_global_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
@@ -160,17 +160,15 @@ mod tests {
             let wg = wg.clone();
             wg.add(1);
             let once = once.clone();
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    let _ = once
-                        .call_once(async move {
-                            sleep(Duration::from_millis(1)).await;
-                            assert!(!a.load(SeqCst));
-                            a.store(true, SeqCst);
-                        })
-                        .await;
-                    wg.done();
-                });
+            sched_future_to_another_thread(async move {
+                let _ = once
+                    .call_once(async move {
+                        sleep(Duration::from_millis(1)).await;
+                        assert!(!a.load(SeqCst));
+                        a.store(true, SeqCst);
+                    })
+                    .await;
+                wg.done();
             });
         }
 
@@ -180,7 +178,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_sync_once() {
+    fn test_sync_global_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
@@ -192,14 +190,12 @@ mod tests {
             let wg = wg.clone();
             wg.add(1);
             let once = once.clone();
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    let _ = once.call_once_sync(|| {
-                        assert!(!a.load(SeqCst));
-                        a.store(true, SeqCst);
-                    });
-                    wg.done();
+            sched_future_to_another_thread(async move {
+                let _ = once.call_once_sync(|| {
+                    assert!(!a.load(SeqCst));
+                    a.store(true, SeqCst);
                 });
+                wg.done();
             });
         }
 

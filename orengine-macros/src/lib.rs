@@ -1,161 +1,8 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
-use std::ops::Deref;
-use syn::{parse_macro_input, Expr, Lit};
-
-/// Returns the `core::time::Duration::from_secs(#timeout_secs)` expression.
-///
-/// It expects an expression like `timeout_secs = "1"`
-///
-/// # Example
-///
-/// ```ignore
-/// use orengine_macros::get_timeout_name;
-///
-/// let timeout = get_timeout_name(quote! { timeout_secs = "123" }); // core::time::Duration::from_secs(123)
-/// ```
-fn get_timeout_name(attr: TokenStream) -> proc_macro2::TokenStream {
-    let mut timeout = quote! { core::time::Duration::from_secs(1) };
-    match syn::parse::<syn::ExprAssign>(attr) {
-        Ok(syntax_tree) => {
-            if syntax_tree.left.into_token_stream().to_string() == "timeout_secs" {
-                match syntax_tree.right.deref() {
-                    Expr::Lit(lit) => {
-                        if let Lit::Str(expr) = lit.lit.clone() {
-                            let token_stream: u64 = expr.value().parse().unwrap();
-                            timeout = quote! { core::time::Duration::from_secs(#token_stream) };
-                        }
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-        Err(_err) => {}
-    }
-
-    timeout
-}
-
-/// Generates a test function with a [`timeout`](get_timeout_name) argument.
-fn generate_test(args: TokenStream, input: TokenStream, is_local: bool) -> TokenStream {
-    let timeout = get_timeout_name(args);
-    let input = parse_macro_input!(input as syn::ItemFn);
-    let body = &input.block;
-    let attrs = &input.attrs;
-    let signature = &input.sig;
-    let name = signature.ident.to_string();
-    let spawn_fn = if is_local {
-        quote! { run_with_local_future }
-    } else {
-        quote! { run_with_global_future }
-    };
-
-    let expanded = quote! {
-        #[test]
-        #(#attrs)*
-        #signature {
-            let lock = crate::utils::global_test_lock::GLOBAL_TEST_LOCK.lock();
-            let (sender, receiver) = std::sync::mpsc::channel();
-            println!("test {} is started!", #name);
-
-            let res = std::thread::spawn(move || {
-                let sender = std::sync::Arc::new(sender);
-                let sender2 = sender.clone();
-                let result = std::panic::catch_unwind(move || {
-                    let executor = crate::Executor::init();
-                    let _ = executor.#spawn_fn(async move {
-                        #body
-                        sender2.send(Ok(())).unwrap();
-                    });
-                });
-
-                if let Err(err) = result {
-                    sender.send(Err(err)).unwrap();
-                }
-            });
-
-            let res = receiver.recv_timeout(#timeout);
-            unsafe { crate::runtime::stop_all_executors() };
-            match res {
-                Ok(Ok(())) => {
-                    println!("test {} is finished!", #name);
-                    println!();
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                    drop(lock);
-                }
-                Ok(Err(err)) => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                    drop(lock);
-                    std::panic::resume_unwind(err);
-                },
-                Err(_) => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                    drop(lock);
-                    panic!("test {} is failed (timeout)!", #name)
-                },
-            }
-        }
-    };
-
-    TokenStream::from(expanded)
-}
-
-/// Generates a test function with running an `Executor` with `local` task.
-/// It also prevents running tests in parallel.
-///
-/// # The difference between `test` and `test_global`
-///
-/// `test` generates a test function that runs an `Executor` with `local` task.
-/// `test_global` generates a test function that runs an `Executor` with `global` task.
-///
-/// # Optional arguments
-///
-/// * timeout_secs - the timeout in seconds
-///
-/// # Example
-///
-/// ```ignore
-/// #[orengine_macros::test(timeout_secs = "2")]
-/// fn test_sleep() {
-///     let start = std::time::Instant::now();
-///     orengine::sleep(std::time::Duration::from_secs(1)).await;
-///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
-    generate_test(args, input, true)
-}
-
-/// Generates a test function with running an `Executor` with `global` task.
-/// It also prevents running tests in parallel.
-///
-/// # The difference between `test_global` and `test`
-///
-/// `test_global` generates a test function that runs an `Executor` with `global` task.
-/// `test` generates a test function that runs an `Executor` with `local` task.
-///
-/// # Optional arguments
-///
-/// * timeout_secs - the timeout in seconds
-///
-/// # Example
-///
-/// ```ignore
-/// #[orengine_macros::test_global(timeout_secs = "2")]
-/// fn test_sleep() {
-///     let start = std::time::Instant::now();
-///     orengine::sleep(std::time::Duration::from_secs(1)).await;
-///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn test_global(args: TokenStream, input: TokenStream) -> TokenStream {
-    generate_test(args, input, false)
-}
+use quote::quote;
+use syn::parse_macro_input;
 
 /// Generates code for [`Future::poll`](std::future::Future::poll).
 ///
@@ -260,4 +107,114 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Generates a test function with provided locality.
+fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
+    let input = parse_macro_input!(input as syn::ItemFn);
+    let body = &input.block;
+    let attrs = &input.attrs;
+    let signature = &input.sig;
+    let name = &signature.ident;
+    let name_str = name.to_string();
+    if signature.inputs.len() > 0 {
+        panic!("Test function must have zero arguments!");
+    }
+    let spawn_fn = if is_local {
+        quote! { orengine::test::run_test_and_block_on_local }
+    } else {
+        quote! { orengine::test::run_test_and_block_on_global }
+    };
+
+    let expanded = quote! {
+        #[test]
+        #(#attrs)*
+        fn #name() {
+            println!("Test {} started!", #name_str.to_string());
+            #spawn_fn(async {
+                #body
+            });
+            println!("Test {} finished!", #name_str.to_string());
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Generates a test function with running an `Executor` with `local` task.
+///
+/// # The difference between `test_local` and [`test_global`]
+///
+/// `test_local` generates a test function that runs an `Executor` with `local` task.
+/// [`test_global`] generates a test function that runs an `Executor` with `global` task.
+///
+/// # Example
+///
+/// ```ignore
+/// #[orengine_macros::test_local]
+/// fn test_sleep() {
+///     let start = std::time::Instant::now();
+///     orengine::sleep(std::time::Duration::from_secs(1)).await;
+///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+/// }
+/// ```
+///
+/// # Note
+///
+/// Code above is equal to:
+///
+/// ```ignore
+/// #[test]
+/// fn test_sleep() {
+///     println!("Test sleep started!");
+///     orengine::test::run_test_and_block_on_local(async {
+///         let start = std::time::Instant::now();
+///         orengine::sleep(std::time::Duration::from_secs(1)).await;
+///         assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+///     });
+///     println!("Test sleep finished!");
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
+    generate_test(input, true)
+}
+
+/// Generates a test function with running an `Executor` with `local` task.
+///
+/// # The difference between `test_global` and [`test_local`]
+///
+/// [`test_global`] generates a test function that runs an `Executor` with `global` task.
+/// `test_local` generates a test function that runs an `Executor` with `local` task.
+///
+/// # Example
+///
+/// ```ignore
+/// #[orengine_macros::test_global]
+/// fn test_sleep() {
+///     let start = std::time::Instant::now();
+///     orengine::sleep(std::time::Duration::from_secs(1)).await;
+///     assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+/// }
+/// ```
+///
+/// # Note
+///
+/// Code above is equal to:
+///
+/// ```ignore
+/// #[test]
+/// fn test_sleep() {
+///     println!("Test sleep started!");
+///     orengine::test::run_test_and_block_on_global(async {
+///         let start = std::time::Instant::now();
+///         orengine::sleep(std::time::Duration::from_secs(1)).await;
+///         assert!(start.elapsed() >= std::time::Duration::from_secs(1));
+///     });
+///     println!("Test sleep finished!");
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn test_global(_: TokenStream, input: TokenStream) -> TokenStream {
+    generate_test(input, false)
 }

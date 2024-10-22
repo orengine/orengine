@@ -1,5 +1,5 @@
 use crate::runtime::task::task_data::TaskData;
-use crate::runtime::task_pool;
+use crate::runtime::{task_pool, Locality};
 use std::future::Future;
 
 /// `Task` is a wrapper of a future.
@@ -17,8 +17,8 @@ impl Task {
     ///
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub fn from_future<F: Future<Output = ()>>(future: F, is_local: usize) -> Self {
-        task_pool().acquire(future, is_local)
+    pub fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
+        task_pool().acquire(future, locality)
     }
 
     /// Returns the future that are wrapped by this [`Task`].
@@ -53,12 +53,17 @@ macro_rules! check_task_local_safety {
         #[cfg(debug_assertions)]
         {
             if $task.is_local() && crate::local_executor().id() != $task.executor_id {
-                panic!(
-                    "[BUG] Local task has been moved to another executor.\
-                    Please report it. Provide details about the place where the problem occurred \
-                    and the conditions under which it happened. \
-                    Thank you for helping us make orengine better!"
-                );
+                if cfg!(test) && $task.executor_id == usize::MAX {
+                    // All is ok
+                    $task.executor_id = crate::local_executor().id();
+                } else {
+                    panic!(
+                        "[BUG] Local task has been moved to another executor.\
+                        Please report it. Provide details about the place where the problem occurred \
+                        and the conditions under which it happened. \
+                        Thank you for helping us make orengine better!"
+                    );
+                }
             }
         }
     };

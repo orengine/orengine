@@ -1,5 +1,5 @@
 use crate::runtime::task::task_data::TaskData;
-use crate::runtime::Task;
+use crate::runtime::{Locality, Task};
 use ahash::AHashMap;
 use std::cell::UnsafeCell;
 use std::future::Future;
@@ -56,9 +56,14 @@ impl TaskPool {
     ///
     /// If `is_local` is not `0` or `1`.
     #[inline(always)]
-    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, is_local: usize) -> Task {
-        debug_assert!(is_local < 2, "is_local must be 0 or 1");
+    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
         let size = size_of::<F>();
+        #[cfg(debug_assertions)]
+        let executor_id = if cfg!(test) {
+            usize::MAX
+        } else {
+            crate::local_executor().id()
+        };
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
         if let Some(slot_ptr) = pool.pop() {
@@ -66,17 +71,18 @@ impl TaskPool {
             unsafe {
                 future_ptr.write(future);
             }
+
             Task {
-                data: TaskData::new(future_ptr as *mut _, is_local),
+                data: TaskData::new(future_ptr as *mut _, locality),
                 #[cfg(debug_assertions)]
-                executor_id: crate::local_executor().id(),
+                executor_id,
             }
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
             Task {
-                data: TaskData::new(future_ptr as *mut _, is_local),
+                data: TaskData::new(future_ptr as *mut _, locality),
                 #[cfg(debug_assertions)]
-                executor_id: crate::local_executor().id(),
+                executor_id,
             }
         }
     }

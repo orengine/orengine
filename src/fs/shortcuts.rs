@@ -1,8 +1,8 @@
-use std::io::{Result};
-use std::path::Path;
 use crate::fs::{DirBuilder, File, OpenOptions};
 use crate::io::remove_dir::RemoveDir;
 use crate::io::sys::OsPath::get_os_path;
+use std::io::Result;
+use std::path::Path;
 
 /// Opens a file asynchronously with the specified open options.
 ///
@@ -162,7 +162,7 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
 where
     OldPath: AsRef<Path>,
-    NewPath: AsRef<Path>
+    NewPath: AsRef<Path>,
 {
     File::rename(old_path, new_path).await
 }
@@ -171,11 +171,12 @@ where
 /// we need to check only [`remove_dir`], because all others functions was already tested in
 /// [`file`](crate::fs::file) or [`dir_builder`](crate::fs::dir_builder).
 mod tests {
-    use std::path::PathBuf;
     use super::*;
+    use crate as orengine;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
+    use std::path::PathBuf;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_remove_dir() {
         create_test_dir_if_not_exist();
 
@@ -183,12 +184,12 @@ mod tests {
         path.push("remove_dir");
         match create_dir(path.clone()).await {
             Ok(_) => assert!(is_exists(path.clone())),
-            Err(err) => panic!("Can't create dir: {}", err)
+            Err(err) => panic!("Can't create dir: {}", err),
         }
 
         match remove_dir(path.clone()).await {
             Ok(_) => assert!(!is_exists(path)),
-            Err(err) => panic!("Can't remove dir: {}", err)
+            Err(err) => panic!("Can't remove dir: {}", err),
         }
     }
 }

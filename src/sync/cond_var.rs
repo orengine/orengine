@@ -219,34 +219,32 @@ unsafe impl Send for CondVar {}
 mod tests {
     use std::ops::Deref;
     use std::sync::Arc;
-    use std::thread;
     use std::time::{Duration, Instant};
 
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::Executor;
 
     use super::*;
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
-    async fn test_one(need_drop: bool) {
+    async fn test_notify_one(need_drop: bool) {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                let (lock, cvar) = pair2.deref();
-                let mut started = lock.lock().await;
-                sleep(TIME_TO_SLEEP).await;
-                *started = true;
-                if need_drop {
-                    drop(started);
-                }
-                cvar.notify_one();
-            });
+
+        sched_future_to_another_thread(async move {
+            let (lock, cvar) = pair2.deref();
+            let mut started = lock.lock().await;
+            sleep(TIME_TO_SLEEP).await;
+            *started = true;
+            if need_drop {
+                drop(started);
+            }
+            cvar.notify_one();
         });
 
         let (lock, cvar) = pair.deref();
@@ -258,7 +256,7 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    async fn test_all(need_drop: bool) {
+    async fn test_notify_all(need_drop: bool) {
         const NUMBER_OF_WAITERS: usize = 10;
 
         let start = Instant::now();
@@ -280,17 +278,14 @@ mod tests {
             let pair = pair.clone();
             let wg = wg.clone();
             wg.add(1);
-            thread::spawn(move || {
-                let executor = Executor::init();
-                executor.spawn_global(async move {
-                    let (lock, cvar) = pair.deref();
-                    let mut started = lock.lock().await;
-                    while !*started {
-                        started = cvar.wait(started).await;
-                    }
-                    wg.done();
-                });
-                executor.run();
+
+            sched_future_to_another_thread(async move {
+                let (lock, cvar) = pair.deref();
+                let mut started = lock.lock().await;
+                while !*started {
+                    started = cvar.wait(started).await;
+                }
+                wg.done();
             });
         }
 
@@ -300,22 +295,22 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_one_with_drop_guard() {
-        test_one(true).await;
+    fn test_global_cond_var_notify_one_with_drop_guard() {
+        test_notify_one(true).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_all_with_drop_guard() {
-        test_all(true).await;
+    fn test_global_cond_var_notify_all_with_drop_guard() {
+        test_notify_all(true).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_one_without_drop_guard() {
-        test_one(false).await;
+    fn test_global_cond_var_notify_one_without_drop_guard() {
+        test_notify_one(false).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_all_without_drop_guard() {
-        test_all(false).await;
+    fn test_global_cond_var_notify_all_without_drop_guard() {
+        test_notify_all(false).await;
     }
 }

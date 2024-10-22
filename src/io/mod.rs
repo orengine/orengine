@@ -1,5 +1,5 @@
 //! This module contains async io operations, utils for working with them and structs
-//! for working with them like [`IoUringWorker`](sys::unix::IoUringWorker).
+//! for working with them like [`IOUringWorker`](sys::unix::IOUringWorker).
 //!
 //! It also contains [`IoWorker`](worker::IoWorker) trait.
 pub(crate) mod close;

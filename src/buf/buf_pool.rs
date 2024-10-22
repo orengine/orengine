@@ -1,8 +1,8 @@
-use std::cell::UnsafeCell;
-use std::mem::ManuallyDrop;
 use crate::buf::Buffer;
 use crate::local_executor;
 use crate::runtime::config::DEFAULT_BUF_CAP;
+use std::cell::UnsafeCell;
+use std::mem::ManuallyDrop;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.
@@ -14,9 +14,7 @@ thread_local! {
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
 #[inline(always)]
 pub fn buf_pool() -> &'static mut BufPool {
-    BUF_POOL.with(|buf_pool| {
-        unsafe { &mut *buf_pool.get() }
-    })
+    BUF_POOL.with(|buf_pool| unsafe { &mut *buf_pool.get() })
 }
 
 /// Get [`Buffer`] from local [`BufPool`].
@@ -123,8 +121,9 @@ impl BufPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_buf_pool() {
         let pool = buf_pool();
         assert!(pool.pool.is_empty());

@@ -12,6 +12,6 @@ pub(crate) use unix::os_message_header::*;
 #[cfg(target_os = "linux")]
 pub(crate) use unix::os_path as OsPath;
 #[cfg(target_os = "linux")]
-pub(crate) use unix::IoUringWorker as WorkerSys;
+pub(crate) use unix::IOUringWorker as WorkerSys;
 #[cfg(windows)]
 pub(crate) use windows::fd::*;

@@ -1,17 +1,15 @@
-// TODO notified
-
+pub mod channel;
 pub mod cond_var;
 pub mod mutex;
-pub mod rw_lock;
-pub mod wait_group;
-pub mod channel;
 pub mod once;
+pub mod rw_lock;
 pub mod scope;
+pub mod wait_group;
 
+pub use channel::LocalChannel;
 pub use cond_var::LocalCondVar;
 pub use mutex::{LocalMutex, LocalMutexGuard};
-pub use rw_lock::{LocalRWLock, LocalWriteLockGuard};
-pub use wait_group::LocalWaitGroup;
-pub use channel::{LocalChannel};
 pub use once::LocalOnce;
-pub use scope::{LocalScope, local_scope};
+pub use rw_lock::{LocalRWLock, LocalWriteLockGuard};
+pub use scope::{local_scope, LocalScope};
+pub use wait_group::LocalWaitGroup;

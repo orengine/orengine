@@ -21,15 +21,10 @@ pub(crate) fn get_local_worker_ref() -> &'static mut Option<WorkerSys> {
 /// Initializes the thread-local worker.
 pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
     if get_local_worker_ref().is_some() {
-        panic!("{}", BUG_MESSAGE);
+        panic!("{BUG_MESSAGE}");
     }
 
     *get_local_worker_ref() = Some(WorkerSys::new(config));
-}
-
-/// Uninitializes the thread-local worker.
-pub(crate) fn uninit_local_worker() {
-    *get_local_worker_ref() = None;
 }
 
 /// Returns the thread-local worker.

@@ -203,6 +203,10 @@ impl WaitGroup {
     ///
     /// Returns the previous value of the counter.
     ///
+    /// # Safety
+    ///
+    /// The counter must be greater than 0.
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -225,13 +229,16 @@ impl WaitGroup {
     #[inline(always)]
     pub fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
-        if prev_count == 0 {
-            panic!("WaitGroup::done called after counter reached 0");
-        }
+        debug_assert!(
+            prev_count > 0,
+            "WaitGroup::done called after counter reached 0"
+        );
 
         if prev_count == 1 {
             let executor = local_executor();
-            while let Some(task) = self.waited_tasks.pop() {
+            let mut tasks = Vec::new();
+            self.waited_tasks.pop_all_in(&mut tasks);
+            for task in tasks {
                 executor.spawn_global_task(task);
             }
         }
@@ -269,7 +276,6 @@ impl WaitGroup {
     /// # }
     /// ```
     #[inline(always)]
-    #[must_use = "Future must be awaited to start the wait"]
     pub async fn wait(&self) {
         Wait::new(self).await
     }
@@ -281,15 +287,16 @@ unsafe impl Send for WaitGroup {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{sleep, stop_executor, Executor};
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
+    use crate::{sleep, yield_now};
     use std::sync::{Arc, Mutex};
-    use std::thread;
     use std::time::Duration;
 
     const PAR: usize = 10;
 
     #[orengine_macros::test_global]
-    fn test_many_wait_one() {
+    fn test_global_wg_many_wait_one() {
         let check_value = Arc::new(Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.inc();
@@ -298,24 +305,22 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    let _ = wait_group.wait().await;
-                    if !*check_value.lock().unwrap() {
-                        panic!("not waited");
-                    }
-                });
+            sched_future_to_another_thread(async move {
+                let _ = wait_group.wait().await;
+                if !*check_value.lock().unwrap() {
+                    panic!("not waited");
+                }
             });
         }
 
-        sleep(Duration::from_millis(1)).await;
+        yield_now().await;
 
         *check_value.lock().unwrap() = true;
         wait_group.done();
     }
 
     #[orengine_macros::test_global]
-    fn test_one_wait_many_task_finished_after_wait() {
+    fn test_global_wg_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
@@ -324,14 +329,10 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    sleep(Duration::from_millis(1)).await;
-                    *check_value.lock().unwrap() -= 1;
-                    if wait_group.done() != 1 {
-                        stop_executor(local_executor().id());
-                    }
-                });
+            sched_future_to_another_thread(async move {
+                *check_value.lock().unwrap() -= 1;
+                sleep(Duration::from_millis(100)).await;
+                wait_group.done();
             });
         }
 
@@ -342,7 +343,7 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_one_wait_many_task_finished_before_wait() {
+    fn test_global_wg_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
@@ -351,11 +352,9 @@ mod tests {
             let check_value = check_value.clone();
             let wait_group = wait_group.clone();
 
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    *check_value.lock().unwrap() -= 1;
-                    wait_group.done();
-                });
+            sched_future_to_another_thread(async move {
+                *check_value.lock().unwrap() -= 1;
+                wait_group.done();
             });
         }
 

@@ -65,11 +65,12 @@ pub fn sleep(duration: Duration) -> Sleep {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::local::Local;
     use std::ops::Deref;
     use std::time::Duration;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_sleep() {
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
@@ -77,22 +78,22 @@ mod tests {
         }
 
         let arr = Local::new(Vec::new());
+        let ex = local_executor();
 
-        local_executor().exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        local_executor().exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        local_executor().exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        local_executor().exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        ex.exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        ex.exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        ex.exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.deref());
 
         let arr = Local::new(Vec::new());
 
-        let executor = local_executor();
-        executor.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        executor.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        executor.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        executor.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+        ex.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+        ex.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+        ex.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+        ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], arr.deref());

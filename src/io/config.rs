@@ -1,22 +1,22 @@
-use crate::io::sys::unix::IoUringConfig;
+use crate::io::sys::unix::IOUringConfig;
 
 /// Config for [`IoWorker`](crate::io::worker::IoWorker).
 #[derive(Clone, Copy)]
 pub struct IoWorkerConfig {
-    /// Config for [`IoUringWorker`](crate::io::sys::unix::IoUringWorker).
+    /// Config for [`IOUringWorker`](crate::io::sys::unix::IOUringWorker).
     ///
-    /// Read [`IoUringConfig`](IoUringConfig) for more details.
-    pub(crate) io_uring: IoUringConfig
+    /// Read [`IOUringConfig`](IOUringConfig) for more details.
+    pub(crate) io_uring: IOUringConfig
 }
 
 impl IoWorkerConfig {
     /// Returns default [`IoWorkerConfig`]
     pub const fn default() -> Self {
-        Self { io_uring: IoUringConfig::default() }
+        Self { io_uring: IOUringConfig::default() }
     }
 
-    /// Returns current [`IoUringConfig`] of this [`IoWorkerConfig`].
-    pub const fn io_uring_config(&self) -> IoUringConfig {
+    /// Returns current [`IOUringConfig`] of this [`IoWorkerConfig`].
+    pub const fn io_uring_config(&self) -> IOUringConfig {
         self.io_uring
     }
 

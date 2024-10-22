@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
 use crate::runtime::Task;
 use crate::utils::SpinLock;
+use std::collections::VecDeque;
 
 /// `SyncTaskList` is a list of tasks that can be shared between threads.
 ///
@@ -9,7 +9,7 @@ use crate::utils::SpinLock;
 /// Use it only for creating your own [`futures`](std::future::Future) to safe `global` tasks
 /// in these futures.
 pub struct SyncTaskList {
-    inner: SpinLock<Vec<Task>>
+    inner: SpinLock<Vec<Task>>,
 }
 
 impl SyncTaskList {
@@ -24,8 +24,8 @@ impl SyncTaskList {
     ///
     /// # Safety
     ///
-    /// If called not in [`Future::poll`](std::future::Future::poll). 
-    /// 
+    /// If called not in [`Future::poll`](std::future::Future::poll).
+    ///
     /// In [`Future::poll`](std::future::Future::poll) use
     /// [`Executor::push_current_task_to`](crate::runtime::Executor::push_current_task_to) instead.
     pub unsafe fn push(&self, task: Task) {
@@ -36,6 +36,13 @@ impl SyncTaskList {
     #[inline(always)]
     pub fn pop(&self) -> Option<Task> {
         self.inner.lock().pop()
+    }
+
+    /// Pops all tasks from the list and appends them to `tasks`.
+    #[inline(always)]
+    pub fn pop_all_in(&self, tasks: &mut Vec<Task>) {
+        let mut guard = self.inner.lock();
+        tasks.append(&mut guard);
     }
 
     /// Takes a batch of tasks from the list. It never takes more than `limit`.

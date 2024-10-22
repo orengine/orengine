@@ -762,14 +762,15 @@ unsafe impl<T> Sync for LocalChannel<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
     use crate::sync::local_scope;
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::SpinLock;
     use crate::yield_now;
     use std::sync::Arc;
 
-    #[orengine_macros::test]
-    fn test_zero_capacity() {
+    #[orengine_macros::test_local]
+    fn test_local_zero_capacity() {
         let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
 
@@ -796,8 +797,8 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
-    fn test_unbounded() {
+    #[orengine_macros::test_local]
+    fn test_local_unbounded() {
         let ch = LocalChannel::unbounded();
         let ch_ref = &ch;
 
@@ -833,7 +834,7 @@ mod tests {
     // case 3 - send (N + 1) and recv N. Wait for send
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_channel_case1() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -862,7 +863,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_channel_case2() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -888,7 +889,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_channel_case3() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -913,7 +914,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_channel_case4() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -933,7 +934,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_local_channel_split() {
         let ch = LocalChannel::bounded(N);
         let (tx, rx) = ch.split();
@@ -953,8 +954,8 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test]
-    fn test_drop_channel() {
+    #[orengine_macros::test_local]
+    fn test_drop_local_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = LocalChannel::bounded(1);
 
@@ -982,8 +983,8 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2]);
     }
 
-    #[orengine_macros::test]
-    fn test_drop_channel_split() {
+    #[orengine_macros::test_local]
+    fn test_drop_local_channel_split() {
         let channel = LocalChannel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let (sender, receiver) = channel.split();

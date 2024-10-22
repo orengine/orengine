@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 use crossbeam::utils::{Backoff, CachePadded};
 
 use crate::panic_if_local_in_future;
-use crate::runtime::{local_executor, local_executor_unchecked, Task};
+use crate::runtime::{local_executor, Task};
 use crate::sync_task_queue::SyncTaskList;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
@@ -299,7 +299,7 @@ impl<T> Mutex<T> {
         self.expected_count.set(self.expected_count.get() + 1);
         let next = self.wait_queue.pop();
         if next.is_some() {
-            unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
+            unsafe { local_executor().exec_task(next.unwrap_unchecked()) };
         } else {
             // Another task failed to acquire a lock, but it is not yet in the queue
             let backoff = Backoff::new();
@@ -307,7 +307,7 @@ impl<T> Mutex<T> {
                 backoff.spin();
                 let next = self.wait_queue.pop();
                 if next.is_some() {
-                    unsafe { local_executor_unchecked().exec_task(next.unwrap_unchecked()) };
+                    unsafe { local_executor().exec_task(next.unwrap_unchecked()) };
                     break;
                 }
             }
@@ -338,17 +338,17 @@ unsafe impl<T: Send> Send for Mutex<T> {}
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::thread;
     use std::time::Duration;
 
     use crate::sleep::sleep;
     use crate::sync::WaitGroup;
-    use crate::Executor;
 
     use super::*;
+    use crate as orengine;
+    use crate::test::sched_future_to_another_thread;
 
     #[orengine_macros::test_global]
-    fn test_mutex() {
+    fn test_global_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let mutex = Arc::new(Mutex::new(false));
@@ -357,16 +357,13 @@ mod tests {
         let mutex_clone = mutex.clone();
         let wg_clone = wg.clone();
         wg_clone.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            ex.run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                wg_clone.done();
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                println!("3");
-                *value = true;
-            });
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            wg_clone.done();
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            println!("3");
+            *value = true;
         });
 
         let _ = wg.wait().await;
@@ -390,18 +387,17 @@ mod tests {
 
         lock_wg.add(1);
         unlock_wg.add(1);
-        thread::spawn(move || {
-            Executor::init().run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                lock_wg_clone.done();
-                let _ = unlock_wg_clone.wait().await;
-                println!("4");
-                *value = true;
-                drop(value);
-                second_lock_clone.done();
-                println!("5");
-            });
+
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            lock_wg_clone.done();
+            let _ = unlock_wg_clone.wait().await;
+            println!("4");
+            *value = true;
+            drop(value);
+            second_lock_clone.done();
+            println!("5");
         });
 
         let _ = lock_wg.wait().await;
@@ -422,17 +418,17 @@ mod tests {
     }
 
     #[orengine_macros::test_global]
-    fn test_try_without_spinning_mutex() {
+    fn test_try_without_spinning_global_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
     #[orengine_macros::test_global]
-    fn test_try_with_spinning_mutex() {
+    fn test_try_with_spinning_global_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
     #[orengine_macros::test_global]
-    fn stress_test_mutex() {
+    fn stress_test_global_mutex() {
         const PAR: usize = 5;
         const TRIES: usize = 400;
 
@@ -452,12 +448,10 @@ mod tests {
         for _ in 1..PAR {
             let wg = wg.clone();
             let mutex = mutex.clone();
-            thread::spawn(move || {
-                Executor::init().run_with_global_future(async move {
-                    for _ in 0..TRIES {
-                        work_with_lock(&mutex, &wg).await;
-                    }
-                });
+            sched_future_to_another_thread(async move {
+                for _ in 0..TRIES {
+                    work_with_lock(&mutex, &wg).await;
+                }
             });
         }
 

@@ -66,9 +66,10 @@ impl Buffer {
     /// - size > 0
     #[inline(always)]
     pub fn new(size: usize) -> Self {
-        if size == 0 {
-            panic!("Cannot create Buffer with size 0. Size must be > 0.");
-        }
+        debug_assert!(
+            size > 0,
+            "Cannot create Buffer with size 0. Size must be > 0."
+        );
 
         Buffer {
             slice: Self::raw_slice(size),
@@ -325,20 +326,15 @@ impl Drop for Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_new() {
         let buf = Buffer::new(1);
         assert_eq!(buf.cap(), 1);
     }
 
-    #[orengine_macros::test]
-    #[should_panic(expected = "Cannot create Buffer with size 0. Size must be > 0.")]
-    fn test_new_panic() {
-        Buffer::new(0);
-    }
-
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_add_len_and_set_len_to_cap() {
         let mut buf = Buffer::new(100);
         assert_eq!(buf.len(), 0);
@@ -353,7 +349,7 @@ mod tests {
         assert_eq!(buf.len(), buf.cap());
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_len_and_cap() {
         let mut buf = Buffer::new(100);
         assert_eq!(buf.len(), 0);
@@ -364,7 +360,7 @@ mod tests {
         assert_eq!(buf.cap(), 100);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_resize() {
         let mut buf = Buffer::new(100);
         buf.append(&[1, 2, 3]);
@@ -378,7 +374,7 @@ mod tests {
         assert_eq!(buf.as_ref(), &[1, 2, 3]);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_append_and_clear() {
         let mut buf = Buffer::new(5);
 
@@ -396,7 +392,7 @@ mod tests {
         assert_eq!(buf.cap(), 10);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_is_empty_and_is_full() {
         let mut buf = Buffer::new(5);
         assert!(buf.is_empty());
@@ -413,7 +409,7 @@ mod tests {
         assert!(!buf.is_full());
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_index() {
         let mut buf = Buffer::new(5);
         buf.append(&[1, 2, 3]);
@@ -426,7 +422,7 @@ mod tests {
         assert_eq!(&buf[..], &[1, 2, 3]);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_from() {
         let b = Box::new([1, 2, 3]);
         let buf = Buffer::from(b);

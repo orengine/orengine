@@ -241,10 +241,11 @@ unsafe impl<T: Send> Send for NaiveMutex<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
+    use crate::sleep;
     use crate::sync::WaitGroup;
-    use crate::{sleep, Executor};
+    use crate::test::sched_future_to_another_thread;
     use std::sync::Arc;
-    use std::thread;
     use std::time::Duration;
 
     #[orengine_macros::test_global]
@@ -257,16 +258,13 @@ mod tests {
         let mutex_clone = mutex.clone();
         let wg_clone = wg.clone();
         wg_clone.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                sleep(SLEEP_DURATION).await;
-                wg_clone.done();
-                println!("3");
-                *value = true;
-            });
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            sleep(SLEEP_DURATION).await;
+            wg_clone.done();
+            println!("3");
+            *value = true;
         });
 
         let _ = wg.wait().await;
@@ -291,18 +289,15 @@ mod tests {
 
         lock_wg.add(1);
         unlock_wg.add(1);
-        thread::spawn(move || {
-            let ex = Executor::init();
-            let _ = ex.run_with_global_future(async move {
-                let mut value = mutex_clone.lock().await;
-                println!("1");
-                lock_wg_clone.done();
-                let _ = unlock_wg_clone.wait().await;
-                println!("4");
-                *value = true;
-                drop(value);
-                second_lock_clone.done();
-            });
+        sched_future_to_another_thread(async move {
+            let mut value = mutex_clone.lock().await;
+            println!("1");
+            lock_wg_clone.done();
+            let _ = unlock_wg_clone.wait().await;
+            println!("4");
+            *value = true;
+            drop(value);
+            second_lock_clone.done();
         });
 
         let _ = lock_wg.wait().await;
@@ -343,13 +338,11 @@ mod tests {
         for _ in 1..PAR {
             let wg = wg.clone();
             let mutex = mutex.clone();
-            thread::spawn(move || {
-                let ex = Executor::init();
-                ex.run_with_global_future(async move {
-                    for _ in 0..TRIES {
-                        work_with_lock(&mutex, &wg).await;
-                    }
-                });
+
+            sched_future_to_another_thread(async move {
+                for _ in 0..TRIES {
+                    work_with_lock(&mutex, &wg).await;
+                }
             });
         }
 

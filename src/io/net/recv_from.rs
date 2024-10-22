@@ -56,6 +56,8 @@ impl<'fut> Future for RecvFrom<'fut> {
     }
 }
 
+unsafe impl Send for RecvFrom<'_> {}
+
 /// `recv_from` io operation with deadline.
 pub struct RecvFromWithDeadline<'fut> {
     fd: RawFd,
@@ -105,6 +107,8 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
         ));
     }
 }
+
+unsafe impl Send for RecvFromWithDeadline<'_> {}
 
 /// The `AsyncRecvFrom` trait provides asynchronous methods for receiving at the incoming data
 /// with consuming it from the socket (datagram).

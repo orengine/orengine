@@ -1,6 +1,7 @@
 use crate::io::IoWorkerConfig;
 use crate::utils::SpinLock;
 use crate::BUG_MESSAGE;
+use std::mem::discriminant;
 
 /// A global config of state of the all runtime.
 /// It is used to prevent unsafe behavior in the runtime.
@@ -246,9 +247,9 @@ impl Config {
                         != 0
                     {
                         panic!(
-                            "An attempt to create an Executor with task sharing and with an \
+                            "An attempt to create an Executor with work sharing and with an \
                             IO worker has failed because another Executor was created with \
-                            task sharing enabled and without an IO worker enabled. \
+                            work sharing enabled and without an IO worker enabled. \
                             This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
@@ -263,9 +264,9 @@ impl Config {
                         != 0
                     {
                         panic!(
-                            "An attempt to create an Executor with task sharing and without an \
+                            "An attempt to create an Executor with work sharing and without an \
                             IO worker has failed because another Executor was created with \
-                            an IO worker and task sharing enabled. \
+                            an IO worker and work sharing enabled. \
                             This is unacceptable because an Executor who does not have an \
                             IO worker cannot take on a task that requires an IO worker."
                         );
@@ -283,9 +284,9 @@ impl Config {
                         != 0
                     {
                         panic!(
-                            "An attempt to create an Executor with task sharing and with a \
+                            "An attempt to create an Executor with work sharing and with a \
                             thread pool enabled has failed because another Executor was created with \
-                            task sharing enabled and without a thread pool enabled. \
+                            work sharing enabled and without a thread pool enabled. \
                             This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
@@ -300,9 +301,9 @@ impl Config {
                         != 0
                     {
                         panic!(
-                            "An attempt to create an Executor with task sharing and without a \
+                            "An attempt to create an Executor with work sharing and without a \
                             thread pool enabled has failed because another Executor was created with \
-                            both a thread pool and task sharing enabled. \
+                            both a thread pool and work sharing enabled. \
                             This is unacceptable because an Executor who does not have a \
                             thread pool cannot take on a task that requires a thread pool."
                         );
@@ -334,21 +335,45 @@ impl From<&ValidConfig> for Config {
     }
 }
 
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer_cap == other.buffer_cap
+            && discriminant(&self.io_worker_config) == discriminant(&other.io_worker_config)
+            && self.number_of_thread_workers == other.number_of_thread_workers
+            && self.work_sharing_level == other.work_sharing_level
+    }
+}
+
+impl Eq for Config {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as orengine;
 
-    #[orengine_macros::test]
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn get_lock() -> std::sync::MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| {
+            LOCK.clear_poison();
+            e.into_inner()
+        })
+    }
+
+    #[orengine_macros::test_local]
     fn test_default_config() {
+        let lock = get_lock();
         let config = Config::default().validate();
         assert_eq!(config.buffer_cap, DEFAULT_BUF_CAP);
         assert!(config.io_worker_config.is_some());
         assert!(config.is_thread_pool_enabled());
         assert_ne!(config.work_sharing_level, usize::MAX);
+        drop(lock);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     fn test_config() {
+        let lock = get_lock();
         let config = Config::default()
             .set_buffer_cap(1024)
             .set_io_worker_config(None)
@@ -362,57 +387,70 @@ mod tests {
         assert!(!config.is_thread_pool_enabled());
         assert_eq!(config.work_sharing_level, usize::MAX);
         assert!(!config.is_work_sharing_enabled());
+
+        drop(lock);
     }
 
     // 4 cases for panic
-    // 1 - first config with io worker and task, next with task sharing and without io worker
-    // 2 - first config with task sharing and without io worker, next with io worker and task sharing
-    // 3 - first config with task sharing and without thread pool, next with thread pool and task sharing
-    // 4 - first config with thread pool and task sharing, next with task sharing and without thread pool
-
-    #[orengine_macros::test]
+    // 1 - first config with io worker and task, next with work sharing and without io worker
+    // 2 - first config with work sharing and without io worker, next with io worker and work sharing
+    // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
+    // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
+    #[orengine_macros::test_local]
     #[should_panic]
-    fn test_first_case_panic() {
-        // with io worker and task sharing
+    fn test_config_first_case_panic() {
+        let lock = get_lock();
+        // with io worker and work sharing
         let _first_config = Config::default().validate();
         let _second_config = Config::default()
             .set_io_worker_config(None)
             .unwrap()
             .enable_work_sharing()
             .validate();
+
+        drop(lock);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     #[should_panic]
-    fn test_second_case_panic() {
-        // with task sharing and without io worker
+    fn test_config_second_case_panic() {
+        let lock = get_lock();
+        // with work sharing and without io worker
         let _first_config = Config::default()
             .set_io_worker_config(None)
             .unwrap()
             .enable_work_sharing()
             .validate();
         let _second_config = Config::default().validate();
+
+        drop(lock);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     #[should_panic]
-    fn test_third_case_panic() {
-        // with task sharing and without thread pool
+    fn test_config_third_case_panic() {
+        let lock = get_lock();
+        // with work sharing and without thread pool
         let _first_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
         let _second_config = Config::default().validate();
+
+        drop(lock);
     }
 
-    #[orengine_macros::test]
+    #[orengine_macros::test_local]
     #[should_panic]
-    fn test_fourth_case_panic() {
-        // with thread pool and task sharing
+    fn test_config_fourth_case_panic() {
+        let lock = get_lock();
+        // with thread pool and work sharing
         let _first_config = Config::default().validate();
         let _second_config = Config::default()
             .set_numbers_of_thread_workers(0)
             .enable_work_sharing()
             .validate();
+
+        drop(lock);
     }
 }
