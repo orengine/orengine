@@ -717,7 +717,8 @@ impl Executor {
     /// was called or [`end`](crate::runtime::end::end)).
     #[inline(always)]
     fn background_task(&mut self) -> bool {
-        self.subscribed_state.check_subscription(self.executor_id);
+        self.subscribed_state
+            .check_version_and_update_if_needed(self.executor_id);
         if self.subscribed_state.is_stopped() {
             return true;
         }

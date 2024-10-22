@@ -1,4 +1,4 @@
-// TODO docs
+use crate::bug_message::BUG_MESSAGE;
 use crate::local_executor;
 use crate::runtime::ExecutorSharedTaskList;
 #[cfg(test)]
@@ -9,6 +9,12 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
 
+/// `SubscribedState` contains the image of the [`global state`](GLOBAL_STATE)
+/// and the version. Before use the image, it checks the version and updates it if needed.
+///
+/// It allows to avoid lock contention, because almost always it can read the image without locking.
+///
+/// It contains `is_stopped` and `tasks_lists` of all alive executors with work-sharing.
 pub(crate) struct SubscribedState {
     current_version: CachePadded<AtomicUsize>,
     processed_version: usize,
@@ -17,31 +23,22 @@ pub(crate) struct SubscribedState {
 }
 
 impl SubscribedState {
-    #[inline(always)]
-    pub(crate) fn check_subscription(&mut self, executor_id: usize) {
-        let current_version = self.current_version.load(Acquire);
-        if self.processed_version == current_version {
-            // The subscription has valid data
-            return;
+    /// Creates a new `SubscribedState`.
+    ///
+    /// It **must** be registered by
+    /// [`register_local_executor`](GlobalState::register_local_executor).
+    pub(crate) const fn new() -> Self {
+        Self {
+            current_version: CachePadded::new(AtomicUsize::new(1)),
+            processed_version: usize::MAX,
+            is_stopped: false,
+            tasks_lists: None,
         }
+    }
 
-        self.processed_version = current_version;
-        let global_state = global_state();
-        let found = global_state
-            .states_of_alive_executors
-            .iter()
-            .position(|(alive_executor_id, _)| *alive_executor_id == executor_id)
-            .is_some();
-
-        if !found {
-            self.is_stopped = true;
-            return;
-        }
-
-        if self.tasks_lists.is_some() {
-            self.tasks_lists = Some(global_state.lists.clone());
-            self.validate_tasks_lists(executor_id);
-        }
+    /// Returns whether current executor is stopped.
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.is_stopped
     }
 
     /// Removes the list of the executor
@@ -69,30 +66,52 @@ impl SubscribedState {
 
         self.tasks_lists = Some(new_list);
     }
-}
 
-impl SubscribedState {
-    pub(crate) const fn new() -> Self {
-        Self {
-            current_version: CachePadded::new(AtomicUsize::new(1)),
-            processed_version: 0,
-            is_stopped: false,
-            tasks_lists: None,
+    /// Checks the version of [`global state`](GLOBAL_STATE) and updates it if needed.
+    #[inline(always)]
+    pub(crate) fn check_version_and_update_if_needed(&mut self, executor_id: usize) {
+        let current_version = self.current_version.load(Acquire);
+        if self.processed_version == current_version {
+            debug_assert_ne!(self.processed_version, usize::MAX, "{BUG_MESSAGE}");
+            return;
+        }
+
+        self.processed_version = current_version;
+        let global_state = global_state();
+        let found = global_state
+            .states_of_alive_executors
+            .iter()
+            .position(|(alive_executor_id, _)| *alive_executor_id == executor_id)
+            .is_some();
+
+        if !found {
+            self.is_stopped = true;
+            return;
+        }
+
+        if self.tasks_lists.is_some() {
+            self.tasks_lists = Some(global_state.lists.clone());
+            self.validate_tasks_lists(executor_id);
         }
     }
 
-    pub(crate) fn is_stopped(&self) -> bool {
-        self.is_stopped
-    }
-
+    /// Returns `tasks_lists` of all alive executors with work-sharing.
+    ///
     /// # Safety
     ///
-    /// Tasks list must be not None
+    /// Tasks list must be not None.
     pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<ExecutorSharedTaskList>> {
         unsafe { self.tasks_lists.as_ref().unwrap_unchecked() }
     }
 }
 
+/// `GlobalState` contains current version, `tasks_lists` of all alive executors with work-sharing.
+///
+/// It also contains `states_of_alive_executors` to update the versions.
+///
+/// # Note
+///
+/// [`GLOBAL_STATE`](GLOBAL_STATE) and [`SubscribedState`] form `Shared RWLock`.
 struct GlobalState {
     version: usize,
     /// 0 - id
@@ -103,6 +122,7 @@ struct GlobalState {
 }
 
 impl GlobalState {
+    /// Creates a new `GlobalState`.
     const fn new() -> Self {
         Self {
             version: 0,
@@ -111,6 +131,8 @@ impl GlobalState {
         }
     }
 
+    /// Registers the executor of the current thread (by calling
+    /// [`local_executor()`](local_executor)) and notifies all executors.
     #[inline(always)]
     pub(crate) fn register_local_executor(&mut self) {
         self.version += 1;
@@ -133,6 +155,7 @@ impl GlobalState {
         }
     }
 
+    /// Stops the executor with the given id and notifies all executors.
     #[inline(always)]
     pub(crate) fn stop_executor(&mut self, id: usize) {
         self.version += 1;
@@ -144,6 +167,7 @@ impl GlobalState {
         self.lists.retain(|list| list.executor_id() != id);
     }
 
+    /// Stops all executors.
     #[inline(always)]
     #[cfg(not(test))]
     pub(crate) fn stop_all_executors(&mut self) {
@@ -156,17 +180,32 @@ impl GlobalState {
     }
 }
 
+/// `GLOBAL_STATE` contains current version, `tasks_lists` of all alive executors with work-sharing.
+/// It and [`SubscribedState`] form `Shared RWLock`.
+///
+/// Read [`GlobalState`](GlobalState) for more details.
+///
+/// # Thread safety
+///
+/// It is thread-safe because it uses [`SpinLock`](SpinLock).
 static GLOBAL_STATE: SpinLock<GlobalState> = SpinLock::new(GlobalState::new());
 
+/// Locks `GLOBAL_STATE` and returns [`SpinLockGuard<'static, GlobalState>`](SpinLockGuard).
 fn global_state() -> SpinLockGuard<'static, GlobalState> {
     GLOBAL_STATE.lock()
 }
 
+/// Registers the executor of the current thread (by calling [`local_executor()`](local_executor))
+/// and notifies all executors.
 pub(crate) fn register_local_executor() {
     global_state().register_local_executor()
 }
 
 /// Stops the executor with the given id.
+///
+/// # Do not use it in tests!
+///
+/// TODO
 ///
 /// # Examples
 ///
@@ -222,7 +261,11 @@ pub fn stop_executor(executor_id: usize) {
     global_state().stop_executor(executor_id);
 }
 
-/// Stops all executors after some time (at most 100ms).
+/// Stops all executors.
+///
+/// # Do not use it in tests!
+///
+/// TODO
 pub fn stop_all_executors() {
     if cfg!(test) {
         panic!("stop_all_executors is not supported in test mode");
