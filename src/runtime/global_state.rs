@@ -5,6 +5,7 @@ use crate::runtime::ExecutorSharedTaskList;
 use crate::test::is_executor_id_in_pool;
 use crate::utils::{SpinLock, SpinLockGuard};
 use crossbeam::utils::CachePadded;
+use std::cell::UnsafeCell;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
@@ -117,7 +118,7 @@ struct GlobalState {
     /// 0 - id
     ///
     /// 1 - state
-    states_of_alive_executors: Vec<(usize, &'static SubscribedState)>,
+    states_of_alive_executors: Vec<(usize, Arc<UnsafeCell<SubscribedState>>)>,
     lists: Vec<Arc<ExecutorSharedTaskList>>,
 }
 
@@ -151,7 +152,7 @@ impl GlobalState {
             .push((executor.id(), executor.subscribed_state()));
 
         for (_, state) in &mut self.states_of_alive_executors {
-            state.current_version.store(self.version, Release);
+            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
         }
     }
 
@@ -161,7 +162,7 @@ impl GlobalState {
         self.version += 1;
         self.states_of_alive_executors
             .retain(|(alive_executor_id, state)| {
-                state.current_version.store(self.version, Release);
+                unsafe { &(&*state.get()).current_version }.store(self.version, Release);
                 *alive_executor_id != id
             });
         self.lists.retain(|list| list.executor_id() != id);
@@ -173,12 +174,14 @@ impl GlobalState {
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
         self.states_of_alive_executors.retain(|(_, state)| {
-            state.current_version.store(self.version, Release);
+            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
             false
         });
         self.lists.clear();
     }
 }
+
+unsafe impl Send for GlobalState {}
 
 /// `GLOBAL_STATE` contains current version, `tasks_lists` of all alive executors with work-sharing.
 /// It and [`SubscribedState`] form `Shared RWLock`.

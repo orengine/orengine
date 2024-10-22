@@ -1,27 +1,22 @@
 // TODO docs
 
 use crate::bug_message::BUG_MESSAGE;
+use crate::runtime::executor::get_local_executor_ref;
 use crate::runtime::Config;
 use crate::{local_executor, Executor};
-use std::cell::Cell;
 use std::future::Future;
 
-pub struct TestRunner {
-    was_executor_init: Cell<bool>,
-}
+pub struct TestRunner {}
 
 impl TestRunner {
     pub const fn new() -> Self {
-        Self {
-            was_executor_init: Cell::new(false),
-        }
+        Self {}
     }
 
     pub fn get_local_executor(&self) -> &'static mut Executor {
-        if !self.was_executor_init.get() {
+        if get_local_executor_ref().is_none() {
             let cfg = Config::default().disable_work_sharing();
             Executor::init_with_config(cfg);
-            self.was_executor_init.set(true);
         }
 
         local_executor()

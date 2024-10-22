@@ -172,7 +172,7 @@ impl ExecutorPool {
     }
 
     /// Creates a new executor in new thread and returns its [`channel`](Channel).
-    pub(crate) fn new_executor(&self) -> Arc<Channel<Job>> {
+    fn new_executor(&self) -> Arc<Channel<Job>> {
         let channel = Arc::new(Channel::bounded(1));
         let channel_clone = channel.clone();
         thread::spawn(move || {
