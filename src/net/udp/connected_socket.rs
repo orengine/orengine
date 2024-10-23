@@ -142,7 +142,7 @@ impl Drop for UdpConnectedSocket {
     }
 }
 
-// TODO
+// TODO on github actions it doesn't work
 // #[cfg(test)]
 // mod tests {
 //     use crate::io::{AsyncBind, AsyncConnectDatagram};

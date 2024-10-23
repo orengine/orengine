@@ -190,7 +190,7 @@ impl Drop for UdpSocket {
     }
 }
 
-// TODO
+// TODO on github actions it doesn't work
 // #[cfg(test)]
 // mod tests {
 //     use std::net::SocketAddr;
