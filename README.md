@@ -61,7 +61,8 @@ leading to improved efficiency and balanced execution across multiple threads.
 
 # Examples
 
-See the [Echo Server](examples/echo-server) and [fs](examples/fs) examples.
+You can find the [Echo Server](examples/echo-server), [test](examples/test) and [fs](examples/fs)
+examples in the [examples](examples) directory.
 
 # Benchmarking
 
