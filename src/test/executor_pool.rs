@@ -136,12 +136,12 @@ impl Drop for ExecutorPoolJoinHandle {
 
 /// `EXECUTORS_FROM_POOL_IDS` contains IDs of all created executors from the pool.
 ///
-/// It is used to prevent stopping executors from the [`pool`](EXECUTOR_POOL).
+/// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
 static EXECUTORS_FROM_POOL_IDS: STDMutex<BTreeSet<usize>> = STDMutex::new(BTreeSet::new());
 
 /// Returns whether the given executor ID is in the pool.
 ///
-/// It is used to prevent stopping executors from the [`pool`](EXECUTOR_POOL).
+/// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
 #[cfg(test)]
 pub(crate) fn is_executor_id_in_pool(id: usize) -> bool {
     EXECUTORS_FROM_POOL_IDS.lock().unwrap().contains(&id)
@@ -156,7 +156,7 @@ pub struct ExecutorPool {
     senders_to_executors: SegQueue<Arc<Channel<Job>>>,
 }
 
-/// Returns [`Config`] for creating [`Executor`] in the [`pool`](EXECUTOR_POOL).
+/// Returns [`Config`] for creating [`Executor`] in the [`pool`](ExecutorPool).
 fn executor_pool_cfg() -> Config {
     Config::default().disable_work_sharing()
 }
@@ -198,19 +198,20 @@ impl ExecutorPool {
         channel
     }
 
-    /// Schedules a future to any free executor in the [`pool`](EXECUTOR_POOL).
+    /// Schedules a future to any free executor in the [`pool`](ExecutorPool).
     ///
     /// It is used to test parallelism.
     ///
     /// # Example
     ///
     /// ```no_run
+    /// use std::sync::Arc;
     /// use std::sync::atomic::AtomicUsize;
     /// use std::sync::atomic::Ordering::SeqCst;
     /// use orengine::test::{run_test_and_block_on_global, ExecutorPool};
     /// use orengine::yield_now;
     ///
-    /// async fn awesome_function(atomic_to_sync_test: &AtomicUsize) {
+    /// async fn awesome_function(atomic_to_sync_test: Arc<AtomicUsize>) {
     ///     atomic_to_sync_test.fetch_add(1, SeqCst);
     ///     yield_now().await;
     ///     atomic_to_sync_test.fetch_add(1, SeqCst);
@@ -219,16 +220,22 @@ impl ExecutorPool {
     /// #[cfg(test)]
     /// fn test_awesome_function() {
     ///     run_test_and_block_on_global(async {
-    ///         let atomic_to_sync_test = AtomicUsize::new(0);
+    ///         let atomic_to_sync_test = Arc::new(AtomicUsize::new(0));
     ///         let mut joins = Vec::with_capacity(10);
     ///
     ///         for _ in 0..10 {
-    ///             joins.push(ExecutorPool::sched_future(awesome_function(&atomic_to_sync_test)));
+    ///             let join = ExecutorPool::sched_future(
+    ///                 awesome_function(atomic_to_sync_test.clone())
+    ///             ).await;
+    ///
+    ///             joins.push(join);
     ///         }
     ///
     ///         for join in joins {
-    ///             join.await;
+    ///             join.join().await;
     ///         }
+    ///
+    ///         assert_eq!(atomic_to_sync_test.load(SeqCst), 20);
     ///     });
     /// }
     /// ```
@@ -254,7 +261,7 @@ impl ExecutorPool {
     }
 }
 
-/// Schedules a future to any free executor in the [`pool`](EXECUTOR_POOL).
+/// Schedules a future to any free executor in the [`pool`](ExecutorPool).
 ///
 /// It is used to test parallelism.
 ///
@@ -270,25 +277,33 @@ impl ExecutorPool {
 /// # Example
 ///
 /// ```no_run
+/// use std::sync::Arc;
 /// use std::sync::atomic::AtomicUsize;
 /// use std::sync::atomic::Ordering::SeqCst;
+/// use orengine::sync::WaitGroup;
 /// use orengine::test::{run_test_and_block_on_global, sched_future_to_another_thread};
 /// use orengine::yield_now;
 ///
-/// async fn awesome_function(atomic_to_sync_test: &AtomicUsize) {
+/// async fn awesome_function(atomic_to_sync_test: Arc<AtomicUsize>, wg: Arc<WaitGroup>) {
 ///     atomic_to_sync_test.fetch_add(1, SeqCst);
 ///     yield_now().await;
 ///     atomic_to_sync_test.fetch_add(1, SeqCst);
+///     wg.done();
 /// }
 ///
 /// #[cfg(test)]
 /// fn test_awesome_function() {
 ///     run_test_and_block_on_global(async {
-///         let atomic_to_sync_test = AtomicUsize::new(0);
+///         let atomic_to_sync_test = Arc::new(AtomicUsize::new(0));
+///         let wg = Arc::new(WaitGroup::new());
 ///
 ///         for _ in 0..10 {
-///             sched_future_to_another_thread(awesome_function(&atomic_to_sync_test));
+///             wg.inc();
+///             sched_future_to_another_thread(awesome_function(atomic_to_sync_test.clone(), wg.clone()));
 ///         }
+///
+///         wg.wait().await;
+///         assert_eq!(atomic_to_sync_test.load(SeqCst), 20);
 ///     });
 /// }
 /// ```
