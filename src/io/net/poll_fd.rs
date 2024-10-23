@@ -73,7 +73,7 @@ macro_rules! generate_poll {
                 poll_for_time_bounded_io_request!((
                     worker.$method_with_deadline(
                         this.fd,
-                        unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                        unsafe { this.io_request_data.as_mut().expect("io request data") },
                         &mut this.deadline
                     ),
                     ()

@@ -174,7 +174,6 @@ mod tests {
     use crate::net::TcpStream;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use std::time::Duration;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -231,7 +230,6 @@ mod tests {
 
         println!("orengine client connect start");
         let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
-        thread::sleep(Duration::from_millis(123));
         println!("orengine client connect end");
 
         for _ in 0..TIMES {

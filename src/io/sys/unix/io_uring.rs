@@ -239,7 +239,9 @@ impl IoWorker for IOUringWorker {
 
             let ret = cqe.result();
             let io_request_ptr = cqe.user_data() as *mut IoRequestData;
+            println!("io_request 1");
             let io_request = unsafe { &mut *io_request_ptr };
+            println!("io_request 2");
 
             if ret < 0 {
                 if ret != -libc::ECANCELED {
