@@ -170,9 +170,8 @@ impl Drop for TcpStream {
 #[cfg(test)]
 mod tests {
     use crate as orengine;
-    use crate::io::{AsyncConnectStream, AsyncRecv, AsyncSend};
+    use crate::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
     use crate::net::TcpStream;
-    use crate::sleep;
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
@@ -232,8 +231,8 @@ mod tests {
 
         println!("orengine client connect start");
         let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
+        thread::sleep(Duration::from_millis(123));
         println!("orengine client connect end");
-        sleep(Duration::from_millis(1)).await;
 
         for _ in 0..TIMES {
             println!("orengine client send_all start");
@@ -241,7 +240,7 @@ mod tests {
             println!("orengine client send_all end");
 
             println!("orengine client poll start");
-            //stream.poll_recv().await.expect("poll failed");
+            stream.poll_recv().await.expect("poll failed");
             println!("orengine client poll end");
             let mut buf = vec![0u8; RESPONSE.len()];
             println!("orengine client recv start");
