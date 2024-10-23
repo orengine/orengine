@@ -195,9 +195,12 @@ mod tests {
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
+                println!("std server try lock start");
                 let mut is_ready = is_ready_mu.lock().expect("lock failed");
+                println!("std server try lock end");
                 *is_ready = true;
                 condvar.notify_one();
+                println!("std server wake up end");
             }
 
             println!("std server accept start");
