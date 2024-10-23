@@ -1,4 +1,4 @@
-# This directory contains the results of the cpu_bounded benchmarks
+# This directory contains the results of the cpu_bound benchmarks
 
 ## Create task and yield
 

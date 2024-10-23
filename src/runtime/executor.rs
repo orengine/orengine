@@ -163,10 +163,6 @@ const MAX_NUMBER_OF_TASKS_TAKEN: usize = 16;
 impl Executor {
     /// Initializes the executor in the current thread with provided config on the given core.
     ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
-    ///
     /// # Example
     ///
     /// ```no_run
@@ -186,7 +182,11 @@ impl Executor {
     /// ```
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
         if get_local_executor_ref().is_some() {
-            panic!("There is already an initialized executor in the current thread!");
+            println!(
+                "There is already an initialized executor in the current thread!\
+             Not re-initializing."
+            );
+            return local_executor();
         }
 
         let valid_config = config.validate();
@@ -224,17 +224,11 @@ impl Executor {
                 local_sleeping_tasks: BTreeSet::new(),
             });
 
-            register_local_executor();
-
             local_executor()
         }
     }
 
     /// Initializes the executor in the current thread on the given core.
-    ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -258,10 +252,6 @@ impl Executor {
 
     /// Initializes the executor in the current thread with provided config.
     ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
-    ///
     /// # Example
     ///
     /// ```no_run
@@ -282,10 +272,6 @@ impl Executor {
     }
 
     /// Initializes the executor in the current thread.
-    ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -793,6 +779,8 @@ impl Executor {
     /// }
     /// ```
     pub fn run(&mut self) {
+        register_local_executor();
+
         let mut task;
         // A round is a number of tasks that must be completed before the next background_work call.
         // It is needed to avoid case like:

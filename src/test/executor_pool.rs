@@ -141,14 +141,6 @@ impl Drop for ExecutorPoolJoinHandle {
 /// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
 static EXECUTORS_FROM_POOL_IDS: STDMutex<BTreeSet<usize>> = STDMutex::new(BTreeSet::new());
 
-/// Returns whether the given executor ID is in the pool.
-///
-/// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
-#[cfg(test)]
-pub(crate) fn is_executor_id_in_pool(id: usize) -> bool {
-    EXECUTORS_FROM_POOL_IDS.lock().unwrap().contains(&id)
-}
-
 /// `ExecutorPool` allows to reuse [`Executor`] instances. It is used in tests.
 ///
 /// # Thread safety

@@ -1,8 +1,6 @@
 use crate::bug_message::BUG_MESSAGE;
 use crate::local_executor;
 use crate::runtime::ExecutorSharedTaskList;
-#[cfg(test)]
-use crate::test::is_executor_id_in_pool;
 use crate::utils::{SpinLock, SpinLockGuard};
 use crossbeam::utils::CachePadded;
 use std::cell::UnsafeCell;
@@ -151,6 +149,9 @@ impl GlobalState {
         self.states_of_alive_executors
             .push((executor.id(), executor.subscribed_state()));
 
+        // It is necessary to reset the flag to false on re-initialization.
+        executor.subscribed_state_mut().is_stopped = false;
+
         for (_, state) in &mut self.states_of_alive_executors {
             unsafe { &(&*state.get()).current_version }.store(self.version, Release);
         }
@@ -170,7 +171,6 @@ impl GlobalState {
 
     /// Stops all executors.
     #[inline(always)]
-    #[cfg(not(test))]
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
         self.states_of_alive_executors.retain(|(_, state)| {
@@ -208,7 +208,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// # Do not use it in tests!
 ///
-/// TODO
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 ///
 /// # Examples
 ///
@@ -254,13 +254,6 @@ pub(crate) fn register_local_executor() {
 /// }
 /// ```
 pub fn stop_executor(executor_id: usize) {
-    #[cfg(test)]
-    {
-        if is_executor_id_in_pool(executor_id) {
-            return;
-        }
-    }
-
     global_state().stop_executor(executor_id);
 }
 
@@ -268,13 +261,8 @@ pub fn stop_executor(executor_id: usize) {
 ///
 /// # Do not use it in tests!
 ///
-/// TODO
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 pub fn stop_all_executors() {
-    if cfg!(test) {
-        panic!("stop_all_executors is not supported in test mode");
-    }
-
-    #[cfg(not(test))]
     global_state().stop_all_executors();
 }
 

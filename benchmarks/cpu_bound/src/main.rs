@@ -10,6 +10,18 @@ use std::hint::black_box;
 use std::thread;
 use tools::bench;
 
+static ORENGINE_INIT_ONCE: std::sync::Once = std::sync::Once::new();
+
+fn init_orengine_cpu_bound() {
+    let cfg = orengine::runtime::Config::default()
+        .disable_work_sharing()
+        .disable_io_worker()
+        .set_numbers_of_thread_workers(0);
+    ORENGINE_INIT_ONCE.call_once(move || {
+        Executor::init_with_config(cfg);
+    });
+}
+
 fn bench_create_task_and_yield() {
     const LARGE_SIZE: usize = 9000;
 
@@ -60,11 +72,8 @@ fn bench_create_task_and_yield() {
     });
 
     bench("orengine small create_task_and_yield", |mut b| {
-        let cfg = orengine::runtime::Config::default()
-            .disable_work_sharing()
-            .disable_io_worker()
-            .set_numbers_of_thread_workers(0);
-        Executor::init_with_config(cfg).spawn_local(async move {
+        init_orengine_cpu_bound();
+        local_executor().spawn_local(async move {
             b.iter_async(|| async {
                 let ret_ch = LocalChannel::bounded(0);
                 local_scope(|scope| async {
@@ -145,11 +154,8 @@ fn bench_create_task_and_yield() {
     });
 
     bench("orengine large create_task_and_yield", |mut b| {
-        let cfg = orengine::runtime::Config::default()
-            .disable_work_sharing()
-            .disable_io_worker()
-            .set_numbers_of_thread_workers(0);
-        Executor::init_with_config(cfg).spawn_local(async move {
+        init_orengine_cpu_bound();
+        local_executor().spawn_local(async move {
             b.iter_async(|| async {
                 let ret_ch = LocalChannel::bounded(0);
                 local_scope(|scope| async {
@@ -262,27 +268,24 @@ fn bench_yield_task() {
     });
 
     bench("orengine task switch", |mut b| {
-        let cfg = orengine::runtime::Config::default()
-            .disable_work_sharing()
-            .disable_io_worker()
-            .set_numbers_of_thread_workers(0);
-        Executor::init_with_config(cfg).spawn_local(async move {
-            b.iter_async(|| async {
-                local_scope(|scope| async {
-                    for _ in 0..NUMBER_TASKS {
-                        scope.exec(async move {
-                            for _ in 0..YIELDS_PER_TASK {
-                                orengine::yield_now().await;
-                            }
-                        });
-                    }
+        init_orengine_cpu_bound();
+        local_executor()
+            .run_and_block_on_local(async move {
+                b.iter_async(|| async {
+                    local_scope(|scope| async {
+                        for _ in 0..NUMBER_TASKS {
+                            scope.exec(async move {
+                                for _ in 0..YIELDS_PER_TASK {
+                                    orengine::yield_now().await;
+                                }
+                            });
+                        }
+                    })
+                    .await;
                 })
                 .await;
             })
-            .await;
-            stop_all_executors();
-        });
-        local_executor().run();
+            .unwrap();
     });
 
     bench("sync task switch", |mut b| {
@@ -350,41 +353,37 @@ fn bench_mutex() {
 
     fn bench_orengine() {
         bench("orengine naive mutex", |mut b| {
-            let cfg = orengine::runtime::Config::default()
-                .disable_work_sharing()
-                .disable_io_worker()
-                .set_numbers_of_thread_workers(0);
-            Executor::init_with_config(cfg).spawn_local(async move {
-                b.iter_async(|| async {
-                    let mutex = orengine::sync::NaiveMutex::new(0);
-                    for _ in 0..N {
-                        let mut guard = mutex.lock().await;
-                        *guard += 1;
-                    }
+            init_orengine_cpu_bound();
+            local_executor()
+                .run_and_block_on_local(async move {
+                    b.iter_async(|| async {
+                        let mutex = orengine::sync::NaiveMutex::new(0);
+                        for _ in 0..N {
+                            let mut guard = mutex.lock().await;
+                            *guard += 1;
+                        }
+                    })
+                    .await;
+                    stop_all_executors();
                 })
-                .await;
-                stop_all_executors();
-            });
-            local_executor().run();
+                .unwrap();
         });
 
         bench("orengine mutex", |mut b| {
-            let cfg = orengine::runtime::Config::default()
-                .disable_work_sharing()
-                .disable_io_worker()
-                .set_numbers_of_thread_workers(0);
-            Executor::init_with_config(cfg).spawn_local(async move {
-                b.iter_async(|| async {
-                    let mutex = orengine::sync::mutex::Mutex::new(0);
-                    for _ in 0..N {
-                        let mut guard = mutex.lock().await;
-                        *guard += 1;
-                    }
+            init_orengine_cpu_bound();
+            local_executor()
+                .run_and_block_on_local(async move {
+                    b.iter_async(|| async {
+                        let mutex = orengine::sync::mutex::Mutex::new(0);
+                        for _ in 0..N {
+                            let mut guard = mutex.lock().await;
+                            *guard += 1;
+                        }
+                    })
+                    .await;
+                    stop_all_executors();
                 })
-                .await;
-                stop_all_executors();
-            });
-            local_executor().run();
+                .unwrap();
         });
     }
 

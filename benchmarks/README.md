@@ -14,18 +14,18 @@ __Less is better__
 
 __All__
 
-![cpu_bounded/images/create_task_and_yield.png](cpu_bounded/images/create_task_and_yield.png)
+![cpu_bound/images/create_task_and_yield.png](cpu_bound/images/create_task_and_yield.png)
 
 __Favorites only__
 
-![cpu_bounded/images/create_task_and_yield_favorites.png](cpu_bounded/images/create_task_and_yield_favorites.png)
+![cpu_bound/images/create_task_and_yield_favorites.png](cpu_bound/images/create_task_and_yield_favorites.png)
 
 ### Task switch
 
 This benchmark measures the overhead of switching between tasks.
 __Less is better__
 
-![cpu_bounded/images/task_switch.png](cpu_bounded/images/task_switch.png)
+![cpu_bound/images/task_switch.png](cpu_bound/images/task_switch.png)
 
 ### Mutex lock and unlock
 
@@ -33,7 +33,7 @@ This benchmark measures the overhead of locking and unlocking a mutex. This test
 run just as fast as a synchronous one. So don't be afraid to use orengine::sync::Mutex in your tasks!
 __Less is better__
 
-![cpu_bounded/images/mutex_lock_unlock.png](cpu_bounded/images/mutex_lock_unlock.png)
+![cpu_bound/images/mutex_lock_unlock.png](cpu_bound/images/mutex_lock_unlock.png)
 
 ### Memory usage per task
 
@@ -44,11 +44,11 @@ __Less is better__
 
 __All__
 
-![cpu_bounded/images/memory_usage_per_10m_tasks_all.png](cpu_bounded/images/memory_usage_per_10m_tasks_all.png)
+![cpu_bound/images/memory_usage_per_10m_tasks_all.png](cpu_bound/images/memory_usage_per_10m_tasks_all.png)
 
 __Favorites only__
 
-![cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png](cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png)
+![cpu_bound/images/memory_usage_per_10m_tasks_favorites_only.png](cpu_bound/images/memory_usage_per_10m_tasks_favorites_only.png)
 
 ## Network Benchmarks
 
