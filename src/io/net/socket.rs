@@ -30,11 +30,10 @@ impl Future for Socket {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
-            worker.socket(this.domain, this.socket_type, unsafe {
+            local_worker().socket(this.domain, this.socket_type, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ret as RawFd

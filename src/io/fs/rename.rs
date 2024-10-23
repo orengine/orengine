@@ -30,12 +30,11 @@ impl Future for Rename {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         #[allow(unused)]
         let ret;
 
         poll_for_io_request!((
-            worker.rename(this.old_path.as_ptr(), this.new_path.as_ptr(), unsafe {
+            local_worker().rename(this.old_path.as_ptr(), this.new_path.as_ptr(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ()

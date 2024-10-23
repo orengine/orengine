@@ -41,11 +41,10 @@ impl<'fut> Future for RecvFrom<'fut> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
-            worker.recv_from(
+            local_worker().recv_from(
                 this.fd,
                 this.msg_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),

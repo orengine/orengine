@@ -39,11 +39,10 @@ impl<'fut> Future for SendTo<'fut> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
-            worker.send_to(
+            local_worker().send_to(
                 this.fd,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),

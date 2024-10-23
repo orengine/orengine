@@ -40,11 +40,10 @@ impl<S: FromRawFd> Future for Accept<S> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
-            worker.accept(
+            local_worker().accept(
                 this.fd,
                 this.addr.0.as_ptr() as _,
                 &mut this.addr.1,

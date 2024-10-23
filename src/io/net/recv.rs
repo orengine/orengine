@@ -33,11 +33,10 @@ impl<'buf> Future for Recv<'buf> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = local_worker();
         let ret;
 
         poll_for_io_request!((
-            worker.recv(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
+            local_worker().recv(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ret
