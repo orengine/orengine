@@ -217,10 +217,12 @@ mod tests {
             }
         });
 
-        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-        let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
-        while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
+        {
+            let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+            let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
+            while *is_server_ready == false {
+                is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
+            }
         }
 
         println!("orengine client connect start");
