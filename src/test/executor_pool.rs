@@ -142,6 +142,7 @@ static EXECUTORS_FROM_POOL_IDS: STDMutex<BTreeSet<usize>> = STDMutex::new(BTreeS
 /// Returns whether the given executor ID is in the pool.
 ///
 /// It is used to prevent stopping executors from the [`pool`](EXECUTOR_POOL).
+#[cfg(test)]
 pub(crate) fn is_executor_id_in_pool(id: usize) -> bool {
     EXECUTORS_FROM_POOL_IDS.lock().unwrap().contains(&id)
 }
@@ -173,28 +174,32 @@ impl ExecutorPool {
 
     /// Creates a new executor in new thread and returns its [`channel`](Channel).
     fn new_executor(&self) -> Arc<Channel<Job>> {
-        let channel = Arc::new(Channel::bounded(1));
-        let channel_clone = channel.clone();
-        thread::spawn(move || {
-            let ex = Executor::init_with_config(executor_pool_cfg());
-            EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
-            ex.run_and_block_on_global(async move {
-                loop {
-                    match channel_clone.recv().await {
-                        Ok(job) => {
-                            job.await;
-                        }
-                        Err(_) => {
-                            // closed, it is fine
-                            break;
+        if cfg!(test) {
+            let channel = Arc::new(Channel::bounded(1));
+            let channel_clone = channel.clone();
+            thread::spawn(move || {
+                let ex = Executor::init_with_config(executor_pool_cfg());
+                EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
+                ex.run_and_block_on_global(async move {
+                    loop {
+                        match channel_clone.recv().await {
+                            Ok(job) => {
+                                job.await;
+                            }
+                            Err(_) => {
+                                // closed, it is fine
+                                break;
+                            }
                         }
                     }
-                }
-            })
-            .expect(BUG_MESSAGE);
-        });
+                })
+                .expect(BUG_MESSAGE);
+            });
 
-        channel
+            return channel;
+        }
+
+        panic!("`ExecutorPool` and `sched_future_to_another_thread` can only be used in tests!");
     }
 
     /// Schedules a future to any free executor in the [`pool`](EXECUTOR_POOL).

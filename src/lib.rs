@@ -12,7 +12,6 @@ pub mod runtime;
 pub mod sleep;
 pub mod sync;
 pub mod sync_task_queue;
-#[cfg(test)]
 pub mod test;
 pub mod utils;
 pub mod yield_now;

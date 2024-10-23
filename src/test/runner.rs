@@ -14,12 +14,19 @@ impl TestRunner {
     }
 
     pub fn get_local_executor(&self) -> &'static mut Executor {
-        if get_local_executor_ref().is_none() {
-            let cfg = Config::default().disable_work_sharing();
-            Executor::init_with_config(cfg);
+        if cfg!(test) {
+            if get_local_executor_ref().is_none() {
+                let cfg = Config::default().disable_work_sharing();
+                Executor::init_with_config(cfg);
+            }
+
+            return local_executor();
         }
 
-        local_executor()
+        panic!(
+            "`TestRunner`, `run_test_and_block_on_local` and `run_test_and_block_on_global`\
+         can only be used in tests"
+        );
     }
 
     pub fn block_on_local<Fut>(&self, future: Fut)
