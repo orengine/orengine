@@ -189,7 +189,9 @@ mod tests {
         let server_thread = thread::spawn(move || {
             use std::io::{Read, Write};
 
+            println!("std server bind start");
             let listener = std::net::TcpListener::bind(ADDR).expect("std bind failed");
+            println!("std server bind end");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
