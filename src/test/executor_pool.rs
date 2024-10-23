@@ -1,3 +1,5 @@
+//! This module contains utilities for parallel testing via
+//! [`sched_future_to_another_thread`] or [`sched_future`](ExecutorPool::sched_future).
 use crate::bug_message::BUG_MESSAGE;
 use crate::runtime::{Config, Locality, Task};
 use crate::sync::Channel;

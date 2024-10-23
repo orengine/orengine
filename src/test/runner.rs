@@ -1,3 +1,30 @@
+//! This module provides a way to run tests with reusing
+//! the same [`Executor`](Executor) via [`run_test_and_block_on_local`]
+//! and [`run_test_and_block_on_global`].
+//!
+//! # Example
+//!
+//! ```no_run
+//! use orengine::test::run_test_and_block_on_local;
+//!
+//! async fn awesome_async_function() -> usize {
+//!     42
+//! }
+//!
+//! #[cfg(test)]
+//! fn test_awesome_async_function() {
+//!     run_test_and_block_on_local(async {
+//!         assert_eq!(awesome_async_function().await, 42);
+//!     });
+//! }
+//! ```
+//!
+//! # Shortcuts
+//!
+//! You can use macro [`orengine::test::test_local`](crate::test::test_local) instead
+//! of [`run_test_and_block_on_local`] and [`orengine::test::test_global`](crate::test::test_global)
+//! instead of [`run_test_and_block_on_global`]. Read [`run_test_and_block_on_local`] and
+//! [`run_test_and_block_on_global`] for examples.
 use crate::bug_message::BUG_MESSAGE;
 use crate::runtime::executor::get_local_executor_ref;
 use crate::runtime::Config;
@@ -75,6 +102,39 @@ thread_local! {
 /// creates a `global` task.
 ///
 /// Read more about `local` and `global` tasks in [`Executor`].
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::test::run_test_and_block_on_local;
+///
+/// async fn awesome_async_function() -> usize {
+///     42
+/// }
+///
+/// #[cfg(test)]
+/// fn test_awesome_async_function() {
+///     run_test_and_block_on_local(async {
+///         assert_eq!(awesome_async_function().await, 42);
+///     });
+/// }
+/// ```
+///
+/// # Shortcut
+///
+/// You can use [`orengine::test::test_local`](crate::test::test_local).
+/// An example below is equivalent to the one above:
+///
+/// ```no_run
+/// async fn awesome_async_function() -> usize {
+///     42
+/// }
+///
+/// #[orengine::test::test_local]
+/// fn test_awesome_async_function() {
+///     assert_eq!(awesome_async_function().await, 42);
+/// }
+/// ```
 pub fn run_test_and_block_on_local<Fut>(future: Fut)
 where
     Fut: Future<Output = ()> + 'static,
@@ -91,6 +151,50 @@ where
 /// creates a `local` task.
 ///
 /// Read more about `local` and `global` tasks in [`Executor`].
+///
+/// # Example
+///
+/// ```no_run
+/// use orengine::test::run_test_and_block_on_global;
+/// # async fn get_some_result_from_shared_state() -> Result<(), ()> { Ok(()) }
+///
+/// async fn awesome_async_global_function() -> usize {
+///     if get_some_result_from_shared_state().await.is_err() {
+///         return 0;
+///     }
+///
+///     3
+/// }
+///
+/// #[cfg(test)]
+/// fn test_awesome_async_function() {
+///     run_test_and_block_on_global(async {
+///         assert_eq!(awesome_async_global_function().await, 3);
+///     });
+/// }
+/// ```
+///
+/// # Shortcut
+///
+/// You can use [`orengine::test::test_global`](crate::test::test_global).
+/// An example below is equivalent to the one above:
+///
+/// ```no_run
+/// # async fn get_some_result_from_shared_state() -> Result<(), ()> { Ok(()) }
+///
+/// async fn awesome_async_global_function() -> usize {
+///     if get_some_result_from_shared_state().await.is_err() {
+///         return 0;
+///     }
+///
+///     3
+/// }
+///
+/// #[orengine::test::test_global]
+/// fn test_awesome_async_function() {
+///     assert_eq!(awesome_async_global_function().await, 3);
+/// }
+/// ```
 pub fn run_test_and_block_on_global<Fut>(future: Fut)
 where
     Fut: Future<Output = ()> + Send + 'static,
