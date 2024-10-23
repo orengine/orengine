@@ -174,32 +174,28 @@ impl ExecutorPool {
 
     /// Creates a new executor in new thread and returns its [`channel`](Channel).
     fn new_executor(&self) -> Arc<Channel<Job>> {
-        if cfg!(test) {
-            let channel = Arc::new(Channel::bounded(1));
-            let channel_clone = channel.clone();
-            thread::spawn(move || {
-                let ex = Executor::init_with_config(executor_pool_cfg());
-                EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
-                ex.run_and_block_on_global(async move {
-                    loop {
-                        match channel_clone.recv().await {
-                            Ok(job) => {
-                                job.await;
-                            }
-                            Err(_) => {
-                                // closed, it is fine
-                                break;
-                            }
+        let channel = Arc::new(Channel::bounded(1));
+        let channel_clone = channel.clone();
+        thread::spawn(move || {
+            let ex = Executor::init_with_config(executor_pool_cfg());
+            EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
+            ex.run_and_block_on_global(async move {
+                loop {
+                    match channel_clone.recv().await {
+                        Ok(job) => {
+                            job.await;
+                        }
+                        Err(_) => {
+                            // closed, it is fine
+                            break;
                         }
                     }
-                })
-                .expect(BUG_MESSAGE);
-            });
+                }
+            })
+            .expect(BUG_MESSAGE);
+        });
 
-            return channel;
-        }
-
-        panic!("`ExecutorPool` and `sched_future_to_another_thread` can only be used in tests!");
+        channel
     }
 
     /// Schedules a future to any free executor in the [`pool`](EXECUTOR_POOL).
