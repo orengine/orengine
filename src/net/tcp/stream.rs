@@ -169,6 +169,7 @@ impl Drop for TcpStream {
 
 #[cfg(test)]
 mod tests {
+    use crate as orengine;
     use crate::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
     use crate::net::TcpStream;
     use std::sync::{Arc, Mutex};
