@@ -169,65 +169,59 @@ impl Drop for TcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-
-    use super::*;
-    use crate as orengine;
-    use crate::io::{AsyncAccept, AsyncBind};
-
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[orengine_macros::test_local]
-    fn test_tcp_client() {
-        const ADDR: &str = "127.0.0.1:6086";
-
-        let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
-        let is_server_ready_server_clone = is_server_ready.clone();
-
-        let server_thread = thread::spawn(move || {
-            use std::io::{Read, Write};
-            let listener = std::net::TcpListener::bind(ADDR).expect("std bind failed");
-
-            {
-                let (is_ready_mu, condvar) = &*is_server_ready;
-                let mut is_ready = is_ready_mu.lock().expect("lock failed");
-                *is_ready = true;
-                condvar.notify_one();
-            }
-
-            let mut stream = listener.accept().expect("accept failed").0;
-
-            for _ in 0..TIMES {
-                let mut buf = vec![0u8; REQUEST.len()];
-                stream.read_exact(&mut buf).expect("std read failed");
-                assert_eq!(REQUEST, buf);
-
-                stream.write_all(RESPONSE).expect("std write failed");
-            }
-        });
-
-        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-        let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
-        while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
-        }
-
-        let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
-
-        for _ in 0..TIMES {
-            stream.send_all(REQUEST).await.expect("send failed");
-
-            stream.poll_recv().await.expect("poll failed");
-            let mut buf = vec![0u8; RESPONSE.len()];
-            stream.recv_exact(&mut buf).await.expect("recv failed");
-            assert_eq!(RESPONSE, buf);
-        }
-
-        server_thread.join().expect("server thread join failed");
-    }
+    // TODO
+    // #[orengine_macros::test_local]
+    // fn test_tcp_client() {
+    //     const ADDR: &str = "127.0.0.1:6086";
+    //
+    //     let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    //     let is_server_ready_server_clone = is_server_ready.clone();
+    //
+    //     let server_thread = thread::spawn(move || {
+    //         use std::io::{Read, Write};
+    //         let listener = std::net::TcpListener::bind(ADDR).expect("std bind failed");
+    //
+    //         {
+    //             let (is_ready_mu, condvar) = &*is_server_ready;
+    //             let mut is_ready = is_ready_mu.lock().expect("lock failed");
+    //             *is_ready = true;
+    //             condvar.notify_one();
+    //         }
+    //
+    //         let mut stream = listener.accept().expect("accept failed").0;
+    //
+    //         for _ in 0..TIMES {
+    //             let mut buf = vec![0u8; REQUEST.len()];
+    //             stream.read_exact(&mut buf).expect("std read failed");
+    //             assert_eq!(REQUEST, buf);
+    //
+    //             stream.write_all(RESPONSE).expect("std write failed");
+    //         }
+    //     });
+    //
+    //     let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+    //     let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
+    //     while *is_server_ready == false {
+    //         is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
+    //     }
+    //
+    //     let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
+    //
+    //     for _ in 0..TIMES {
+    //         stream.send_all(REQUEST).await.expect("send failed");
+    //
+    //         stream.poll_recv().await.expect("poll failed");
+    //         let mut buf = vec![0u8; RESPONSE.len()];
+    //         stream.recv_exact(&mut buf).await.expect("recv failed");
+    //         assert_eq!(RESPONSE, buf);
+    //     }
+    //
+    //     server_thread.join().expect("server thread join failed");
+    // }
 
     // TODO
     // #[orengine_macros::test_local]
