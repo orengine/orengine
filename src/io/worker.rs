@@ -37,7 +37,7 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
 ///
 /// If the thread-local worker has not been initialized in `release` mode.
 #[inline(always)]
-pub(crate) unsafe fn local_worker() -> &'static mut WorkerSys {
+pub(crate) fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
     {
         if crate::local_executor()

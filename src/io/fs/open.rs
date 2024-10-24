@@ -35,11 +35,10 @@ impl<F: FromRawFd> Future for Open<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
         let ret;
 
         poll_for_io_request!((
-            worker.open(this.path.as_ptr(), &this.os_open_options, unsafe {
+            local_worker().open(this.path.as_ptr(), &this.os_open_options, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             unsafe { F::from_raw_fd(ret as RawFd) }

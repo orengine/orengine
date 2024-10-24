@@ -30,11 +30,10 @@ impl<'buf> Future for Write<'buf> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
         let ret;
 
         poll_for_io_request!((
-            worker.write(this.fd, this.buf.as_ptr(), this.buf.len(), unsafe {
+            local_worker().write(this.fd, this.buf.as_ptr(), this.buf.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ret
@@ -67,11 +66,10 @@ impl<'buf> Future for PositionedWrite<'buf> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
         let ret;
 
         poll_for_io_request!((
-            worker.pwrite(
+            local_worker().pwrite(
                 this.fd,
                 this.buf.as_ptr(),
                 this.buf.len(),

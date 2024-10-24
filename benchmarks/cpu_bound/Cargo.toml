@@ -1,10 +1,10 @@
 [package]
-name = "cpu-bounded"
+name = "cpu-bound"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-orengine = "0.3.1"
+orengine = "0.4.7-unstable"
 tokio = { version = "1", features = ["full"] }
 smol = "2.0.0"
 async-std = "1.12.0"

@@ -36,12 +36,11 @@ impl<'fut> Future for Connect<'fut> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
         #[allow(unused)]
         let ret;
 
         poll_for_io_request!((
-            worker.connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
+            local_worker().connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ()
@@ -74,7 +73,7 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
+        let worker = local_worker();
         #[allow(unused)]
         let ret;
 

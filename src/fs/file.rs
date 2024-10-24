@@ -146,11 +146,12 @@ impl File {
     /// # Example
     ///
     /// ```no_run
+    /// use std::path::Path;
     /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let file = File::remove("foo.txt").await?;
-    /// assert!(!std::fs::exists("foo.txt")?);
+    /// assert!(!Path::new("foo.txt").exists());
     /// # Ok(())
     /// # }
     /// ```
@@ -218,14 +219,11 @@ mod tests {
     use crate::buf::buffer;
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
     use std::fs::create_dir;
-    use std::mem;
     use std::path::PathBuf;
 
     #[orengine_macros::test_local]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
-        let test_file_dir_path_: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
-        let test_file_dir_path =
-            unsafe { mem::transmute::<&str, &'static str>(test_file_dir_path_) };
+        let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
 
         create_test_dir_if_not_exist();
 

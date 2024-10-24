@@ -220,11 +220,9 @@ impl LocalWaitGroup {
         if inner.count == 0 {
             let executor = local_executor();
 
-            for task in inner.waited_tasks.iter() {
-                executor.exec_task(*task);
+            for task in inner.waited_tasks.drain(..) {
+                executor.exec_task(task);
             }
-
-            unsafe { inner.waited_tasks.set_len(0) };
         }
 
         inner.count

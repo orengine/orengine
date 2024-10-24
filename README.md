@@ -61,7 +61,8 @@ leading to improved efficiency and balanced execution across multiple threads.
 
 # Examples
 
-See the [Echo Server](examples/echo-server) and [fs](examples/fs) examples.
+You can find the [Echo Server](examples/echo-server), [test](examples/test) and [fs](examples/fs)
+examples in the [examples](examples) directory.
 
 # Benchmarking
 
@@ -73,7 +74,7 @@ Extensive benchmarking has been done to prove Orengine’s superiority.
 
 ## Memory Usage
 
-![benchmarks/cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png](benchmarks/cpu_bounded/images/memory_usage_per_10m_tasks_favorites_only.png)
+![benchmarks/cpu_bound/images/memory_usage_per_10m_tasks_favorites_only.png](benchmarks/cpu_bound/images/memory_usage_per_10m_tasks_favorites_only.png)
 
 Read more about the benchmarks in the [benchmarks](benchmarks) directory.
 

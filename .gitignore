@@ -11,8 +11,8 @@ Cargo.lock
 /benchmarks/net/tcp/client/Cargo.lock
 /benchmarks/net/tcp/server/target/
 /benchmarks/net/tcp/server/Cargo.lock
-/benchmarks/cpu_bounded/target/
-/benchmarks/cpu_bounded/Cargo.lock
+/benchmarks/cpu_bound/target/
+/benchmarks/cpu_bound/Cargo.lock
 /benchmarks/tools/target/
 /benchmarks/tools/Cargo.lock
 

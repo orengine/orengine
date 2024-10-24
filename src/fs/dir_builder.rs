@@ -12,6 +12,7 @@ use std::path::Path;
 /// # Example
 ///
 /// ```no_run
+/// use std::path::Path;
 /// use orengine::fs::DirBuilder;
 ///
 /// # async fn foo() -> std::io::Result<()> {
@@ -21,7 +22,7 @@ use std::path::Path;
 ///     .create("foo/bar")
 ///     .await?;
 ///
-/// assert!(std::fs::exists("foo/bar")?);
+/// assert!(Path::new("foo/bar").exists());
 /// # Ok(())
 /// # }
 /// ```
@@ -66,11 +67,12 @@ impl DirBuilder {
     /// # Example
     ///
     /// ```no_run
+    /// use std::path::Path;
     /// use orengine::fs::DirBuilder;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     ///  DirBuilder::new().mode(0o777).create("foo").await?;
-    ///  assert!(std::fs::exists("foo")?);
+    ///  assert!(Path::new("foo").exists());
     /// # Ok(())
     /// # }
     pub async fn create<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
@@ -88,11 +90,12 @@ impl DirBuilder {
     /// # Example
     ///
     /// ```no_run
+    /// use std::path::Path;
     /// use orengine::fs::{create_dir_all};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// create_dir_all("foo/bar").await?;
-    /// assert!(std::fs::exists("foo/bar")?);
+    /// assert!(Path::new("foo/bar").exists());
     /// # Ok(())
     /// # }
     async fn create_dir_all(path: &Path, mode: u32) -> io::Result<()> {

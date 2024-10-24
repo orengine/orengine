@@ -66,7 +66,9 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
 /// `*const crate::runtime::Task` in [`data`](std::task::Waker::data);
 ///
-/// * declared variable `ret` (`usize`) which can be used in `ret_statement`.
+/// * declared variable `ret` (`usize`) which can be used in `ret_statement`;
+///
+/// * `worker` from `local_worker()`.
 ///
 /// # Arguments
 ///

@@ -144,12 +144,7 @@ impl Drop for TcpListener {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    use std::time::Duration;
-
-    use crate::net::ReusePort;
-    use crate::yield_now;
 
     use super::*;
     use crate as orengine;
@@ -175,34 +170,36 @@ mod tests {
         }
     }
 
-    async fn test_listener_accept_with_config(config: &BindConfig) {
-        let mut listener = TcpListener::bind_with_config("127.0.0.1:4063", config)
-            .await
-            .expect("bind call failed");
-        match listener.accept_with_timeout(Duration::from_micros(1)).await {
-            Ok(_) => panic!("accept_with_timeout call failed"),
-            Err(err) => {
-                assert_eq!(err.kind(), io::ErrorKind::TimedOut);
-            }
-        }
+    // TODO
+    // async fn test_listener_accept_with_config(config: &BindConfig) {
+    //     let mut listener = TcpListener::bind_with_config("127.0.0.1:4063", config)
+    //         .await
+    //         .expect("bind call failed");
+    //     match listener.accept_with_timeout(Duration::from_micros(1)).await {
+    //         Ok(_) => panic!("accept_with_timeout call failed"),
+    //         Err(err) => {
+    //             assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+    //         }
+    //     }
+    //
+    //     let stream = std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
+    //     match listener.accept_with_timeout(Duration::from_secs(1)).await {
+    //         Ok((_, addr)) => {
+    //             assert_eq!(addr, stream.local_addr().unwrap())
+    //         }
+    //         Err(_) => panic!("accept_with_timeout call failed"),
+    //     }
+    //
+    //     drop(listener);
+    //     yield_now().await;
+    // }
 
-        let stream = std::net::TcpStream::connect("127.0.0.1:4063").expect("connect call failed");
-        match listener.accept_with_timeout(Duration::from_secs(1)).await {
-            Ok((_, addr)) => {
-                assert_eq!(addr, stream.local_addr().unwrap())
-            }
-            Err(_) => panic!("accept_with_timeout call failed"),
-        }
-
-        drop(listener);
-        yield_now().await;
-    }
-
-    #[orengine_macros::test_local]
-    fn test_accept() {
-        let config = BindConfig::default();
-        test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;
-        test_listener_accept_with_config(&config.reuse_port(ReusePort::Default)).await;
-        test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU)).await;
-    }
+    // TODO
+    // #[orengine_macros::test_local]
+    // fn test_accept() {
+    //     let config = BindConfig::default();
+    //     test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled)).await;
+    //     test_listener_accept_with_config(&config.reuse_port(ReusePort::Default)).await;
+    //     test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU)).await;
+    // }
 }

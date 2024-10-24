@@ -42,7 +42,7 @@ thread_local! {
 /// Returns the thread-local executor wrapped in an [`Option`].
 ///
 /// It is `None` if the executor is not initialized.
-fn get_local_executor_ref() -> &'static mut Option<Executor> {
+pub(crate) fn get_local_executor_ref() -> &'static mut Option<Executor> {
     LOCAL_EXECUTOR.with(|local_executor| unsafe { &mut *local_executor.get() })
 }
 
@@ -136,7 +136,7 @@ pub struct Executor {
     core_id: CoreId,
     executor_id: usize,
     config: ValidConfig,
-    subscribed_state: SubscribedState,
+    subscribed_state: Arc<UnsafeCell<SubscribedState>>,
     rng: Rng,
 
     local_tasks: VecDeque<Task>,
@@ -163,10 +163,6 @@ const MAX_NUMBER_OF_TASKS_TAKEN: usize = 16;
 impl Executor {
     /// Initializes the executor in the current thread with provided config on the given core.
     ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
-    ///
     /// # Example
     ///
     /// ```no_run
@@ -186,7 +182,11 @@ impl Executor {
     /// ```
     pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
         if get_local_executor_ref().is_some() {
-            panic!("There is already an initialized executor in the current thread!");
+            println!(
+                "There is already an initialized executor in the current thread!\
+             Not re-initializing."
+            );
+            return local_executor();
         }
 
         let valid_config = config.validate();
@@ -210,7 +210,7 @@ impl Executor {
                 core_id,
                 executor_id,
                 config: valid_config,
-                subscribed_state: SubscribedState::new(),
+                subscribed_state: Arc::new(UnsafeCell::new(SubscribedState::new())),
                 rng: Rng::new(),
 
                 local_tasks: VecDeque::new(),
@@ -224,17 +224,11 @@ impl Executor {
                 local_sleeping_tasks: BTreeSet::new(),
             });
 
-            register_local_executor();
-
             local_executor()
         }
     }
 
     /// Initializes the executor in the current thread on the given core.
-    ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -258,10 +252,6 @@ impl Executor {
 
     /// Initializes the executor in the current thread with provided config.
     ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
-    ///
     /// # Example
     ///
     /// ```no_run
@@ -282,10 +272,6 @@ impl Executor {
     }
 
     /// Initializes the executor in the current thread.
-    ///
-    /// # Panics
-    ///
-    /// If the local executor is already initialized.
     ///
     /// # Example
     ///
@@ -327,13 +313,13 @@ impl Executor {
     }
 
     /// Returns a reference to the subscribed state of the executor.
-    pub(crate) fn subscribed_state(&self) -> &SubscribedState {
-        &self.subscribed_state
+    pub(crate) fn subscribed_state(&self) -> Arc<UnsafeCell<SubscribedState>> {
+        self.subscribed_state.clone()
     }
 
     /// Returns a mutable reference to the subscribed state of the executor.
     pub(crate) fn subscribed_state_mut(&mut self) -> &mut SubscribedState {
-        &mut self.subscribed_state
+        unsafe { &mut *self.subscribed_state.get() }
     }
 
     /// Returns the core id on which the executor is running.
@@ -684,7 +670,7 @@ impl Executor {
                 }
             }
 
-            let lists = unsafe { self.subscribed_state.tasks_lists() };
+            let lists = unsafe { (&*self.subscribed_state.get()).tasks_lists() };
             if lists.is_empty() {
                 return;
             }
@@ -717,9 +703,9 @@ impl Executor {
     /// was called or [`end`](crate::runtime::end::end)).
     #[inline(always)]
     fn background_task(&mut self) -> bool {
-        self.subscribed_state
-            .check_version_and_update_if_needed(self.executor_id);
-        if self.subscribed_state.is_stopped() {
+        let subscribed_state_ref = unsafe { &mut *self.subscribed_state.get() };
+        subscribed_state_ref.check_version_and_update_if_needed(self.executor_id);
+        if subscribed_state_ref.is_stopped() {
             return true;
         }
 
@@ -793,6 +779,8 @@ impl Executor {
     /// }
     /// ```
     pub fn run(&mut self) {
+        register_local_executor();
+
         let mut task;
         // A round is a number of tasks that must be completed before the next background_work call.
         // It is needed to avoid case like:

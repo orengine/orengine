@@ -1,10 +1,9 @@
 use crate::bug_message::BUG_MESSAGE;
 use crate::local_executor;
 use crate::runtime::ExecutorSharedTaskList;
-#[cfg(test)]
-use crate::test::is_executor_id_in_pool;
 use crate::utils::{SpinLock, SpinLockGuard};
 use crossbeam::utils::CachePadded;
+use std::cell::UnsafeCell;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
@@ -117,7 +116,7 @@ struct GlobalState {
     /// 0 - id
     ///
     /// 1 - state
-    states_of_alive_executors: Vec<(usize, &'static SubscribedState)>,
+    states_of_alive_executors: Vec<(usize, Arc<UnsafeCell<SubscribedState>>)>,
     lists: Vec<Arc<ExecutorSharedTaskList>>,
 }
 
@@ -150,8 +149,11 @@ impl GlobalState {
         self.states_of_alive_executors
             .push((executor.id(), executor.subscribed_state()));
 
+        // It is necessary to reset the flag to false on re-initialization.
+        executor.subscribed_state_mut().is_stopped = false;
+
         for (_, state) in &mut self.states_of_alive_executors {
-            state.current_version.store(self.version, Release);
+            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
         }
     }
 
@@ -161,7 +163,7 @@ impl GlobalState {
         self.version += 1;
         self.states_of_alive_executors
             .retain(|(alive_executor_id, state)| {
-                state.current_version.store(self.version, Release);
+                unsafe { &(&*state.get()).current_version }.store(self.version, Release);
                 *alive_executor_id != id
             });
         self.lists.retain(|list| list.executor_id() != id);
@@ -169,16 +171,17 @@ impl GlobalState {
 
     /// Stops all executors.
     #[inline(always)]
-    #[cfg(not(test))]
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
         self.states_of_alive_executors.retain(|(_, state)| {
-            state.current_version.store(self.version, Release);
+            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
             false
         });
         self.lists.clear();
     }
 }
+
+unsafe impl Send for GlobalState {}
 
 /// `GLOBAL_STATE` contains current version, `tasks_lists` of all alive executors with work-sharing.
 /// It and [`SubscribedState`] form `Shared RWLock`.
@@ -205,7 +208,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// # Do not use it in tests!
 ///
-/// TODO
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 ///
 /// # Examples
 ///
@@ -251,13 +254,6 @@ pub(crate) fn register_local_executor() {
 /// }
 /// ```
 pub fn stop_executor(executor_id: usize) {
-    #[cfg(test)]
-    {
-        if is_executor_id_in_pool(executor_id) {
-            return;
-        }
-    }
-
     global_state().stop_executor(executor_id);
 }
 
@@ -265,13 +261,8 @@ pub fn stop_executor(executor_id: usize) {
 ///
 /// # Do not use it in tests!
 ///
-/// TODO
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 pub fn stop_all_executors() {
-    if cfg!(test) {
-        panic!("stop_all_executors is not supported in test mode");
-    }
-
-    #[cfg(not(test))]
     global_state().stop_all_executors();
 }
 

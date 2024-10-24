@@ -30,12 +30,11 @@ impl Future for CreateDir {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let worker = unsafe { local_worker() };
         #[allow(unused)]
         let ret;
 
         poll_for_io_request!((
-            worker.create_dir(this.os_path.as_ptr(), this.mode, unsafe {
+            local_worker().create_dir(this.os_path.as_ptr(), this.mode, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ()
