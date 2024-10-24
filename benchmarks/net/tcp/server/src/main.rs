@@ -1,6 +1,7 @@
 use std::{io, thread};
 
 use orengine::buf::buffer;
+use orengine::runtime::Config;
 use orengine::utils::{get_core_ids, CoreId};
 use orengine::Executor;
 
@@ -122,29 +123,25 @@ fn orengine() {
     use orengine::io::{AsyncAccept, AsyncBind};
 
     #[inline(always)]
-    async fn handle_client<S: orengine::net::Stream>(mut stream: S) -> io::Result<()> {
+    async fn handle_client<S: orengine::net::Stream>(mut stream: S) {
         loop {
-            stream.poll_recv().await?;
+            stream.poll_recv().await.unwrap();
             let mut buf = buffer();
             buf.set_len_to_cap();
-            let n = stream.recv(&mut buf).await?;
+            let n = stream.recv(&mut buf).await.unwrap();
             if n == 0 {
                 break;
             }
-            stream.send_all(&buf[..n]).await?;
+            stream.send_all(&buf[..n]).await.unwrap();
         }
-
-        Ok(())
     }
 
     fn run_server(core_id: CoreId) {
-        let ex = Executor::init_on_core(core_id);
+        let ex = Executor::init_on_core_with_config(core_id, Config::default().disable_work_sharing());
         let _ = ex.run_and_block_on_local(async {
             let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
             while let Ok((stream, _)) = listener.accept().await {
-                orengine::local_executor().spawn_local(async move {
-                    let _ = handle_client(stream).await;
-                });
+                orengine::local_executor().spawn_local(handle_client(stream));
             }
         });
     }

@@ -42,24 +42,24 @@ fn bench_throughput() {
         bench_throughput_client!(
             "std client",
             {
-                thread::sleep(Duration::from_secs(1));
+                thread::sleep(Duration::from_secs(3));
             },
             {
                 use std::io::{Read, Write};
 
                 let mut joins = Vec::with_capacity(PAR);
-                for _i in 0..PAR {
+                for _ in 0..PAR {
                     joins.push(thread::spawn(move || {
                         let mut conn = std::net::TcpStream::connect(SERVER_ADDR).unwrap();
                         let mut buf = [0u8; 1024];
-
+        
                         for _ in 0..COUNT {
                             conn.write_all(b"ping").unwrap();
                             conn.read(&mut buf).unwrap();
                         }
                     }));
                 }
-
+        
                 for join in joins {
                     join.join().unwrap();
                 }

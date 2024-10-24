@@ -139,7 +139,7 @@ impl IOUringWorker {
 
     /// Submits all accumulated requests and waits for completions or a timeout.
     ///
-    /// Returns Ok(true) if the submission queue is empty and no sqes were submitted at all.
+    /// Returns Ok(false) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
     fn submit(&mut self) -> Result<bool, Error> {
         if self.number_of_active_tasks == 0 {
