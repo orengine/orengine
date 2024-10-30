@@ -1,6 +1,6 @@
+use crate::runtime::task::Task;
 use std::io::Result;
 use std::mem;
-use crate::runtime::task::Task;
 
 /// Default value of [`IoRequestData::ret`].
 pub(crate) const UNINIT_RESULT: Result<usize> = Ok(1 << 32 - 1);
@@ -9,7 +9,7 @@ pub(crate) const UNINIT_RESULT: Result<usize> = Ok(1 << 32 - 1);
 /// After the task is done, the result will be set and the task will be executed.
 pub(crate) struct IoRequestData {
     ret: Result<usize>,
-    task: Task
+    task: Task,
 }
 
 impl IoRequestData {
@@ -18,7 +18,7 @@ impl IoRequestData {
     pub(crate) fn new(task: Task) -> Self {
         Self {
             ret: UNINIT_RESULT,
-            task
+            task,
         }
     }
 
@@ -34,9 +34,9 @@ impl IoRequestData {
         mem::replace(&mut self.ret, UNINIT_RESULT)
     }
 
-    /// Returns the task that must be executed.
+    /// Returns a shared reference to the task that must be executed.
     #[inline(always)]
-    pub(crate) fn task(&self) -> Task {
-        self.task
+    pub(crate) fn task(&self) -> &Task {
+        &self.task
     }
 }

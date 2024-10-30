@@ -1,5 +1,5 @@
 use std::cell::UnsafeCell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
@@ -19,7 +18,6 @@ use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
-use crate::sleep::sleeping_task::SleepingTask;
 use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
 use crossbeam::utils::CachePadded;
@@ -147,7 +145,8 @@ pub struct Executor {
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
     current_call: Call,
-    local_sleeping_tasks: BTreeSet<SleepingTask>,
+    // We can't use BTreeMap, because it consumes and not insert value, if key already exists
+    local_sleeping_tasks: BTreeMap<Instant, Task>,
 }
 
 /// The next id of the executor. It is used to generate the unique executor id.
@@ -221,7 +220,7 @@ impl Executor {
                 exec_series: 0,
                 local_worker: get_local_worker_ref(),
                 thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
-                local_sleeping_tasks: BTreeSet::new(),
+                local_sleeping_tasks: BTreeMap::new(),
             });
 
             local_executor()
@@ -460,7 +459,9 @@ impl Executor {
         let task_ref = &mut task;
         let task_ptr = task_ref as *mut Task;
         let future = unsafe { &mut *task_ref.future_ptr() };
-        check_task_local_safety!(task);
+        #[cfg(debug_assertions)]
+        task.check_safety();
+
         let waker = create_waker(task_ptr as *const ());
         let mut context = Context::from_waker(&waker);
 
@@ -652,7 +653,7 @@ impl Executor {
 
     /// Returns a reference to the `sleeping_tasks`.
     #[inline(always)]
-    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
+    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeMap<Instant, Task> {
         &mut self.local_sleeping_tasks
     }
 
@@ -719,16 +720,15 @@ impl Executor {
 
         if self.local_sleeping_tasks.len() > 0 {
             let instant = Some(Instant::now());
-            while let Some(sleeping_task) = self.local_sleeping_tasks.pop_first() {
-                if sleeping_task.time_to_wake() <= unsafe { instant.unwrap_unchecked() } {
-                    let task = sleeping_task.task();
+            while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
+                if time_to_wake <= unsafe { instant.unwrap_unchecked() } {
                     if task.is_local() {
                         self.exec_task(task);
                     } else {
                         self.spawn_global_task(task);
                     }
                 } else {
-                    self.local_sleeping_tasks.insert(sleeping_task);
+                    self.local_sleeping_tasks.insert(time_to_wake, task);
                     break;
                 }
             }

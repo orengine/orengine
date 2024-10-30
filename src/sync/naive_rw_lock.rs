@@ -377,6 +377,7 @@ mod tests {
 
     #[orengine_macros::test_global]
     fn test_naive_rw_lock() {
+        // TODO find deadlock
         const PAR: isize = 3;
 
         let rw_lock = Arc::new(RWLock::new(0));

@@ -15,6 +15,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
+use std::ptr;
 use std::time::{Duration, Instant};
 
 /// Configuration for [`IOUringWorker`].
@@ -252,10 +253,11 @@ impl IoWorker for IOUringWorker {
             }
 
             self.number_of_active_tasks -= 1;
-            if io_request.task().is_local() {
-                executor.exec_task(io_request.task());
+            let task = unsafe { ptr::read(io_request.task()) };
+            if task.is_local() {
+                executor.exec_task(task);
             } else {
-                executor.spawn_global_task(io_request.task());
+                executor.spawn_global_task(task);
             }
         }
 
@@ -281,7 +283,7 @@ impl IoWorker for IOUringWorker {
         let socket_ = socket2::Socket::new(domain, sock_type, None);
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
-        local_executor().spawn_local_task(request.task());
+        local_executor().spawn_local_task(unsafe { ptr::read(request.task()) });
     }
 
     #[inline(always)]

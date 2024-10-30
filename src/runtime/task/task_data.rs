@@ -20,10 +20,6 @@ pub(crate) struct TaskData {
 
 impl TaskData {
     /// Creates a new `TaskData`.
-    ///
-    /// # Panics
-    ///
-    /// If `is_local` is not `0` or `1`.
     #[inline(always)]
     pub(crate) fn new(future: *mut dyn Future<Output = ()>, locality: Locality) -> Self {
         #[cfg(not(target_pointer_width = "64"))]

@@ -51,10 +51,6 @@ impl TaskPool {
     }
 
     /// Returns a [`Task`] with the given future.
-    ///
-    /// # Panics
-    ///
-    /// If `is_local` is not `0` or `1`.
     #[inline(always)]
     pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
         let size = size_of::<F>();
@@ -76,6 +72,8 @@ impl TaskPool {
                 data: TaskData::new(future_ptr as *mut _, locality),
                 #[cfg(debug_assertions)]
                 executor_id,
+                #[cfg(debug_assertions)]
+                ref_count: std::sync::Arc::new(()),
             }
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
@@ -83,6 +81,8 @@ impl TaskPool {
                 data: TaskData::new(future_ptr as *mut _, locality),
                 #[cfg(debug_assertions)]
                 executor_id,
+                #[cfg(debug_assertions)]
+                ref_count: std::sync::Arc::new(()),
             }
         }
     }

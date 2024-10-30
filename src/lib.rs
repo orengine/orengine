@@ -9,7 +9,7 @@ pub mod local;
 pub mod net;
 pub mod run;
 pub mod runtime;
-pub mod sleep;
+mod sleep;
 pub mod sync;
 pub mod sync_task_queue;
 pub mod test;

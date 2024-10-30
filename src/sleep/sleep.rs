@@ -1,6 +1,6 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
-use crate::sleep::sleeping_task::SleepingTask;
+use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -24,13 +24,18 @@ impl Future for Sleep {
         } else {
             this.was_yielded = true;
             let task = get_task_from_context!(cx);
-            let mut sleeping_task = SleepingTask::new(this.sleep_until, task);
 
-            while !local_executor()
-                .sleeping_tasks()
-                .insert(sleeping_task.clone())
-            {
-                sleeping_task.increment_time_to_wake();
+            loop {
+                let sleeping_tasks_map = local_executor().sleeping_tasks();
+                match sleeping_tasks_map.entry(this.sleep_until) {
+                    Occupied(_) => {
+                        this.sleep_until += Duration::from_nanos(1);
+                    }
+                    Vacant(entry) => {
+                        entry.insert(task);
+                        break;
+                    }
+                }
             }
 
             Poll::Pending

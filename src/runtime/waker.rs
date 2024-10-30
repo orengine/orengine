@@ -1,5 +1,6 @@
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
+use std::sync::Arc;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
 /// This is really unsafe. [`Task`] has no some ref counters, so, task can be dropped before it is woken up.
@@ -7,6 +8,11 @@ use std::task::{RawWaker, RawWakerVTable, Waker};
 ///
 /// Therefore, you need to make sure that [`Task`] is not called after drop or [`Ready`](std::task::Poll::Ready) return.
 unsafe fn clone(data_ptr: *const ()) -> RawWaker {
+    #[cfg(debug_assertions)]
+    {
+        let task = unsafe { &*(data_ptr as *mut Task) };
+        unsafe { Arc::increment_strong_count(&task.ref_count) };
+    }
     RawWaker::new(data_ptr, &VTABLE)
 }
 
@@ -36,7 +42,14 @@ unsafe fn wake_by_ref(data_ptr: *const ()) {
 }
 
 /// Do nothing, because [`Executor`](crate::runtime::Executor) will drop the [`Task`] only when it is needed.
-unsafe fn drop(_: *const ()) {}
+#[allow(unused)] // because #[cfg(debug_assertions)]
+unsafe fn drop(data_ptr: *const ()) {
+    #[cfg(debug_assertions)]
+    {
+        let task = unsafe { &*(data_ptr as *mut Task) };
+        unsafe { Arc::decrement_strong_count(&task.ref_count) };
+    }
+}
 
 /// [`RawWakerVTable`] for `orengine` runtime only!
 pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
@@ -46,3 +59,5 @@ pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref,
 pub fn create_waker(data_ptr: *const ()) -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(data_ptr, &VTABLE)) }
 }
+
+// TODO test
