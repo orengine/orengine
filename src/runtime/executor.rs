@@ -456,23 +456,29 @@ impl Executor {
     pub(crate) fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
 
-        let task_ref = &mut task;
-        let task_ptr = task_ref as *mut Task;
-        let future = unsafe { &mut *task_ref.future_ptr() };
+        let future = unsafe { &mut *task.future_ptr() };
         #[cfg(debug_assertions)]
-        task.check_safety();
+        unsafe {
+            task.check_safety();
+            task.is_executing.as_ref().store(true, Ordering::SeqCst);
+        }
 
-        let waker = create_waker(task_ptr as *const ());
+        let waker = create_waker(&mut task);
         let mut context = Context::from_waker(&waker);
-
-        match unsafe { Pin::new_unchecked(future) }
+        let poll_res = unsafe { Pin::new_unchecked(future) }
             .as_mut()
-            .poll(&mut context)
-        {
+            .poll(&mut context);
+        #[cfg(debug_assertions)]
+        unsafe {
+            task.is_executing.as_ref().store(false, Ordering::SeqCst);
+        }
+
+        match poll_res {
             Poll::Ready(()) => {
                 debug_assert_eq!(self.current_call, Call::None);
-                unsafe { task.release_future() };
+                unsafe { task.release() };
             }
+
             Poll::Pending => {
                 let old_call = mem::take(&mut self.current_call);
                 match old_call {

@@ -268,8 +268,13 @@ impl<T> Mutex<T> {
     }
 
     /// Add current task to wait queue.
+    ///
+    /// # Safety
+    ///
+    /// Called by owner of the lock of this [`Mutex`].
     #[inline(always)]
     pub(crate) unsafe fn subscribe(&self, task: Task) {
+        debug_assert!(self.counter.load(Acquire) != 1, "Mutex is unlocked");
         self.expected_count.set(self.expected_count.get() - 1);
         unsafe {
             self.wait_queue.push(task);

@@ -1,15 +1,17 @@
 use crate::runtime::task::task_data::TaskData;
 use crate::runtime::{task_pool, Locality};
 use std::future::Future;
-use std::sync::Arc;
 
 /// `Task` is a wrapper of a future.
+///
+/// If `debug_assertions` is enabled, it keeps additional information to check
+/// if the task is safe to be executed.
 pub struct Task {
     pub(crate) data: TaskData,
     #[cfg(debug_assertions)]
     pub(crate) executor_id: usize,
     #[cfg(debug_assertions)]
-    pub(crate) ref_count: Arc<()>,
+    pub(crate) is_executing: crate::utils::Ptr<std::sync::atomic::AtomicBool>,
 }
 
 impl Task {
@@ -37,10 +39,11 @@ impl Task {
         self.data.is_local()
     }
 
-    /// Releases the wrapped future.
+    /// Puts it back to the [`TaskPool`]. It is unsafe because you have to think about making
+    /// sure it is no longer used.
     #[inline(always)]
-    pub unsafe fn release_future(&mut self) {
-        task_pool().put(self.data.future_ptr());
+    pub unsafe fn release(self) {
+        task_pool().put(self);
     }
 
     /// Checks if the task is safe to be executed.
@@ -49,12 +52,12 @@ impl Task {
     /// It is zero cost because it can be called only in debug mode.
     #[cfg(debug_assertions)]
     pub(crate) fn check_safety(&mut self) {
-        if Arc::strong_count(&self.ref_count) != 1 {
-            panic!(
-                "Task has been cloned! But it can be only moved. Tasks are implement ownership \
-            semantics. This could only happen in Waker::clone. Waker::clone is allowed only \
-            for moving. You must drop and old waker before task is executed next time."
-            );
+        if unsafe {
+            self.is_executing
+                .as_ref()
+                .load(std::sync::atomic::Ordering::SeqCst)
+        } {
+            todo!();
         }
 
         if self.is_local() && self.executor_id != crate::local_executor().id() {

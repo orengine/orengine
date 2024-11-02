@@ -246,8 +246,13 @@ mod tests {
         })
         .await;
 
-        assert_eq!(*local_a.deref(), 4);
+        yield_now().await;
 
+        assert_eq!(*local_a.deref(), 4);
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_scope_exec_with_main_future() {
         let local_a = Local::new(0);
 
         local_scope(|scope| async {
@@ -272,11 +277,41 @@ mod tests {
         })
         .await;
 
+        yield_now().await;
+
         assert_eq!(*local_a.deref(), 5);
     }
 
     #[orengine_macros::test_local]
     fn test_local_scope_spawn() {
+        let local_a = Local::new(0);
+
+        local_scope(|scope| async {
+            scope.spawn(async {
+                assert_eq!(*local_a.deref(), 1);
+                *local_a.get_mut() += 1;
+                yield_now().await;
+                assert_eq!(*local_a.deref(), 2);
+                *local_a.get_mut() += 1;
+            });
+
+            scope.spawn(async {
+                assert_eq!(*local_a.deref(), 0);
+                *local_a.get_mut() += 1;
+                sleep(Duration::from_millis(1)).await;
+                assert_eq!(*local_a.deref(), 3);
+                *local_a.get_mut() += 1;
+            });
+        })
+        .await;
+
+        yield_now().await;
+
+        assert_eq!(*local_a.deref(), 4);
+    }
+
+    #[orengine_macros::test_local]
+    fn test_local_scope_spawn_with_main_future() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();
 
@@ -304,29 +339,8 @@ mod tests {
         })
         .await;
 
+        yield_now().await;
+
         assert_eq!(*local_a.deref(), 5);
-
-        let local_a = Local::new(0);
-
-        local_scope(|scope| async {
-            scope.spawn(async {
-                assert_eq!(*local_a.deref(), 1);
-                *local_a.get_mut() += 1;
-                yield_now().await;
-                assert_eq!(*local_a.deref(), 2);
-                *local_a.get_mut() += 1;
-            });
-
-            scope.spawn(async {
-                assert_eq!(*local_a.deref(), 0);
-                *local_a.get_mut() += 1;
-                sleep(Duration::from_millis(1)).await;
-                assert_eq!(*local_a.deref(), 3);
-                *local_a.get_mut() += 1;
-            });
-        })
-        .await;
-
-        assert_eq!(*local_a.deref(), 4);
     }
 }
