@@ -242,8 +242,12 @@ impl<T> LocalMutex<T> {
     }
 
     /// Add current task to wait queue.
+    ///
+    /// # Safety
+    ///
+    /// Called by owner of the lock of this [`LocalMutex`].
     #[inline(always)]
-    pub(crate) fn subscribe(&self, task: Task) {
+    pub(crate) unsafe fn subscribe(&self, task: Task) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         wait_queue.push(task);
     }

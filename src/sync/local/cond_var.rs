@@ -61,7 +61,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 None => {
                     this.state = State::WaitLock;
                     let task = get_task_from_context!(cx);
-                    this.local_mutex.subscribe(task);
+                    unsafe { this.local_mutex.subscribe(task) };
                     Poll::Pending
                 }
             },

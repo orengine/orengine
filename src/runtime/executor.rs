@@ -356,7 +356,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_to(&mut self, send_to: &SyncTaskList) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushCurrentTaskTo(send_to);
     }
 
@@ -373,7 +373,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_at_the_start_of_lifo_global_queue(&mut self) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue;
     }
 
@@ -400,9 +400,12 @@ impl Executor {
         counter: &AtomicUsize,
         order: Ordering,
     ) {
-        debug_assert!(self.current_call.is_none());
-        self.current_call =
-            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
+        self.current_call = Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+            send_to,
+            counter,
+            order,
+        );
     }
 
     /// Invokes [`Call::ReleaseAtomicBool`]. Use it only if you know what you are doing.
@@ -420,7 +423,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::ReleaseAtomicBool(atomic_bool);
     }
 
@@ -437,8 +440,49 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_fn_to_thread_pool(&mut self, f: &'static mut dyn Fn()) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushFnToThreadPool(f)
+    }
+
+    /// Processing current [`Call`]. It is taken out [`exec_task_now`](Executor::exec_task_now)
+    /// to allow the compiler to decide whether to inline this function.
+    fn handle_call(&mut self, task: Task) {
+        match mem::take(&mut self.current_call) {
+            Call::None => {}
+            Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
+                self.global_tasks.push_front(task);
+            }
+            Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
+            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+                task_list,
+                counter,
+                order,
+            ) => {
+                unsafe {
+                    let list = &*task_list;
+                    list.push(task);
+                    let counter = &*counter;
+
+                    if counter.load(order) == 0 {
+                        if let Some(task) = list.pop() {
+                            self.exec_task(task);
+                        } // else other thread already executed the task
+                    }
+                }
+            }
+            Call::ReleaseAtomicBool(atomic_ptr) => {
+                let atomic_ref = unsafe { &*atomic_ptr };
+                atomic_ref.store(false, Ordering::Release);
+            }
+            Call::PushFnToThreadPool(f) => {
+                debug_assert_ne!(
+                    self.config.number_of_thread_workers, 0,
+                    "try to use thread pool with 0 workers"
+                );
+
+                self.thread_pool.push(task, f);
+            }
+        }
     }
 
     /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
@@ -451,7 +495,7 @@ impl Executor {
     ///
     /// # Attention
     ///
-    /// Execute [`tasks`](Task) only by this method!
+    /// Execute [`tasks`](Task) only by this method or [`exec_task`](Executor::exec_task)!
     #[inline(always)]
     pub(crate) fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
@@ -475,48 +519,16 @@ impl Executor {
 
         match poll_res {
             Poll::Ready(()) => {
-                debug_assert_eq!(self.current_call, Call::None);
+                debug_assert_eq!(
+                    self.current_call,
+                    Call::None,
+                    "Call is not None, but the task is ready."
+                );
                 unsafe { task.release() };
             }
 
             Poll::Pending => {
-                let old_call = mem::take(&mut self.current_call);
-                match old_call {
-                    Call::None => {}
-                    Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
-                        self.global_tasks.push_front(task);
-                    }
-                    Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
-                    Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-                        task_list,
-                        counter,
-                        order,
-                    ) => {
-                        unsafe {
-                            let list = &*task_list;
-                            list.push(task);
-                            let counter = &*counter;
-
-                            if counter.load(order) == 0 {
-                                if let Some(task) = list.pop() {
-                                    self.exec_task(task);
-                                } // else other thread already executed the task
-                            }
-                        }
-                    }
-                    Call::ReleaseAtomicBool(atomic_ptr) => {
-                        let atomic_ref = unsafe { &*atomic_ptr };
-                        atomic_ref.store(false, Ordering::Release);
-                    }
-                    Call::PushFnToThreadPool(f) => {
-                        debug_assert_ne!(
-                            self.config.number_of_thread_workers, 0,
-                            "try to use thread pool with 0 workers"
-                        );
-
-                        self.thread_pool.push(task, f);
-                    }
-                }
+                self.handle_call(task);
             }
         }
     }
@@ -525,7 +537,7 @@ impl Executor {
     ///
     /// # Attention
     ///
-    /// Execute [`tasks`](Task) only by this method!
+    /// Execute [`tasks`](Task) only by this method or [`exec_task_now`](Executor::exec_task_now)!
     #[inline(always)]
     pub fn exec_task(&mut self, task: Task) {
         if self.exec_series >= 106 {

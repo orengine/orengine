@@ -194,13 +194,11 @@ unsafe impl<T: Send> Send for SpinLock<T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::sync::WaitGroup;
-
-    use super::*;
     use crate as orengine;
+    use crate::sync::WaitGroup;
     use crate::test::sched_future_to_another_thread;
+    use crate::utils::SpinLock;
+    use std::sync::Arc;
 
     #[orengine_macros::test_global]
     fn test_try_mutex() {

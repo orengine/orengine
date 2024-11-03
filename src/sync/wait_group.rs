@@ -290,6 +290,7 @@ mod tests {
     use crate as orengine;
     use crate::test::sched_future_to_another_thread;
     use crate::{sleep, yield_now};
+    use std::sync::atomic::Ordering::SeqCst;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -306,7 +307,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             sched_future_to_another_thread(async move {
-                let _ = wait_group.wait().await;
+                wait_group.wait().await;
                 if !*check_value.lock().unwrap() {
                     panic!("not waited");
                 }
@@ -336,7 +337,7 @@ mod tests {
             });
         }
 
-        let _ = wait_group.wait().await;
+        wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
         }
@@ -358,9 +359,60 @@ mod tests {
             });
         }
 
-        let _ = wait_group.wait().await;
+        wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
+        }
+    }
+
+    #[orengine_macros::test_global]
+    fn stress_test_global_wg() {
+        const PAR: usize = 4;
+        const TASKS: usize = 100;
+
+        for _ in 0..15 {
+            let wait_group = Arc::new(WaitGroup::new());
+            let counter = Arc::new(AtomicUsize::new(0));
+
+            wait_group.inc();
+
+            for _ in 0..PAR {
+                {
+                    let wait_group = wait_group.clone();
+                    let counter = counter.clone();
+                    sched_future_to_another_thread(async move {
+                        for _ in 0..TASKS {
+                            let wait_group = wait_group.clone();
+                            let counter = counter.clone();
+                            wait_group.inc();
+                            local_executor().spawn_global(async {
+                                let _ = wait_group.wait().await;
+                                counter.fetch_add(1, SeqCst);
+                            });
+                        }
+                    });
+                }
+
+                let wait_group = wait_group.clone();
+                let counter = counter.clone();
+                sched_future_to_another_thread(async move {
+                    for _ in 0..TASKS {
+                        let wait_group = wait_group.clone();
+                        let counter = counter.clone();
+                        wait_group.inc();
+                        local_executor().spawn_global(async {
+                            sleep(Duration::from_micros(100)).await;
+                            wait_group.done();
+                            counter.fetch_add(1, SeqCst);
+                        });
+                    }
+                });
+            }
+
+            wait_group.wait().await;
+            assert_eq!(counter.load(SeqCst), PAR * TASKS * 2);
+
+            std::thread::yield_now();
         }
     }
 }

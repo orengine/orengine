@@ -214,10 +214,9 @@ where
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::{sleep, yield_now};
+    use crate::yield_now;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
-    use std::time::Duration;
 
     #[orengine_macros::test_global]
     fn test_global_scope_exec() {
@@ -287,6 +286,8 @@ mod tests {
     #[orengine_macros::test_global]
     fn test_global_scope_spawn() {
         let a = AtomicUsize::new(0);
+        let wg = WaitGroup::new();
+        wg.inc();
 
         global_scope(|scope| async {
             scope.spawn(async {
@@ -295,12 +296,13 @@ mod tests {
                 yield_now().await;
                 assert_eq!(a.load(SeqCst), 2);
                 a.fetch_add(1, SeqCst);
+                wg.done();
             });
 
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
-                sleep(Duration::from_millis(1)).await;
+                wg.wait().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
             });
