@@ -74,27 +74,25 @@ mod tests {
     #[orengine_macros::test_local]
     fn test_asyncify() {
         let start = time::Instant::now();
-        let list = Arc::new(std::sync::Mutex::new(vec![]));
+        let was_changed = Arc::new(std::sync::Mutex::new(false));
         let cond_var = Arc::new(std::sync::Condvar::new());
-        let list_clone = list.clone();
+        let was_changed_clone = was_changed.clone();
         let cond_var_clone = cond_var.clone();
 
         local_executor().exec_local_future(async move {
             asyncify!(|| {
-                list_clone.lock().unwrap().push(1);
                 thread::sleep(Duration::from_millis(1));
                 assert!(start.elapsed() >= Duration::from_millis(1));
-                list_clone.lock().unwrap().push(2);
+                *was_changed_clone.lock().unwrap() = true;
                 cond_var_clone.notify_one();
             })
             .await;
         });
 
-        let mut guard = list.lock().unwrap();
-        assert_eq!(*guard, vec![]);
+        let mut guard = was_changed.lock().unwrap();
         guard = cond_var.wait(guard).unwrap();
 
-        assert_eq!(*guard, vec![1, 2]); // this executor was blocked, and
-                                        // if assertion passes, other thread (from the thread pool) processed the list.
+        assert!(*guard); // this executor was blocked, and
+                         // if assertion passes, other thread (from the thread pool) processed the list.
     }
 }

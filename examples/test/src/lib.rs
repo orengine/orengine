@@ -90,7 +90,7 @@ mod tests {
     #[orengine::test::test_global]
     fn test_test_global_and_parallel_with_macro_and_manually_join() {
         let mutex = Arc::new(Mutex::new(0));
-        let mut joins = Vec::with_capacity(10);
+        let mut handles = Vec::with_capacity(10);
 
         for _ in 0..10 {
             let mutex = mutex.clone();
@@ -100,11 +100,11 @@ mod tests {
             })
             .await;
 
-            joins.push(join_handle);
+            handles.push(join_handle);
         }
 
-        for join_handle in joins {
-            join_handle.join().await;
+        for handle in handles {
+            handle.join().await;
         }
 
         assert_eq!(*mutex.lock().await, 1000);
