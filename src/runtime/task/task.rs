@@ -57,7 +57,9 @@ impl Task {
                 .as_ref()
                 .load(std::sync::atomic::Ordering::SeqCst)
         } {
-            todo!();
+            panic!("Attempt to execute an already executing task! It is not allowed! \
+            Try to rewrite the code to follow the concept of task ownership:\
+            only one thread can own a task at the same time and only one task instance can exist.");
         }
 
         if self.is_local() && self.executor_id != crate::local_executor().id() {
