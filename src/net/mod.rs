@@ -1,5 +1,3 @@
-// TODO bench cpu_affinity on sockets
-
 pub use bind_config::{BindConfig, ReusePort};
 pub use connected_datagram::ConnectedDatagram;
 pub use datagram::Datagram;

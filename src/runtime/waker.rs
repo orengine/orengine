@@ -60,5 +60,3 @@ pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref,
 pub fn create_waker(task_ptr: *mut Task) -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(task_ptr as *const (), &VTABLE)) }
 }
-
-// TODO test

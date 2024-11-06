@@ -34,6 +34,7 @@ impl Task {
         self.data.future_ptr()
     }
 
+    /// Returns whether the task is local or not.
     #[inline(always)]
     pub fn is_local(&self) -> bool {
         self.data.is_local()

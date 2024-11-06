@@ -1031,9 +1031,4 @@ mod tests {
         Executor::init_with_config(Config::default().disable_work_sharing());
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
-
-    // #[test]
-    // TODO
-    // fn work_sharing() {
-    // }
 }
