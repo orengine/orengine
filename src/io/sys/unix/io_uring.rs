@@ -76,7 +76,8 @@ pub(crate) struct IOUringWorker {
     backlog: VecDeque<Entry>,
     probe: Probe,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
-    number_of_active_tasks: usize,
+    // TODO number_of_active_tasks: usize,
+    number_of_active_tasks: BTreeSet<u64>,
 }
 
 impl IOUringWorker {
@@ -89,7 +90,7 @@ impl IOUringWorker {
     /// Add a new sqe to the submission queue.
     #[inline(always)]
     fn add_sqe(&mut self, sqe: Entry) {
-        self.number_of_active_tasks += 1;
+        // TODO self.number_of_active_tasks += 1;
         let ring = unsafe { &mut *self.ring.get() };
         unsafe {
             if ring.submission().push(&sqe).is_err() {
@@ -101,7 +102,12 @@ impl IOUringWorker {
     /// Add a new sqe to the submission queue with setting user_data.
     #[inline(always)]
     fn register_entry_with_u64_data(&mut self, sqe: Entry, data: u64) {
+        // TODO r 
+        if !self.number_of_active_tasks.insert(data) {
+            panic!("Failed to insert data to number_of_active_tasks: {}", data);
+        }
         let sqe = sqe.user_data(data);
+        println!("Data: {data}");
         self.add_sqe(sqe);
     }
 
@@ -142,7 +148,7 @@ impl IOUringWorker {
     /// Returns Ok(false) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
     fn submit(&mut self) -> Result<bool, Error> {
-        if self.number_of_active_tasks == 0 {
+        if self.number_of_active_tasks.len() == 0 {
             return Ok(false);
         }
 
@@ -191,7 +197,7 @@ impl IoWorker for IOUringWorker {
             backlog: VecDeque::with_capacity(64),
             probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new(),
-            number_of_active_tasks: 0,
+            number_of_active_tasks: BTreeSet::new(),
         };
 
         let submitter = s.ring.get_mut().submitter();
@@ -251,7 +257,10 @@ impl IoWorker for IOUringWorker {
                 io_request.set_ret(Ok(ret as _));
             }
 
-            self.number_of_active_tasks -= 1;
+            // TODO self.number_of_active_tasks -= 1;
+            if !self.number_of_active_tasks.remove(&cqe.user_data()) {
+                panic!("Task was not found in number_of_active_tasks: {}", cqe.user_data());
+            }
             let task = unsafe { io_request.task() };
             if task.is_local() {
                 executor.exec_task(task);
@@ -271,8 +280,6 @@ impl IoWorker for IOUringWorker {
         protocol: socket2::Protocol,
         request_ptr: *mut IoRequestData,
     ) {
-        // TODO r
-        println!("socket on id: {}", local_executor().id());
         if self.is_supported(opcode::Socket::CODE) {
             self.register_entry(
                 opcode::Socket::new(
