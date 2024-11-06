@@ -12,7 +12,7 @@ use nix::libc;
 use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
-
+use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
@@ -268,20 +268,26 @@ impl IoWorker for IOUringWorker {
         &mut self,
         domain: socket2::Domain,
         sock_type: socket2::Type,
+        protocol: socket2::Protocol,
         request_ptr: *mut IoRequestData,
     ) {
+        // TODO r
+        println!("socket on id: {}", local_executor().id());
         if self.is_supported(opcode::Socket::CODE) {
-            // TODO
-            println!("Supported");
-            // self.register_entry(
-            //     opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(),
-            //     request_ptr,
-            // );
-            // return;
+            self.register_entry(
+                opcode::Socket::new(
+                    c_int::from(domain),
+                    c_int::from(sock_type),
+                    c_int::from(protocol)
+                ).build(),
+                request_ptr,
+            );
+            
+            return;
         }
 
         let request = unsafe { &mut *request_ptr };
-        let socket_ = socket2::Socket::new(domain, sock_type, None);
+        let socket_ = socket2::Socket::new(domain, sock_type, Some(protocol));
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
         local_executor().spawn_local_task(unsafe { request.task() });

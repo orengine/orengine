@@ -4,7 +4,7 @@ use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem;
 
-use socket2::{Domain, Type};
+use socket2::{Domain, Protocol, Type};
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
@@ -114,13 +114,13 @@ impl Into<OwnedFd> for TcpStream {
 impl AsyncConnectStream for TcpStream {
     async fn new_ip4() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM).await?,
+            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
         })
     }
 
     async fn new_ip6() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM).await?,
+            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
         })
     }
 }

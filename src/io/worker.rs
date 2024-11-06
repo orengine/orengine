@@ -89,6 +89,7 @@ pub(crate) trait IoWorker {
         &mut self,
         domain: socket2::Domain,
         sock_type: socket2::Type,
+        protocol: socket2::Protocol,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `accept` io operation.
