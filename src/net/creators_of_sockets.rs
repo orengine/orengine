@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
-use std::os::fd::IntoRawFd;
 use socket2::{Domain, Type};
 
+use crate::io::Socket;
 use crate::io::sys::RawFd;
 
 /// Creates a new socket based on the given `SocketAddr` and `Type` (either stream or datagram).
@@ -16,13 +16,11 @@ pub(crate) async fn new_socket(
 ) -> std::io::Result<RawFd> {
     match addr {
         SocketAddr::V4(_) => {
-            socket2::Socket::new(Domain::IPV4, socket_type, None).map(|s| s.into_raw_fd())
-            // TODO Socket::new(Domain::IPV4, socket_type).await
+            Socket::new(Domain::IPV4, socket_type).await
         }
 
         SocketAddr::V6(_) => {
-            socket2::Socket::new(Domain::IPV6, socket_type, None).map(|s| s.into_raw_fd())
-            // TODO Socket::new(Domain::IPV6, socket_type).await
+            Socket::new(Domain::IPV6, socket_type).await
         }
     }
 }

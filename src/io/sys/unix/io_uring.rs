@@ -12,7 +12,7 @@ use nix::libc;
 use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeSet, VecDeque};
-use std::ffi::c_int;
+
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
@@ -271,11 +271,13 @@ impl IoWorker for IOUringWorker {
         request_ptr: *mut IoRequestData,
     ) {
         if self.is_supported(opcode::Socket::CODE) {
-            self.register_entry(
-                opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(),
-                request_ptr,
-            );
-            return;
+            // TODO
+            println!("Supported");
+            // self.register_entry(
+            //     opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(),
+            //     request_ptr,
+            // );
+            // return;
         }
 
         let request = unsafe { &mut *request_ptr };

@@ -1,7 +1,6 @@
 use crate::runtime::task::Task;
 use std::io::Result;
 use std::{mem, ptr};
-use crate::bug_message::BUG_MESSAGE;
 
 /// Default value of [`IoRequestData::ret`].
 pub(crate) const UNINIT_RESULT: Result<usize> = Ok(1 << 32 - 1);
@@ -26,15 +25,17 @@ impl IoRequestData {
             was_executed: false,
         }
     }
-    
+
     /// Checks whether an associated task has been read to execute. If yes, it panics.
     #[inline(always)]
-    fn check_if_executed_in_debug(&self) {
+    fn check_if_executed_in_debug(&mut self) {
         #[cfg(debug_assertions)]
         {
             if self.was_executed {
-                panic!("{BUG_MESSAGE}");
+                panic!("{}", crate::bug_message::BUG_MESSAGE);
             }
+            
+            self.was_executed = true;
         }
     }
 
@@ -51,15 +52,14 @@ impl IoRequestData {
     }
 
     /// Returns an associated task.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method calls only once for one instance of [`IoRequestData`].
     #[inline(always)]
     pub(crate) unsafe fn task(&mut self) -> Task {
         self.check_if_executed_in_debug();
-        self.was_executed = true;
-        
+
         unsafe { ptr::read(&self.task) }
     }
 }
