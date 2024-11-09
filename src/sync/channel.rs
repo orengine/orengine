@@ -139,6 +139,7 @@ macro_rules! acquire_lock {
             Some(lock) => lock,
             None => {
                 unsafe { local_executor().push_current_task_at_the_start_of_lifo_global_queue() };
+                
                 return Poll::Pending;
             }
         }
@@ -196,8 +197,10 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                 if inner_lock.receivers.len() > 0 {
                     unsafe {
-                        let (task, slot, call_state) =
-                            inner_lock.receivers.pop_front().unwrap_unchecked();
+                        let (task, slot, call_state) = inner_lock
+                            .receivers
+                            .pop_front()
+                            .unwrap();
 
                         inner_lock.unlock();
 

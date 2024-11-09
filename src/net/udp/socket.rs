@@ -203,10 +203,10 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::io::{AsyncBind, AsyncRecv, AsyncSend};
+    use crate::Local;
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
-    use crate::test::sched_future_to_another_thread;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -220,7 +220,8 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            let socket = std::net::UdpSocket::bind(SERVER_ADDR).expect("std bind failed");
+            let socket = std::net::UdpSocket::bind(SERVER_ADDR)
+                .expect("std bind failed");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
@@ -268,18 +269,18 @@ mod tests {
         client_addr_str: String,
         config: BindConfig
     ) {
-        let is_server_ready = Arc::new(
-            (Mutex::new(false), std::sync::Condvar::new())
+        let is_server_ready = Local::new(
+            (LocalMutex::new(false), LocalCondVar::new())
         );
         let is_server_ready_clone = is_server_ready.clone();
         let addr_clone = server_addr_str.clone();
     
-        sched_future_to_another_thread(async move {
+        local_executor().spawn_local(async move {
             let mut server = UdpSocket::bind_with_config(addr_clone, &config)
                 .await
                 .expect("bind failed");
     
-            *is_server_ready_clone.0.lock().unwrap() = true;
+            *is_server_ready_clone.0.lock().await = true;
             is_server_ready_clone.1.notify_one();
     
             for _ in 0..TIMES {
@@ -301,15 +302,15 @@ mod tests {
             }
         });
     
-        let mut is_server_ready_guard = is_server_ready.0.lock().unwrap();
+        let mut is_server_ready_guard = is_server_ready.0.lock().await;
         while !*is_server_ready_guard {
-            is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).unwrap();
+            is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).await;
         }
     
         let mut socket = UdpSocket::bind(client_addr_str)
             .await
             .expect("connect failed")
-            .connect(server_addr_str)
+            .connect_with_timeout(server_addr_str, Duration::from_secs(10))
             .await
             .expect("connect failed");
         
@@ -515,7 +516,7 @@ mod tests {
             .await
         {
             Ok(_) => panic!("peek_from should timeout"),
-            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{}", err),
         }
     }
 }

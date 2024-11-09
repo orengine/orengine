@@ -1,6 +1,6 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{OpenHow, OsMessageHeader, RawFd, WorkerSys};
+use crate::io::sys::{MessageRecvHeader, OpenHow, OsMessageHeader, RawFd, WorkerSys};
 use crate::BUG_MESSAGE;
 use nix::libc;
 use nix::libc::sockaddr;
@@ -171,17 +171,17 @@ pub(crate) trait IoWorker {
         self.recv(fd, buf_ptr, len, request_ptr);
     }
     /// Registers a new `recv_from` io operation.
-    fn recv_from(
+    fn recv_from<'receiving>(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader<'receiving>,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `recv_from` io operation with deadline.
-    fn recv_from_with_deadline(
+    fn recv_from_with_deadline<'receiving>(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader<'receiving>,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
@@ -235,12 +235,17 @@ pub(crate) trait IoWorker {
         self.peek(fd, buf_ptr, len, request_ptr);
     }
     /// Registers a new `peek_from` io operation.
-    fn peek_from(&mut self, fd: RawFd, msg: *mut OsMessageHeader, request_ptr: *mut IoRequestData);
-    /// Registers a new `peek_from` io operation with deadline.
-    fn peek_from_with_deadline(
+    fn peek_from<'peeking>(
         &mut self,
         fd: RawFd,
-        msg: *mut OsMessageHeader,
+        msg: &mut MessageRecvHeader<'peeking>, 
+        request_ptr: *mut IoRequestData
+    );
+    /// Registers a new `peek_from` io operation with deadline.
+    fn peek_from_with_deadline<'peeking>(
+        &mut self,
+        fd: RawFd,
+        msg: &mut MessageRecvHeader<'peeking>,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {

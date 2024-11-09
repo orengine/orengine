@@ -1,6 +1,6 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{IntoRawFd, OsMessageHeader, RawFd};
+use crate::io::sys::{IntoRawFd, MessageRecvHeader, OsMessageHeader, RawFd};
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
 use crate::runtime::local_executor;
@@ -349,11 +349,11 @@ impl IoWorker for IOUringWorker {
     fn recv_from(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), msg_header).build(),
+            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header).build(),
             request_ptr,
         );
     }
@@ -405,15 +405,15 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn peek_from(
+    fn peek_from<'peeking>(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader<'peeking>,
         request_ptr: *mut IoRequestData,
     ) {
-        let msg_header = unsafe { &mut *msg_header };
+        let msg_header = &mut *msg_header;
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), msg_header)
+            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header)
                 .flags(libc::MSG_PEEK as u32)
                 .build(),
             request_ptr,
