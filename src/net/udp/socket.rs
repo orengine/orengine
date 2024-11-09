@@ -202,7 +202,7 @@ mod tests {
 
     use super::*;
     use crate as orengine;
-    use crate::io::AsyncBind;
+    use crate::io::{AsyncBind, AsyncRecv, AsyncSend};
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{LocalCondVar, LocalMutex};
@@ -283,14 +283,21 @@ mod tests {
             is_server_ready_clone.1.notify_one();
     
             for _ in 0..TIMES {
-                server.poll_recv().await.expect("poll failed");
+                server.poll_recv_with_timeout(Duration::from_secs(10))
+                    .await
+                    .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
-                let (n, src) = server.recv_from(&mut buf)
+                let (n, src) = server.recv_from_with_timeout(
+                    &mut buf,
+                    Duration::from_secs(10)
+                )
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
     
-                server.send_to(RESPONSE, &src).await.expect("send failed");
+                server.send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
+                    .await
+                    .expect("send failed");
             }
         });
     
@@ -299,14 +306,24 @@ mod tests {
             is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).unwrap();
         }
     
-        let socket = std::net::UdpSocket::bind(client_addr_str).expect("connect failed");
-        socket.connect(server_addr_str).expect("connect failed");
-    
+        let mut socket = UdpSocket::bind(client_addr_str)
+            .await
+            .expect("connect failed")
+            .connect(server_addr_str)
+            .await
+            .expect("connect failed");
+        
         for _ in 0..TIMES {
-            socket.send(REQUEST).expect("send failed");
+            socket
+                .send_with_timeout(REQUEST, Duration::from_secs(10))
+                .await
+                .expect("send failed");
     
             let mut buf = vec![0u8; RESPONSE.len()];
-            socket.recv(&mut buf).expect("recv failed");
+            socket
+                .recv_with_timeout(&mut buf, Duration::from_secs(10))
+                .await
+                .expect("recv failed");
         }
     }
     

@@ -5,13 +5,11 @@ use crate::runtime::{Config, Locality, Task};
 use crate::sync::Channel;
 use crate::{local_executor, Executor};
 use crossbeam::queue::SegQueue;
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Mutex as STDMutex};
+use std::sync::Arc;
 use std::task::Poll;
 use std::{panic, thread};
-use crate::utils::Ptr;
 
 /// `Job` is a wrapper for a task that implements the [`Future`] trait via polling
 /// the associated [`Task`] and sending the result (caught panic) to the `result_sender`.
@@ -20,16 +18,16 @@ use crate::utils::Ptr;
 /// the task is done.
 struct Job {
     task: Task,
-    sender: Option<Ptr<Channel<Job>>>,
-    result_sender: Ptr<Channel<(thread::Result<()>, Ptr<Channel<Job>>)>>,
+    sender: Option<Arc<Channel<Job>>>,
+    result_sender: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
 }
 
 impl Job {
     /// Creates a new `Job` instance. Read [`Job`] for more information.
     pub(crate) fn new(
         task: Task,
-        channel: Ptr<Channel<Job>>,
-        result_channel: Ptr<Channel<(thread::Result<()>, Ptr<Channel<Job>>)>>,
+        channel: Arc<Channel<Job>>,
+        result_channel: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
     ) -> Self {
         Self {
             task,
@@ -56,13 +54,10 @@ impl Future for Job {
             if poll_res.is_ready() {
                 let sender = this.sender.take().unwrap();
                 local_executor().exec_global_future(async move {
-                    let send_res = unsafe {
-                        this
+                    let send_res = this
                             .result_sender
-                            .as_ref()
                             .send((Ok(()), sender))
-                            .await
-                    };
+                            .await;
                     if send_res.is_err() {
                         panic!("{BUG_MESSAGE}");
                     }
@@ -75,16 +70,13 @@ impl Future for Job {
         } else {
             let sender = this.sender.take().unwrap();
             local_executor().exec_global_future(async move {
-                let send_res = unsafe {
-                    this
+                let send_res = this
                         .result_sender
-                        .as_ref()
                         .send((
                             Err(Box::new(handle.unwrap_err())),
                             sender,
                         ))
-                        .await
-                };
+                        .await;
                 if send_res.is_err() {
                     panic!("{BUG_MESSAGE}");
                 }
@@ -106,14 +98,14 @@ unsafe impl Send for Job {}
 /// If not [`joined`](ExecutorPoolJoinHandle::join) before drop.
 pub struct ExecutorPoolJoinHandle {
     was_joined: bool,
-    channel: Ptr<Channel<(thread::Result<()>, Ptr<Channel<Job>>)>>,
+    channel: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
     pool: &'static ExecutorPool,
 }
 
 impl ExecutorPoolJoinHandle {
     /// Creates a new `ExecutorPoolJoinHandle` instance.
     fn new(
-        channel: Ptr<Channel<(thread::Result<()>, Ptr<Channel<Job>>)>>,
+        channel: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
         pool: &'static ExecutorPool,
     ) -> Self {
         Self {
@@ -126,7 +118,7 @@ impl ExecutorPoolJoinHandle {
     /// Waits for the task sent to the [`ExecutorPool`] to complete.
     pub async fn join(mut self) {
         self.was_joined = true;
-        let (res, sender) = unsafe { self.channel.as_ref() }.recv().await.expect(BUG_MESSAGE);
+        let (res, sender) = self.channel.recv().await.expect(BUG_MESSAGE);
         self.pool.senders_to_executors.push(sender);
 
         if let Err(err) = res {
@@ -145,18 +137,13 @@ impl Drop for ExecutorPoolJoinHandle {
     }
 }
 
-/// `EXECUTORS_FROM_POOL_IDS` contains IDs of all created executors from the pool.
-///
-/// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
-static EXECUTORS_FROM_POOL_IDS: STDMutex<BTreeSet<usize>> = STDMutex::new(BTreeSet::new());
-
 /// `ExecutorPool` allows to reuse [`Executor`] instances. It is used in tests.
 ///
 /// # Thread safety
 ///
 /// `ExecutorPool` is thread-safe.
 pub struct ExecutorPool {
-    senders_to_executors: SegQueue<Ptr<Channel<Job>>>,
+    senders_to_executors: SegQueue<Arc<Channel<Job>>>,
 }
 
 /// Returns [`Config`] for creating [`Executor`] in the [`pool`](ExecutorPool).
@@ -176,23 +163,20 @@ impl ExecutorPool {
     }
 
     /// Creates a new executor in new thread and returns its [`channel`](Channel).
-    fn new_executor(&self) -> Ptr<Channel<Job>> {
-        let channel = Ptr::new(Channel::bounded(1));
+    fn new_executor(&self) -> Arc<Channel<Job>> {
+        let channel = Arc::new(Channel::bounded(0));
         let channel_clone = channel.clone();
         thread::spawn(move || {
             let ex = Executor::init_with_config(executor_pool_cfg());
-            EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
             ex.run_and_block_on_global(async move {
-                unsafe {
-                    loop {
-                        match channel_clone.as_ref().recv().await {
-                            Ok(job) => {
-                                job.await;
-                            }
-                            Err(_) => {
-                                // closed, it is fine
-                                break;
-                            }
+                loop {
+                    match channel_clone.recv().await {
+                        Ok(job) => {
+                            job.await;
+                        }
+                        Err(_) => {
+                            // closed, it is fine
+                            break;
                         }
                     }
                 }
@@ -249,18 +233,15 @@ impl ExecutorPool {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let task = Task::from_future(future, Locality::global());
-        let result_channel = Ptr::new(Channel::bounded(1));
+        let result_channel = Arc::new(Channel::bounded(0));
         let sender = EXECUTOR_POOL
             .senders_to_executors
             .pop()
             .unwrap_or(EXECUTOR_POOL.new_executor());
 
-        let send_res = unsafe {
-            sender
-            .as_ref()
-            .send(Job::new(task, sender.clone(), result_channel.clone()))
-            .await
-        };
+        let send_res = sender
+                .send(Job::new(task, sender.clone(), result_channel.clone()))
+                .await;
         if send_res.is_err() {
             panic!("{BUG_MESSAGE}");
         }

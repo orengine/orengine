@@ -1,12 +1,12 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
-use std::mem;
+use std::{mem, thread};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
@@ -712,6 +712,17 @@ impl Executor {
             }
         }
     }
+    
+    /// Allows the OS to run other threads.
+    /// 
+    /// It is used only when no work is available.
+    #[inline(always)]
+    fn sleep(&self) {
+        // Wait for more work
+        
+        // TODO bench it
+        thread::sleep(Duration::from_millis(10));
+    }
 
     /// Does background work like:
     ///
@@ -736,7 +747,7 @@ impl Executor {
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        match self.local_worker {
+        let has_no_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(),
             None => true,
         };
@@ -755,6 +766,10 @@ impl Executor {
                     break;
                 }
             }
+        }
+        
+        if self.number_of_spawned_tasks() == 0 && has_no_io_work {
+            self.sleep();
         }
 
         shrink!(self.local_tasks);
