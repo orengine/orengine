@@ -195,13 +195,11 @@ impl<'future, T> Future for WaitSend<'future, T> {
                     return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
                 }
 
-                if inner_lock.receivers.len() > 0 {
+                let receiver = inner_lock
+                    .receivers
+                    .pop_front();
+                if let Some((task, slot, call_state)) = receiver {
                     unsafe {
-                        let (task, slot, call_state) = inner_lock
-                            .receivers
-                            .pop_front()
-                            .unwrap();
-
                         inner_lock.unlock();
 
                         ptr::copy_nonoverlapping(this.value.deref(), slot, 1);
