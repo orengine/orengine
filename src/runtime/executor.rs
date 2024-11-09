@@ -340,6 +340,11 @@ impl Executor {
     pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
         self.config.buffer_cap = buffer_len;
     }
+    
+    /// Returns the number of spawned tasks (global and local).
+    pub(crate) fn number_of_spawned_tasks(&self) -> usize {
+        self.global_tasks.len() + self.local_tasks.len()
+    }
 
     /// Invokes [`Call::PushCurrentTaskTo`]. Use it only if you know what you are doing.
     ///

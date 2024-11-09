@@ -490,7 +490,7 @@ mod tests {
             .await
         {
             Ok(_) => panic!("recv_from should timeout"),
-            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{}", err),
         }
 
         match socket

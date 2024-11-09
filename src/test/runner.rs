@@ -28,7 +28,7 @@
 use crate::bug_message::BUG_MESSAGE;
 use crate::runtime::executor::get_local_executor_ref;
 use crate::runtime::Config;
-use crate::{local_executor, Executor};
+use crate::{local_executor, yield_now, Executor};
 use std::future::Future;
 
 /// `TestRunner` provides a way to run tests with reusing the same [`Executor`].
@@ -55,6 +55,20 @@ impl TestRunner {
         local_executor()
     }
 
+    /// Upgrades provided future to release all previous tasks.
+    pub(crate) fn upgrade_future<Fut>(future: Fut) -> impl Future<Output = ()> + 'static
+    where
+        Fut: Future<Output = ()> + 'static,
+    {
+        async {
+            while local_executor().number_of_spawned_tasks() > 0 {
+                yield_now().await
+            }
+            
+            future.await;
+        }
+    }
+
     /// Initializes the local executor (if it is not initialized) and blocks the current
     /// thread until the `local` future is completed.
     ///
@@ -68,7 +82,7 @@ impl TestRunner {
         Fut: Future<Output = ()> + 'static,
     {
         let executor = self.get_local_executor();
-        executor.run_and_block_on_local(future).expect(BUG_MESSAGE);
+        executor.run_and_block_on_local(Self::upgrade_future(future)).expect(BUG_MESSAGE);
     }
 
     /// Initializes the local executor (if it is not initialized) and blocks the current
@@ -84,7 +98,7 @@ impl TestRunner {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let executor = self.get_local_executor();
-        executor.run_and_block_on_global(future).expect(BUG_MESSAGE);
+        executor.run_and_block_on_global(Self::upgrade_future(future)).expect(BUG_MESSAGE);
     }
 }
 
