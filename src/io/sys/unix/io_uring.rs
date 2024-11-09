@@ -79,6 +79,9 @@ pub(crate) struct IOUringWorker {
     number_of_active_tasks: usize,
 }
 
+/// User data for [`AsyncClose`](opcode::AsyncCancel) operations.
+const ASYNC_CLOSE_DATA: u64 = u64::MAX;
+
 impl IOUringWorker {
     /// Get whether a specific opcode is supported.
     #[inline(always)]
@@ -114,7 +117,7 @@ impl IOUringWorker {
     /// Cancels a request with the given user_data.
     #[inline(always)]
     fn cancel_entry(&mut self, data: u64) {
-        self.add_sqe(opcode::AsyncCancel::new(data).build());
+        self.add_sqe(opcode::AsyncCancel::new(data).build().user_data(ASYNC_CLOSE_DATA));
     }
 
     /// Cancels requests that have expired.
@@ -188,7 +191,7 @@ impl IoWorker for IOUringWorker {
         let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
             ring: UnsafeCell::new(IoUring::new(config.io_uring.number_of_entries).unwrap()),
-            backlog: VecDeque::with_capacity(64),
+            backlog: VecDeque::new(),
             probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new(),
             number_of_active_tasks: 0,
@@ -232,8 +235,8 @@ impl IoWorker for IOUringWorker {
         let executor = local_executor();
 
         for cqe in &mut cq {
-            if cqe.user_data() == 0 {
-                // AsyncCancel was done.
+            self.number_of_active_tasks -= 1;
+            if cqe.user_data() == ASYNC_CLOSE_DATA {
                 continue;
             }
 
@@ -251,7 +254,6 @@ impl IoWorker for IOUringWorker {
                 io_request.set_ret(Ok(ret as _));
             }
 
-            self.number_of_active_tasks -= 1;
             let task = unsafe { io_request.task() };
             if task.is_local() {
                 executor.exec_task(task);
