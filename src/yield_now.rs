@@ -27,7 +27,7 @@ impl Future for Yield {
                 return Poll::Pending;
             }
 
-            local_executor().add_task_at_the_start_of_lifo_global_queue(task);
+            local_executor().add_task_at_the_start_of_lifo_shared_queue(task);
             Poll::Pending
         }
     }

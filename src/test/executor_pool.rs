@@ -58,7 +58,7 @@ impl Future for Job {
         if let Ok(poll_res) = handle {
             if poll_res.is_ready() {
                 let sender = this.sender.take().unwrap();
-                local_executor().exec_global_future(async move {
+                local_executor().exec_shared_future(async move {
                     let send_res = this
                             .result_sender
                             .send((Ok(()), sender))
@@ -74,7 +74,7 @@ impl Future for Job {
             Poll::Pending
         } else {
             let sender = this.sender.take().unwrap();
-            local_executor().exec_global_future(async move {
+            local_executor().exec_shared_future(async move {
                 let send_res = this
                         .result_sender
                         .send((
@@ -173,7 +173,7 @@ impl ExecutorPool {
         let channel_clone = channel.clone();
         thread::spawn(move || {
             let ex = Executor::init_with_config(executor_pool_cfg());
-            ex.run_and_block_on_global(async move {
+            ex.run_and_block_on_shared(async move {
                 loop {
                     match channel_clone.recv().await {
                         Ok(job) => {
@@ -202,7 +202,7 @@ impl ExecutorPool {
     /// use std::sync::Arc;
     /// use std::sync::atomic::AtomicUsize;
     /// use std::sync::atomic::Ordering::SeqCst;
-    /// use orengine::test::{run_test_and_block_on_global, ExecutorPool};
+    /// use orengine::test::{run_test_and_block_on_shared, ExecutorPool};
     /// use orengine::yield_now;
     ///
     /// async fn awesome_function(atomic_to_sync_test: Arc<AtomicUsize>) {
@@ -213,7 +213,7 @@ impl ExecutorPool {
     ///
     /// #[cfg(test)]
     /// fn test_awesome_function() {
-    ///     run_test_and_block_on_global(async {
+    ///     run_test_and_block_on_shared(async {
     ///         let atomic_to_sync_test = Arc::new(AtomicUsize::new(0));
     ///         let mut handles = Vec::with_capacity(10);
     ///
@@ -274,7 +274,7 @@ impl ExecutorPool {
 /// use std::sync::atomic::AtomicUsize;
 /// use std::sync::atomic::Ordering::SeqCst;
 /// use orengine::sync::WaitGroup;
-/// use orengine::test::{run_test_and_block_on_global, sched_future_to_another_thread};
+/// use orengine::test::{run_test_and_block_on_shared, sched_future_to_another_thread};
 /// use orengine::yield_now;
 ///
 /// async fn awesome_function(atomic_to_sync_test: Arc<AtomicUsize>, wg: Arc<WaitGroup>) {
@@ -286,7 +286,7 @@ impl ExecutorPool {
 ///
 /// #[cfg(test)]
 /// fn test_awesome_function() {
-///     run_test_and_block_on_global(async {
+///     run_test_and_block_on_shared(async {
 ///         let atomic_to_sync_test = Arc::new(AtomicUsize::new(0));
 ///         let wg = Arc::new(WaitGroup::new());
 ///
@@ -304,7 +304,7 @@ pub fn sched_future_to_another_thread<Fut>(future: Fut)
 where
     Fut: Future<Output = ()> + Send + 'static + UnwindSafe,
 {
-    local_executor().exec_global_future(async move {
+    local_executor().exec_shared_future(async move {
         let handle = ExecutorPool::sched_future(future).await;
 
         handle.join().await;

@@ -81,14 +81,14 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///
 /// # The difference between `CondVar` and [`LocalCondVar`](crate::sync::LocalCondVar)
 ///
-/// The `CondVar` works with `global tasks` and can be shared between threads.
+/// The `CondVar` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use orengine::sync::{CondVar, Mutex, global_scope};
+/// use orengine::sync::{CondVar, Mutex, shared_scope};
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
@@ -96,7 +96,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// let cvar = CondVar::new();
 /// let is_ready = Mutex::new(false);
 ///
-/// global_scope(|scope| async {
+/// shared_scope(|scope| async {
 ///     scope.spawn(async {
 ///         sleep(Duration::from_secs(1)).await;
 ///         let mut lock = is_ready.lock().await;
@@ -130,7 +130,7 @@ impl CondVar {
     /// # Example
     ///
     /// ```no_run
-    /// use orengine::sync::{CondVar, Mutex, global_scope};
+    /// use orengine::sync::{CondVar, Mutex, shared_scope};
     /// use orengine::sleep;
     /// use std::time::Duration;
     ///
@@ -138,7 +138,7 @@ impl CondVar {
     /// let cvar = CondVar::new();
     /// let is_ready = Mutex::new(false);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     scope.spawn(async {
     ///         sleep(Duration::from_secs(1)).await;
     ///         let mut lock = is_ready.lock().await;
@@ -182,7 +182,7 @@ impl CondVar {
     #[inline(always)]
     pub fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
-            local_executor().spawn_global_task(task)
+            local_executor().spawn_shared_task(task)
         }
     }
 
@@ -208,7 +208,7 @@ impl CondVar {
     pub fn notify_all(&self) {
         let executor = local_executor();
         while let Some(task) = self.wait_queue.pop() {
-            executor.spawn_global_task(task);
+            executor.spawn_shared_task(task);
         }
     }
 }
@@ -265,7 +265,7 @@ mod tests {
         let start = Instant::now();
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
-        local_executor().spawn_global(async move {
+        local_executor().spawn_shared(async move {
             let (lock, cvar) = pair2.deref();
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
@@ -297,23 +297,23 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_cond_var_notify_one_with_drop_guard() {
+    #[orengine_macros::test_shared]
+    fn test_shared_cond_var_notify_one_with_drop_guard() {
         test_notify_one(true).await;
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_cond_var_notify_all_with_drop_guard() {
+    #[orengine_macros::test_shared]
+    fn test_shared_cond_var_notify_all_with_drop_guard() {
         test_notify_all(true).await;
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_cond_var_notify_one_without_drop_guard() {
+    #[orengine_macros::test_shared]
+    fn test_shared_cond_var_notify_one_without_drop_guard() {
         test_notify_one(false).await;
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_cond_var_notify_all_without_drop_guard() {
+    #[orengine_macros::test_shared]
+    fn test_shared_cond_var_notify_all_without_drop_guard() {
         test_notify_all(false).await;
     }
 }

@@ -109,7 +109,7 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
 ///
 /// # The difference between `NaiveMutex` and [`LocalMutex`](crate::sync::LocalMutex)
 ///
-/// The `NaiveMutex` works with `global tasks` and can be shared between threads.
+/// The `NaiveMutex` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -251,7 +251,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    #[orengine_macros::test_global]
+    #[orengine_macros::test_shared]
     fn test_naive_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -279,7 +279,7 @@ mod tests {
         drop(value);
     }
 
-    #[orengine_macros::test_global]
+    #[orengine_macros::test_shared]
     fn test_try_naive_mutex() {
         let mutex = Arc::new(NaiveMutex::new(false));
         let mutex_clone = mutex.clone();
@@ -320,7 +320,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_global]
+    #[orengine_macros::test_shared]
     fn stress_test_naive_mutex() {
         const PAR: usize = 10;
         const TRIES: usize = 100;

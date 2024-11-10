@@ -158,7 +158,7 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 /// Unlike non-scoped tasks, scoped tasks can borrow non-`'static` data,
 /// as the scope guarantees all tasks will be awaited at the end of the scope.
 ///
-/// # The difference between `local_scope` and [`global_scope`](crate::sync::global_scope)
+/// # The difference between `local_scope` and [`shared_scope`](crate::sync::shared_scope)
 ///
 /// The `local_scope` works with `local tasks`.
 ///

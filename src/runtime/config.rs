@@ -3,7 +3,7 @@ use crate::utils::SpinLock;
 use crate::BUG_MESSAGE;
 use std::mem::discriminant;
 
-/// A global config of state of the all runtime.
+/// A shared config of state of the all runtime.
 /// It is used to prevent unsafe behavior in the runtime.
 ///
 /// For example, when the task that uses an IO worker is
@@ -27,7 +27,7 @@ impl ConfigStats {
     }
 }
 
-/// A global config of state of the all runtime.
+/// A shared config of state of the all runtime.
 static GLOBAL_CONFIG_STATS: SpinLock<ConfigStats> = SpinLock::new(ConfigStats::new());
 
 /// The default [`buffers`](crate::buf::Buffer) capacity.
@@ -61,15 +61,15 @@ impl Drop for ValidConfig {
             let mut guard;
             if self.io_worker_config.is_some() {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
+                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
-                global_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -=
+                shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -=
                     1;
             } else {
                 guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
+                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
 
-                global_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -=
+                shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -=
                     1;
             }
 
@@ -78,16 +78,16 @@ impl Drop for ValidConfig {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
 
-                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-                global_config_stats
+                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
+                shared_config_stats
                     .number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
             } else {
                 if guard.is_none() {
                     guard = Some(GLOBAL_CONFIG_STATS.lock());
                 }
 
-                let global_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-                global_config_stats
+                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
+                shared_config_stats
                     .number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
             }
         }
@@ -238,11 +238,11 @@ impl Config {
     /// Validates the configuration.
     pub(crate) fn validate(self) -> ValidConfig {
         if self.work_sharing_level != usize::MAX {
-            let mut global_config_stats = GLOBAL_CONFIG_STATS.lock();
+            let mut shared_config_stats = GLOBAL_CONFIG_STATS.lock();
 
             match self.io_worker_config.is_some() {
                 true => {
-                    if global_config_stats
+                    if shared_config_stats
                         .number_of_executors_with_work_sharing_and_without_io_worker
                         != 0
                     {
@@ -255,11 +255,11 @@ impl Config {
                         );
                     }
 
-                    global_config_stats
+                    shared_config_stats
                         .number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
                 }
                 false => {
-                    if global_config_stats
+                    if shared_config_stats
                         .number_of_executors_with_enabled_io_worker_and_work_sharing
                         != 0
                     {
@@ -272,14 +272,14 @@ impl Config {
                         );
                     }
 
-                    global_config_stats
+                    shared_config_stats
                         .number_of_executors_with_work_sharing_and_without_io_worker += 1;
                 }
             }
 
             match self.is_thread_pool_enabled() {
                 true => {
-                    if global_config_stats
+                    if shared_config_stats
                         .number_of_executors_with_work_sharing_and_without_thread_pool
                         != 0
                     {
@@ -292,11 +292,11 @@ impl Config {
                         );
                     }
 
-                    global_config_stats
+                    shared_config_stats
                         .number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
                 }
                 false => {
-                    if global_config_stats
+                    if shared_config_stats
                         .number_of_executors_with_enabled_thread_pool_and_work_sharing
                         != 0
                     {
@@ -309,7 +309,7 @@ impl Config {
                         );
                     }
 
-                    global_config_stats
+                    shared_config_stats
                         .number_of_executors_with_work_sharing_and_without_thread_pool += 1;
                 }
             }

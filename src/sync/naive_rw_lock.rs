@@ -171,7 +171,7 @@ impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
 ///
 /// # The difference between `RWLock` and [`LocalRWLock`](crate::sync::LocalRWLock)
 ///
-/// The `RWLock` works with `global tasks` and can be shared between threads.
+/// The `RWLock` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -368,15 +368,15 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::sync::global_scope;
+    use crate::sync::shared_scope;
     use std::sync::atomic::Ordering::SeqCst;
 
-    #[orengine_macros::test_global]
+    #[orengine_macros::test_shared]
     fn test_naive_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = RWLock::new(0);
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             for i in 1..=NUMBER_OF_READERS {
                 scope.exec(async {
                     let lock = rw_lock.read().await;
@@ -397,12 +397,12 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_global]
+    #[orengine_macros::test_shared]
     fn test_try_naive_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = RWLock::new(0);
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             for i in 1..=NUMBER_OF_READERS {
                 scope.exec(async {
                     let lock = rw_lock.try_read().expect("Failed to get read lock!");

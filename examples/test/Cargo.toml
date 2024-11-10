@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-orengine = "0.4.4-unstable"
+orengine = "0.5.0"

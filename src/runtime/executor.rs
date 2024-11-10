@@ -54,7 +54,7 @@ pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 |                                                                                        |
 |    First way:                                                                          |
 |    1 - let executor = Executor::init();                                                |
-|    2 - executor.run_with_global_future(your_future) or                                 |
+|    2 - executor.run_with_shared_future(your_future) or                                 |
 |        executor.run_with_local_future(your_future)                                     |
 |                                                                                        |
 |    ATTENTION:                                                                          |
@@ -65,7 +65,7 @@ pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 |    Second way:                                                                         |
 |    1 - let executor = Executor::init();                                                |
 |    2 - executor.spawn_local(your_future) or                                            |
-|        executor.spawn_global(your_future)                                              |
+|        executor.spawn_shared(your_future)                                              |
 |    3 - executor.run()                                                                  |
 |                                                                                        |
 |    ATTENTION:                                                                          |
@@ -76,7 +76,7 @@ pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 |    Third way:                                                                          |
 |    1 - let executor = Executor::init();                                                |
 |    2 - executor.run_and_block_on_local(your_future) or                                 |
-|        executor.run_and_block_on_global(your_future)                                   |
+|        executor.run_and_block_on_shared(your_future)                                   |
 |                                                                                        |
 |        This will block the current thread executor until the future completes.         |
 |        And after the future completes, the executor will be stopped.                   |
@@ -112,7 +112,7 @@ pub fn local_executor() -> &'static mut Executor {
 
 /// The executor that runs futures in the current thread.
 ///
-/// # The difference between `local` and `global` task and futures
+/// # The difference between `local` and `shared` task and futures
 ///
 /// - `local` tasks and futures are executed only in the current thread.
 /// It means that the tasks and futures can't be moved between threads.
@@ -120,12 +120,12 @@ pub fn local_executor() -> &'static mut Executor {
 /// you can use [`Local`](crate::Local) and `local primitives of synchronization`.
 /// Using `local` types can improve performance.
 ///
-/// - `global` tasks and futures can be moved between threads.
-/// It allows to use `global primitives of synchronization` and to `share work`.
+/// - `shared` tasks and futures can be moved between threads.
+/// It allows to use `shared primitives of synchronization` and to `share work`.
 ///
 /// # Share work
 ///
-/// When a number of global tasks in the executor is become greater
+/// When a number of shared tasks in the executor is become greater
 /// than [`runtime::Config.work_sharing_level`](Config::set_work_sharing_level) `Executor`
 /// shares the half of work with other executors.
 ///
@@ -138,7 +138,7 @@ pub struct Executor {
     rng: Rng,
 
     local_tasks: VecDeque<Task>,
-    global_tasks: VecDeque<Task>,
+    shared_tasks: VecDeque<Task>,
     shared_tasks_list: Option<Arc<ExecutorSharedTaskList>>,
 
     exec_series: usize,
@@ -192,7 +192,7 @@ impl Executor {
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
         TaskPool::init();
-        let (shared_tasks, global_tasks_list_cap) = match valid_config.is_work_sharing_enabled() {
+        let (shared_tasks, shared_tasks_list_cap) = match valid_config.is_work_sharing_enabled() {
             true => (
                 Some(Arc::new(ExecutorSharedTaskList::new(executor_id))),
                 MAX_NUMBER_OF_TASKS_TAKEN,
@@ -213,7 +213,7 @@ impl Executor {
                 rng: Rng::new(),
 
                 local_tasks: VecDeque::new(),
-                global_tasks: VecDeque::with_capacity(global_tasks_list_cap),
+                shared_tasks: VecDeque::with_capacity(shared_tasks_list_cap),
                 shared_tasks_list: shared_tasks,
 
                 current_call: Call::default(),
@@ -303,12 +303,12 @@ impl Executor {
         self.local_tasks.push_front(task);
     }
 
-    /// Add a task to the beginning of the global lifo queue.
+    /// Add a task to the beginning of the shared lifo queue.
     #[inline(always)]
-    pub(crate) fn add_task_at_the_start_of_lifo_global_queue(&mut self, task: Task) {
+    pub(crate) fn add_task_at_the_start_of_lifo_shared_queue(&mut self, task: Task) {
         debug_assert!(!task.is_local());
 
-        self.global_tasks.push_front(task);
+        self.shared_tasks.push_front(task);
     }
 
     /// Returns a reference to the subscribed state of the executor.
@@ -341,9 +341,9 @@ impl Executor {
         self.config.buffer_cap = buffer_len;
     }
     
-    /// Returns the number of spawned tasks (global and local).
+    /// Returns the number of spawned tasks (shared and local).
     pub(crate) fn number_of_spawned_tasks(&self) -> usize {
-        self.global_tasks.len() + self.local_tasks.len()
+        self.shared_tasks.len() + self.local_tasks.len()
     }
 
     /// Invokes [`Call::PushCurrentTaskTo`]. Use it only if you know what you are doing.
@@ -358,14 +358,14 @@ impl Executor {
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
-    /// * calling task must be global (else you don't need any [`Calls`](Call))
+    /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_to(&mut self, send_to: &SyncTaskList) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushCurrentTaskTo(send_to);
     }
 
-    /// Invokes [`Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue`]. Use it only if you know what you are doing.
+    /// Invokes [`Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue`]. Use it only if you know what you are doing.
     ///
     /// Read [`Call`] for more details.
     ///
@@ -375,11 +375,11 @@ impl Executor {
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
-    /// * calling task must be global (else you don't need any [`Calls`](Call))
+    /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
-    pub unsafe fn push_current_task_at_the_start_of_lifo_global_queue(&mut self) {
+    pub unsafe fn push_current_task_at_the_start_of_lifo_shared_queue(&mut self) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue;
+        self.current_call = Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue;
     }
 
     /// Invokes [`Call::PushCurrentTaskToAndRemoveItIfCounterIsZero`].
@@ -397,7 +397,7 @@ impl Executor {
     ///
     /// * the references must live at least as long as this state of the task
     ///
-    /// * calling task must be global (else you don't need any [`Calls`](Call))
+    /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_to_and_remove_it_if_counter_is_zero(
         &mut self,
@@ -425,7 +425,7 @@ impl Executor {
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
-    /// * calling task must be global (else you don't need any [`Calls`](Call))
+    /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
@@ -442,7 +442,7 @@ impl Executor {
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
-    /// * calling task must be global (else you don't need any [`Calls`](Call))
+    /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_fn_to_thread_pool(&mut self, f: &'static mut dyn Fn()) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
@@ -454,8 +454,8 @@ impl Executor {
     fn handle_call(&mut self, task: Task) {
         match mem::take(&mut self.current_call) {
             Call::None => {}
-            Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
-                self.global_tasks.push_front(task);
+            Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
+                self.shared_tasks.push_front(task);
             }
             Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
             Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
@@ -569,18 +569,18 @@ impl Executor {
         self.exec_task(task);
     }
 
-    /// Creates a `global` [`task`](Task) from a provided [`future`](Future)
+    /// Creates a `shared` [`task`](Task) from a provided [`future`](Future)
     /// and executes it in the current [`executor`](Executor).
     ///
     /// # Attention
     ///
     /// Execute [`Future`] only by this method!
     #[inline(always)]
-    pub fn exec_global_future<F>(&mut self, future: F)
+    pub fn exec_shared_future<F>(&mut self, future: F)
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, Locality::global());
+        let task = Task::from_future(future, Locality::shared());
         self.exec_task(task);
     }
 
@@ -590,7 +590,7 @@ impl Executor {
     ///
     /// This function enqueues it at the end of the queue of local tasks, but it is `LIFO`.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     #[inline(always)]
@@ -608,7 +608,7 @@ impl Executor {
     ///
     /// This function enqueues it at the end of the queue of local tasks, but it is `LIFO`.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     #[inline(always)]
@@ -616,54 +616,54 @@ impl Executor {
         self.local_tasks.push_back(task);
     }
 
-    /// Creates a global [`task`](Task) from a provided [`future`](Future) and enqueues it.
+    /// Creates a shared [`task`](Task) from a provided [`future`](Future) and enqueues it.
     ///
     /// # Attention
     ///
-    /// This function enqueues it at the end of the queue of global tasks, but it is `LIFO`.
+    /// This function enqueues it at the end of the queue of shared tasks, but it is `LIFO`.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     #[inline(always)]
-    pub fn spawn_global<F>(&mut self, future: F)
+    pub fn spawn_shared<F>(&mut self, future: F)
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, Locality::global());
-        self.spawn_global_task(task);
+        let task = Task::from_future(future, Locality::shared());
+        self.spawn_shared_task(task);
     }
 
-    /// Enqueues a global [`task`](Task).
+    /// Enqueues a shared [`task`](Task).
     ///
     /// # Attention
     ///
-    /// This function enqueues it at the end of the queue of global tasks, but it is `LIFO`.
+    /// This function enqueues it at the end of the queue of shared tasks, but it is `LIFO`.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     #[inline(always)]
-    pub fn spawn_global_task(&mut self, task: Task) {
+    pub fn spawn_shared_task(&mut self, task: Task) {
         match self.config.is_work_sharing_enabled() {
             true => {
-                if self.global_tasks.len() <= self.config.work_sharing_level {
-                    self.global_tasks.push_back(task);
+                if self.shared_tasks.len() <= self.config.work_sharing_level {
+                    self.shared_tasks.push_back(task);
                 } else {
                     if let Some(mut shared_tasks_list) =
                         unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() }
                     {
                         let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
-                        for task in self.global_tasks.drain(..number_of_shared) {
+                        for task in self.shared_tasks.drain(..number_of_shared) {
                             shared_tasks_list.push(task);
                         }
                     } else {
-                        self.global_tasks.push_back(task);
+                        self.shared_tasks.push_back(task);
                     }
                 }
             }
             false => {
-                self.global_tasks.push_back(task);
+                self.shared_tasks.push_back(task);
             }
         }
     }
@@ -680,10 +680,10 @@ impl Executor {
         &mut self.local_sleeping_tasks
     }
 
-    /// Tries to take a batch of tasks from the global tasks queue if needed.
+    /// Tries to take a batch of tasks from the shared tasks queue if needed.
     #[inline(always)]
     fn take_work_if_needed(&mut self) {
-        if self.global_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
+        if self.shared_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
             return;
         }
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
@@ -703,12 +703,12 @@ impl Executor {
 
             for i in 0..max_number_of_tries {
                 let list = unsafe { lists.get_unchecked(i) };
-                let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.global_tasks.len();
+                let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
                 if limit == 0 {
                     return;
                 }
 
-                list.take_batch(&mut self.global_tasks, limit);
+                list.take_batch(&mut self.shared_tasks, limit);
             }
         }
     }
@@ -759,7 +759,7 @@ impl Executor {
                     if task.is_local() {
                         self.exec_task(task);
                     } else {
-                        self.spawn_global_task(task);
+                        self.spawn_shared_task(task);
                     }
                 } else {
                     self.local_sleeping_tasks.insert(time_to_wake, task);
@@ -827,7 +827,7 @@ impl Executor {
         // So it works like:
         //   Round 1 -> background work -> round 2  -> ...
         let mut number_of_local_tasks_in_this_round = self.local_tasks.len();
-        let mut number_of_global_tasks_in_this_round = self.global_tasks.len();
+        let mut number_of_shared_tasks_in_this_round = self.shared_tasks.len();
 
         loop {
             for _ in 0..number_of_local_tasks_in_this_round {
@@ -835,21 +835,21 @@ impl Executor {
                 self.exec_task(task);
             }
 
-            for _ in 0..number_of_global_tasks_in_this_round {
-                task = unsafe { self.global_tasks.pop_back().unwrap_unchecked() };
+            for _ in 0..number_of_shared_tasks_in_this_round {
+                task = unsafe { self.shared_tasks.pop_back().unwrap_unchecked() };
                 self.exec_task(task);
             }
 
             if let Some(shared_tasks_list) = self.shared_tasks_list.as_ref() {
-                if self.global_tasks.len() < self.config.work_sharing_level {
-                    let prev_len = self.global_tasks.len();
+                if self.shared_tasks.len() < self.config.work_sharing_level {
+                    let prev_len = self.shared_tasks.len();
                     let to_take =
                         (self.config.work_sharing_level - prev_len).min(MAX_NUMBER_OF_TASKS_TAKEN);
-                    shared_tasks_list.take_batch(&mut self.global_tasks, to_take);
+                    shared_tasks_list.take_batch(&mut self.shared_tasks, to_take);
 
-                    let taken = self.global_tasks.len() - prev_len;
+                    let taken = self.shared_tasks.len() - prev_len;
                     for _ in 0..taken {
-                        let task = unsafe { self.global_tasks.pop_back().unwrap_unchecked() };
+                        let task = unsafe { self.shared_tasks.pop_back().unwrap_unchecked() };
                         self.exec_task(task);
                     }
                 }
@@ -860,13 +860,13 @@ impl Executor {
             }
 
             number_of_local_tasks_in_this_round = self.local_tasks.len();
-            number_of_global_tasks_in_this_round = self.global_tasks.len();
+            number_of_shared_tasks_in_this_round = self.shared_tasks.len();
         }
     }
 
     /// Runs the executor with a local task.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     ///
@@ -896,9 +896,9 @@ impl Executor {
         self.run();
     }
 
-    /// Runs the executor with a global task.
+    /// Runs the executor with a shared task.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     ///
@@ -912,7 +912,7 @@ impl Executor {
     ///     let mut executor = Executor::init();
     ///     let id = executor.id();
     ///
-    ///     executor.run_with_global_future(async move {
+    ///     executor.run_with_shared_future(async move {
     ///         println!("Hello from an async runtime!");
     ///         sleep(Duration::from_secs(3)).await;
     ///         stop_executor(id); // stops the executor
@@ -921,15 +921,15 @@ impl Executor {
     ///     println!("Hello from a sync runtime after at least 3 seconds");
     /// }
     /// ```
-    pub fn run_with_global_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
-        self.spawn_global(future);
+    pub fn run_with_shared_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
+        self.spawn_shared(future);
         self.run();
     }
 
     /// Runs the executor with a local task and blocks on it. The executor will be stopped
     /// after the task completes.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     ///
@@ -966,10 +966,10 @@ impl Executor {
         generate_run_and_block_on_function!(Executor::spawn_local, future, self)
     }
 
-    /// Runs the executor with a global task and blocks on it. The executor will be stopped
+    /// Runs the executor with a shared task and blocks on it. The executor will be stopped
     /// after the task completes.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
     ///
@@ -987,7 +987,7 @@ impl Executor {
     ///     let mut executor = Executor::init();
     ///     let id = executor.id();
     ///
-    ///     let res = executor.run_and_block_on_global(async move {
+    ///     let res = executor.run_and_block_on_shared(async move {
     ///         println!("Hello from an async runtime!");
     ///         sleep(Duration::from_secs(3)).await;
     ///
@@ -997,11 +997,11 @@ impl Executor {
     ///     println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// }
     /// ```
-    pub fn run_and_block_on_global<T, Fut: Future<Output = T> + Send>(
+    pub fn run_and_block_on_shared<T, Fut: Future<Output = T> + Send>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
-        generate_run_and_block_on_function!(Executor::spawn_global, future, self)
+        generate_run_and_block_on_function!(Executor::spawn_shared, future, self)
     }
 }
 

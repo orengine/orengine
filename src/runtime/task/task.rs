@@ -110,7 +110,7 @@ macro_rules! panic_if_local_in_future {
             if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \
-                    Use global task instead or use local structures if it is possible.",
+                    Use shared task instead or use local structures if it is possible.",
                     $name_of_future
                 );
             }

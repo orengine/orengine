@@ -21,9 +21,9 @@ use crate::sync_task_queue::SyncTaskList;
 pub(crate) enum Call {
     /// Does nothing
     None,
-    /// Moves current `global` task at the start of a global `LIFO`
+    /// Moves current `shared` task at the start of a shared `LIFO`
     /// task queue of the current executor.
-    PushCurrentTaskAtTheStartOfLIFOGlobalQueue,
+    PushCurrentTaskAtTheStartOfLIFOSharedQueue,
     /// Pushes current task to the given `AtomicTaskList`.
     PushCurrentTaskTo(*const SyncTaskList),
     /// Pushes current task to the given `AtomicTaskList` and removes it if the given `AtomicUsize`
@@ -64,8 +64,8 @@ impl Debug for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Call::None => write!(f, "Call::None"),
-            Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
-                write!(f, "Call::YieldCurrentGlobalTask")
+            Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
+                write!(f, "Call::YieldCurrentSharedTask")
             }
             Call::PushCurrentTaskTo(_) => write!(f, "Call::PushCurrentTaskTo"),
             Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(_, _, _) => {

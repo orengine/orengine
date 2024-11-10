@@ -26,12 +26,12 @@ mod tests {
     use super::{awesome_async_fn_to_parallel_test, awesome_async_local_fn};
     use orengine::sync::{Mutex, WaitGroup};
     use orengine::test::{
-        run_test_and_block_on_global, run_test_and_block_on_local, sched_future_to_another_thread,
+        run_test_and_block_on_shared, run_test_and_block_on_local, sched_future_to_another_thread,
         ExecutorPool,
     };
     use std::sync::Arc;
 
-    #[orengine::test::test_global]
+    #[orengine::test::test_shared]
     fn test_local_with_macro() {
         let res = awesome_async_local_fn().await;
         assert_eq!(res, 42);
@@ -45,8 +45,8 @@ mod tests {
         });
     }
 
-    #[orengine::test::test_global]
-    fn test_test_global_and_parallel_with_macro() {
+    #[orengine::test::test_shared]
+    fn test_test_shared_and_parallel_with_macro() {
         let mutex = Arc::new(Mutex::new(0));
         let wg = Arc::new(WaitGroup::new());
 
@@ -66,8 +66,8 @@ mod tests {
     }
 
     #[test]
-    fn test_test_global_and_parallel_without_macro() {
-        run_test_and_block_on_global(async {
+    fn test_test_shared_and_parallel_without_macro() {
+        run_test_and_block_on_shared(async {
             let mutex = Arc::new(Mutex::new(0));
             let wg = Arc::new(WaitGroup::new());
 
@@ -87,8 +87,8 @@ mod tests {
         });
     }
 
-    #[orengine::test::test_global]
-    fn test_test_global_and_parallel_with_macro_and_manually_join() {
+    #[orengine::test::test_shared]
+    fn test_test_shared_and_parallel_with_macro_and_manually_join() {
         let mutex = Arc::new(Mutex::new(0));
         let mut handles = Vec::with_capacity(10);
 

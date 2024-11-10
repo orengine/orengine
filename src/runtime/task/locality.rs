@@ -19,9 +19,9 @@ pub(crate) const TASK_MASK: i128 = !(1 << IS_LOCAL_SHIFT);
 pub(crate) const IS_LOCAL_MASK: i128 = 1 << IS_LOCAL_SHIFT;
 
 /// `Locality` is a struct that represents whether a task is [`local`](Locality::local)
-/// or [`global`](Locality::global).
+/// or [`shared`](Locality::shared).
 ///
-/// # The difference between global and local tasks
+/// # The difference between shared and local tasks
 ///
 /// Read it in [`crate::Executor`].
 #[derive(Clone, Copy)]
@@ -35,7 +35,7 @@ pub struct Locality {
 impl Locality {
     /// Creates a new `Locality` with a `local` value.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
     #[inline(always)]
@@ -51,13 +51,13 @@ impl Locality {
         }
     }
 
-    /// Creates a new `Locality` with a `global` value.
+    /// Creates a new `Locality` with a `shared` value.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
     #[inline(always)]
-    pub fn global() -> Self {
+    pub fn shared() -> Self {
         #[cfg(not(target_pointer_width = "64"))]
         {
             Self { value: false }
@@ -69,7 +69,7 @@ impl Locality {
 
     /// Returns whether the `Locality` is `local`.
     ///
-    /// # The difference between global and local tasks
+    /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
     #[inline(always)]

@@ -21,14 +21,14 @@ unsafe fn clone(data_ptr: *const ()) -> RawWaker {
     RawWaker::new(data_ptr, &VTABLE)
 }
 
-/// Wakes the [`Task`] considering whether it is local or global.
+/// Wakes the [`Task`] considering whether it is `local` or `shared`.
 macro_rules! generate_wake {
     ($data_ptr:expr) => {
         let task = unsafe { ($data_ptr as *mut Task).read() };
         if task.is_local() {
             local_executor().spawn_local_task(task);
         } else {
-            local_executor().spawn_global_task(task);
+            local_executor().spawn_shared_task(task);
         }
     };
 }
