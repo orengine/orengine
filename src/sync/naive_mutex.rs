@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 use std::hint::spin_loop;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
@@ -237,6 +238,8 @@ impl<T> NaiveMutex<T> {
 
 unsafe impl<T: Send + Sync> Sync for NaiveMutex<T> {}
 unsafe impl<T: Send> Send for NaiveMutex<T> {}
+impl<T: UnwindSafe> UnwindSafe for NaiveMutex<T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for NaiveMutex<T> {}
 
 #[cfg(test)]
 mod tests {

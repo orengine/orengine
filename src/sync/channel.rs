@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::Deref;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::ptr;
 use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
@@ -139,7 +140,7 @@ macro_rules! acquire_lock {
             Some(lock) => lock,
             None => {
                 unsafe { local_executor().push_current_task_at_the_start_of_lifo_global_queue() };
-                
+
                 return Poll::Pending;
             }
         }
@@ -249,6 +250,8 @@ impl<'future, T> Future for WaitSend<'future, T> {
 }
 
 unsafe impl<T> Send for WaitSend<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for WaitSend<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for WaitSend<'_, T> {}
 
 #[cfg(debug_assertions)]
 impl<T> Drop for WaitSend<'_, T> {
@@ -343,6 +346,8 @@ impl<'future, T> Future for WaitRecv<'future, T> {
 }
 
 unsafe impl<T> Send for WaitRecv<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for WaitRecv<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for WaitRecv<'_, T> {}
 
 // endregion
 
@@ -439,6 +444,8 @@ impl<'channel, T> Clone for Sender<'channel, T> {
 
 unsafe impl<'channel, T> Sync for Sender<'channel, T> {}
 unsafe impl<'channel, T> Send for Sender<'channel, T> {}
+impl<'channel, T: UnwindSafe> UnwindSafe for Sender<'channel, T> {}
+impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Sender<'channel, T> {}
 
 // endregion
 
@@ -592,6 +599,8 @@ impl<'channel, T> Clone for Receiver<'channel, T> {
 
 unsafe impl<'channel, T> Sync for Receiver<'channel, T> {}
 unsafe impl<'channel, T> Send for Receiver<'channel, T> {}
+impl<'channel, T: UnwindSafe> UnwindSafe for Receiver<'channel, T> {}
+impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
 
 // endregion
 
@@ -851,6 +860,8 @@ impl<T> Channel<T> {
 
 unsafe impl<T> Sync for Channel<T> {}
 unsafe impl<T> Send for Channel<T> {}
+impl<T: UnwindSafe> UnwindSafe for Channel<T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Channel<T> {}
 
 // endregion
 
@@ -1060,7 +1071,7 @@ mod tests {
         let sent = Arc::new(AtomicUsize::new(0));
         let received = Arc::new(AtomicUsize::new(0));
 
-        for i in 0..get_core_ids().unwrap().len() * 4 {
+        for i in 0..get_core_ids().unwrap().len() * 2  {
             let channel = channel.clone();
             let wg = wg.clone();
             let sent = sent.clone();

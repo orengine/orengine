@@ -8,6 +8,7 @@ use crossbeam::utils::{Backoff, CachePadded};
 use std::cell::UnsafeCell;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -191,6 +192,8 @@ impl<T> SpinLock<T> {
 
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 unsafe impl<T: Send> Send for SpinLock<T> {}
+impl<T: UnwindSafe> UnwindSafe for SpinLock<T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for SpinLock<T> {}
 
 #[cfg(test)]
 mod tests {

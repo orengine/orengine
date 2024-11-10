@@ -2,6 +2,7 @@ use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
 use crate::sync_task_queue::SyncTaskList;
 use std::future::Future;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -283,6 +284,8 @@ impl WaitGroup {
 
 unsafe impl Sync for WaitGroup {}
 unsafe impl Send for WaitGroup {}
+impl UnwindSafe for WaitGroup {}
+impl RefUnwindSafe for WaitGroup {}
 
 #[cfg(test)]
 mod tests {

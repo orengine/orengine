@@ -1,6 +1,7 @@
 use crate::runtime::task::task_data::TaskData;
 use crate::runtime::{task_pool, Locality};
 use std::future::Future;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 
 /// `Task` is a wrapper of a future.
 ///
@@ -75,6 +76,8 @@ impl Task {
 }
 
 unsafe impl Send for Task {}
+impl UnwindSafe for Task {}
+impl RefUnwindSafe for Task {}
 
 #[macro_export]
 macro_rules! check_task_local_safety {
