@@ -747,7 +747,7 @@ impl Executor {
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        let has_no_io_work = match self.local_worker {
+        let has_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(),
             None => true,
         };
@@ -768,7 +768,7 @@ impl Executor {
             }
         }
         
-        if self.number_of_spawned_tasks() == 0 && has_no_io_work {
+        if self.number_of_spawned_tasks() == 0 && !has_io_work {
             self.sleep();
         }
 
