@@ -152,7 +152,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 ///
 /// # The difference between `Mutex` and [`LocalMutex`](crate::sync::LocalMutex)
 ///
-/// The `Mutex` works with `global tasks` and can be shared between threads.
+/// The `Mutex` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -355,8 +355,8 @@ mod tests {
     use crate as orengine;
     use crate::test::sched_future_to_another_thread;
 
-    #[orengine_macros::test_global]
-    fn test_global_mutex() {
+    #[orengine_macros::test_shared]
+    fn test_shared_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
         let mutex = Arc::new(Mutex::new(false));
@@ -425,18 +425,18 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_global]
-    fn test_try_without_spinning_global_mutex() {
+    #[orengine_macros::test_shared]
+    fn test_try_without_spinning_shared_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
-    #[orengine_macros::test_global]
-    fn test_try_with_spinning_global_mutex() {
+    #[orengine_macros::test_shared]
+    fn test_try_with_spinning_shared_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
-    #[orengine_macros::test_global]
-    fn stress_test_global_mutex() {
+    #[orengine_macros::test_shared]
+    fn stress_test_shared_mutex() {
         const PAR: usize = 5;
         const TRIES: usize = 400;
 

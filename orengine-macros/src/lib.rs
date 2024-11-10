@@ -125,7 +125,7 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
     let spawn_fn = if is_local {
         quote! { orengine::test::run_test_and_block_on_local }
     } else {
-        quote! { orengine::test::run_test_and_block_on_global }
+        quote! { orengine::test::run_test_and_block_on_shared }
     };
 
     let expanded = quote! {
@@ -145,10 +145,10 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_local` and [`test_global`]
+/// # The difference between `test_local` and [`test_shared`]
 ///
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
-/// [`test_global`] generates a test function that runs an `Executor` with `global` task.
+/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
 ///
 /// # Example
 ///
@@ -184,15 +184,15 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_global` and [`test_local`]
+/// # The difference between `test_shared` and [`test_local`]
 ///
-/// [`test_global`] generates a test function that runs an `Executor` with `global` task.
+/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
 ///
 /// # Example
 ///
 /// ```ignore
-/// #[orengine_macros::test_global]
+/// #[orengine_macros::test_shared]
 /// fn test_sleep() {
 ///     let start = std::time::Instant::now();
 ///     orengine::sleep(std::time::Duration::from_secs(1)).await;
@@ -208,7 +208,7 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 /// #[test]
 /// fn test_sleep() {
 ///     println!("Test sleep started!");
-///     orengine::test::run_test_and_block_on_global(async {
+///     orengine::test::run_test_and_block_on_shared(async {
 ///         let start = std::time::Instant::now();
 ///         orengine::sleep(std::time::Duration::from_secs(1)).await;
 ///         assert!(start.elapsed() >= std::time::Duration::from_secs(1));
@@ -217,6 +217,6 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn test_global(_: TokenStream, input: TokenStream) -> TokenStream {
+pub fn test_shared(_: TokenStream, input: TokenStream) -> TokenStream {
     generate_test(input, false)
 }

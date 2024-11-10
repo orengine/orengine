@@ -23,9 +23,9 @@ or a shared-all architecture, Orengine provides you with the tools to reach maxi
 - __No Compromises on Performance__: Highly tuned internal code-based optimizations that prioritize performance over
   unnecessary complexity.
 
-# Task execution: local vs global
+# Task execution: local vs shared
 
-Orengine offers two modes of execution of tasks and `Futures`: local and global, each suited to different
+Orengine offers two modes of execution of tasks and `Futures`: local and shared, each suited to different
 architectural needs and performance optimizations.
 
 ## `Local Tasks`
@@ -37,23 +37,23 @@ architectural needs and performance optimizations.
 - With local tasks, you can leverage `Local` and local synchronization primitives, which offer significant
   performance improvements due to reduced overhead from cross-thread synchronization.
 
-## `Global Tasks`
+## `Shared Tasks`
 
-- Don't rewrite the 'usual' architecture: where you use Tokio, you can use global tasks to achieve the same result,
+- Don't rewrite the 'usual' architecture: where you use Tokio, you can use shared tasks to achieve the same result,
   but with better performance.
 
-- Global tasks and `Futures` can be moved freely between threads, allowing more dynamic distribution of workload
+- Shared tasks and `Futures` can be moved freely between threads, allowing more dynamic distribution of workload
   across the system.
 
-# Work-Sharing: Efficient `Global Tasks` Distribution
+# Work-Sharing: Efficient `Shared Tasks` Distribution
 
 Orengine also provides a built-in work-sharing mechanism to balance the load across executors dynamically.
 
-When the number of global tasks in an executor exceeds a configurable threshold-defined
-by `runtime::Config.work_sharing_level` — the executor will share half of its `global tasks`
+When the number of shared tasks in an executor exceeds a configurable threshold-defined
+by `runtime::Config.work_sharing_level` — the executor will share half of its `shared tasks`
 with other available executors.
 
-Conversely, when an executor has no tasks left to run, it will attempt to take `global tasks` from other executors
+Conversely, when an executor has no tasks left to run, it will attempt to take `shared tasks` from other executors
 that have excess work, ensuring optimal utilization of all available resources.
 
 This system ensures that no executor is idle while others are overloaded,

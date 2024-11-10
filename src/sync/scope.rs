@@ -5,25 +5,25 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
 
-/// A scope to spawn scoped global tasks in.
+/// A scope to spawn scoped shared tasks in.
 ///
 /// # The difference between `Scope` and [`LocalScope`](crate::sync::LocalScope)
 ///
-/// The `Scope` works with `global tasks` and its tasks can be shared between threads.
+/// The `Scope` works with `shared tasks` and its tasks can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
-/// See [`global_scope`] for details.
+/// See [`shared_scope`] for details.
 pub struct Scope<'scope> {
     wg: WaitGroup,
     _scope: std::marker::PhantomData<&'scope ()>,
 }
 
 impl<'scope> Scope<'scope> {
-    /// Executes a new global task within a scope.
+    /// Executes a new shared task within a scope.
     ///
     /// Unlike non-scoped tasks, tasks created with this function may
-    /// borrow non-`'static` data from the outside the scope. See [`global_scope`] for
+    /// borrow non-`'static` data from the outside the scope. See [`shared_scope`] for
     /// details.
     ///
     /// The created task will be executed immediately.
@@ -34,13 +34,13 @@ impl<'scope> Scope<'scope> {
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use std::time::Duration;
     /// use orengine::sleep;
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wg = WaitGroup::new();
     /// let a = AtomicUsize::new(0);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.exec(async {
@@ -66,14 +66,14 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        let global_task = crate::runtime::Task::from_future(handle, Locality::global());
-        local_executor().exec_task(global_task);
+        let shared_task = crate::runtime::Task::from_future(handle, Locality::shared());
+        local_executor().exec_task(shared_task);
     }
 
-    /// Spawns a new global task within a scope.
+    /// Spawns a new shared task within a scope.
     ///
     /// Unlike non-scoped tasks, tasks created with this function may
-    /// borrow non-`'static` data from the outside the scope. See [`global_scope`] for
+    /// borrow non-`'static` data from the outside the scope. See [`shared_scope`] for
     /// details.
     ///
     /// The created task will be executed later.
@@ -82,13 +82,13 @@ impl<'scope> Scope<'scope> {
     ///
     /// ```no_run
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wg = WaitGroup::new();
     /// let a = AtomicUsize::new(0);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.spawn(async {
@@ -113,7 +113,7 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        local_executor().spawn_global(handle);
+        local_executor().spawn_shared(handle);
     }
 }
 
@@ -148,18 +148,18 @@ impl<'scope, Fut: Future<Output = ()> + Send> Future for ScopedHandle<'scope, Fu
 unsafe impl<F: Future<Output = ()> + Send> Send for ScopedHandle<'_, F> {}
 unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 
-/// Creates a [`global scope`](GlobalScope) for spawning scoped global tasks.
+/// Creates a [`shared scope`](SharedScope) for spawning scoped shared tasks.
 ///
 /// The function passed to `scope` will be provided a [`Scope`] object,
-/// through which scoped global tasks can be [spawned][`Scope::spawn`]
+/// through which scoped shared tasks can be [spawned][`Scope::spawn`]
 /// or [executed][`Scope::exec`].
 ///
 /// Unlike non-scoped tasks, scoped tasks can borrow non-`'static` data,
 /// as the scope guarantees all tasks will be awaited at the end of the scope.
 ///
-/// # The difference between `global_scope` and [`local_scope`](crate::sync::local_scope)
+/// # The difference between `shared_scope` and [`local_scope`](crate::sync::local_scope)
 ///
-/// The `global_scope` works with `global tasks` and its tasks can be shared between threads.
+/// The `shared_scope` works with `shared tasks` and its tasks can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -169,13 +169,13 @@ unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 /// use std::time::Duration;
 /// use orengine::sleep;
-/// use orengine::sync::{global_scope, WaitGroup};
+/// use orengine::sync::{shared_scope, WaitGroup};
 ///
 /// # async fn foo() {
 /// let wg = WaitGroup::new();
 /// let a = AtomicUsize::new(0);
 ///
-/// global_scope(|scope| async {
+/// shared_scope(|scope| async {
 ///     for i in 0..10 {
 ///         wg.inc();
 ///         scope.exec(async {
@@ -194,7 +194,7 @@ unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 /// # }
 /// ```
 #[inline(always)]
-pub async fn global_scope<'scope, Fut, F>(f: F)
+pub async fn shared_scope<'scope, Fut, F>(f: F)
 where
     Fut: Future<Output = ()> + Send,
     F: FnOnce(&'scope Scope<'scope>) -> Fut,
@@ -218,12 +218,12 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
 
-    #[orengine_macros::test_global]
-    fn test_global_scope_exec() {
+    #[orengine_macros::test_shared]
+    fn test_shared_scope_exec() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
@@ -249,12 +249,12 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_scope_exec_with_main_future() {
+    #[orengine_macros::test_shared]
+    fn test_shared_scope_exec_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             scope.exec(async {
                 assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
@@ -283,13 +283,13 @@ mod tests {
         assert_eq!(a.load(SeqCst), 5);
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_scope_spawn() {
+    #[orengine_macros::test_shared]
+    fn test_shared_scope_spawn() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
         wg.inc();
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 1);
                 a.fetch_add(1, SeqCst);
@@ -314,12 +314,12 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_scope_spawn_with_main_future() {
+    #[orengine_macros::test_shared]
+    fn test_shared_scope_spawn_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
 
-        global_scope(|scope| async {
+        shared_scope(|scope| async {
             wg.add(1);
             scope.spawn(async {
                 assert_eq!(a.load(SeqCst), 2);

@@ -65,7 +65,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
 ///
 /// # The difference between `WaitGroup` and [`LocalWaitGroup`](crate::sync::LocalWaitGroup)
 ///
-/// The `WaitGroup` works with `global tasks` and can be shared between threads.
+/// The `WaitGroup` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -75,13 +75,13 @@ impl<'wait_group> Future for Wait<'wait_group> {
 /// use std::time::Duration;
 /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 /// use orengine::sleep;
-/// use orengine::sync::{global_scope, WaitGroup};
+/// use orengine::sync::{shared_scope, WaitGroup};
 ///
 /// # async fn foo() {
 /// let wait_group = WaitGroup::new();
 /// let number_executed_tasks = AtomicUsize::new(0);
 ///
-/// global_scope(|scope| async {
+/// shared_scope(|scope| async {
 ///     for i in 0..10 {
 ///         wait_group.inc();
 ///         scope.spawn(async {
@@ -118,13 +118,13 @@ impl WaitGroup {
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wait_group = WaitGroup::new();
     /// let number_executed_tasks = AtomicUsize::new(0);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     wait_group.add(10);
     ///     for i in 0..10 {
     ///         scope.spawn(async {
@@ -152,13 +152,13 @@ impl WaitGroup {
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wait_group = WaitGroup::new();
     /// let number_executed_tasks = AtomicUsize::new(0);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     for i in 0..10 {
     ///         wait_group.inc();
     ///         scope.spawn(async {
@@ -211,12 +211,12 @@ impl WaitGroup {
     /// # Example
     ///
     /// ```no_run
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wait_group = WaitGroup::new();
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     wait_group.inc();
     ///     scope.spawn(async {
     ///         // wake up the waiting task, because a current and the only one task is done
@@ -240,7 +240,7 @@ impl WaitGroup {
             let mut tasks = Vec::new();
             self.waited_tasks.pop_all_in(&mut tasks);
             for task in tasks {
-                executor.spawn_global_task(task);
+                executor.spawn_shared_task(task);
             }
         }
 
@@ -255,13 +255,13 @@ impl WaitGroup {
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
-    /// use orengine::sync::{global_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wait_group = WaitGroup::new();
     /// let number_executed_tasks = AtomicUsize::new(0);
     ///
-    /// global_scope(|scope| async {
+    /// shared_scope(|scope| async {
     ///     for i in 0..10 {
     ///         wait_group.inc();
     ///         scope.spawn(async {
@@ -298,8 +298,8 @@ mod tests {
 
     const PAR: usize = 10;
 
-    #[orengine_macros::test_global]
-    fn test_global_wg_many_wait_one() {
+    #[orengine_macros::test_shared]
+    fn test_shared_wg_many_wait_one() {
         let check_value = Arc::new(std::sync::Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.inc();
@@ -322,8 +322,8 @@ mod tests {
         wait_group.done();
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_wg_one_wait_many_task_finished_after_wait() {
+    #[orengine_macros::test_shared]
+    fn test_shared_wg_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
@@ -345,8 +345,8 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_global]
-    fn test_global_wg_one_wait_many_task_finished_before_wait() {
+    #[orengine_macros::test_shared]
+    fn test_shared_wg_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);

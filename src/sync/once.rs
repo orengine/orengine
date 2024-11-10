@@ -14,7 +14,7 @@ use crate::sync::local::once::OnceState;
 ///
 /// # The difference between `Once` and [`LocalOnce`](crate::sync::LocalOnce)
 ///
-/// The `Once` works with `global tasks` and can be shared between threads.
+/// The `Once` works with `shared tasks` and can be shared between threads.
 ///
 /// Read [`Executor`](crate::Executor) for more details.
 ///
@@ -147,8 +147,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    #[orengine_macros::test_global]
-    fn test_async_global_once() {
+    #[orengine_macros::test_shared]
+    fn test_async_shared_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
@@ -177,8 +177,8 @@ mod tests {
         assert_eq!(once.call_once(async {}).await, Err(()));
     }
 
-    #[orengine_macros::test_global]
-    fn test_sync_global_once() {
+    #[orengine_macros::test_shared]
+    fn test_sync_shared_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());

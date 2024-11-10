@@ -258,7 +258,7 @@ impl IoWorker for IOUringWorker {
             if task.is_local() {
                 executor.exec_task(task);
             } else {
-                executor.spawn_global_task(task);
+                executor.spawn_shared_task(task);
             }
         }
 
