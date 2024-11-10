@@ -1,37 +1,37 @@
 //! This module contains utilities for parallel testing via
 //! [`sched_future_to_another_thread`] or [`sched_future`](ExecutorPool::sched_future).
 use crate::bug_message::BUG_MESSAGE;
-use crate::runtime::{Config, Locality, Task};
+use crate::runtime::Config;
 use crate::sync::Channel;
 use crate::{local_executor, Executor};
 use crossbeam::queue::SegQueue;
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex as STDMutex};
+use std::sync::Arc;
 use std::task::Poll;
 use std::{panic, thread};
+use std::panic::UnwindSafe;
 
-/// `Job` is a wrapper for a task that implements the [`Future`] trait via polling
-/// the associated [`Task`] and sending the result (caught panic) to the `result_sender`.
+/// `Job` is a wrapper for a [`Future`] via polling it and sending the result
+/// (caught panic) to the `result_sender`.
 ///
 /// It also contains a `sender` to acquired [`Executor`] that will be released after
 /// the task is done.
 struct Job {
-    task: Task,
+    future: Box<dyn Future<Output = ()> + UnwindSafe>,
     sender: Option<Arc<Channel<Job>>>,
     result_sender: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
 }
 
 impl Job {
     /// Creates a new `Job` instance. Read [`Job`] for more information.
-    pub(crate) fn new(
-        task: Task,
+    pub(crate) fn new<Fut: Future<Output = ()> + UnwindSafe + 'static>(
+        future: Fut,
         channel: Arc<Channel<Job>>,
         result_channel: Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>,
     ) -> Self {
         Self {
-            task,
+            future: Box::new(future),
             sender: Some(channel),
             result_sender: result_channel,
         }
@@ -44,20 +44,25 @@ impl Future for Job {
     fn poll(self: Pin<&mut Self>, mut cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
-        let mut future_ptr = panic::AssertUnwindSafe(this.task.future_ptr());
         let mut unwind_safe_cx = panic::AssertUnwindSafe(&mut cx);
-        let handle = panic::catch_unwind(move || unsafe {
-            let pinned_future = Pin::new_unchecked(&mut **future_ptr);
+        let mut unwind_safe_future = {
+            panic::AssertUnwindSafe(this.future.as_mut() as *mut dyn Future<Output = ()>)
+        };
+        let handle = panic::catch_unwind(move || {
+            let pinned_future = unsafe {
+                Pin::new_unchecked(&mut **unwind_safe_future)
+            };
             pinned_future.poll(*unwind_safe_cx)
         });
 
         if let Ok(poll_res) = handle {
             if poll_res.is_ready() {
+                let sender = this.sender.take().unwrap();
                 local_executor().exec_global_future(async move {
                     let send_res = this
-                        .result_sender
-                        .send((Ok(()), this.sender.take().unwrap()))
-                        .await;
+                            .result_sender
+                            .send((Ok(()), sender))
+                            .await;
                     if send_res.is_err() {
                         panic!("{BUG_MESSAGE}");
                     }
@@ -68,14 +73,15 @@ impl Future for Job {
 
             Poll::Pending
         } else {
+            let sender = this.sender.take().unwrap();
             local_executor().exec_global_future(async move {
                 let send_res = this
-                    .result_sender
-                    .send((
-                        Err(Box::new(handle.unwrap_err())),
-                        this.sender.take().unwrap(),
-                    ))
-                    .await;
+                        .result_sender
+                        .send((
+                            Err(Box::new(handle.unwrap_err())),
+                            sender,
+                        ))
+                        .await;
                 if send_res.is_err() {
                     panic!("{BUG_MESSAGE}");
                 }
@@ -136,11 +142,6 @@ impl Drop for ExecutorPoolJoinHandle {
     }
 }
 
-/// `EXECUTORS_FROM_POOL_IDS` contains IDs of all created executors from the pool.
-///
-/// It is used to prevent stopping executors from the [`pool`](ExecutorPool).
-static EXECUTORS_FROM_POOL_IDS: STDMutex<BTreeSet<usize>> = STDMutex::new(BTreeSet::new());
-
 /// `ExecutorPool` allows to reuse [`Executor`] instances. It is used in tests.
 ///
 /// # Thread safety
@@ -168,11 +169,10 @@ impl ExecutorPool {
 
     /// Creates a new executor in new thread and returns its [`channel`](Channel).
     fn new_executor(&self) -> Arc<Channel<Job>> {
-        let channel = Arc::new(Channel::bounded(1));
+        let channel = Arc::new(Channel::bounded(0));
         let channel_clone = channel.clone();
         thread::spawn(move || {
             let ex = Executor::init_with_config(executor_pool_cfg());
-            EXECUTORS_FROM_POOL_IDS.lock().unwrap().insert(ex.id());
             ex.run_and_block_on_global(async move {
                 loop {
                     match channel_clone.recv().await {
@@ -215,18 +215,18 @@ impl ExecutorPool {
     /// fn test_awesome_function() {
     ///     run_test_and_block_on_global(async {
     ///         let atomic_to_sync_test = Arc::new(AtomicUsize::new(0));
-    ///         let mut joins = Vec::with_capacity(10);
+    ///         let mut handles = Vec::with_capacity(10);
     ///
     ///         for _ in 0..10 {
     ///             let join = ExecutorPool::sched_future(
     ///                 awesome_function(atomic_to_sync_test.clone())
     ///             ).await;
     ///
-    ///             joins.push(join);
+    ///             handles.push(join);
     ///         }
     ///
-    ///         for join in joins {
-    ///             join.join().await;
+    ///         for handle in handles {
+    ///             handle.join().await;
     ///         }
     ///
     ///         assert_eq!(atomic_to_sync_test.load(SeqCst), 20);
@@ -235,18 +235,17 @@ impl ExecutorPool {
     /// ```
     pub async fn sched_future<Fut>(future: Fut) -> ExecutorPoolJoinHandle
     where
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static + UnwindSafe,
     {
-        let task = Task::from_future(future, Locality::global());
-        let result_channel = Arc::new(Channel::bounded(1));
+        let result_channel = Arc::new(Channel::bounded(0));
         let sender = EXECUTOR_POOL
             .senders_to_executors
             .pop()
             .unwrap_or(EXECUTOR_POOL.new_executor());
 
         let send_res = sender
-            .send(Job::new(task, sender.clone(), result_channel.clone()))
-            .await;
+                .send(Job::new(future, sender.clone(), result_channel.clone()))
+                .await;
         if send_res.is_err() {
             panic!("{BUG_MESSAGE}");
         }
@@ -303,7 +302,7 @@ impl ExecutorPool {
 /// ```
 pub fn sched_future_to_another_thread<Fut>(future: Fut)
 where
-    Fut: Future<Output = ()> + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static + UnwindSafe,
 {
     local_executor().exec_global_future(async move {
         let handle = ExecutorPool::sched_future(future).await;

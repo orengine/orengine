@@ -2,6 +2,7 @@ use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
 use crate::sync_task_queue::SyncTaskList;
 use std::future::Future;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -283,6 +284,8 @@ impl WaitGroup {
 
 unsafe impl Sync for WaitGroup {}
 unsafe impl Send for WaitGroup {}
+impl UnwindSafe for WaitGroup {}
+impl RefUnwindSafe for WaitGroup {}
 
 #[cfg(test)]
 mod tests {
@@ -290,14 +293,14 @@ mod tests {
     use crate as orengine;
     use crate::test::sched_future_to_another_thread;
     use crate::{sleep, yield_now};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
 
     const PAR: usize = 10;
 
     #[orengine_macros::test_global]
     fn test_global_wg_many_wait_one() {
-        let check_value = Arc::new(Mutex::new(false));
+        let check_value = Arc::new(std::sync::Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.inc();
 
@@ -306,7 +309,7 @@ mod tests {
             let wait_group = wait_group.clone();
 
             sched_future_to_another_thread(async move {
-                let _ = wait_group.wait().await;
+                wait_group.wait().await;
                 if !*check_value.lock().unwrap() {
                     panic!("not waited");
                 }
@@ -321,7 +324,7 @@ mod tests {
 
     #[orengine_macros::test_global]
     fn test_global_wg_one_wait_many_task_finished_after_wait() {
-        let check_value = Arc::new(Mutex::new(PAR));
+        let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
 
@@ -336,7 +339,7 @@ mod tests {
             });
         }
 
-        let _ = wait_group.wait().await;
+        wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
         }
@@ -344,7 +347,7 @@ mod tests {
 
     #[orengine_macros::test_global]
     fn test_global_wg_one_wait_many_task_finished_before_wait() {
-        let check_value = Arc::new(Mutex::new(PAR));
+        let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
         wait_group.add(PAR);
 
@@ -358,7 +361,7 @@ mod tests {
             });
         }
 
-        let _ = wait_group.wait().await;
+        wait_group.wait().await;
         if *check_value.lock().unwrap() != 0 {
             panic!("not waited");
         }

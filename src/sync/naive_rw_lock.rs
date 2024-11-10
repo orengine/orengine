@@ -368,67 +368,33 @@ unsafe impl<T: Send> Send for RWLock<T> {}
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::sleep;
-    use crate::sync::{global_scope, CondVar, Mutex, WaitGroup};
-    use crate::test::sched_future_to_another_thread;
+    use crate::sync::global_scope;
     use std::sync::atomic::Ordering::SeqCst;
-    use std::sync::Arc;
-    use std::time::Duration;
 
     #[orengine_macros::test_global]
     fn test_naive_rw_lock() {
-        const PAR: isize = 3;
+        const NUMBER_OF_READERS: isize = 5;
+        let rw_lock = RWLock::new(0);
 
-        let rw_lock = Arc::new(RWLock::new(0));
-        let was_acquired_for_read = Arc::new((Mutex::new(false), CondVar::new()));
-        // WaitGroup for readers, to release they only after failed attempt to acquire write lock
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR as usize);
-        let write_wg = Arc::new(WaitGroup::new());
-        write_wg.add(PAR as usize);
+        global_scope(|scope| async {
+            for i in 1..=NUMBER_OF_READERS {
+                scope.exec(async {
+                    let lock = rw_lock.read().await;
+                    assert_eq!(rw_lock.number_of_readers.load(SeqCst), i);
+                    yield_now().await;
+                    lock.unlock();
+                });
+            }
 
-        for _ in 0..PAR {
-            let rw_lock = rw_lock.clone();
-            let wg = wg.clone();
-            let was_acquired_for_read = was_acquired_for_read.clone();
-            sched_future_to_another_thread(async move {
-                let value = rw_lock.read().await;
-                *was_acquired_for_read.0.lock().await = true;
-                was_acquired_for_read.1.notify_all();
-                assert_eq!(*value, 0);
-                wg.wait().await;
-                assert_eq!(*value, 0);
-            });
-        }
+            assert_eq!(rw_lock.number_of_readers.load(SeqCst), NUMBER_OF_READERS);
 
-        let mut was_ready = was_acquired_for_read.0.lock().await;
-        while !*was_ready {
-            was_ready = was_acquired_for_read.1.wait(was_ready).await;
-        }
-
-        for _ in 0..PAR {
-            let rw_lock = rw_lock.clone();
-            let wg = wg.clone();
-            let write_wg = write_wg.clone();
-            sched_future_to_another_thread(async move {
-                assert!(
-                    rw_lock.try_write().is_none(),
-                    "Successful attempt to acquire write lock, when it was already locked for read"
-                );
-                wg.done();
-                let mut value = rw_lock.write().await;
-                let start_value = *value;
-                *value += 1;
-                sleep(Duration::from_millis(1)).await;
-                assert_eq!(*value, start_value + 1);
-                write_wg.done();
-            });
-        }
-
-        write_wg.wait().await;
-
-        let value = rw_lock.read().await;
-        assert_eq!(*value, PAR);
+            let mut write_lock = rw_lock.write().await;
+            assert!(rw_lock.try_write().is_none());
+            *write_lock += 1;
+            assert_eq!(*write_lock, 1);
+            assert_eq!(rw_lock.number_of_readers.load(SeqCst), -1);
+        })
+        .await;
     }
 
     #[orengine_macros::test_global]

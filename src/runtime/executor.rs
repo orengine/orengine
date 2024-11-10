@@ -1,14 +1,13 @@
 use std::cell::UnsafeCell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
-use std::mem;
+use std::{mem, thread};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use crate::check_task_local_safety;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
@@ -19,7 +18,6 @@ use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
-use crate::sleep::sleeping_task::SleepingTask;
 use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
 use crossbeam::utils::CachePadded;
@@ -147,7 +145,8 @@ pub struct Executor {
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
     current_call: Call,
-    local_sleeping_tasks: BTreeSet<SleepingTask>,
+    // We can't use BTreeMap, because it consumes and not insert value, if key already exists
+    local_sleeping_tasks: BTreeMap<Instant, Task>,
 }
 
 /// The next id of the executor. It is used to generate the unique executor id.
@@ -221,7 +220,7 @@ impl Executor {
                 exec_series: 0,
                 local_worker: get_local_worker_ref(),
                 thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
-                local_sleeping_tasks: BTreeSet::new(),
+                local_sleeping_tasks: BTreeMap::new(),
             });
 
             local_executor()
@@ -341,6 +340,11 @@ impl Executor {
     pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
         self.config.buffer_cap = buffer_len;
     }
+    
+    /// Returns the number of spawned tasks (global and local).
+    pub(crate) fn number_of_spawned_tasks(&self) -> usize {
+        self.global_tasks.len() + self.local_tasks.len()
+    }
 
     /// Invokes [`Call::PushCurrentTaskTo`]. Use it only if you know what you are doing.
     ///
@@ -357,7 +361,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_to(&mut self, send_to: &SyncTaskList) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushCurrentTaskTo(send_to);
     }
 
@@ -374,7 +378,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_current_task_at_the_start_of_lifo_global_queue(&mut self) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue;
     }
 
@@ -401,9 +405,12 @@ impl Executor {
         counter: &AtomicUsize,
         order: Ordering,
     ) {
-        debug_assert!(self.current_call.is_none());
-        self.current_call =
-            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
+        self.current_call = Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+            send_to,
+            counter,
+            order,
+        );
     }
 
     /// Invokes [`Call::ReleaseAtomicBool`]. Use it only if you know what you are doing.
@@ -421,7 +428,7 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::ReleaseAtomicBool(atomic_bool);
     }
 
@@ -438,8 +445,49 @@ impl Executor {
     /// * calling task must be global (else you don't need any [`Calls`](Call))
     #[inline(always)]
     pub unsafe fn push_fn_to_thread_pool(&mut self, f: &'static mut dyn Fn()) {
-        debug_assert!(self.current_call.is_none());
+        debug_assert!(self.current_call.is_none(), "Call is already set.");
         self.current_call = Call::PushFnToThreadPool(f)
+    }
+
+    /// Processing current [`Call`]. It is taken out [`exec_task_now`](Executor::exec_task_now)
+    /// to allow the compiler to decide whether to inline this function.
+    fn handle_call(&mut self, task: Task) {
+        match mem::take(&mut self.current_call) {
+            Call::None => {}
+            Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
+                self.global_tasks.push_front(task);
+            }
+            Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
+            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
+                task_list,
+                counter,
+                order,
+            ) => {
+                unsafe {
+                    let list = &*task_list;
+                    list.push(task);
+                    let counter = &*counter;
+
+                    if counter.load(order) == 0 {
+                        if let Some(task) = list.pop() {
+                            self.exec_task(task);
+                        } // else other thread already executed the task
+                    }
+                }
+            }
+            Call::ReleaseAtomicBool(atomic_ptr) => {
+                let atomic_ref = unsafe { &*atomic_ptr };
+                atomic_ref.store(false, Ordering::Release);
+            }
+            Call::PushFnToThreadPool(f) => {
+                debug_assert_ne!(
+                    self.config.number_of_thread_workers, 0,
+                    "try to use thread pool with 0 workers"
+                );
+
+                self.thread_pool.push(task, f);
+            }
+        }
     }
 
     /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
@@ -452,64 +500,40 @@ impl Executor {
     ///
     /// # Attention
     ///
-    /// Execute [`tasks`](Task) only by this method!
+    /// Execute [`tasks`](Task) only by this method or [`exec_task`](Executor::exec_task)!
     #[inline(always)]
     pub(crate) fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
 
-        let task_ref = &mut task;
-        let task_ptr = task_ref as *mut Task;
-        let future = unsafe { &mut *task_ref.future_ptr() };
-        check_task_local_safety!(task);
-        let waker = create_waker(task_ptr as *const ());
+        let future = unsafe { &mut *task.future_ptr() };
+        #[cfg(debug_assertions)]
+        unsafe {
+            task.check_safety();
+            task.is_executing.as_ref().store(true, Ordering::SeqCst);
+        }
+
+        let waker = create_waker(&mut task);
         let mut context = Context::from_waker(&waker);
-
-        match unsafe { Pin::new_unchecked(future) }
+        let poll_res = unsafe { Pin::new_unchecked(future) }
             .as_mut()
-            .poll(&mut context)
-        {
+            .poll(&mut context);
+        #[cfg(debug_assertions)]
+        unsafe {
+            task.is_executing.as_ref().store(false, Ordering::SeqCst);
+        }
+
+        match poll_res {
             Poll::Ready(()) => {
-                debug_assert_eq!(self.current_call, Call::None);
-                unsafe { task.release_future() };
+                debug_assert_eq!(
+                    self.current_call,
+                    Call::None,
+                    "Call is not None, but the task is ready."
+                );
+                unsafe { task.release() };
             }
+
             Poll::Pending => {
-                let old_call = mem::take(&mut self.current_call);
-                match old_call {
-                    Call::None => {}
-                    Call::PushCurrentTaskAtTheStartOfLIFOGlobalQueue => {
-                        self.global_tasks.push_front(task);
-                    }
-                    Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
-                    Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-                        task_list,
-                        counter,
-                        order,
-                    ) => {
-                        unsafe {
-                            let list = &*task_list;
-                            list.push(task);
-                            let counter = &*counter;
-
-                            if counter.load(order) == 0 {
-                                if let Some(task) = list.pop() {
-                                    self.exec_task(task);
-                                } // else other thread already executed the task
-                            }
-                        }
-                    }
-                    Call::ReleaseAtomicBool(atomic_ptr) => {
-                        let atomic_ref = unsafe { &*atomic_ptr };
-                        atomic_ref.store(false, Ordering::Release);
-                    }
-                    Call::PushFnToThreadPool(f) => {
-                        debug_assert_ne!(
-                            self.config.number_of_thread_workers, 0,
-                            "try to use thread pool with 0 workers"
-                        );
-
-                        self.thread_pool.push(task, f);
-                    }
-                }
+                self.handle_call(task);
             }
         }
     }
@@ -518,7 +542,7 @@ impl Executor {
     ///
     /// # Attention
     ///
-    /// Execute [`tasks`](Task) only by this method!
+    /// Execute [`tasks`](Task) only by this method or [`exec_task_now`](Executor::exec_task_now)!
     #[inline(always)]
     pub fn exec_task(&mut self, task: Task) {
         if self.exec_series >= 106 {
@@ -652,7 +676,7 @@ impl Executor {
 
     /// Returns a reference to the `sleeping_tasks`.
     #[inline(always)]
-    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeSet<SleepingTask> {
+    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeMap<Instant, Task> {
         &mut self.local_sleeping_tasks
     }
 
@@ -688,6 +712,17 @@ impl Executor {
             }
         }
     }
+    
+    /// Allows the OS to run other threads.
+    /// 
+    /// It is used only when no work is available.
+    #[inline(always)]
+    fn sleep(&self) {
+        // Wait for more work
+        
+        // TODO bench it
+        thread::sleep(Duration::from_millis(10));
+    }
 
     /// Does background work like:
     ///
@@ -712,26 +747,29 @@ impl Executor {
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        match self.local_worker {
+        let has_no_io_work = match self.local_worker {
             Some(io_worker) => io_worker.must_poll(),
             None => true,
         };
 
         if self.local_sleeping_tasks.len() > 0 {
             let instant = Some(Instant::now());
-            while let Some(sleeping_task) = self.local_sleeping_tasks.pop_first() {
-                if sleeping_task.time_to_wake() <= unsafe { instant.unwrap_unchecked() } {
-                    let task = sleeping_task.task();
+            while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
+                if time_to_wake <= unsafe { instant.unwrap_unchecked() } {
                     if task.is_local() {
                         self.exec_task(task);
                     } else {
                         self.spawn_global_task(task);
                     }
                 } else {
-                    self.local_sleeping_tasks.insert(sleeping_task);
+                    self.local_sleeping_tasks.insert(time_to_wake, task);
                     break;
                 }
             }
+        }
+        
+        if self.number_of_spawned_tasks() == 0 && has_no_io_work {
+            self.sleep();
         }
 
         shrink!(self.local_tasks);
@@ -1013,9 +1051,4 @@ mod tests {
         Executor::init_with_config(Config::default().disable_work_sharing());
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
-
-    // #[test]
-    // TODO
-    // fn work_sharing() {
-    // }
 }

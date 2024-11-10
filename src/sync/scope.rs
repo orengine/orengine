@@ -214,13 +214,43 @@ where
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::{sleep, yield_now};
+    use crate::yield_now;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
-    use std::time::Duration;
 
     #[orengine_macros::test_global]
     fn test_global_scope_exec() {
+        let a = AtomicUsize::new(0);
+        let wg = WaitGroup::new();
+
+        global_scope(|scope| async {
+            scope.exec(async {
+                assert_eq!(a.load(SeqCst), 0);
+                a.fetch_add(1, SeqCst);
+                yield_now().await;
+                assert_eq!(a.load(SeqCst), 2);
+                a.fetch_add(1, SeqCst);
+                wg.done();
+            });
+
+            scope.exec(async {
+                assert_eq!(a.load(SeqCst), 1);
+                a.fetch_add(1, SeqCst);
+                wg.inc();
+                wg.wait().await;
+                assert_eq!(a.load(SeqCst), 3);
+                a.fetch_add(1, SeqCst);
+            });
+        })
+        .await;
+
+        yield_now().await;
+
+        assert_eq!(a.load(SeqCst), 4);
+    }
+
+    #[orengine_macros::test_global]
+    fn test_global_scope_exec_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
 
@@ -248,14 +278,20 @@ mod tests {
         })
         .await;
 
-        assert_eq!(a.load(SeqCst), 5);
+        yield_now().await;
 
+        assert_eq!(a.load(SeqCst), 5);
+    }
+
+    #[orengine_macros::test_global]
+    fn test_global_scope_spawn() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
+        wg.inc();
 
         global_scope(|scope| async {
-            scope.exec(async {
-                assert_eq!(a.load(SeqCst), 0);
+            scope.spawn(async {
+                assert_eq!(a.load(SeqCst), 1);
                 a.fetch_add(1, SeqCst);
                 yield_now().await;
                 assert_eq!(a.load(SeqCst), 2);
@@ -263,10 +299,9 @@ mod tests {
                 wg.done();
             });
 
-            scope.exec(async {
-                assert_eq!(a.load(SeqCst), 1);
+            scope.spawn(async {
+                assert_eq!(a.load(SeqCst), 0);
                 a.fetch_add(1, SeqCst);
-                wg.inc();
                 wg.wait().await;
                 assert_eq!(a.load(SeqCst), 3);
                 a.fetch_add(1, SeqCst);
@@ -274,11 +309,13 @@ mod tests {
         })
         .await;
 
+        yield_now().await;
+
         assert_eq!(a.load(SeqCst), 4);
     }
 
     #[orengine_macros::test_global]
-    fn test_global_scope_spawn() {
+    fn test_global_scope_spawn_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
 
@@ -306,29 +343,8 @@ mod tests {
         })
         .await;
 
+        yield_now().await;
+
         assert_eq!(a.load(SeqCst), 5);
-
-        let a = AtomicUsize::new(0);
-
-        global_scope(|scope| async {
-            scope.spawn(async {
-                assert_eq!(a.load(SeqCst), 1);
-                a.fetch_add(1, SeqCst);
-                yield_now().await;
-                assert_eq!(a.load(SeqCst), 2);
-                a.fetch_add(1, SeqCst);
-            });
-
-            scope.spawn(async {
-                assert_eq!(a.load(SeqCst), 0);
-                a.fetch_add(1, SeqCst);
-                sleep(Duration::from_millis(1)).await;
-                assert_eq!(a.load(SeqCst), 3);
-                a.fetch_add(1, SeqCst);
-            });
-        })
-        .await;
-
-        assert_eq!(a.load(SeqCst), 4);
     }
 }

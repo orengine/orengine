@@ -1,6 +1,6 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{IntoRawFd, OsMessageHeader, RawFd};
+use crate::io::sys::{IntoRawFd, MessageRecvHeader, OsMessageHeader, RawFd};
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
 use crate::runtime::local_executor;
@@ -79,6 +79,9 @@ pub(crate) struct IOUringWorker {
     number_of_active_tasks: usize,
 }
 
+/// User data for [`AsyncClose`](opcode::AsyncCancel) operations.
+const ASYNC_CLOSE_DATA: u64 = u64::MAX;
+
 impl IOUringWorker {
     /// Get whether a specific opcode is supported.
     #[inline(always)]
@@ -114,7 +117,7 @@ impl IOUringWorker {
     /// Cancels a request with the given user_data.
     #[inline(always)]
     fn cancel_entry(&mut self, data: u64) {
-        self.add_sqe(opcode::AsyncCancel::new(data).build());
+        self.add_sqe(opcode::AsyncCancel::new(data).build().user_data(ASYNC_CLOSE_DATA));
     }
 
     /// Cancels requests that have expired.
@@ -188,7 +191,7 @@ impl IoWorker for IOUringWorker {
         let mut s = Self {
             timeout: SubmitArgs::new().timespec(&TIMEOUT),
             ring: UnsafeCell::new(IoUring::new(config.io_uring.number_of_entries).unwrap()),
-            backlog: VecDeque::with_capacity(64),
+            backlog: VecDeque::new(),
             probe: Probe::new(),
             time_bounded_io_task_queue: BTreeSet::new(),
             number_of_active_tasks: 0,
@@ -232,8 +235,8 @@ impl IoWorker for IOUringWorker {
         let executor = local_executor();
 
         for cqe in &mut cq {
-            if cqe.user_data() == 0 {
-                // AsyncCancel was done.
+            self.number_of_active_tasks -= 1;
+            if cqe.user_data() == ASYNC_CLOSE_DATA {
                 continue;
             }
 
@@ -251,11 +254,11 @@ impl IoWorker for IOUringWorker {
                 io_request.set_ret(Ok(ret as _));
             }
 
-            self.number_of_active_tasks -= 1;
-            if io_request.task().is_local() {
-                executor.exec_task(io_request.task());
+            let task = unsafe { io_request.task() };
+            if task.is_local() {
+                executor.exec_task(task);
             } else {
-                executor.spawn_global_task(io_request.task());
+                executor.spawn_global_task(task);
             }
         }
 
@@ -267,21 +270,27 @@ impl IoWorker for IOUringWorker {
         &mut self,
         domain: socket2::Domain,
         sock_type: socket2::Type,
+        protocol: socket2::Protocol,
         request_ptr: *mut IoRequestData,
     ) {
         if self.is_supported(opcode::Socket::CODE) {
             self.register_entry(
-                opcode::Socket::new(c_int::from(domain), c_int::from(sock_type), 0).build(),
+                opcode::Socket::new(
+                    c_int::from(domain),
+                    c_int::from(sock_type),
+                    c_int::from(protocol)
+                ).build(),
                 request_ptr,
             );
+            
             return;
         }
 
         let request = unsafe { &mut *request_ptr };
-        let socket_ = socket2::Socket::new(domain, sock_type, None);
+        let socket_ = socket2::Socket::new(domain, sock_type, Some(protocol));
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
-        local_executor().spawn_local_task(request.task());
+        local_executor().spawn_local_task(unsafe { request.task() });
     }
 
     #[inline(always)]
@@ -340,24 +349,26 @@ impl IoWorker for IOUringWorker {
     fn recv_from(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), msg_header).build(),
+            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData) {
-        if self.is_supported(opcode::SendZc::CODE) {
-            self.register_entry(
-                opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
-                request_ptr,
-            );
-            return;
-        }
+        // TODO https://github.com/tokio-rs/io-uring/issues/308
+        // if self.is_supported(opcode::SendZc::CODE) {
+        //     self.register_entry(
+        //         opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
+        //         request_ptr,
+        //     );
+        //     return;
+        // }
+        
         self.register_entry(
             opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
@@ -371,13 +382,15 @@ impl IoWorker for IOUringWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     ) {
-        if self.is_supported(opcode::SendMsgZc::CODE) {
-            self.register_entry(
-                opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
-                request_ptr,
-            );
-            return;
-        }
+        // TODO https://github.com/tokio-rs/io-uring/issues/308
+        // if self.is_supported(opcode::SendMsgZc::CODE) {
+        //     self.register_entry(
+        //         opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
+        //         request_ptr,
+        //     );
+        //     return;
+        // }
+        
         self.register_entry(
             opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
             request_ptr,
@@ -395,15 +408,15 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn peek_from(
+    fn peek_from<'peeking>(
         &mut self,
         fd: RawFd,
-        msg_header: *mut OsMessageHeader,
+        msg_header: &mut MessageRecvHeader<'peeking>,
         request_ptr: *mut IoRequestData,
     ) {
-        let msg_header = unsafe { &mut *msg_header };
+        let msg_header = &mut *msg_header;
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), msg_header)
+            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header)
                 .flags(libc::MSG_PEEK as u32)
                 .build(),
             request_ptr,

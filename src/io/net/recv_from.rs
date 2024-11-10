@@ -18,19 +18,15 @@ use crate::BUG_MESSAGE;
 pub struct RecvFrom<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
-    buf: &'fut mut [u8],
-    addr: &'fut mut SockAddr,
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'fut> RecvFrom<'fut> {
     /// Creates a new `recv_from` io operation.
-    pub fn new(fd: RawFd, buf: &'fut mut [u8], addr: &'fut mut SockAddr) -> Self {
+    pub fn new(fd: RawFd, buf_ptr: *mut *mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
             fd,
-            msg_header: MessageRecvHeader::new(),
-            buf,
-            addr,
+            msg_header: MessageRecvHeader::new(addr, buf_ptr),
             io_request_data: None,
         }
     }
@@ -46,8 +42,7 @@ impl<'fut> Future for RecvFrom<'fut> {
         poll_for_io_request!((
             local_worker().recv_from(
                 this.fd,
-                this.msg_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                &mut this.msg_header,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
@@ -61,8 +56,6 @@ unsafe impl Send for RecvFrom<'_> {}
 pub struct RecvFromWithDeadline<'fut> {
     fd: RawFd,
     msg_header: MessageRecvHeader<'fut>,
-    buf: &'fut mut [u8],
-    addr: &'fut mut SockAddr,
     deadline: Instant,
     io_request_data: Option<IoRequestData>,
 }
@@ -71,15 +64,13 @@ impl<'fut> RecvFromWithDeadline<'fut> {
     /// Creates a new `recv_from` io operation with deadline.
     pub fn new(
         fd: RawFd,
-        buf: &'fut mut [u8],
+        buf_ptr: *mut *mut [u8],
         addr: &'fut mut SockAddr,
         deadline: Instant,
     ) -> Self {
         Self {
             fd,
-            msg_header: MessageRecvHeader::new(),
-            buf,
-            addr,
+            msg_header: MessageRecvHeader::new(addr, buf_ptr),
             deadline,
             io_request_data: None,
         }
@@ -97,8 +88,7 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
         poll_for_time_bounded_io_request!((
             worker.recv_from_with_deadline(
                 this.fd,
-                this.msg_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *mut _)),
+                &mut this.msg_header,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
@@ -158,7 +148,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     #[inline(always)]
     async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFrom::new(self.as_raw_fd(), buf, &mut sock_addr).await?;
+        let n = RecvFrom::new(self.as_raw_fd(), &mut (buf as *mut [u8]), &mut sock_addr).await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -196,7 +186,12 @@ pub trait AsyncRecvFrom: AsRawFd {
         deadline: Instant,
     ) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFromWithDeadline::new(self.as_raw_fd(), buf, &mut sock_addr, deadline).await?;
+        let n = RecvFromWithDeadline::new(
+            self.as_raw_fd(),
+            &mut (buf as *mut [u8]),
+            &mut sock_addr,
+            deadline
+        ).await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }

@@ -47,9 +47,9 @@ fn bench_throughput() {
             {
                 use std::io::{Read, Write};
 
-                let mut joins = Vec::with_capacity(PAR);
+                let mut handles = Vec::with_capacity(PAR);
                 for _ in 0..PAR {
-                    joins.push(thread::spawn(move || {
+                    handles.push(thread::spawn(move || {
                         let mut conn = std::net::TcpStream::connect(SERVER_ADDR).unwrap();
                         let mut buf = [0u8; 1024];
         
@@ -60,8 +60,8 @@ fn bench_throughput() {
                     }));
                 }
         
-                for join in joins {
-                    join.join().unwrap();
+                for handle in handles {
+                    handle.join().unwrap();
                 }
             }
         );

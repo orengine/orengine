@@ -6,6 +6,7 @@ use std::future::Future;
 use std::hint::spin_loop;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -268,8 +269,13 @@ impl<T> Mutex<T> {
     }
 
     /// Add current task to wait queue.
+    ///
+    /// # Safety
+    ///
+    /// Called by owner of the lock of this [`Mutex`].
     #[inline(always)]
     pub(crate) unsafe fn subscribe(&self, task: Task) {
+        debug_assert!(self.counter.load(Acquire) != 1, "Mutex is unlocked");
         self.expected_count.set(self.expected_count.get() - 1);
         unsafe {
             self.wait_queue.push(task);
@@ -334,6 +340,8 @@ impl<T> Mutex<T> {
 
 unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
 unsafe impl<T: Send> Send for Mutex<T> {}
+impl<T: UnwindSafe> UnwindSafe for Mutex<T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Mutex<T> {}
 
 #[cfg(test)]
 mod tests {

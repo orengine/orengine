@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -214,6 +215,8 @@ impl CondVar {
 
 unsafe impl Sync for CondVar {}
 unsafe impl Send for CondVar {}
+impl UnwindSafe for CondVar {}
+impl RefUnwindSafe for CondVar {}
 
 #[cfg(test)]
 mod tests {

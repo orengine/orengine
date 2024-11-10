@@ -8,6 +8,7 @@ use crossbeam::utils::{Backoff, CachePadded};
 use std::cell::UnsafeCell;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -191,16 +192,16 @@ impl<T> SpinLock<T> {
 
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 unsafe impl<T: Send> Send for SpinLock<T> {}
+impl<T: UnwindSafe> UnwindSafe for SpinLock<T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for SpinLock<T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::sync::WaitGroup;
-
-    use super::*;
     use crate as orengine;
+    use crate::sync::WaitGroup;
     use crate::test::sched_future_to_another_thread;
+    use crate::utils::SpinLock;
+    use std::sync::Arc;
 
     #[orengine_macros::test_global]
     fn test_try_mutex() {

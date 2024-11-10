@@ -2,14 +2,26 @@ use crate::runtime::local_executor;
 use crate::runtime::task::Task;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-/// This is really unsafe. [`Task`] has no some ref counters, so, task can be dropped before it is woken up.
-/// And [`Task`] has no state, so it can be executed after [`Ready`](std::task::Poll::Ready) return.
+/// This is really unsafe.
 ///
-/// Therefore, you need to make sure that [`Task`] is not called after drop or [`Ready`](std::task::Poll::Ready) return.
+/// - [`Task`] has no some ref counters, so, task can be dropped
+/// before it is woken up.
+///
+/// - [`Task`] can be executed only when it is not running. So you need to control that
+/// [`Task`] never be woken up while it is running. Read [`Call`](crate::runtime::call::Call)
+/// for more details.
+///
+/// # Safety
+///
+/// - [`Task`] never be executed after
+/// it was dropped (after it returned [`Poll::Ready`](std::task::Poll::Ready)).
+///
+/// - [`Task`] never executed while it is running.
 unsafe fn clone(data_ptr: *const ()) -> RawWaker {
     RawWaker::new(data_ptr, &VTABLE)
 }
 
+/// Wakes the [`Task`] considering whether it is local or global.
 macro_rules! generate_wake {
     ($data_ptr:expr) => {
         let task = unsafe { ($data_ptr as *mut Task).read() };
@@ -35,14 +47,16 @@ unsafe fn wake_by_ref(data_ptr: *const ()) {
     generate_wake!(data_ptr);
 }
 
-/// Do nothing, because [`Executor`](crate::runtime::Executor) will drop the [`Task`] only when it is needed.
-unsafe fn drop(_: *const ()) {}
+/// Do nothing, because [`Executor`](crate::runtime::Executor) will drop the [`Task`]
+/// only when it is needed.
+#[allow(unused)] // because #[cfg(debug_assertions)]
+unsafe fn drop(data_ptr: *const ()) {}
 
 /// [`RawWakerVTable`] for `orengine` runtime only!
 pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
 /// Creates a [`Waker`] with [`orengine::VTABLE`](VTABLE).
 #[inline(always)]
-pub fn create_waker(data_ptr: *const ()) -> Waker {
-    unsafe { Waker::from_raw(RawWaker::new(data_ptr, &VTABLE)) }
+pub fn create_waker(task_ptr: *mut Task) -> Waker {
+    unsafe { Waker::from_raw(RawWaker::new(task_ptr as *const (), &VTABLE)) }
 }

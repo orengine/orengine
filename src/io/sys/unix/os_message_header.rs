@@ -10,36 +10,22 @@ pub(crate) type OsMessageHeader = libc::msghdr;
 
 /// [`MessageRecvHeader`] keeps the message header for `recvfrom`.
 pub(crate) struct MessageRecvHeader<'header> {
-    header: OsMessageHeader,
+    pub(crate) header: OsMessageHeader,
     phantom_data: PhantomData<&'header [u8]>
 }
 
 impl<'header> MessageRecvHeader<'header> {
     /// Creates a new [`MessageRecvHeader`].
-    pub(crate) fn new() -> Self {
-        unsafe { mem::zeroed() }
-    }
+    pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut *mut [u8]) -> Self {
+        let mut s: Self = unsafe { mem::zeroed() };
 
-    /// Initializes the message header.
-    #[inline(always)]
-    pub(crate) fn init(&mut self, addr: *mut SockAddr, buf_ptr: &mut *mut [u8]) {
-        self.header.msg_name = addr as _;
-        self.header.msg_namelen = size_of::<SockAddr>() as _;
+        s.header.msg_name = addr as _;
+        s.header.msg_namelen = size_of::<SockAddr>() as _;
 
-        self.header.msg_iov = buf_ptr as *mut _ as _;
-        self.header.msg_iovlen = 1;
-    }
-
-    /// Returns a pointer to the message header after its initialization.
-    #[inline(always)]
-    pub(crate) fn get_os_message_header_ptr(
-        &mut self,
-        sock_addr: *mut SockAddr,
-        buf_ptr: &mut *mut [u8]
-    ) -> *mut OsMessageHeader {
-        self.init(sock_addr, buf_ptr);
-
-        &mut self.header
+        s.header.msg_iov = buf_ptr as *mut _ as _;
+        s.header.msg_iovlen = 1;
+        
+        s
     }
 }
 

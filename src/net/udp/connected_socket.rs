@@ -142,114 +142,113 @@ impl Drop for UdpConnectedSocket {
     }
 }
 
-// TODO on github actions it doesn't work
-// #[cfg(test)]
-// mod tests {
-//     use crate::io::{AsyncBind, AsyncConnectDatagram};
-//     use crate::net::udp::UdpSocket;
-//     use std::net::SocketAddr;
-//     use std::str::FromStr;
-//     use std::sync::{Arc, Mutex};
-//     use std::time::Duration;
-//     use std::{io, thread};
-//
-//     use super::*;
-//     use crate as orengine;
-//
-//     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
-//     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
-//     const TIMES: usize = 20;
-//
-//     #[orengine_macros::test_local]
-//     fn test_connected_udp_client() {
-//         const SERVER_ADDR: &str = "127.0.0.1:11086";
-//         const CLIENT_ADDR: &str = "127.0.0.1:11091";
-//
-//         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
-//         let is_server_ready_server_clone = is_server_ready.clone();
-//
-//         let server_thread = thread::spawn(move || {
-//             let socket = std::net::UdpSocket::bind(SERVER_ADDR).expect("std bind failed");
-//
-//             {
-//                 let (is_ready_mu, condvar) = &*is_server_ready;
-//                 let mut is_ready = is_ready_mu.lock().unwrap();
-//                 *is_ready = true;
-//                 condvar.notify_one();
-//             }
-//
-//             let mut buf = vec![0u8; REQUEST.len()];
-//
-//             for _ in 0..TIMES {
-//                 let (n, src) = socket.recv_from(&mut buf).expect("accept failed");
-//                 assert_eq!(REQUEST, &buf[..n]);
-//
-//                 socket.send_to(RESPONSE, &src).expect("std write failed");
-//             }
-//         });
-//
-//         let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-//         let mut is_server_ready = is_server_ready_mu.lock().unwrap();
-//         while *is_server_ready == false {
-//             is_server_ready = condvar.wait(is_server_ready).unwrap();
-//         }
-//
-//         let stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
-//         let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
-//
-//         assert_eq!(
-//             connected_stream.local_addr().expect(CLIENT_ADDR),
-//             SocketAddr::from_str(CLIENT_ADDR).unwrap()
-//         );
-//         assert_eq!(
-//             connected_stream.peer_addr().expect(CLIENT_ADDR),
-//             SocketAddr::from_str(SERVER_ADDR).unwrap()
-//         );
-//
-//         for _ in 0..TIMES {
-//             connected_stream
-//                 .send_all(REQUEST)
-//                 .await
-//                 .expect("send failed");
-//             let mut buf = vec![0u8; RESPONSE.len()];
-//
-//             connected_stream.recv(&mut buf).await.expect("recv failed");
-//             assert_eq!(RESPONSE, buf);
-//         }
-//
-//         server_thread.join().expect("server thread join failed");
-//     }
-//
-//     #[orengine_macros::test_local]
-//     fn test_timeout() {
-//         const ADDR: &str = "127.0.0.1:11141";
-//         const TIMEOUT: Duration = Duration::from_micros(1);
-//
-//         let socket = UdpSocket::bind(ADDR).await.expect("bind failed");
-//         let mut connected_socket = socket
-//             .connect_with_timeout("127.0.0.1:14142", TIMEOUT)
-//             .await
-//             .expect("bind failed");
-//
-//         match connected_socket.poll_recv_with_timeout(TIMEOUT).await {
-//             Ok(_) => panic!("poll_recv should timeout"),
-//             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-//         }
-//
-//         match connected_socket
-//             .recv_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-//             .await
-//         {
-//             Ok(_) => panic!("recv_from should timeout"),
-//             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-//         }
-//
-//         match connected_socket
-//             .peek_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-//             .await
-//         {
-//             Ok(_) => panic!("peek_from should timeout"),
-//             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::io::{AsyncBind, AsyncConnectDatagram};
+    use crate::net::udp::UdpSocket;
+    use std::net::SocketAddr;
+    use std::str::FromStr;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use std::{io, thread};
+
+    use super::*;
+    use crate as orengine;
+
+    const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
+    const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
+    const TIMES: usize = 20;
+
+    #[orengine_macros::test_local]
+    fn test_connected_udp_client() {
+        const SERVER_ADDR: &str = "127.0.0.1:11086";
+        const CLIENT_ADDR: &str = "127.0.0.1:11091";
+
+        let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let is_server_ready_server_clone = is_server_ready.clone();
+
+        let server_thread = thread::spawn(move || {
+            let socket = std::net::UdpSocket::bind(SERVER_ADDR).expect("std bind failed");
+
+            {
+                let (is_ready_mu, condvar) = &*is_server_ready;
+                let mut is_ready = is_ready_mu.lock().unwrap();
+                *is_ready = true;
+                condvar.notify_one();
+            }
+
+            let mut buf = vec![0u8; REQUEST.len()];
+
+            for _ in 0..TIMES {
+                let (n, src) = socket.recv_from(&mut buf).expect("accept failed");
+                assert_eq!(REQUEST, &buf[..n]);
+
+                socket.send_to(RESPONSE, &src).expect("std write failed");
+            }
+        });
+
+        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+        let mut is_server_ready = is_server_ready_mu.lock().unwrap();
+        while *is_server_ready == false {
+            is_server_ready = condvar.wait(is_server_ready).unwrap();
+        }
+
+        let stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
+        let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
+
+        assert_eq!(
+            connected_stream.local_addr().expect(CLIENT_ADDR),
+            SocketAddr::from_str(CLIENT_ADDR).unwrap()
+        );
+        assert_eq!(
+            connected_stream.peer_addr().expect(CLIENT_ADDR),
+            SocketAddr::from_str(SERVER_ADDR).unwrap()
+        );
+
+        for _ in 0..TIMES {
+            connected_stream
+                .send_all(REQUEST)
+                .await
+                .expect("send failed");
+            let mut buf = vec![0u8; RESPONSE.len()];
+
+            connected_stream.recv(&mut buf).await.expect("recv failed");
+            assert_eq!(RESPONSE, buf);
+        }
+
+        server_thread.join().expect("server thread join failed");
+    }
+
+    #[orengine_macros::test_local]
+    fn test_timeout() {
+        const ADDR: &str = "127.0.0.1:11141";
+        const TIMEOUT: Duration = Duration::from_micros(1);
+
+        let socket = UdpSocket::bind(ADDR).await.expect("bind failed");
+        let mut connected_socket = socket
+            .connect_with_timeout("127.0.0.1:14142", TIMEOUT)
+            .await
+            .expect("bind failed");
+
+        match connected_socket.poll_recv_with_timeout(TIMEOUT).await {
+            Ok(_) => panic!("poll_recv should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
+
+        match connected_socket
+            .recv_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .await
+        {
+            Ok(_) => panic!("recv_from should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
+
+        match connected_socket
+            .peek_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .await
+        {
+            Ok(_) => panic!("peek_from should timeout"),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
+        }
+    }
+}

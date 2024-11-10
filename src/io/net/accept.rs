@@ -222,7 +222,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     }
 }
 
-// TODO
+// TODO unix
 // pub(crate) trait AsyncAcceptUnix<S: FromRawFd>: AsRawFd {
 //     #[inline(always)]
 //     async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {

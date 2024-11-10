@@ -8,7 +8,7 @@ use std::mem::size_of;
 /// A pool of tasks.
 pub struct TaskPool {
     /// Key is a size.
-    storage: AHashMap<usize, Vec<*mut ()>>,
+    storage: AHashMap<usize, Vec<Task>>,
 }
 
 thread_local! {
@@ -51,10 +51,6 @@ impl TaskPool {
     }
 
     /// Returns a [`Task`] with the given future.
-    ///
-    /// # Panics
-    ///
-    /// If `is_local` is not `0` or `1`.
     #[inline(always)]
     pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
         let size = size_of::<F>();
@@ -66,38 +62,36 @@ impl TaskPool {
         };
 
         let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
-        if let Some(slot_ptr) = pool.pop() {
-            let future_ptr: *mut F = unsafe { &mut *(slot_ptr as *mut F) };
+        if let Some(task) = pool.pop() {
+            let future_ptr: *mut F = unsafe { &mut *(task.future_ptr() as *mut F) };
             unsafe {
                 future_ptr.write(future);
             }
 
-            Task {
-                data: TaskData::new(future_ptr as *mut _, locality),
-                #[cfg(debug_assertions)]
-                executor_id,
-            }
+            task
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
             Task {
                 data: TaskData::new(future_ptr as *mut _, locality),
                 #[cfg(debug_assertions)]
                 executor_id,
+                #[cfg(debug_assertions)]
+                is_executing: crate::utils::Ptr::new(std::sync::atomic::AtomicBool::new(false)),
             }
         }
     }
 
     /// Puts a task into the pool.
     #[inline(always)]
-    pub fn put(&mut self, ptr: *mut dyn Future<Output = ()>) {
-        let size = size_of_val(unsafe { &*ptr });
+    pub fn put(&mut self, task: Task) {
+        let size = size_of_val(unsafe { &*task.future_ptr() });
         if let Some(pool) = self.storage.get_mut(&size) {
-            pool.push(ptr as *mut ());
+            pool.push(task);
             return;
         }
 
         // A task that have been allocated in another thread ended up here
 
-        self.storage.insert(size, vec![ptr as *mut ()]);
+        self.storage.insert(size, vec![task]);
     }
 }
