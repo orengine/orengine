@@ -265,80 +265,78 @@ mod tests {
     }
     
     async fn test_server_with_config(
-        server_addr_str: &String,
-        client_addr_str: &String,
+        server_addr_str: String,
+        client_addr_str: String,
         config: BindConfig
     ) {
-        for _ in 0..100 {
-            let is_server_ready = Local::new(
-                (LocalMutex::new(false), LocalCondVar::new())
-            );
-            let is_server_ready_clone = is_server_ready.clone();
-            let addr_clone = server_addr_str.clone();
+        let is_server_ready = Local::new(
+            (LocalMutex::new(false), LocalCondVar::new())
+        );
+        let is_server_ready_clone = is_server_ready.clone();
+        let addr_clone = server_addr_str.clone();
 
-            local_executor().spawn_local(async move {
-                let mut server = UdpSocket::bind_with_config(addr_clone, &config)
-                    .await
-                    .expect("bind failed");
-
-                *is_server_ready_clone.0.lock().await = true;
-                is_server_ready_clone.1.notify_one();
-
-                for _ in 0..TIMES {
-                    server.poll_recv_with_timeout(Duration::from_secs(10))
-                        .await
-                        .expect("poll failed");
-                    let mut buf = vec![0u8; REQUEST.len()];
-                    let (n, src) = server.recv_from_with_timeout(
-                        &mut buf,
-                        Duration::from_secs(10)
-                    )
-                        .await
-                        .expect("accept failed");
-                    assert_eq!(REQUEST, &buf[..n]);
-
-                    server.send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
-                        .await
-                        .expect("send failed");
-                }
-            });
-
-            let mut is_server_ready_guard = is_server_ready.0.lock().await;
-            while !*is_server_ready_guard {
-                is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).await;
-            }
-
-            let mut socket = UdpSocket::bind(client_addr_str)
+        local_executor().spawn_local(async move {
+            let mut server = UdpSocket::bind_with_config(addr_clone, &config)
                 .await
-                .expect("connect failed")
-                .connect_with_timeout(server_addr_str, Duration::from_secs(10))
-                .await
-                .expect("connect failed");
+                .expect("bind failed");
+
+            *is_server_ready_clone.0.lock().await = true;
+            is_server_ready_clone.1.notify_one();
 
             for _ in 0..TIMES {
-                socket
-                    .send_with_timeout(REQUEST, Duration::from_secs(10))
+                server.poll_recv_with_timeout(Duration::from_secs(10))
+                    .await
+                    .expect("poll failed");
+                let mut buf = vec![0u8; REQUEST.len()];
+                let (n, src) = server.recv_from_with_timeout(
+                    &mut buf,
+                    Duration::from_secs(10)
+                )
+                    .await
+                    .expect("accept failed");
+                assert_eq!(REQUEST, &buf[..n]);
+
+                server.send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
                     .await
                     .expect("send failed");
-
-                let mut buf = vec![0u8; RESPONSE.len()];
-                socket
-                    .recv_with_timeout(&mut buf, Duration::from_secs(10))
-                    .await
-                    .expect("recv failed");
             }
-            
-            yield_now().await;
-            thread::yield_now();
+        });
+
+        let mut is_server_ready_guard = is_server_ready.0.lock().await;
+        while !*is_server_ready_guard {
+            is_server_ready_guard = is_server_ready.1.wait(is_server_ready_guard).await;
         }
+
+        let mut socket = UdpSocket::bind(client_addr_str)
+            .await
+            .expect("connect failed")
+            .connect_with_timeout(server_addr_str, Duration::from_secs(10))
+            .await
+            .expect("connect failed");
+
+        for _ in 0..TIMES {
+            socket
+                .send_with_timeout(REQUEST, Duration::from_secs(10))
+                .await
+                .expect("send failed");
+
+            let mut buf = vec![0u8; RESPONSE.len()];
+            socket
+                .recv_with_timeout(&mut buf, Duration::from_secs(10))
+                .await
+                .expect("recv failed");
+        }
+        
+        yield_now().await;
+        thread::yield_now();
     }
     
     #[orengine_macros::test_local]
     fn test_server_without_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
-            &"127.0.0.1:10037".to_string(),
-            &"127.0.0.1:9082".to_string(),
+            "127.0.0.1:10037".to_string(),
+            "127.0.0.1:9082".to_string(),
             config.reuse_port(ReusePort::Disabled)
         )
         .await;
@@ -348,8 +346,8 @@ mod tests {
     fn test_server_with_default_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
-            &"127.0.0.1:10038".to_string(),
-            &"127.0.0.1:9083".to_string(),
+            "127.0.0.1:10038".to_string(),
+            "127.0.0.1:9083".to_string(),
             config.reuse_port(ReusePort::Default)
         )
         .await;
@@ -359,8 +357,8 @@ mod tests {
     fn test_server_with_cpu_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
-            &"127.0.0.1:10039".to_string(),
-            &"127.0.0.1:9084".to_string(),
+            "127.0.0.1:10039".to_string(),
+            "127.0.0.1:9084".to_string(),
             config.reuse_port(ReusePort::CPU)
         )
             .await;

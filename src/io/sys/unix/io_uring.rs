@@ -360,14 +360,15 @@ impl IoWorker for IOUringWorker {
 
     #[inline(always)]
     fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData) {
-        if self.is_supported(opcode::SendZc::CODE) {
-            // TODO
-            // self.register_entry(
-            //     opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
-            //     request_ptr,
-            // );
-            // return;
-        }
+        // TODO https://github.com/tokio-rs/io-uring/issues/308
+        // if self.is_supported(opcode::SendZc::CODE) {
+        //     self.register_entry(
+        //         opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
+        //         request_ptr,
+        //     );
+        //     return;
+        // }
+        
         self.register_entry(
             opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
@@ -381,14 +382,14 @@ impl IoWorker for IOUringWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     ) {
-        if self.is_supported(opcode::SendMsgZc::CODE) {
-            // TODO
-            // self.register_entry(
-            //     opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
-            //     request_ptr,
-            // );
-            // return;
-        }
+        // TODO https://github.com/tokio-rs/io-uring/issues/308
+        // if self.is_supported(opcode::SendMsgZc::CODE) {
+        //     self.register_entry(
+        //         opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
+        //         request_ptr,
+        //     );
+        //     return;
+        // }
         
         self.register_entry(
             opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
