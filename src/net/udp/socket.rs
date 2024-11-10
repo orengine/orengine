@@ -355,16 +355,16 @@ mod tests {
         .await;
     }
     
-    // #[orengine_macros::test_local]
-    // fn test_server_with_cpu_reuse_port() {
-    //     let config = BindConfig::default();
-    //     test_server_with_config(
-    //         &"127.0.0.1:10039".to_string(),
-    //         &"127.0.0.1:9084".to_string(),
-    //         config.reuse_port(ReusePort::CPU)
-    //     )
-    //         .await;
-    // }
+    #[orengine_macros::test_local]
+    fn test_server_with_cpu_reuse_port() {
+        let config = BindConfig::default();
+        test_server_with_config(
+            &"127.0.0.1:10039".to_string(),
+            &"127.0.0.1:9084".to_string(),
+            config.reuse_port(ReusePort::CPU)
+        )
+            .await;
+    }
 
     #[orengine_macros::test_local]
     fn test_socket() {
