@@ -40,7 +40,7 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     /// Returns a reference to the original [`Mutex`].
     #[inline(always)]
     pub fn mutex(&self) -> &Mutex<T> {
-        &self.mutex
+        self.mutex
     }
 
     /// Unlocks the [`mutex`](Mutex). Calling `guard.unlock()` is equivalent to
@@ -70,7 +70,9 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     /// The mutex is unlocked by calling [`Mutex::unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'static Mutex<T> {
-        let static_mutex = unsafe { mem::transmute(self.mutex) };
+        let static_mutex = unsafe {
+            mem::transmute::<&Mutex<T>, &'static Mutex<T>>(self.mutex)
+        };
         mem::forget(self);
 
         static_mutex
@@ -128,7 +130,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
             }
 
             if this.mutex.counter.fetch_add(1, Acquire) == 0 {
-                return Poll::Ready(MutexGuard::new(&this.mutex));
+                return Poll::Ready(MutexGuard::new(this.mutex));
             }
 
             this.was_called = true;
@@ -136,7 +138,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 
             Poll::Pending
         } else {
-            Poll::Ready(MutexGuard::new(&this.mutex))
+            Poll::Ready(MutexGuard::new(this.mutex))
         }
     }
 }
@@ -172,7 +174,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::collections::HashMap;
 /// use orengine::sync::Mutex;
 ///
@@ -198,8 +200,8 @@ pub struct Mutex<T> {
 impl<T> Mutex<T> {
     /// Creates a new [`Mutex`].
     #[inline(always)]
-    pub fn new(value: T) -> Mutex<T> {
-        Mutex {
+    pub fn new(value: T) -> Self {
+        Self {
             counter: CachePadded::new(AtomicUsize::new(0)),
             wait_queue: SyncTaskList::new(),
             value: UnsafeCell::new(value),
@@ -211,6 +213,7 @@ impl<T> Mutex<T> {
     ///
     /// It blocks the current task if the mutex is locked.
     #[inline(always)]
+    // TODO is this Send
     pub fn lock(&self) -> MutexWait<T> {
         MutexWait::new(self)
     }
@@ -247,16 +250,23 @@ impl<T> Mutex<T> {
     #[inline(always)]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
-            let lock_res = self.counter.compare_exchange(0, 1, Acquire, Acquire);
-            match lock_res {
-                Ok(_) => return Some(MutexGuard::new(self)),
-                Err(count) if count == 1 => {
-                    for _ in 0..1 << step {
-                        spin_loop();
+            let lock_res = self
+                .counter
+                .compare_exchange(0, 1, Acquire, Acquire);
+            return match lock_res {
+                Ok(_) => Some(MutexGuard::new(self)),
+                Err(count) => {
+                    if count == 1 {
+                        for _ in 0..1 << step {
+                            spin_loop();
+                        }
+
+                        continue;
                     }
+
+                    None
                 }
-                Err(_) => return None,
-            }
+            };
         }
 
         None
@@ -374,16 +384,19 @@ mod tests {
             *value = true;
         });
 
-        let _ = wg.wait().await;
+        wg.wait().await;
         println!("2");
         let value = mutex.lock().await;
         println!("4");
 
-        assert_eq!(*value, true);
+        assert!(*value);
         drop(value);
     }
 
-    async fn test_try_mutex<F: Fn(&Mutex<bool>) -> Option<MutexGuard<'_, bool>>>(try_lock: F) {
+    async fn test_try_mutex<F>(try_lock: F)
+    where
+        F: Send + Fn(&Mutex<bool>) -> Option<MutexGuard<'_, bool>>,
+    {
         let mutex = Arc::new(Mutex::new(false));
         let mutex_clone = mutex.clone();
         let lock_wg = Arc::new(WaitGroup::new());
@@ -400,7 +413,7 @@ mod tests {
             let mut value = mutex_clone.lock().await;
             println!("1");
             lock_wg_clone.done();
-            let _ = unlock_wg_clone.wait().await;
+            unlock_wg_clone.wait().await;
             println!("4");
             *value = true;
             drop(value);
@@ -408,7 +421,7 @@ mod tests {
             println!("5");
         });
 
-        let _ = lock_wg.wait().await;
+        lock_wg.wait().await;
         println!("2");
         let value = try_lock(&mutex);
         println!("3");
@@ -416,11 +429,11 @@ mod tests {
         second_lock.inc();
         unlock_wg.done();
 
-        let _ = second_lock.wait().await;
+        second_lock.wait().await;
         let value = try_lock(&mutex);
         println!("6");
         match value {
-            Some(v) => assert_eq!(*v, true, "not waited"),
+            Some(v) => assert!(*v, "not waited"),
             None => panic!("can't acquire lock"),
         }
     }
@@ -467,7 +480,7 @@ mod tests {
             work_with_lock(&mutex, &wg).await;
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
 
         assert_eq!(*mutex.lock().await, TRIES * PAR);
     }

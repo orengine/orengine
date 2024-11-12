@@ -20,7 +20,7 @@ use crate::sync::local::once::OnceState;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::sync::Once;
 ///
 /// static START: Once = Once::new();
@@ -54,7 +54,7 @@ impl Once {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::Once;
     ///
     /// static START: Once = Once::new();
@@ -67,7 +67,7 @@ impl Once {
     /// }
     /// ```
     #[inline(always)]
-    pub async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
+    pub async fn call_once<Fut: Future<Output=()>>(&self, f: Fut) -> Result<(), ()> {
         if self
             .state
             .compare_exchange(
@@ -89,7 +89,7 @@ impl Once {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::Once;
     ///
     /// static START: Once = Once::new();

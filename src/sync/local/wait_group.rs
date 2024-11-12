@@ -26,7 +26,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
         let this = unsafe { self.get_unchecked_mut() };
         let inner = this.wait_group.get_inner();
         if inner.count != 0 {
-            let task = get_task_from_context!(cx);
+            let task = unsafe { get_task_from_context!(cx) };
             inner.waited_tasks.push(task);
 
             return Poll::Pending;
@@ -53,7 +53,7 @@ struct Inner {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::time::Duration;
 /// use orengine::{sleep, Local};
 /// use orengine::sync::{local_scope, LocalWaitGroup};
@@ -97,6 +97,7 @@ impl LocalWaitGroup {
 
     /// Returns a mutable reference to the [`Inner`].
     #[inline(always)]
+    #[allow(clippy::mut_from_ref, reason = "this is local and unsafe")]
     fn get_inner(&self) -> &mut Inner {
         unsafe { &mut *self.inner.get() }
     }
@@ -105,7 +106,7 @@ impl LocalWaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use orengine::{sleep, Local};
     /// use orengine::sync::{local_scope, LocalWaitGroup};
@@ -138,7 +139,7 @@ impl LocalWaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use orengine::{sleep, Local};
     /// use orengine::sync::{local_scope, LocalWaitGroup};
@@ -171,7 +172,7 @@ impl LocalWaitGroup {
     ///
     /// Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::LocalWaitGroup;
     ///
     /// # async fn foo() {
@@ -195,7 +196,7 @@ impl LocalWaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::{local_scope, LocalWaitGroup};
     ///
     /// # async fn foo() {
@@ -232,7 +233,7 @@ impl LocalWaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use orengine::{sleep, Local};
     /// use orengine::sync::{local_scope, LocalWaitGroup};
@@ -263,6 +264,12 @@ impl LocalWaitGroup {
     }
 }
 
+impl Default for LocalWaitGroup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Sync for LocalWaitGroup {}
 
 #[cfg(test)]
@@ -285,9 +292,7 @@ mod tests {
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
                 wait_group.wait().await;
-                if !*check_value {
-                    panic!("not waited");
-                }
+                assert!(*check_value, "not waited");
             });
         }
 
@@ -314,8 +319,6 @@ mod tests {
         }
 
         wait_group.wait().await;
-        if *check_value != 0 {
-            panic!("not waited");
-        }
+        assert_eq!(*check_value, 0, "not waited");
     }
 }

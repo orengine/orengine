@@ -4,6 +4,7 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -15,7 +16,7 @@ pub struct SyncAll {
 }
 
 impl SyncAll {
-    /// Creates a new 'sync_all' io operation.
+    /// Creates a new `sync_all` io operation.
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
@@ -61,7 +62,7 @@ pub trait AsyncSyncAll: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::{AsyncRead, AsyncWrite};

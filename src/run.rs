@@ -6,7 +6,7 @@ use std::future::Future;
 ///
 /// 1 - Initializes the [`Executor`] with provided [`Config`];
 ///
-/// 2 - Spawns local_future using `creator`;
+/// 2 - Spawns `local_future` using `creator`;
 ///
 /// 3 - Runs the [`Executor`].
 ///
@@ -48,14 +48,14 @@ use std::future::Future;
 /// ```
 pub fn run_on_all_cores_with_config<Fut, F>(creator: F, cfg: Config)
 where
-    Fut: Future<Output=()> + 'static, F: 'static + Clone + Send + Fn() -> Fut
+    Fut: Future<Output=()> + 'static,
+    F: 'static + Clone + Send + Fn() -> Fut,
 {
-    let cores = utils::core::get_core_ids().unwrap();
-    for i in 1..cores.len() {
-        let core = cores[i];
+    let mut cores = utils::core::get_core_ids().unwrap();
+    for core in cores.drain(1..) {
         let creator = creator.clone();
         std::thread::Builder::new()
-            .name(format!("worker on core: {}", i))
+            .name(format!("worker on core: {}", core.id))
             .spawn(move || {
                 Executor::init_on_core_with_config(core, cfg);
                 local_executor().spawn_local(creator());
@@ -69,17 +69,17 @@ where
 }
 
 /// It does next steps on each core:
-/// 
+///
 /// 1 - Initializes the [`Executor`];
-/// 
+///
 /// 2 - Spawns local_future using `creator`;
-/// 
+///
 /// 3 - Runs the [`Executor`].
-/// 
+///
 /// # Example
-/// 
+///
 /// ## High-performance echo server
-/// 
+///
 /// ```no_run
 /// use orengine::buf::full_buffer;
 /// use orengine::{run_on_all_cores, local_executor};
@@ -98,7 +98,7 @@ where
 ///         stream.send_all(&buf[..n]).await.unwrap();
 ///     }
 /// }
-/// 
+///
 /// fn main() {
 ///     run_on_all_cores(|| async {
 ///         let mut listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -112,8 +112,9 @@ where
 /// }
 /// ```
 pub fn run_on_all_cores<Fut, F>(creator: F)
-where 
-    Fut: Future<Output=()> + 'static, F: 'static + Clone + Send + Fn() -> Fut
+where
+    Fut: Future<Output=()> + 'static,
+    F: 'static + Clone + Send + Fn() -> Fut,
 {
     run_on_all_cores_with_config(creator, Config::default())
 }

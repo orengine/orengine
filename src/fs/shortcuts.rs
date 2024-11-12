@@ -11,7 +11,7 @@ use std::path::Path;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::fs::{File, OpenOptions, open_file};
 ///
 /// # async fn foo() -> std::io::Result<()> {
@@ -26,7 +26,7 @@ use std::path::Path;
 /// This function will return an `Err` if the file cannot be opened due to I/O errors
 /// (e.g., file not found, permission denied).
 #[inline(always)]
-pub async fn open_file<P: AsRef<Path>>(path: P, open_options: &OpenOptions) -> Result<File> {
+pub async fn open_file<P: AsRef<Path> + Send>(path: P, open_options: &OpenOptions) -> Result<File> {
     File::open(path, open_options).await
 }
 
@@ -39,7 +39,7 @@ pub async fn open_file<P: AsRef<Path>>(path: P, open_options: &OpenOptions) -> R
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::path::Path;
 /// use orengine::fs::create_dir;
 ///
@@ -55,7 +55,7 @@ pub async fn open_file<P: AsRef<Path>>(path: P, open_options: &OpenOptions) -> R
 /// This function will return an `Err` if the directory cannot be created due to I/O errors
 /// (e.g., permission denied, path does not exist).
 #[inline(always)]
-pub async fn create_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn create_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     DirBuilder::new().create(path).await
 }
 
@@ -66,7 +66,7 @@ pub async fn create_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::fs::create_dir_all;
 ///
 /// # async fn foo() -> std::io::Result<()> {
@@ -80,7 +80,7 @@ pub async fn create_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 /// This function will return an `Err` if any directory in the path cannot be created
 /// due to I/O errors.
 #[inline(always)]
-pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn create_dir_all<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     DirBuilder::new().recursive(true).create(path).await
 }
 
@@ -91,7 +91,7 @@ pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::path::Path;
 /// use orengine::fs::remove_dir;
 ///
@@ -107,7 +107,7 @@ pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 /// This function will return an `Err` if the directory is not empty or cannot be deleted
 /// due to I/O errors.
 #[inline(always)]
-pub async fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn remove_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     let path = get_os_path(path.as_ref())?;
     RemoveDir::new(path).await
 }
@@ -119,7 +119,7 @@ pub async fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::path::Path;
 /// use orengine::fs::remove_file;
 ///
@@ -135,7 +135,7 @@ pub async fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 /// This function will return an `Err` if the file cannot be deleted due to I/O errors
 /// (e.g., permission denied, file not found).
 #[inline(always)]
-pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn remove_file<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     File::remove(path).await
 }
 
@@ -146,7 +146,7 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::path::Path;
 /// use orengine::fs::rename;
 ///
@@ -165,8 +165,8 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
 #[inline(always)]
 pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
 where
-    OldPath: AsRef<Path>,
-    NewPath: AsRef<Path>,
+    OldPath: AsRef<Path> + Send,
+    NewPath: AsRef<Path> + Send,
 {
     File::rename(old_path, new_path).await
 }
@@ -187,13 +187,13 @@ mod tests {
         let mut path = PathBuf::from(TEST_DIR_PATH);
         path.push("remove_dir");
         match create_dir(path.clone()).await {
-            Ok(_) => assert!(is_exists(path.clone())),
-            Err(err) => panic!("Can't create dir: {}", err),
+            Ok(()) => assert!(is_exists(path.clone())),
+            Err(err) => panic!("Can't create dir: {err}"),
         }
 
         match remove_dir(path.clone()).await {
-            Ok(_) => assert!(!is_exists(path)),
-            Err(err) => panic!("Can't remove dir: {}", err),
+            Ok(()) => assert!(!is_exists(path)),
+            Err(err) => panic!("Can't remove dir: {err}"),
         }
     }
 }

@@ -32,7 +32,7 @@ impl<'scope> LocalScope<'scope> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::ops::Deref;
     /// use std::time::Duration;
     /// use orengine::{sleep, Local};
@@ -61,7 +61,7 @@ impl<'scope> LocalScope<'scope> {
     /// # }
     /// ```
     #[inline(always)]
-    pub fn exec<F: Future<Output = ()>>(&'scope self, future: F) {
+    pub fn exec<F: Future<Output=()>>(&'scope self, future: F) {
         self.wg.inc();
         let handle = LocalScopedHandle {
             scope: self,
@@ -83,7 +83,7 @@ impl<'scope> LocalScope<'scope> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::ops::Deref;
     /// use orengine::Local;
     /// use orengine::sync::{local_scope, LocalWaitGroup};
@@ -110,7 +110,7 @@ impl<'scope> LocalScope<'scope> {
     /// # }
     /// ```
     #[inline(always)]
-    pub fn spawn<F: Future<Output = ()>>(&'scope self, future: F) {
+    pub fn spawn<F: Future<Output=()>>(&'scope self, future: F) {
         self.wg.inc();
         let handle = LocalScopedHandle {
             scope: self,
@@ -124,14 +124,14 @@ impl<'scope> LocalScope<'scope> {
 
 /// `LocalScopedHandle` is a wrapper of `Future<Output = ()>`
 /// to decrement the wait group when the future is done.
-pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
+pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output=()>> {
     scope: &'scope LocalScope<'scope>,
     fut: Fut,
     // impl !Send
     no_send_marker: PhantomData<*const ()>,
 }
 
-impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
+impl<'scope, Fut: Future<Output=()>> Future for LocalScopedHandle<'scope, Fut> {
     type Output = ();
 
     #[inline(always)]
@@ -166,7 +166,7 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::ops::Deref;
 /// use std::time::Duration;
 /// use orengine::{sleep, Local};
@@ -197,7 +197,7 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 #[inline(always)]
 pub async fn local_scope<'scope, Fut, F>(f: F)
 where
-    Fut: Future<Output = ()>,
+    Fut: Future<Output=()>,
     F: FnOnce(&'scope LocalScope<'scope>) -> Fut,
 {
     let scope = LocalScope {
@@ -243,7 +243,7 @@ mod tests {
                 *local_a.get_mut() += 1;
             });
         })
-        .await;
+            .await;
 
         yield_now().await;
 
@@ -274,7 +274,7 @@ mod tests {
             assert_eq!(*local_a.deref(), 2);
             *local_a.get_mut() += 1;
         })
-        .await;
+            .await;
 
         yield_now().await;
 
@@ -305,7 +305,7 @@ mod tests {
                 *local_a.get_mut() += 1;
             });
         })
-        .await;
+            .await;
 
         yield_now().await;
 
@@ -339,7 +339,7 @@ mod tests {
             assert_eq!(*local_a.deref(), 0);
             *local_a.get_mut() += 1;
         })
-        .await;
+            .await;
 
         yield_now().await;
 

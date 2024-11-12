@@ -1,4 +1,5 @@
 //! This module provides an asynchronous rw_lock (e.g. [`std::sync::RwLock`]) type [`LocalRWLock`].
+//!
 //! It allows for asynchronous read or write locking and unlocking, and provides
 //! ownership-based locking through [`LocalReadLockGuard`] and [`LocalWriteLockGuard`].
 use crate::get_task_from_context;
@@ -185,7 +186,7 @@ impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
-            let task = get_task_from_context!(cx);
+            let task = unsafe { get_task_from_context!(cx) };
             this.local_rw_lock.get_inner().wait_queue_read.push(task);
             this.was_called = true;
             return Poll::Pending;
@@ -218,7 +219,7 @@ impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
-            let task = get_task_from_context!(cx);
+            let task = unsafe { get_task_from_context!(cx) };
             this.local_rw_lock.get_inner().wait_queue_write.push(task);
             this.was_called = true;
             return Poll::Pending;
@@ -265,7 +266,7 @@ struct Inner<T> {
 ///
 /// # Incorrect usage
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::sync::LocalRWLock;
 ///
 /// // Incorrect usage, because in local runtime all tasks are executed sequentially.
@@ -277,7 +278,7 @@ struct Inner<T> {
 ///
 /// Use [`Local`](crate::Local) instead.
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::Local;
 ///
 /// // Correct usage, because in local runtime all tasks are executed sequentially.
@@ -288,7 +289,7 @@ struct Inner<T> {
 ///
 /// # Example with correct usage
 ///
-/// ```no_run
+/// ```rust
 /// use std::collections::HashMap;
 /// use orengine::Local;
 /// use orengine::sync::LocalRWLock;

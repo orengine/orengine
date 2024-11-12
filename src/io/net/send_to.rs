@@ -1,14 +1,15 @@
 use std::future::Future;
-use std::io;
 use std::io::{ErrorKind, Result};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use std::{io, ptr};
 
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageSendHeader, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -45,7 +46,7 @@ impl<'fut> Future for SendTo<'fut> {
             local_worker().send_to(
                 this.fd,
                 this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
@@ -53,6 +54,7 @@ impl<'fut> Future for SendTo<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendTo` is `Send`
 unsafe impl Send for SendTo<'_> {}
 
 /// `send_to` io operation with deadline.
@@ -91,7 +93,7 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
             worker.send_to_with_deadline(
                 this.fd,
                 this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
@@ -100,6 +102,7 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendToWithDeadline` is `Send`
 unsafe impl Send for SendToWithDeadline<'_> {}
 
 #[inline(always)]
@@ -128,7 +131,7 @@ fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAdd
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::UdpSocket;
 /// use orengine::io::{AsyncBind, AsyncSendTo};
 /// use std::net::SocketAddr;
@@ -147,7 +150,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -171,7 +174,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -199,7 +202,7 @@ pub trait AsyncSendTo: AsRawFd {
             &sock_addr_from_to_socket_addr(addr)?,
             deadline,
         )
-        .await
+            .await
     }
 
     /// Asynchronously sends data to the specified address with a timeout.
@@ -210,7 +213,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -238,7 +241,7 @@ pub trait AsyncSendTo: AsRawFd {
             &sock_addr_from_to_socket_addr(addr)?,
             Instant::now() + timeout,
         )
-        .await
+            .await
     }
 
     /// Asynchronously sends all the data in the buffer to the specified address. The method
@@ -247,7 +250,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -281,7 +284,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -322,7 +325,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;

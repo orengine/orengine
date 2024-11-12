@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, FromRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -28,6 +29,7 @@ impl<S: FromRawFd> Accept<S> {
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
+            #[allow(clippy::cast_possible_truncation)] // size of SockAddr is less than u32::MAX
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             io_request_data: None,
             phantom_data: PhantomData,
@@ -45,7 +47,7 @@ impl<S: FromRawFd> Future for Accept<S> {
         poll_for_io_request!((
             local_worker().accept(
                 this.fd,
-                this.addr.0.as_ptr() as _,
+                this.addr.0.as_ptr().cast_mut(),
                 &mut this.addr.1,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
@@ -68,6 +70,7 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
     pub fn new(fd: RawFd, deadline: Instant) -> Self {
         Self {
             fd,
+            #[allow(clippy::cast_possible_truncation)] // size of SockAddr is less than u32::MAX
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             io_request_data: None,
             deadline,
@@ -87,7 +90,7 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
         poll_for_time_bounded_io_request!((
             worker.accept_with_deadline(
                 this.fd,
-                this.addr.0.as_ptr() as _,
+                this.addr.0.as_ptr().cast_mut(),
                 &mut this.addr.1,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
@@ -98,7 +101,9 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
 }
 
 /// The `AsyncAccept` trait provides asynchronous methods for accepting new incoming connections.
+///
 /// It is implemented for types that can be represented as raw file descriptors (via [`AsRawFd`]).
+///
 /// This trait allows the server-side of a socket to accept new connections either indefinitely or
 /// with a specified timeout or deadline.
 ///
@@ -108,7 +113,7 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::TcpStream;
 /// use orengine::net::TcpListener;
 /// use orengine::io::{AsyncAccept, AsyncBind};
@@ -133,7 +138,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::net::TcpListener;
     /// use orengine::io::{AsyncAccept, AsyncBind};
@@ -166,7 +171,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::net::TcpListener;
     /// use orengine::io::{AsyncAccept, AsyncBind};
@@ -200,7 +205,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::net::TcpListener;
     /// use orengine::io::{AsyncAccept, AsyncBind};

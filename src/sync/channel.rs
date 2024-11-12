@@ -4,7 +4,6 @@ use crate::{get_task_from_context, panic_if_local_in_future};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ops::Deref;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::ptr;
 use std::ptr::drop_in_place;
@@ -86,6 +85,8 @@ enum SendCallState<T> {
     WokenByClose,
 }
 
+unsafe impl<T: Send> Send for SendCallState<T> {}
+
 /// `RecvCallState` is a state machine for [`WaitRecv`]. This is used to improve performance.
 enum RecvCallState {
     /// Default state.
@@ -109,9 +110,11 @@ enum RecvCallState {
     WokenByClose,
 }
 
+unsafe impl Send for RecvCallState {}
+
 /// This is the internal data structure for the [`channel`](Channel).
 /// It holds the actual storage for the values and manages the queue of senders and receivers.
-struct Inner<T> {
+struct Inner<T: Send> {
     storage: VecDeque<T>,
     is_closed: bool,
     capacity: usize,
@@ -119,8 +122,8 @@ struct Inner<T> {
     receivers: VecDeque<(Task, *mut T, *mut RecvCallState)>,
 }
 
-unsafe impl<T> Sync for Inner<T> {}
-unsafe impl<T> Send for Inner<T> {}
+unsafe impl<T: Send> Sync for Inner<T> {}
+unsafe impl<T: Send> Send for Inner<T> {}
 
 // region futures
 
@@ -149,13 +152,14 @@ macro_rules! acquire_lock {
 
 /// This struct represents a future that waits for a value to be sent
 /// into the [`channel`](Channel).
+///
 /// When the future is polled, it either sends the value immediately (if there is capacity) or
 /// gets parked in the list of waiting senders.
 ///
 /// # Panics or memory leaks
 ///
 /// If [`WaitSend::poll`] is not called.
-pub struct WaitSend<'future, T> {
+pub struct WaitSend<'future, T: Send> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: SendCallState<T>,
     value: ManuallyDrop<T>,
@@ -163,7 +167,7 @@ pub struct WaitSend<'future, T> {
     was_awaited: bool,
 }
 
-impl<'future, T> WaitSend<'future, T> {
+impl<'future, T: Send> WaitSend<'future, T> {
     /// Creates a new [`WaitSend`].
     #[inline(always)]
     fn new(value: T, inner: &'future NaiveMutex<Inner<T>>) -> Self {
@@ -177,7 +181,7 @@ impl<'future, T> WaitSend<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitSend<'future, T> {
+impl<'future, T: Send> Future for WaitSend<'future, T> {
     type Output = Result<(), T>;
 
     #[inline(always)]
@@ -203,7 +207,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
                     unsafe {
                         inner_lock.unlock();
 
-                        ptr::copy_nonoverlapping(this.value.deref(), slot, 1);
+                        ptr::copy_nonoverlapping(&*this.value, slot, 1);
                         call_state.write(RecvCallState::WokenToReturnReady);
                         local_executor().exec_task(task);
 
@@ -213,7 +217,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
 
                 let len = inner_lock.storage.len();
                 if len >= inner_lock.capacity {
-                    let task = get_task_from_context!(cx);
+                    let task = unsafe { get_task_from_context!(cx) };
                     inner_lock.senders.push_back((task, &mut this.call_state));
                     return_pending_and_release_lock!(local_executor(), inner_lock);
                 }
@@ -238,7 +242,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
             }
             SendCallState::WokenToWriteIntoTheSlot(slot_ptr) => {
                 unsafe {
-                    ptr::copy_nonoverlapping(this.value.deref(), slot_ptr, 1);
+                    ptr::copy_nonoverlapping(&*this.value, slot_ptr, 1);
                 };
                 Poll::Ready(Ok(()))
             }
@@ -249,12 +253,12 @@ impl<'future, T> Future for WaitSend<'future, T> {
     }
 }
 
-unsafe impl<T> Send for WaitSend<'_, T> {}
-impl<T: UnwindSafe> UnwindSafe for WaitSend<'_, T> {}
-impl<T: RefUnwindSafe> RefUnwindSafe for WaitSend<'_, T> {}
+unsafe impl<T: Send> Send for WaitSend<'_, T> {}
+impl<T: UnwindSafe + Send> UnwindSafe for WaitSend<'_, T> {}
+impl<T: RefUnwindSafe + Send> RefUnwindSafe for WaitSend<'_, T> {}
 
 #[cfg(debug_assertions)]
-impl<T> Drop for WaitSend<'_, T> {
+impl<T: Send> Drop for WaitSend<'_, T> {
     fn drop(&mut self) {
         assert!(
             self.was_awaited,
@@ -265,15 +269,16 @@ impl<T> Drop for WaitSend<'_, T> {
 
 /// This struct represents a future that waits for a value to be
 /// received from the [`channel`](Channel).
+///
 /// When the future is polled, it either receives the value immediately (if available) or
 /// gets parked in the list of waiting receivers.
-pub struct WaitRecv<'future, T> {
+pub struct WaitRecv<'future, T: Send> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: RecvCallState,
     slot: *mut T,
 }
 
-impl<'future, T> WaitRecv<'future, T> {
+impl<'future, T: Send> WaitRecv<'future, T> {
     /// Creates a new [`WaitRecv`].
     #[inline(always)]
     fn new(inner: &'future NaiveMutex<Inner<T>>, slot: *mut T) -> Self {
@@ -285,7 +290,7 @@ impl<'future, T> WaitRecv<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitRecv<'future, T> {
+impl<'future, T: Send> Future for WaitRecv<'future, T> {
     type Output = Result<(), ()>;
 
     #[inline(always)]
@@ -314,7 +319,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                         }
                     }
 
-                    let task = get_task_from_context!(cx);
+                    let task = unsafe { get_task_from_context!(cx) };
                     inner_lock
                         .receivers
                         .push_back((task, this.slot, &mut this.call_state));
@@ -322,8 +327,7 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                 }
 
                 unsafe {
-                    this.slot
-                        .write(inner_lock.storage.pop_front().unwrap_unchecked())
+                    this.slot.write(inner_lock.storage.pop_front().unwrap_unchecked());
                 }
 
                 let sender_ = inner_lock.senders.pop_front();
@@ -345,15 +349,15 @@ impl<'future, T> Future for WaitRecv<'future, T> {
     }
 }
 
-unsafe impl<T> Send for WaitRecv<'_, T> {}
-impl<T: UnwindSafe> UnwindSafe for WaitRecv<'_, T> {}
-impl<T: RefUnwindSafe> RefUnwindSafe for WaitRecv<'_, T> {}
+unsafe impl<T: Send> Send for WaitRecv<'_, T> {}
+impl<T: UnwindSafe + Send> UnwindSafe for WaitRecv<'_, T> {}
+impl<T: RefUnwindSafe + Send> RefUnwindSafe for WaitRecv<'_, T> {}
 
 // endregion
 
 /// Closes the [`channel`](Channel) and wakes all senders and receivers.
 #[inline(always)]
-async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
+async fn close<T: Send>(inner: &NaiveMutex<Inner<T>>) {
     let mut inner_lock = inner.lock().await;
     inner_lock.is_closed = true;
     let executor = local_executor();
@@ -376,13 +380,15 @@ async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
 // region sender
 
 /// The `Sender` allows sending values into the [`Channel`].
+///
 /// When the [`channel`](Channel) is not full, values are sent immediately.
+///
 /// If the [`channel`](Channel) is full, the sender waits until capacity
 /// is available or the [`channel`](Channel) is closed.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::Channel::bounded(2); // capacity = 2
 ///     let (sender, receiver) = channel.split();
@@ -392,11 +398,11 @@ async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
 ///     assert_eq!(res, 1);
 /// }
 /// ```
-pub struct Sender<'channel, T> {
+pub struct Sender<'channel, T: Send> {
     inner: &'channel NaiveMutex<Inner<T>>,
 }
 
-impl<'channel, T> Sender<'channel, T> {
+impl<'channel, T: Send> Sender<'channel, T> {
     /// Creates a new [`Sender`].
     #[inline(always)]
     fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
@@ -415,7 +421,7 @@ impl<'channel, T> Sender<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -436,29 +442,31 @@ impl<'channel, T> Sender<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Sender<'channel, T> {
+impl<'channel, T: Send> Clone for Sender<'channel, T> {
     fn clone(&self) -> Self {
         Sender { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T> Sync for Sender<'channel, T> {}
-unsafe impl<'channel, T> Send for Sender<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Sender<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Sender<'channel, T> {}
+unsafe impl<'channel, T: Send> Sync for Sender<'channel, T> {}
+unsafe impl<'channel, T: Send> Send for Sender<'channel, T> {}
+impl<'channel, T: UnwindSafe + Send> UnwindSafe for Sender<'channel, T> {}
+impl<'channel, T: RefUnwindSafe + Send> RefUnwindSafe for Sender<'channel, T> {}
 
 // endregion
 
 // region receiver
 
 /// The `Receiver` allows receiving values from the [`Channel`].
+///
 /// When the [`channel`](Channel) is not empty, values are received immediately.
+///
 /// If the [`channel`](Channel) is empty, the receiver waits until a value
 /// is available or the [`channel`](Channel) is closed.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::Channel::bounded(2); // capacity = 2
 ///     let (sender, receiver) = channel.split();
@@ -468,11 +476,11 @@ impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Sender<'channel, T> {}
 ///     assert_eq!(res, 1);
 /// }
 ///
-pub struct Receiver<'channel, T> {
+pub struct Receiver<'channel, T: Send> {
     inner: &'channel NaiveMutex<Inner<T>>,
 }
 
-impl<'channel, T> Receiver<'channel, T> {
+impl<'channel, T: Send> Receiver<'channel, T> {
     /// Creates a new [`Receiver`].
     #[inline(always)]
     fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
@@ -492,7 +500,7 @@ impl<'channel, T> Receiver<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -508,8 +516,8 @@ impl<'channel, T> Receiver<'channel, T> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
             match self.recv_in_ptr(slot.as_mut_ptr()).await {
-                Ok(_) => Ok(slot.assume_init()),
-                Err(_) => Err(()),
+                Ok(()) => Ok(slot.assume_init()),
+                Err(()) => Err(()),
             }
         }
     }
@@ -531,7 +539,7 @@ impl<'channel, T> Receiver<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -563,9 +571,14 @@ impl<'channel, T> Receiver<'channel, T> {
     ///
     /// __Doesn't drop__ the old value in the slot.
     ///
+    /// # Safety
+    ///
+    /// - Provided pointer is valid and aligned
+    /// - Previous value is dropped
+    ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -591,16 +604,16 @@ impl<'channel, T> Receiver<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Receiver<'channel, T> {
+impl<'channel, T: Send> Clone for Receiver<'channel, T> {
     fn clone(&self) -> Self {
         Receiver { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T> Sync for Receiver<'channel, T> {}
-unsafe impl<'channel, T> Send for Receiver<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Receiver<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
+unsafe impl<'channel, T: Send> Sync for Receiver<'channel, T> {}
+unsafe impl<'channel, T: Send> Send for Receiver<'channel, T> {}
+impl<'channel, T: UnwindSafe + Send> UnwindSafe for Receiver<'channel, T> {}
+impl<'channel, T: RefUnwindSafe + Send> RefUnwindSafe for Receiver<'channel, T> {}
 
 // endregion
 
@@ -629,7 +642,7 @@ impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
 ///
 /// ## Don't split
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
 ///
@@ -641,7 +654,7 @@ impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
 ///
 /// ## Split into receiver and sender
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
 ///     let (sender, receiver) = channel.split();
@@ -651,11 +664,11 @@ impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
 ///     assert_eq!(res, 1);
 /// }
 /// ```
-pub struct Channel<T> {
+pub struct Channel<T: Send> {
     inner: NaiveMutex<Inner<T>>,
 }
 
-impl<T> Channel<T> {
+impl<T: Send> Channel<T> {
     /// Creates a bounded [`channel`](Channel) with a given capacity.
     ///
     /// A bounded channel limits the number of items that can be stored before sending blocks.
@@ -664,7 +677,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1);
     ///
@@ -691,7 +704,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::unbounded();
     ///
@@ -724,7 +737,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(0);
     ///     channel.send(1).await.unwrap(); // blocked
@@ -746,7 +759,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::<usize>::bounded(1);
     ///     let res = channel.recv().await.unwrap(); // blocked until a value is sent
@@ -757,8 +770,8 @@ impl<T> Channel<T> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
             match self.recv_in_ptr(slot.as_mut_ptr()).await {
-                Ok(_) => Ok(slot.assume_init()),
-                Err(_) => Err(()),
+                Ok(()) => Ok(slot.assume_init()),
+                Err(()) => Err(()),
             }
         }
     }
@@ -772,7 +785,7 @@ impl<T> Channel<T> {
     ///
     /// # On close
     ///
-    /// Returns `Err(())` if the [channel`](Channel) is closed.
+    /// Returns `Err(())` if the [`channel`](Channel) is closed.
     ///
     /// # Attention
     ///
@@ -780,7 +793,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1);
     ///
@@ -811,9 +824,14 @@ impl<T> Channel<T> {
     ///
     /// __Doesn't drop__ the old value in the slot.
     ///
+    /// # Safety
+    ///
+    /// - Provided pointer is valid and aligned
+    /// - Previous value is dropped
+    ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1); // capacity = 1
     ///
@@ -842,7 +860,7 @@ impl<T> Channel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::Channel::bounded(1);
     ///     let (sender, receiver) = channel.split();
@@ -858,10 +876,10 @@ impl<T> Channel<T> {
     }
 }
 
-unsafe impl<T> Sync for Channel<T> {}
-unsafe impl<T> Send for Channel<T> {}
-impl<T: UnwindSafe> UnwindSafe for Channel<T> {}
-impl<T: RefUnwindSafe> RefUnwindSafe for Channel<T> {}
+unsafe impl<T: Send> Sync for Channel<T> {}
+unsafe impl<T: Send> Send for Channel<T> {}
+impl<T: UnwindSafe + Send> UnwindSafe for Channel<T> {}
+impl<T: RefUnwindSafe + Send> RefUnwindSafe for Channel<T> {}
 
 // endregion
 
@@ -900,7 +918,7 @@ mod tests {
         assert_eq!(res, 2);
 
         match ch.send(2).await {
-            Err(_) => assert!(true),
+            Err(value) => assert_eq!(value, 2),
             _ => panic!("should be closed"),
         };
     }
@@ -921,7 +939,7 @@ mod tests {
                 ch_clone.send(i).await.expect("closed");
             }
 
-            let _ = wg_clone.wait().await;
+            wg_clone.wait().await;
             ch_clone.close().await;
         });
 
@@ -931,10 +949,7 @@ mod tests {
             wg.done();
         }
 
-        match ch.recv().await {
-            Err(_) => assert!(true),
-            _ => panic!("should be closed"),
-        };
+        assert!(ch.recv().await.is_err(), "should be closed");
     }
 
     #[orengine_macros::test_shared]
@@ -974,7 +989,7 @@ mod tests {
 
         let _ = ch.send(3).await;
         match ch.send(4).await {
-            Err(_) => assert!(true),
+            Err(value) => assert_eq!(value, 4),
             _ => panic!("should be closed"),
         };
     }
@@ -992,7 +1007,7 @@ mod tests {
                 ch_clone.send(i).await.expect("closed");
             }
 
-            let _ = wg_clone.wait().await;
+            wg_clone.wait().await;
 
             ch_clone.close().await;
         });
@@ -1004,10 +1019,7 @@ mod tests {
 
         wg.done();
 
-        match ch.recv().await {
-            Err(_) => assert!(true),
-            _ => panic!("should be closed"),
-        };
+        assert!(ch.recv().await.is_err(), "should be closed");
     }
 
     #[orengine_macros::test_shared]
@@ -1071,7 +1083,7 @@ mod tests {
         let sent = Arc::new(AtomicUsize::new(0));
         let received = Arc::new(AtomicUsize::new(0));
 
-        for i in 0..get_core_ids().unwrap().len() * 2  {
+        for i in 0..get_core_ids().unwrap().len() * 2 {
             let channel = channel.clone();
             let wg = wg.clone();
             let sent = sent.clone();
@@ -1095,7 +1107,7 @@ mod tests {
             });
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
         assert_eq!(sent.load(Relaxed), received.load(Relaxed));
     }
 

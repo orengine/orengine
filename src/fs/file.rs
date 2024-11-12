@@ -25,7 +25,7 @@ use std::{io, mem};
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::fs::{File, OpenOptions};
 ///
 /// # async fn foo() -> std::io::Result<()> {
@@ -43,7 +43,7 @@ impl File {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
@@ -69,11 +69,11 @@ impl File {
     /// - The provided path is empty.
     /// - There is an issue converting the path to an OS-specific format.
     /// - The file could not be opened due to other I/O errors
-    /// (e.g., permission denied, file not found).
+    ///   (e.g., permission denied, file not found).
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
@@ -82,7 +82,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path> + Send>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
@@ -111,7 +111,7 @@ impl File {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
@@ -122,8 +122,8 @@ impl File {
     #[inline(always)]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
     where
-        OldPath: AsRef<Path>,
-        NewPath: AsRef<Path>,
+        OldPath: AsRef<Path> + Send,
+        NewPath: AsRef<Path> + Send,
     {
         let old_path = get_os_path(old_path.as_ref())?;
         let new_path = get_os_path(new_path.as_ref())?;
@@ -141,11 +141,11 @@ impl File {
     /// This function will return an `Err` if:
     /// - The provided path cannot be converted into an OS path.
     /// - The file removal operation fails due to I/O issues such as permission errors
-    /// or file not found.
+    ///   or file not found.
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::path::Path;
     /// use orengine::fs::{File, OpenOptions};
     ///
@@ -156,18 +156,18 @@ impl File {
     /// # }
     /// ```
     #[inline(always)]
-    pub async fn remove<P: AsRef<Path>>(path: P) -> Result<()> {
+    pub async fn remove<P: AsRef<Path> + Send>(path: P) -> Result<()> {
         let path = get_os_path(path.as_ref())?;
         Remove::new(path).await
     }
 }
 
-impl Into<std::fs::File> for File {
-    fn into(self) -> std::fs::File {
-        let fd = self.fd;
-        mem::forget(self);
+impl From<File> for std::fs::File {
+    fn from(file: File) -> Self {
+        let fd = file.fd;
+        mem::forget(file);
 
-        unsafe { std::fs::File::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(fd) }
     }
 }
 
@@ -223,6 +223,8 @@ mod tests {
 
     #[orengine_macros::test_local]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
+        const MSG: &[u8] = b"Hello, world!";
+
         let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
 
         create_test_dir_if_not_exist();
@@ -240,53 +242,49 @@ mod tests {
             .create(true);
         let mut file = match File::open(&file_path, &options).await {
             Ok(file) => file,
-            Err(err) => panic!("Can't open (create) file: {}", err),
+            Err(err) => panic!("Can't open (create) file: {err}"),
         };
 
         assert!(is_exists(file_path.clone()));
 
         let mut buf = buffer();
-        const MSG: &[u8] = b"Hello, world!";
         buf.append(MSG);
 
         match file.write_all(buf.as_ref()).await {
-            Ok(_) => (),
-            Err(err) => panic!("Can't write file: {}", err),
+            Ok(()) => (),
+            Err(err) => panic!("Can't write file: {err}"),
         }
 
         match file.read_exact(buf.as_mut()).await {
-            Ok(_) => assert_eq!(buf.as_ref(), MSG),
-            Err(err) => panic!("Can't read file: {}", err),
+            Ok(()) => assert_eq!(buf.as_ref(), MSG),
+            Err(err) => panic!("Can't read file: {err}"),
         }
 
         buf.clear();
-        buf.append("great World!".as_bytes());
+        buf.append(b"great World!");
         match file.pwrite_all(buf.as_ref(), 7).await {
-            Ok(_) => (),
-            Err(err) => panic!("Can't pwrite file: {}", err),
+            Ok(()) => (),
+            Err(err) => panic!("Can't pwrite file: {err}"),
         }
 
         buf.clear();
         buf.set_len(MSG.len() + 6);
         match file.read_exact(buf.as_mut()).await {
-            Ok(_) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
-            Err(err) => panic!("Can't read file: {}", err),
+            Ok(()) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
+            Err(err) => panic!("Can't read file: {err}"),
         }
 
-        match File::rename(
+        File::rename(
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-        .await
-        {
-            Ok(_) => assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt")),
-            Err(err) => panic!("Can't rename file: {}", err),
-        }
+            .await.expect("Can't rename file");
+        assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
-        match File::remove(test_file_dir_path.to_string() + "/test2.txt").await {
-            Ok(_) => assert!(!is_exists(file_path)),
-            Err(err) => panic!("Can't remove file: {}", err),
-        }
+        File::remove(test_file_dir_path.to_string() + "/test2.txt")
+            .await
+            .expect("Can't remove file");
+        assert!(!is_exists(file_path));
 
         std::fs::remove_dir("./test/test_file").expect("failed to remove test file dir");
     }

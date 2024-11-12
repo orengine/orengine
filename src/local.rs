@@ -16,6 +16,7 @@ struct Inner<T> {
 
 /// [`Local`] is a custom smart pointer-like structure designed to manage `T` in a single-threaded,
 /// non-shared memory environment.
+///
 /// This design is aligned with the shared-nothing concurrency model, which avoids shared memory
 /// between threads to reduce the complexity of synchronization.
 ///
@@ -32,7 +33,7 @@ struct Inner<T> {
 /// Instead, you get a simpler and more efficient implementation by using a raw pointer
 /// with manual reference counting.
 ///
-/// # Shared-Nothing and spawn_local
+/// # Shared-Nothing and [`spawn_local`](crate::Executor::spawn_local)
 ///
 /// In Rust, when working with local, task-specific data, you may want to leverage
 /// shared-nothing concurrency by isolating data to specific threads.
@@ -48,23 +49,21 @@ struct Inner<T> {
 /// use orengine::Executor;
 /// use orengine::local_executor;
 ///
-/// fn main() {
-///     Executor::init().run_with_local_future(async {
-///         let local_data = Local::new(42);
+/// Executor::init().run_with_local_future(async {
+///     let local_data = Local::new(42);
 ///
-///         println!("The value is: {}", local_data);
+///     println!("The value is: {}", local_data);
 ///
-///         *local_data.get_mut() += 1;
+///     *local_data.get_mut() += 1;
 ///
-///         println!("Updated value: {}", local_data);
+///     println!("Updated value: {}", local_data);
 ///
-///         // Cloning (increments the internal counter)
-///         let cloned_data = local_data.clone();
-///         local_executor().spawn_local(async move {
-///             assert_eq!(*cloned_data, 43);
-///         });
+///     // Cloning (increments the internal counter)
+///     let cloned_data = local_data.clone();
+///     local_executor().spawn_local(async move {
+///         assert_eq!(*cloned_data, 43);
 ///     });
-/// }
+/// });
 /// ```
 pub struct Local<T> {
     inner: Ptr<Inner<T>>,
@@ -95,7 +94,7 @@ impl<T> Local<T> {
     /// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`](crate::runtime::executor::MSG_LOCAL_EXECUTOR_IS_NOT_INIT)
     /// for more details.
     pub fn new(data: T) -> Self {
-        Local {
+        Self {
             inner: Ptr::new(Inner { data, counter: 1 }),
             #[cfg(debug_assertions)]
             parent_executor_id: crate::local_executor().id(),
@@ -129,6 +128,8 @@ impl<T> Local<T> {
 
     /// Returns a mutable reference to the inner data.
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
+    // TODO in debug check if borrowed
     pub fn get_mut(&self) -> &mut T {
         check_parent_executor_id!(self);
 

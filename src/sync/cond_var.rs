@@ -9,17 +9,17 @@ use crate::sync_task_queue::SyncTaskList;
 use crate::{get_task_from_context, panic_if_local_in_future};
 
 /// Current state of the [`WaitCondVar`].
-enum State {
-    WaitSleep,
-    WaitWake,
-    WaitLock,
+enum WaitState {
+    Sleep,
+    Wake,
+    Lock,
 }
 
 /// `WaitCondVar` represents a future returned by the [`CondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
 pub struct WaitCondVar<'mutex, 'cond_var, T> {
-    state: State,
+    state: WaitState,
     cond_var: &'cond_var CondVar,
     mutex: &'mutex Mutex<T>,
 }
@@ -30,9 +30,9 @@ impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
     pub fn new(
         cond_var: &'cond_var CondVar,
         mutex: &'mutex Mutex<T>,
-    ) -> WaitCondVar<'mutex, 'cond_var, T> {
+    ) -> Self {
         WaitCondVar {
-            state: State::WaitSleep,
+            state: WaitState::Sleep,
             cond_var,
             mutex,
         }
@@ -47,23 +47,24 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
         panic_if_local_in_future!(cx, "CondVar");
 
         match this.state {
-            State::WaitSleep => {
-                this.state = State::WaitWake;
+            WaitState::Sleep => {
+                this.state = WaitState::Wake;
                 unsafe { local_executor().push_current_task_to(&this.cond_var.wait_queue) };
                 Poll::Pending
             }
-            State::WaitWake => match this.mutex.try_lock_with_spinning() {
-                Some(guard) => Poll::Ready(guard),
-                None => {
-                    this.state = State::WaitLock;
-                    let task = get_task_from_context!(cx);
+            WaitState::Wake => {
+                if let Some(guard) = this.mutex.try_lock_with_spinning() {
+                    Poll::Ready(guard)
+                } else {
+                    this.state = WaitState::Lock;
+                    let task = unsafe { get_task_from_context!(cx) };
                     unsafe {
                         this.mutex.subscribe(task);
                     }
                     Poll::Pending
                 }
-            },
-            State::WaitLock => Poll::Ready(MutexGuard::new(this.mutex)),
+            }
+            WaitState::Lock => Poll::Ready(MutexGuard::new(this.mutex)),
         }
     }
 }
@@ -87,7 +88,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::sync::{CondVar, Mutex, shared_scope};
 /// use orengine::sleep;
 /// use std::time::Duration;
@@ -119,8 +120,8 @@ pub struct CondVar {
 impl CondVar {
     /// Creates a new [`CondVar`].
     #[inline(always)]
-    pub fn new() -> CondVar {
-        CondVar {
+    pub fn new() -> Self {
+        Self {
             wait_queue: SyncTaskList::new(),
         }
     }
@@ -129,7 +130,7 @@ impl CondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::{CondVar, Mutex, shared_scope};
     /// use orengine::sleep;
     /// use std::time::Duration;
@@ -169,7 +170,7 @@ impl CondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::{Mutex, CondVar};
     ///
     /// async fn inc_counter_and_notify(counter: &Mutex<i32>, cvar: &CondVar) {
@@ -182,7 +183,7 @@ impl CondVar {
     #[inline(always)]
     pub fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
-            local_executor().spawn_shared_task(task)
+            local_executor().spawn_shared_task(task);
         }
     }
 
@@ -194,7 +195,7 @@ impl CondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::{Mutex, CondVar};
     ///
     /// async fn inc_counter_and_notify_all(counter: &Mutex<i32>, cvar: &CondVar) {
@@ -213,6 +214,12 @@ impl CondVar {
     }
 }
 
+impl Default for CondVar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Sync for CondVar {}
 unsafe impl Send for CondVar {}
 impl UnwindSafe for CondVar {}
@@ -220,7 +227,6 @@ impl RefUnwindSafe for CondVar {}
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
@@ -240,7 +246,7 @@ mod tests {
         let pair2 = pair.clone();
 
         sched_future_to_another_thread(async move {
-            let (lock, cvar) = pair2.deref();
+            let (lock, cvar) = &*pair2;
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
             *started = true;
@@ -250,7 +256,7 @@ mod tests {
             cvar.notify_one();
         });
 
-        let (lock, cvar) = pair.deref();
+        let (lock, cvar) = &*pair;
         let mut started = lock.lock().await;
         while !*started {
             started = cvar.wait(started).await;
@@ -266,7 +272,7 @@ mod tests {
         let pair = Arc::new((Mutex::new(false), CondVar::new()));
         let pair2 = pair.clone();
         local_executor().spawn_shared(async move {
-            let (lock, cvar) = pair2.deref();
+            let (lock, cvar) = &*pair2;
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
             *started = true;
@@ -283,7 +289,7 @@ mod tests {
             wg.add(1);
 
             sched_future_to_another_thread(async move {
-                let (lock, cvar) = pair.deref();
+                let (lock, cvar) = &*pair;
                 let mut started = lock.lock().await;
                 while !*started {
                     started = cvar.wait(started).await;
@@ -292,7 +298,7 @@ mod tests {
             });
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
 
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }

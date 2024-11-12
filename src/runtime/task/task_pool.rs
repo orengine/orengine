@@ -13,7 +13,7 @@ pub struct TaskPool {
 
 thread_local! {
     /// A thread-local task pool. So it is lockless.
-    pub(crate) static TASK_POOL: UnsafeCell<Option<TaskPool>> = UnsafeCell::new(None);
+    pub(crate) static TASK_POOL: UnsafeCell<Option<TaskPool>> = const { UnsafeCell::new(None) };
 }
 
 /// Returns the thread-local task pool wrapped in an [`Option`].
@@ -24,10 +24,11 @@ pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
 
 /// Returns `&'static mut TaskPool` of the current thread.
 ///
-/// # Safety
+/// # Panics or Undefined Behavior
 ///
-/// [`TASK_POOL`](TASK_POOL) must be initialized.
+/// If [`TASK_POOL`](TASK_POOL) is not initialized.
 #[inline(always)]
+#[allow(clippy::missing_panics_doc, reason = "false positive")]
 pub fn task_pool() -> &'static mut TaskPool {
     #[cfg(debug_assertions)]
     {
@@ -44,7 +45,7 @@ impl TaskPool {
     /// Initializes a new `TaskPool` in the current thread if it is not initialized.
     pub fn init() {
         if get_task_pool_ref().is_none() {
-            *get_task_pool_ref() = Some(TaskPool {
+            *get_task_pool_ref() = Some(Self {
                 storage: AHashMap::new(),
             });
         }
@@ -52,7 +53,7 @@ impl TaskPool {
 
     /// Returns a [`Task`] with the given future.
     #[inline(always)]
-    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
+    pub fn acquire<F: Future<Output=()>>(&mut self, future: F, locality: Locality) -> Task {
         let size = size_of::<F>();
         #[cfg(debug_assertions)]
         let executor_id = if cfg!(test) {
@@ -61,9 +62,9 @@ impl TaskPool {
             crate::local_executor().id()
         };
 
-        let pool = self.storage.entry(size).or_insert_with(|| Vec::new());
+        let pool = self.storage.entry(size).or_default();
         if let Some(task) = pool.pop() {
-            let future_ptr: *mut F = unsafe { &mut *(task.future_ptr() as *mut F) };
+            let future_ptr: *mut F = unsafe { &mut *task.future_ptr().cast::<F>() };
             unsafe {
                 future_ptr.write(future);
             }

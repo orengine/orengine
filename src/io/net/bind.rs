@@ -1,14 +1,15 @@
-use std::io::Result;
-use std::net::{SocketAddr, ToSocketAddrs};
-
-use socket2::SockRef;
-
 use crate::each_addr;
 use crate::io::sys::{BorrowedFd, FromRawFd, RawFd};
 use crate::net::{BindConfig, ReusePort};
+use socket2::SockRef;
+use std::io::Result;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::ptr::addr_of;
 
 /// The `AsyncBind` trait provides asynchronous methods for creating, binding, and configuring
-/// sockets. It is primarily used to bind a socket to a specific address, with options for setting
+/// sockets.
+///
+/// It is primarily used to bind a socket to a specific address, with options for setting
 /// configuration such as address reuse and port reuse.
 ///
 /// This trait can be implemented for types that represent sockets, and it provides both direct binding
@@ -16,7 +17,7 @@ use crate::net::{BindConfig, ReusePort};
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::TcpListener;
 /// use orengine::net::BindConfig;
 /// use orengine::io::AsyncBind;
@@ -47,7 +48,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::net::SocketAddr;
     /// use orengine::net::TcpListener;
     /// use orengine::io::AsyncBind;
@@ -78,7 +79,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::os::fd::BorrowedFd;
     /// use orengine::net::{BindConfig, TcpListener};
     /// use orengine::socket2::SockRef;
@@ -107,7 +108,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpListener;
     /// use orengine::net::BindConfig;
     /// use orengine::io::AsyncBind;
@@ -154,6 +155,8 @@ pub trait AsyncBind: Sized + FromRawFd {
                         //     {BPF_LD | BPF_W | BPF_ABS, 0, 0, SKF_AD_OFF + SKF_AD_CPU},
                         //     {BPF_RET | BPF_A, 0, 0, 0}
                         // ]
+                        #[allow(clippy::cast_possible_truncation)] // because they are flags
+                        #[allow(clippy::cast_sign_loss)] // because they are flags
                         let mut code = [
                             libc::sock_filter {
                                 code: (BPF_LD | BPF_W | BPF_ABS) as _,
@@ -172,13 +175,14 @@ pub trait AsyncBind: Sized + FromRawFd {
                             len: 2,
                             filter: code.as_mut_ptr(),
                         };
-
+                        #[allow(clippy::cast_possible_truncation)] // size of libc::sock_fprog
+                        // is less than u32::MAX
                         let res = unsafe {
                             libc::setsockopt(
                                 fd as _,
                                 libc::SOL_SOCKET,
                                 libc::SO_ATTACH_REUSEPORT_CBPF,
-                                &p as *const _ as _,
+                                addr_of!(p).cast(),
                                 size_of::<libc::sock_fprog>() as _,
                             )
                         };
@@ -200,7 +204,7 @@ pub trait AsyncBind: Sized + FromRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpListener;
     /// use orengine::io::AsyncBind;
     ///

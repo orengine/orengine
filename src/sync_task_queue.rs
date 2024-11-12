@@ -57,5 +57,11 @@ impl SyncTaskList {
     }
 }
 
+impl Default for SyncTaskList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Send for SyncTaskList {}
 unsafe impl Sync for SyncTaskList {}

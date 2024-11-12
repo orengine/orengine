@@ -1,5 +1,6 @@
-//! This module provides asynchronous file system operations,
-//! focusing on low-level interactions with the file system such as file and directory
+//! This module provides asynchronous file system operations.
+//!
+//! It is focused on low-level interactions with the file system such as file and directory
 //! creation, removal, reading, writing, and syncing data to disk.
 
 /// Contains tools for creating directories.
@@ -33,12 +34,12 @@ pub mod sync_all;
 pub mod sync_data;
 
 pub use create_dir::CreateDir;
-pub use open::Open;
 pub use fallocate::Fallocate;
-pub use sync_data::{AsyncSyncData, SyncData};
-pub use sync_all::{AsyncSyncAll, SyncAll};
+pub use open::Open;
 pub use read::AsyncRead;
 pub use remove::Remove;
 pub use remove_dir::RemoveDir;
 pub use rename::Rename;
+pub use sync_all::{AsyncSyncAll, SyncAll};
+pub use sync_data::{AsyncSyncData, SyncData};
 pub use write::AsyncWrite;

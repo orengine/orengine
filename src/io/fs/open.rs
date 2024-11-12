@@ -3,6 +3,7 @@ use crate::io::sys::unix::OsOpenOptions;
 use crate::io::sys::OsPath::OsPath;
 use crate::io::sys::{FromRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
+use crate as orengine;
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;

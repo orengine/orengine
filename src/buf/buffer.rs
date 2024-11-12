@@ -51,10 +51,8 @@ impl Buffer {
     /// capacity > 0
     #[inline(always)]
     fn raw_slice(capacity: usize) -> NonNull<[u8]> {
-        let layout = match Layout::array::<u8>(capacity) {
-            Ok(layout) => layout,
-            Err(_) => panic!("Cannot create slice with capacity {capacity}. Capacity overflow."),
-        };
+        let layout = Layout::array::<u8>(capacity)
+            .expect("Cannot create slice with capacity {capacity}. Capacity overflow.");
         unsafe { NonNull::new_unchecked(slice_from_raw_parts_mut(alloc(layout), capacity)) }
     }
 
@@ -71,7 +69,7 @@ impl Buffer {
             "Cannot create Buffer with size 0. Size must be > 0."
         );
 
-        Buffer {
+        Self {
             slice: Self::raw_slice(size),
             len: 0,
         }
@@ -80,7 +78,7 @@ impl Buffer {
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
     pub(crate) fn new_from_pool(size: usize) -> Self {
-        Buffer {
+        Self {
             slice: Self::raw_slice(size),
             len: 0,
         }
@@ -130,16 +128,16 @@ impl Buffer {
 
     /// Resizes the buffer to a new size.
     ///
-    /// If the new_size is less than the current length of the buffer,
-    /// the length is truncated to new_size.
+    /// If the `new_size` is less than the current length of the buffer,
+    /// the length is truncated to `new_size`.
     ///
-    /// A new buffer is created with the specified new_size.
+    /// A new buffer is created with the specified `new_size`.
     /// If a buffer of the same size is available in the buffer pool, it is reused;
     /// otherwise, a new buffer is allocated.
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::Buffer;
     ///
     /// let mut buf = Buffer::new(100);
@@ -157,7 +155,7 @@ impl Buffer {
         let mut new_buf = if buf_pool().buffer_len() == new_size {
             buffer()
         } else {
-            Buffer::new(new_size)
+            Self::new(new_size)
         };
 
         new_buf.len = self.len;
@@ -186,13 +184,13 @@ impl Buffer {
     /// Returns a pointer to the buffer.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const u8 {
-        self.slice.as_ptr() as *mut _
+        self.slice.as_ptr().cast()
     }
 
     /// Returns a mutable pointer to the buffer.
     #[inline(always)]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.slice.as_ptr() as *mut _
+        self.slice.as_ptr().cast()
     }
 
     /// Clears the buffer.
@@ -275,7 +273,7 @@ impl Debug for Buffer {
 
 impl From<Box<[u8]>> for Buffer {
     fn from(slice: Box<[u8]>) -> Self {
-        Buffer {
+        Self {
             len: slice.len(),
             slice: NonNull::from(Box::leak(slice)),
         }
@@ -284,7 +282,7 @@ impl From<Box<[u8]>> for Buffer {
 
 impl<const N: usize> From<Box<[u8; N]>> for Buffer {
     fn from(slice: Box<[u8; N]>) -> Self {
-        Buffer {
+        Self {
             len: slice.len(),
             slice: NonNull::from(Box::leak(slice)),
         }
@@ -296,7 +294,7 @@ impl From<Vec<u8>> for Buffer {
         let l = slice.len();
         unsafe { slice.set_len(slice.capacity()) }
 
-        Buffer {
+        Self {
             len: l,
             slice: NonNull::from(slice.leak()),
         }
@@ -307,7 +305,7 @@ impl Drop for Buffer {
     fn drop(&mut self) {
         let pool = buf_pool();
         if self.cap() == pool.buffer_len() {
-            let buf = Buffer {
+            let buf = Self {
                 slice: self.slice,
                 len: self.len,
             };
@@ -315,9 +313,9 @@ impl Drop for Buffer {
         } else {
             unsafe {
                 dealloc(
-                    self.slice.as_ptr() as *mut _,
+                    self.slice.as_ptr().cast(),
                     Layout::array::<u8>(self.cap()).unwrap_unchecked(),
-                )
+                );
             }
         }
     }

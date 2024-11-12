@@ -18,7 +18,7 @@ pub struct Task {
 impl Task {
     /// Returns a [`Task`] with the given future.
     #[inline(always)]
-    pub fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
+    pub fn from_future<F: Future<Output=()>>(future: F, locality: Locality) -> Self {
         task_pool().acquire(future, locality)
     }
 
@@ -31,7 +31,7 @@ impl Task {
     /// Deref it only if you know what you are doing and remember that [`Task`] can be executed
     /// only by [`Executor::exec_task`](crate::Executor::exec_task) and it can't be cloned, only moved.
     #[inline(always)]
-    pub fn future_ptr(&self) -> *mut dyn Future<Output = ()> {
+    pub fn future_ptr(&self) -> *mut dyn Future<Output=()> {
         self.data.future_ptr()
     }
 
@@ -43,13 +43,17 @@ impl Task {
 
     /// Puts it back to the [`TaskPool`]. It is unsafe because you have to think about making
     /// sure it is no longer used.
+    ///
+    /// # Safety
+    ///
+    /// Provieded [`Task`] is no longer used.
     #[inline(always)]
     pub unsafe fn release(self) {
         task_pool().put(self);
     }
 
     /// Checks if the task is safe to be executed.
-    /// It checks ref_count and executor_id with locality.
+    /// It checks `ref_count` and `executor_id` with locality.
     ///
     /// It is zero cost because it can be called only in debug mode.
     #[cfg(debug_assertions)]
@@ -79,15 +83,16 @@ unsafe impl Send for Task {}
 impl UnwindSafe for Task {}
 impl RefUnwindSafe for Task {}
 
+// TODO docs
 #[macro_export]
 macro_rules! check_task_local_safety {
     ($task:expr) => {
         #[cfg(debug_assertions)]
         {
-            if $task.is_local() && crate::local_executor().id() != $task.executor_id {
+            if $task.is_local() && $crate::local_executor().id() != $task.executor_id {
                 if cfg!(test) && $task.executor_id == usize::MAX {
                     // All is ok
-                    $task.executor_id = crate::local_executor().id();
+                    $task.executor_id = $crate::local_executor().id();
                 } else {
                     panic!(
                         "[BUG] Local task has been moved to another executor.\
@@ -101,12 +106,13 @@ macro_rules! check_task_local_safety {
     };
 }
 
+// TODO docs
 #[macro_export]
 macro_rules! panic_if_local_in_future {
     ($cx:expr, $name_of_future:expr) => {
         #[cfg(debug_assertions)]
         {
-            let task = crate::get_task_from_context!($cx);
+            let task = unsafe { $crate::get_task_from_context!($cx) };
             if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \

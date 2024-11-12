@@ -1,11 +1,13 @@
+use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
+use crate::io::{AsyncClose, AsyncPollFd};
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
-use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncClose, AsyncPollFd};
 
 /// The `Socket` trait defines common socket-related operations and is intended to be implemented
-/// for types that represent network sockets. It provides methods for querying and configuring
+/// for types that represent network sockets.
+///
+/// It provides methods for querying and configuring
 /// socket settings, such as TTL and obtaining the local address
 /// or pending socket errors.
 ///
@@ -22,7 +24,7 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncCl
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncBind;
     /// use orengine::net::Socket;
     ///
@@ -36,7 +38,7 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncCl
     fn local_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.local_addr()?.as_socket().ok_or_else(|| Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))

@@ -1,3 +1,4 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -14,7 +15,7 @@ pub struct SyncData {
 }
 
 impl SyncData {
-    /// Creates a new 'sync_data' io operation.
+    /// Creates a new `sync_data` io operation.
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
@@ -56,7 +57,7 @@ pub trait AsyncSyncData: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::{AsyncRead, AsyncSyncData, AsyncWrite};

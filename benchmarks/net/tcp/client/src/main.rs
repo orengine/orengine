@@ -55,7 +55,7 @@ fn bench_throughput() {
         
                         for _ in 0..COUNT {
                             conn.write_all(b"ping").unwrap();
-                            conn.read(&mut buf).unwrap();
+                            let _ = conn.read(&mut buf).unwrap();
                         }
                     }));
                 }
@@ -130,7 +130,7 @@ fn bench_throughput() {
 
                                 for _ in 0..COUNT {
                                     conn.write_all(b"ping").await.unwrap();
-                                    conn.read(&mut buf).await.unwrap();
+                                    let _ = conn.read(&mut buf).await.unwrap();
                                 }
 
                                 tx.send_async(()).await.unwrap();
@@ -197,11 +197,12 @@ fn bench_throughput() {
             let par = PAR / number_of_cores;
 
             for i in 0..TRIES as isize {
-                let mut guard = start_wg.0.lock().unwrap();
-                while *guard != i {
-                    guard = start_wg.1.wait(guard).unwrap();
+                {
+                    let mut guard = start_wg.0.lock().unwrap();
+                    while *guard != i {
+                        guard = start_wg.1.wait(guard).unwrap();
+                    }
                 }
-                drop(guard);
 
                 let wg = Local::new(LocalWaitGroup::new());
 
@@ -239,8 +240,7 @@ fn bench_throughput() {
         let cores = get_core_ids().unwrap();
         let number_of_cores = cores.len();
 
-        for i in 0..number_of_cores {
-            let core = cores[i];
+        for core in cores {
             let start_wg = start_wg.clone();
             let end_wg = end_wg.clone();
             thread::spawn(move || {

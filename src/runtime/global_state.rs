@@ -8,6 +8,14 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
 
+/// Inner value of [`SharedState`].
+struct Inner {
+    current_version: CachePadded<AtomicUsize>,
+    processed_version: usize,
+    is_stopped: bool,
+    tasks_lists: Option<Vec<Arc<ExecutorSharedTaskList>>>,
+}
+
 /// `SubscribedState` contains the image of the [`shared state`](GLOBAL_STATE)
 /// and the version. Before use the image, it checks the version and updates it if needed.
 ///
@@ -15,10 +23,7 @@ use std::sync::Arc;
 ///
 /// It contains `is_stopped` and `tasks_lists` of all alive executors with work-sharing.
 pub(crate) struct SubscribedState {
-    current_version: CachePadded<AtomicUsize>,
-    processed_version: usize,
-    is_stopped: bool,
-    tasks_lists: Option<Vec<Arc<ExecutorSharedTaskList>>>,
+    inner: UnsafeCell<Inner>,
 }
 
 impl SubscribedState {
@@ -28,70 +33,80 @@ impl SubscribedState {
     /// [`register_local_executor`](SharedState::register_local_executor).
     pub(crate) const fn new() -> Self {
         Self {
-            current_version: CachePadded::new(AtomicUsize::new(1)),
-            processed_version: usize::MAX,
-            is_stopped: false,
-            tasks_lists: None,
+            inner: UnsafeCell::new(Inner {
+                current_version: CachePadded::new(AtomicUsize::new(1)),
+                processed_version: usize::MAX,
+                is_stopped: false,
+                tasks_lists: None,
+            }),
         }
+    }
+
+    /// Runs the closure with a mutable reference to the [`inner`](Inner) value.
+    fn with_inner<R, F: FnOnce(&mut Inner) -> R>(&self, f: F) -> R {
+        unsafe { f(&mut *self.inner.get()) }
     }
 
     /// Returns whether current executor is stopped.
     pub(crate) fn is_stopped(&self) -> bool {
-        self.is_stopped
+        self.with_inner(|inner| inner.is_stopped)
     }
 
     /// Removes the list of the executor
     /// and moves all the lists that are after it to the beginning.
-    fn validate_tasks_lists(&mut self, executor_id: usize) {
-        if self.tasks_lists.is_none() {
-            return;
-        }
+    fn validate_tasks_lists(&self, executor_id: usize) {
+        self.with_inner(|inner| {
+            if inner.tasks_lists.is_none() {
+                return;
+            }
 
-        let tasks_lists = self.tasks_lists.as_ref().unwrap();
-        let index = tasks_lists
-            .iter()
-            .position(|list| list.executor_id() == executor_id)
-            .unwrap();
+            let tasks_lists = inner.tasks_lists.as_ref().unwrap();
+            let index = tasks_lists
+                .iter()
+                .position(|list| list.executor_id() == executor_id)
+                .unwrap();
 
-        let len = self.tasks_lists.as_ref().unwrap().len() - 1;
-        if len == 0 {
-            self.tasks_lists = Some(vec![]);
-            return;
-        }
+            let len = inner.tasks_lists.as_ref().unwrap().len() - 1;
+            if len == 0 {
+                inner.tasks_lists = Some(vec![]);
+                return;
+            }
 
-        let mut new_list = tasks_lists.clone();
-        new_list.remove(index);
-        new_list.rotate_left(index);
+            let mut new_list = tasks_lists.clone();
+            new_list.remove(index);
+            new_list.rotate_left(index);
 
-        self.tasks_lists = Some(new_list);
+            inner.tasks_lists = Some(new_list);
+        });
     }
 
     /// Checks the version of [`shared state`](GLOBAL_STATE) and updates it if needed.
     #[inline(always)]
-    pub(crate) fn check_version_and_update_if_needed(&mut self, executor_id: usize) {
-        let current_version = self.current_version.load(Acquire);
-        if self.processed_version == current_version {
-            debug_assert_ne!(self.processed_version, usize::MAX, "{BUG_MESSAGE}");
-            return;
-        }
+    pub(crate) fn check_version_and_update_if_needed(&self, executor_id: usize) {
+        self.with_inner(|inner| {
+            let current_version = inner.current_version.load(Acquire);
+            if inner.processed_version == current_version {
+                debug_assert_ne!(inner.processed_version, usize::MAX, "{BUG_MESSAGE}");
+                return;
+            }
 
-        self.processed_version = current_version;
-        let shared_state = shared_state();
-        let found = shared_state
-            .states_of_alive_executors
-            .iter()
-            .position(|(alive_executor_id, _)| *alive_executor_id == executor_id)
-            .is_some();
+            inner.processed_version = current_version;
+            let shared_state = shared_state();
+            let found = shared_state
+                .states_of_alive_executors
+                .iter()
+                .any(|(alive_executor_id, _)| *alive_executor_id == executor_id);
 
-        if !found {
-            self.is_stopped = true;
-            return;
-        }
+            if !found {
+                inner.is_stopped = true;
+                return;
+            }
 
-        if self.tasks_lists.is_some() {
-            self.tasks_lists = Some(shared_state.lists.clone());
-            self.validate_tasks_lists(executor_id);
-        }
+            if inner.tasks_lists.is_some() {
+                inner.tasks_lists = Some(shared_state.lists.clone());
+                self.validate_tasks_lists(executor_id);
+            }
+        });
     }
 
     /// Returns `tasks_lists` of all alive executors with work-sharing.
@@ -99,10 +114,19 @@ impl SubscribedState {
     /// # Safety
     ///
     /// Tasks list must be not None.
-    pub(crate) unsafe fn tasks_lists(&self) -> &Vec<Arc<ExecutorSharedTaskList>> {
-        unsafe { self.tasks_lists.as_ref().unwrap_unchecked() }
+    pub(crate) unsafe fn with_tasks_lists<F>(&self, f: F)
+    where
+        F: FnOnce(&Vec<Arc<ExecutorSharedTaskList>>),
+    {
+        self.with_inner(|inner| {
+            f(unsafe {
+                inner.tasks_lists.as_ref().unwrap_unchecked()
+            });
+        });
     }
 }
+
+unsafe impl Sync for SubscribedState {}
 
 /// `SharedState` contains current version, `tasks_lists` of all alive executors with work-sharing.
 ///
@@ -116,7 +140,7 @@ struct SharedState {
     /// 0 - id
     ///
     /// 1 - state
-    states_of_alive_executors: Vec<(usize, Arc<UnsafeCell<SubscribedState>>)>,
+    states_of_alive_executors: Vec<(usize, Arc<SubscribedState>)>,
     lists: Vec<Arc<ExecutorSharedTaskList>>,
 }
 
@@ -138,22 +162,29 @@ impl SharedState {
         let executor = local_executor();
         if let Some(shared_task_list) = executor.shared_task_list() {
             self.lists.push(shared_task_list.clone());
-            executor.subscribed_state_mut().tasks_lists = Some(self.lists.clone());
+            executor.subscribed_state().with_inner(|inner| {
+                inner.tasks_lists = Some(self.lists.clone());
+            });
             let executor_id = executor.id();
             executor
-                .subscribed_state_mut()
+                .subscribed_state()
                 .validate_tasks_lists(executor_id);
         }
 
-        executor.subscribed_state_mut().processed_version = self.version;
-        self.states_of_alive_executors
-            .push((executor.id(), executor.subscribed_state()));
+        executor.subscribed_state().with_inner(|inner| {
+            inner.processed_version = self.version;
+        });
+        self.states_of_alive_executors.push((executor.id(), executor.subscribed_state()));
 
         // It is necessary to reset the flag to false on re-initialization.
-        executor.subscribed_state_mut().is_stopped = false;
+        executor.subscribed_state().with_inner(|inner| {
+            inner.is_stopped = false;
+        });
 
-        for (_, state) in &mut self.states_of_alive_executors {
-            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
+        for (_, state) in &self.states_of_alive_executors {
+            state.with_inner(|inner| {
+                inner.current_version.store(self.version, Release);
+            });
         }
     }
 
@@ -163,7 +194,9 @@ impl SharedState {
         self.version += 1;
         self.states_of_alive_executors
             .retain(|(alive_executor_id, state)| {
-                unsafe { &(&*state.get()).current_version }.store(self.version, Release);
+                state.with_inner(|inner| {
+                    inner.current_version.store(self.version, Release);
+                });
                 *alive_executor_id != id
             });
         self.lists.retain(|list| list.executor_id() != id);
@@ -174,7 +207,10 @@ impl SharedState {
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
         self.states_of_alive_executors.retain(|(_, state)| {
-            unsafe { &(&*state.get()).current_version }.store(self.version, Release);
+            state.with_inner(|inner| {
+                inner.current_version.store(self.version, Release);
+            });
+
             false
         });
         self.lists.clear();
@@ -201,7 +237,7 @@ fn shared_state() -> SpinLockGuard<'static, SharedState> {
 /// Registers the executor of the current thread (by calling [`local_executor()`](local_executor))
 /// and notifies all executors.
 pub(crate) fn register_local_executor() {
-    shared_state().register_local_executor()
+    shared_state().register_local_executor();
 }
 
 /// Stops the executor with the given id.
@@ -214,22 +250,20 @@ pub(crate) fn register_local_executor() {
 ///
 /// ## Correct Usage
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::{Executor, stop_executor, sleep};
 /// use std::time::Duration;
 ///
-/// fn main() {
-///     let mut executor = Executor::init();
-///     let id = executor.id();
+/// let mut executor = Executor::init();
+/// let id = executor.id();
 ///
-///     executor.spawn_local(async move {
-///         sleep(Duration::from_secs(3)).await;
-///         stop_executor(id); // stops the executor
-///     });
-///     executor.run();
+/// executor.spawn_local(async move {
+///     sleep(Duration::from_secs(3)).await;
+///     stop_executor(id); // stops the executor
+/// });
+/// executor.run();
 ///
-///     println!("Hello from a sync runtime after at least 3 seconds");
-/// }
+/// println!("Hello from a sync runtime after at least 3 seconds");
 /// ```
 ///
 /// ## Incorrect Usage
@@ -237,21 +271,19 @@ pub(crate) fn register_local_executor() {
 /// You need to save an id when the executor starts because else the task can be moved
 /// (if it is shared) to another executor, but it needs to stop the parent executor.
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::{Executor, stop_executor, sleep, local_executor};
 /// use std::time::Duration;
 ///
-/// fn main() {
-///     let mut executor = Executor::init();
+/// let mut executor = Executor::init();
 ///
-///     executor.spawn_shared(async move {
-///         sleep(Duration::from_secs(3)).await;
-///         stop_executor(local_executor().id()); // Undefined behavior: stops an unknown executor
-///     });
-///     executor.run();
+/// executor.spawn_shared(async move {
+///     sleep(Duration::from_secs(3)).await;
+///     stop_executor(local_executor().id()); // Undefined behavior: stops an unknown executor
+/// });
+/// executor.run();
 ///
-///     println!("Hello from a sync runtime after at least 3 seconds");
-/// }
+/// println!("Hello from a sync runtime after at least 3 seconds");
 /// ```
 pub fn stop_executor(executor_id: usize) {
     shared_state().stop_executor(executor_id);

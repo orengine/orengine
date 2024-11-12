@@ -1,6 +1,7 @@
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
+use crate as orengine;
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
@@ -96,7 +97,7 @@ impl<'buf> Future for PositionedRead<'buf> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::ops::Deref;
 /// use orengine::buf::full_buffer;
 /// use orengine::fs::{File, OpenOptions};
@@ -133,7 +134,7 @@ pub trait AsyncRead: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::AsyncRead;
@@ -158,7 +159,7 @@ pub trait AsyncRead: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::AsyncRead;
@@ -183,7 +184,7 @@ pub trait AsyncRead: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::AsyncRead;
@@ -214,7 +215,7 @@ pub trait AsyncRead: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::AsyncRead;

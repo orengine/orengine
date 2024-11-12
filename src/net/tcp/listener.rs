@@ -22,7 +22,7 @@ use crate::runtime::local_executor;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::io::{AsyncAccept, AsyncBind};
 /// use orengine::net::TcpListener;
 ///
@@ -38,12 +38,12 @@ pub struct TcpListener {
     pub(crate) fd: RawFd,
 }
 
-impl Into<std::net::TcpListener> for TcpListener {
-    fn into(self) -> std::net::TcpListener {
-        let fd = self.fd;
-        mem::forget(self);
+impl From<TcpListener> for std::net::TcpListener {
+    fn from(listener: TcpListener) -> Self {
+        let fd = listener.fd;
+        mem::forget(listener);
 
-        unsafe { std::net::TcpListener::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(fd) }
     }
 }
 
@@ -83,9 +83,9 @@ impl From<OwnedFd> for TcpListener {
     }
 }
 
-impl Into<OwnedFd> for TcpListener {
-    fn into(self) -> OwnedFd {
-        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
+impl From<TcpListener> for OwnedFd {
+    fn from(listener: TcpListener) -> Self {
+        unsafe { Self::from_raw_fd(listener.into_raw_fd()) }
     }
 }
 
@@ -100,6 +100,7 @@ impl AsyncBind for TcpListener {
         config: &BindConfig,
     ) -> Result<()> {
         sock_ref.bind(&SockAddr::from(addr))?;
+        #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
         sock_ref.listen(config.backlog_size as c_int)?;
 
         Ok(())
@@ -144,13 +145,13 @@ impl Drop for TcpListener {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    use std::time::Duration;
     use super::*;
     use crate as orengine;
     use crate::net::ReusePort;
     use crate::yield_now;
+    use std::io;
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::time::Duration;
 
     #[orengine_macros::test_local]
     fn test_listener() {
@@ -165,14 +166,9 @@ mod tests {
         listener.set_ttl(122).expect("set_ttl call failed");
         assert_eq!(listener.ttl().expect("ttl call failed"), 122);
 
-        match listener.take_error() {
-            Ok(err) => {
-                assert!(err.is_none());
-            }
-            Err(_) => panic!("take_error call failed"),
-        }
+        assert!(listener.take_error().expect("take_error call failed").is_none());
     }
-    
+
     async fn test_listener_accept_with_config(config: &BindConfig, port: u16) {
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port));
         let mut listener = TcpListener::bind_with_config(addr, config)
@@ -184,20 +180,20 @@ mod tests {
                 assert_eq!(err.kind(), io::ErrorKind::TimedOut);
             }
         }
-    
+
         let stream = std::net::TcpStream::connect(addr).expect("connect call failed");
         match listener.accept_with_timeout(Duration::from_secs(1)).await {
             Ok((_, addr)) => {
-                assert_eq!(addr, stream.local_addr().unwrap())
+                assert_eq!(addr, stream.local_addr().unwrap());
             }
-            Err(_) => panic!("accept_with_timeout call failed"),
+            Err(err) => panic!("accept_with_timeout call failed: {err}"),
         }
-    
+
         drop(listener);
         drop(stream);
         yield_now().await;
     }
-    
+
     #[orengine_macros::test_local]
     fn test_accept() {
         let config = BindConfig::default();

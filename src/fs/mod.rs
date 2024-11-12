@@ -7,7 +7,7 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```rust
 //! use orengine::fs::{File, OpenOptions, DirBuilder, remove_file};
 //!
 //! # async fn foo() -> std::io::Result<()> {

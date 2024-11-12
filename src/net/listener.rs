@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 
 /// The `Listener` trait defines common socket-related operations for types that implement
 /// listening functionality, such as [`TCP socket listeners`](crate::net::TcpListener).
+///
 /// It is intended to be implemented for types that accept incoming connections
 /// via the [`AsyncAccept`] trait and provides methods for querying and configuring socket settings,
 /// such as TTL and obtaining the local address. Additionally, it offers the ability
@@ -26,7 +27,7 @@ use std::net::SocketAddr;
 /// - [`AsFd`]
 /// - [`AsRawFd`]
 pub trait Listener:
-    AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
+AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
 {
     type Stream: Stream;
 
@@ -37,7 +38,7 @@ pub trait Listener:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncBind;
     /// use orengine::net::{TcpListener, Listener};
     ///
@@ -51,7 +52,7 @@ pub trait Listener:
     fn local_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.local_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.local_addr()?.as_socket().ok_or_else(|| Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))
@@ -64,7 +65,7 @@ pub trait Listener:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncBind;
     /// use orengine::net::{TcpListener, Listener};
     ///
@@ -89,7 +90,7 @@ pub trait Listener:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncBind;
     /// use orengine::net::{TcpListener, Listener};
     ///
@@ -113,7 +114,7 @@ pub trait Listener:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncBind;
     /// use orengine::net::{TcpListener, Listener};
     ///

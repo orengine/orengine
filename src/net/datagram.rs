@@ -1,10 +1,12 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-use crate::io::{AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo, AsyncBind};
+use crate::io::{AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo};
 use crate::net::connected_datagram::ConnectedDatagram;
 use crate::net::Socket;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// The `Datagram` trait defines common operations for connectionless datagram-based sockets,
-/// such as UDP. It extends the `Socket` trait and provides methods for sending and receiving
+/// such as UDP.
+///
+/// It extends the [`Socket`] trait and provides methods for sending and receiving
 /// datagrams, as well as configuring settings like broadcast and multicast.
 ///
 /// # Associated Types
@@ -28,7 +30,7 @@ use crate::net::Socket;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::net::Datagram;
 ///
@@ -46,8 +48,8 @@ use crate::net::Socket;
 /// }
 /// ```
 pub trait Datagram:
-    Socket + AsyncConnectDatagram<Self::ConnectedDatagram> + AsyncRecvFrom +
-    AsyncPeekFrom + AsyncSendTo + AsyncBind {
+Socket + AsyncConnectDatagram<Self::ConnectedDatagram> + AsyncRecvFrom +
+AsyncPeekFrom + AsyncSendTo + AsyncBind {
     /// Type of the connected datagram, which allows sending data without specifying the address
     /// for each operation.
     type ConnectedDatagram: ConnectedDatagram;
@@ -125,7 +127,7 @@ pub trait Datagram:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::{UdpSocket, Datagram};
     /// use std::net::Ipv4Addr;    ///
     /// #

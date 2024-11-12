@@ -250,6 +250,7 @@ mod tests {
         const PAR: usize = 50;
         const TRIES: usize = 100;
 
+        // TODO check for SIGSEGV
         async fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;

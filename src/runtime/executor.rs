@@ -1,12 +1,12 @@
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
-use std::{mem, thread};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use std::{mem, thread};
 
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
@@ -34,7 +34,9 @@ macro_rules! shrink {
 
 thread_local! {
     /// Thread local [`Executor`]. So, it is lockless.
-    pub(crate) static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = UnsafeCell::new(None);
+    pub(crate) static LOCAL_EXECUTOR: UnsafeCell<Option<Executor>> = const {
+        UnsafeCell::new(None)
+    };
 }
 
 /// Returns the thread-local executor wrapped in an [`Option`].
@@ -134,7 +136,7 @@ pub struct Executor {
     core_id: CoreId,
     executor_id: usize,
     config: ValidConfig,
-    subscribed_state: Arc<UnsafeCell<SubscribedState>>,
+    subscribed_state: Arc<SubscribedState>,
     rng: Rng,
 
     local_tasks: VecDeque<Task>,
@@ -169,17 +171,15 @@ impl Executor {
     /// use orengine::Executor;
     /// use orengine::utils::get_core_ids;
     ///
-    /// fn main() {
-    ///     let cores = get_core_ids().unwrap();
-    ///     let ex = Executor::init_on_core_with_config(cores[0], Config::default());
+    /// let cores = get_core_ids().unwrap();
+    /// let ex = Executor::init_on_core_with_config(cores[0], Config::default());
     ///
-    ///     ex.spawn_local(async {
-    ///         println!("Hello, world!");
-    ///     });
-    ///     ex.run();
-    /// }
+    /// ex.spawn_local(async {
+    ///     println!("Hello, world!");
+    /// });
+    /// ex.run()
     /// ```
-    pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Executor {
+    pub fn init_on_core_with_config(core_id: CoreId, config: Config) -> &'static mut Self {
         if get_local_executor_ref().is_some() {
             println!(
                 "There is already an initialized executor in the current thread!\
@@ -192,12 +192,16 @@ impl Executor {
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
         TaskPool::init();
-        let (shared_tasks, shared_tasks_list_cap) = match valid_config.is_work_sharing_enabled() {
-            true => (
+        let (
+            shared_tasks,
+            shared_tasks_list_cap
+        ) = if valid_config.is_work_sharing_enabled() {
+            (
                 Some(Arc::new(ExecutorSharedTaskList::new(executor_id))),
-                MAX_NUMBER_OF_TASKS_TAKEN,
-            ),
-            false => (None, 0),
+                MAX_NUMBER_OF_TASKS_TAKEN
+            )
+        } else {
+            (None, 0)
         };
         let number_of_thread_workers = valid_config.number_of_thread_workers;
 
@@ -205,11 +209,11 @@ impl Executor {
             if let Some(io_config) = valid_config.io_worker_config {
                 init_local_worker(io_config);
             }
-            *get_local_executor_ref() = Some(Executor {
+            *get_local_executor_ref() = Some(Self {
                 core_id,
                 executor_id,
                 config: valid_config,
-                subscribed_state: Arc::new(UnsafeCell::new(SubscribedState::new())),
+                subscribed_state: Arc::new(SubscribedState::new()),
                 rng: Rng::new(),
 
                 local_tasks: VecDeque::new(),
@@ -235,17 +239,15 @@ impl Executor {
     /// use orengine::Executor;
     /// use orengine::utils::get_core_ids;
     ///
-    /// fn main() {
-    ///     let cores = get_core_ids().unwrap();
-    ///     let ex = Executor::init_on_core(cores[0]);
+    /// let cores = get_core_ids().unwrap();
+    /// let ex = Executor::init_on_core(cores[0]);
     ///
-    ///     ex.spawn_local(async {
-    ///         println!("Hello, world!");
-    ///     });
-    ///     ex.run();
-    /// }
+    /// ex.spawn_local(async {
+    ///     println!("Hello, world!");
+    /// });
+    /// ex.run();
     /// ```
-    pub fn init_on_core(core_id: CoreId) -> &'static mut Executor {
+    pub fn init_on_core(core_id: CoreId) -> &'static mut Self {
         Self::init_on_core_with_config(core_id, Config::default())
     }
 
@@ -257,16 +259,14 @@ impl Executor {
     /// use orengine::runtime::Config;
     /// use orengine::Executor;
     ///
-    /// fn main() {
-    ///     let ex = Executor::init_with_config(Config::default());
+    /// let ex = Executor::init_with_config(Config::default());
     ///
-    ///     ex.spawn_local(async {
-    ///         println!("Hello, world!");
-    ///     });
-    ///     ex.run();
-    /// }
+    /// ex.spawn_local(async {
+    ///     println!("Hello, world!");
+    /// });
+    /// ex.run();
     /// ```
-    pub fn init_with_config(config: Config) -> &'static mut Executor {
+    pub fn init_with_config(config: Config) -> &'static mut Self {
         Self::init_on_core_with_config(get_core_id_for_executor(), config)
     }
 
@@ -277,16 +277,14 @@ impl Executor {
     /// ```no_run
     /// use orengine::Executor;
     ///
-    /// fn main() {
-    ///     let ex = Executor::init();
+    /// let ex = Executor::init();
     ///
-    ///     ex.spawn_local(async {
-    ///         println!("Hello, world!");
-    ///     });
-    ///     ex.run();
-    /// }
+    /// ex.spawn_local(async {
+    ///     println!("Hello, world!");
+    /// });
+    /// ex.run();
     /// ```
-    pub fn init() -> &'static mut Executor {
+    pub fn init() -> &'static mut Self {
         Self::init_on_core(get_core_id_for_executor())
     }
 
@@ -312,13 +310,8 @@ impl Executor {
     }
 
     /// Returns a reference to the subscribed state of the executor.
-    pub(crate) fn subscribed_state(&self) -> Arc<UnsafeCell<SubscribedState>> {
+    pub(crate) fn subscribed_state(&self) -> Arc<SubscribedState> {
         self.subscribed_state.clone()
-    }
-
-    /// Returns a mutable reference to the subscribed state of the executor.
-    pub(crate) fn subscribed_state_mut(&mut self) -> &mut SubscribedState {
-        unsafe { &mut *self.subscribed_state.get() }
     }
 
     /// Returns the core id on which the executor is running.
@@ -340,7 +333,7 @@ impl Executor {
     pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
         self.config.buffer_cap = buffer_len;
     }
-    
+
     /// Returns the number of spawned tasks (shared and local).
     pub(crate) fn number_of_spawned_tasks(&self) -> usize {
         self.shared_tasks.len() + self.local_tasks.len()
@@ -352,7 +345,7 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * send_to must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
+    /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
     /// * the reference must live at least as long as this state of the task
     ///
@@ -389,7 +382,7 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * send_to must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
+    /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
     /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
     ///
@@ -419,7 +412,7 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * atomic_bool must be a valid pointer to [`AtomicBool`](AtomicBool)
+    /// * `atomic_bool` must be a valid pointer to [`AtomicBool`](AtomicBool)
     ///
     /// * the [`AtomicBool`] must live at least as long as this state of the task
     ///
@@ -444,9 +437,9 @@ impl Executor {
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
-    pub unsafe fn push_fn_to_thread_pool(&mut self, f: &'static mut dyn Fn()) {
+    pub unsafe fn push_fn_to_thread_pool(&mut self, f: *mut dyn Fn()) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushFnToThreadPool(f)
+        self.current_call = Call::PushFnToThreadPool(f);
     }
 
     /// Processing current [`Call`]. It is taken out [`exec_task_now`](Executor::exec_task_now)
@@ -457,7 +450,7 @@ impl Executor {
             Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
                 self.shared_tasks.push_front(task);
             }
-            Call::PushCurrentTaskTo(task_list) => unsafe { (&*task_list).push(task) },
+            Call::PushCurrentTaskTo(task_list) => unsafe { (*task_list).push(task) },
             Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
                 task_list,
                 counter,
@@ -563,7 +556,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_local_future<F>(&mut self, future: F)
     where
-        F: Future<Output = ()>,
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.exec_task(task);
@@ -578,7 +571,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_shared_future<F>(&mut self, future: F)
     where
-        F: Future<Output = ()> + Send,
+        F: Future<Output=()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.exec_task(task);
@@ -596,7 +589,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
     where
-        F: Future<Output = ()>,
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.spawn_local_task(task);
@@ -628,7 +621,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_shared<F>(&mut self, future: F)
     where
-        F: Future<Output = ()> + Send,
+        F: Future<Output=()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.spawn_shared_task(task);
@@ -645,26 +638,21 @@ impl Executor {
     /// Read it in [`Executor`].
     #[inline(always)]
     pub fn spawn_shared_task(&mut self, task: Task) {
-        match self.config.is_work_sharing_enabled() {
-            true => {
-                if self.shared_tasks.len() <= self.config.work_sharing_level {
-                    self.shared_tasks.push_back(task);
-                } else {
-                    if let Some(mut shared_tasks_list) =
-                        unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() }
-                    {
-                        let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
-                        for task in self.shared_tasks.drain(..number_of_shared) {
-                            shared_tasks_list.push(task);
-                        }
-                    } else {
-                        self.shared_tasks.push_back(task);
-                    }
+        if self.config.is_work_sharing_enabled() {
+            if self.shared_tasks.len() <= self.config.work_sharing_level {
+                self.shared_tasks.push_back(task);
+            } else if let Some(mut shared_tasks_list) =
+                unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() }
+            {
+                let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
+                for task in self.shared_tasks.drain(..number_of_shared) {
+                    shared_tasks_list.push(task);
                 }
-            }
-            false => {
+            } else {
                 self.shared_tasks.push_back(task);
             }
+        } else {
+            self.shared_tasks.push_back(task);
         }
     }
 
@@ -694,32 +682,36 @@ impl Executor {
                 }
             }
 
-            let lists = unsafe { (&*self.subscribed_state.get()).tasks_lists() };
-            if lists.is_empty() {
-                return;
-            }
+            unsafe {
+                self.subscribed_state.with_tasks_lists(|lists| {
+                    if lists.is_empty() {
+                        return;
+                    }
 
-            let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
+                    let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
 
-            for i in 0..max_number_of_tries {
-                let list = unsafe { lists.get_unchecked(i) };
-                let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
-                if limit == 0 {
-                    return;
-                }
+                    for i in 0..max_number_of_tries {
+                        let list = lists.get_unchecked(i);
+                        let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
+                        if limit == 0 {
+                            return;
+                        }
 
-                list.take_batch(&mut self.shared_tasks, limit);
+                        list.take_batch(&mut self.shared_tasks, limit);
+                    }
+                });
             }
         }
     }
-    
+
     /// Allows the OS to run other threads.
-    /// 
+    ///
     /// It is used only when no work is available.
     #[inline(always)]
+    #[allow(clippy::unused_self)] // because in the future it will use it
     fn sleep(&self) {
         // Wait for more work
-        
+
         // TODO bench it
         thread::sleep(Duration::from_millis(10));
     }
@@ -738,24 +730,24 @@ impl Executor {
     /// was called or [`end`](crate::runtime::end::end)).
     #[inline(always)]
     fn background_task(&mut self) -> bool {
-        let subscribed_state_ref = unsafe { &mut *self.subscribed_state.get() };
-        subscribed_state_ref.check_version_and_update_if_needed(self.executor_id);
-        if subscribed_state_ref.is_stopped() {
+        self.subscribed_state.check_version_and_update_if_needed(self.executor_id);
+        if self.subscribed_state.is_stopped() {
             return true;
         }
 
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        let has_io_work = match self.local_worker {
-            Some(io_worker) => io_worker.must_poll(),
-            None => true,
-        };
+        let has_io_work = self.local_worker
+            .as_mut()
+            .map_or(true, |io_worker| {
+                io_worker.must_poll()
+            });
 
-        if self.local_sleeping_tasks.len() > 0 {
-            let instant = Some(Instant::now());
+        if !self.local_sleeping_tasks.is_empty() {
+            let instant = Instant::now();
             while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
-                if time_to_wake <= unsafe { instant.unwrap_unchecked() } {
+                if time_to_wake <= instant {
                     if task.is_local() {
                         self.exec_task(task);
                     } else {
@@ -767,7 +759,7 @@ impl Executor {
                 }
             }
         }
-        
+
         if self.number_of_spawned_tasks() == 0 && !has_io_work {
             self.sleep();
         }
@@ -802,19 +794,17 @@ impl Executor {
     /// use orengine::{Executor, stop_executor, sleep};
     /// use std::time::Duration;
     ///
-    /// fn main() {
-    ///     let mut executor = Executor::init();
-    ///     let id = executor.id();
+    /// let mut executor = Executor::init();
+    /// let id = executor.id();
     ///
-    ///     executor.spawn_local(async move {
-    ///         println!("Hello from an async runtime!");
-    ///         sleep(Duration::from_secs(3)).await;
-    ///         stop_executor(id); // stops the executor
-    ///     });
-    ///     executor.run();
+    /// executor.spawn_local(async move {
+    ///     println!("Hello from an async runtime!");
+    ///     sleep(Duration::from_secs(3)).await;
+    ///     stop_executor(id); // stops the executor
+    /// });
+    /// executor.run();
     ///
-    ///     println!("Hello from a sync runtime after at least 3 seconds");
-    /// }
+    /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
     pub fn run(&mut self) {
         register_local_executor();
@@ -876,22 +866,20 @@ impl Executor {
     /// use orengine::{Executor, stop_executor, sleep, Local};
     /// use std::time::Duration;
     ///
-    /// fn main() {
-    ///     let mut executor = Executor::init();
-    ///     let id = executor.id();
-    ///     let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
-    ///     // but you can use Local, because here we use a local task.
+    /// let mut executor = Executor::init();
+    /// let id = executor.id();
+    /// let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
+    /// // but you can use Local, because here we use a local task.
     ///
-    ///     executor.run_with_local_future(async move {
-    ///         println!("{}" ,local_msg);
-    ///         sleep(Duration::from_secs(3)).await;
-    ///         stop_executor(id); // stops the executor
-    ///     });
+    /// executor.run_with_local_future(async move {
+    ///     println!("{}" ,local_msg);
+    ///     sleep(Duration::from_secs(3)).await;
+    ///     stop_executor(id); // stops the executor
+    /// });
     ///
-    ///     println!("Hello from a sync runtime after at least 3 seconds");
-    /// }
+    /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_local_future<Fut: Future<Output = ()>>(&mut self, future: Fut) {
+    pub fn run_with_local_future<Fut: Future<Output=()>>(&mut self, future: Fut) {
         self.spawn_local(future);
         self.run();
     }
@@ -908,20 +896,18 @@ impl Executor {
     /// use orengine::{Executor, stop_executor, sleep, Local};
     /// use std::time::Duration;
     ///
-    /// fn main() {
-    ///     let mut executor = Executor::init();
-    ///     let id = executor.id();
+    /// let mut executor = Executor::init();
+    /// let id = executor.id();
     ///
-    ///     executor.run_with_shared_future(async move {
-    ///         println!("Hello from an async runtime!");
-    ///         sleep(Duration::from_secs(3)).await;
-    ///         stop_executor(id); // stops the executor
-    ///     });
+    /// executor.run_with_shared_future(async move {
+    ///     println!("Hello from an async runtime!");
+    ///     sleep(Duration::from_secs(3)).await;
+    ///     stop_executor(id); // stops the executor
+    /// });
     ///
-    ///     println!("Hello from a sync runtime after at least 3 seconds");
-    /// }
+    /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_shared_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
+    pub fn run_with_shared_future<Fut: Future<Output=()> + Send>(&mut self, future: Fut) {
         self.spawn_shared(future);
         self.run();
     }
@@ -943,27 +929,25 @@ impl Executor {
     /// use orengine::{Executor, stop_executor, sleep, Local};
     /// use std::time::Duration;
     ///
-    /// fn main() {
-    ///     let mut executor = Executor::init();
-    ///     let id = executor.id();
-    ///     let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
-    ///     // but you can use Local, because here we use a local task.
+    /// let mut executor = Executor::init();
+    /// let id = executor.id();
+    /// let local_msg = Local::new("Hello from an async runtime!"); // bad example of usage Local,
+    /// // but you can use Local, because here we use a local task.
     ///
-    ///     let res = executor.run_and_block_on_local(async move {
-    ///         println!("{}" ,local_msg);
-    ///         sleep(Duration::from_secs(3)).await;
+    /// let res = executor.run_and_block_on_local(async move {
+    ///     println!("{}" ,local_msg);
+    ///     sleep(Duration::from_secs(3)).await;
     ///
-    ///         42
-    ///     }).expect("undefined behavior happened"); // 42
+    ///     42
+    /// }).expect("undefined behavior happened"); // 42
     ///
-    ///     println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
-    /// }
+    /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
+    pub fn run_and_block_on_local<T, Fut: Future<Output=T>>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
-        generate_run_and_block_on_function!(Executor::spawn_local, future, self)
+        generate_run_and_block_on_function!(Self::spawn_local, future, self)
     }
 
     /// Runs the executor with a shared task and blocks on it. The executor will be stopped
@@ -983,25 +967,23 @@ impl Executor {
     /// use orengine::{Executor, stop_executor, sleep, Local};
     /// use std::time::Duration;
     ///
-    /// fn main() {
-    ///     let mut executor = Executor::init();
-    ///     let id = executor.id();
+    /// let mut executor = Executor::init();
+    /// let id = executor.id();
     ///
-    ///     let res = executor.run_and_block_on_shared(async move {
-    ///         println!("Hello from an async runtime!");
-    ///         sleep(Duration::from_secs(3)).await;
+    /// let res = executor.run_and_block_on_shared(async move {
+    ///     println!("Hello from an async runtime!");
+    ///     sleep(Duration::from_secs(3)).await;
     ///
-    ///         42
-    ///     }).expect("undefined behavior happened"); // 42
+    ///     42
+    /// }).expect("undefined behavior happened"); // 42
     ///
-    ///     println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
-    /// }
+    /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_shared<T, Fut: Future<Output = T> + Send>(
+    pub fn run_and_block_on_shared<T, Fut: Future<Output=T> + Send>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
-        generate_run_and_block_on_function!(Executor::spawn_shared, future, self)
+        generate_run_and_block_on_function!(Self::spawn_shared, future, self)
     }
 }
 
@@ -1012,12 +994,13 @@ mod tests {
     use crate as orengine;
     use crate::local::Local;
     use crate::yield_now::yield_now;
-    use std::ops::Deref;
 
     use super::*;
 
     #[orengine_macros::test_local]
     fn test_spawn_local_and_exec_future() {
+        #[allow(clippy::unused_async)] // because it is a test
+        #[allow(clippy::future_not_send)] // because it is a local
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
             arr.get_mut().push(number);
         }
@@ -1031,7 +1014,7 @@ mod tests {
 
         yield_now().await;
 
-        assert_eq!(&vec![10, 30, 20], arr.deref()); // 30, 20 because of LIFO
+        assert_eq!(&vec![10, 30, 20], &*arr); // 30, 20 because of LIFO
 
         let arr = Local::new(Vec::new());
 
@@ -1039,11 +1022,12 @@ mod tests {
         local_executor().exec_local_future(insert(20, arr.clone()));
         local_executor().exec_local_future(insert(30, arr.clone()));
 
-        assert_eq!(&vec![10, 20, 30], arr.deref()); // 20, 30 because we don't use the list here
+        assert_eq!(&vec![10, 20, 30], &*arr); // 20, 30 because we don't use the list here
     }
 
     #[test]
     fn test_run_and_block_on() {
+        #[allow(clippy::unused_async)] // because it is a test
         async fn async_42() -> u32 {
             42
         }

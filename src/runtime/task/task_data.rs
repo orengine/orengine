@@ -28,7 +28,7 @@ impl TaskData {
             is_local: locality.value,
         };
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
         {
             let mut tagged_ptr =
                 unsafe { std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(future) };
@@ -49,7 +49,7 @@ impl TaskData {
         #[cfg(not(target_pointer_width = "64"))]
         return self.future_ptr;
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
         {
             let future_tagged_ptr = unsafe {
                 std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(self.future_tagged_ptr)
@@ -69,7 +69,7 @@ impl TaskData {
         #[cfg(not(target_pointer_width = "64"))]
         return self.is_local;
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
         {
             let future_tagged_ptr = unsafe {
                 std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(self.future_tagged_ptr)

@@ -55,7 +55,7 @@ impl From<isize> for OnceState {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::sync::LocalOnce;
 ///
 /// static START: LocalOnce = LocalOnce::new();
@@ -92,7 +92,7 @@ impl LocalOnce {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::LocalOnce;
     ///
     /// static START: LocalOnce = LocalOnce::new();
@@ -105,7 +105,7 @@ impl LocalOnce {
     /// }
     /// ```
     #[inline(always)]
-    pub async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
+    pub async fn call_once<Fut: Future<Output=()>>(&self, f: Fut) -> Result<(), ()> {
         if self.is_called() {
             return Err(());
         }
@@ -119,7 +119,7 @@ impl LocalOnce {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::LocalOnce;
     ///
     /// static START: LocalOnce = LocalOnce::new();

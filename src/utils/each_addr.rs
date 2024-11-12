@@ -23,7 +23,7 @@ pub(crate) enum EachAddrRes<R> {
 macro_rules! each_addr {
     ($addrs: expr, $f: expr) => {
         {
-            use crate::utils::each_addr::EachAddrRes;
+            use $crate::utils::each_addr::EachAddrRes;
 
             let addrs = match std::net::ToSocketAddrs::to_socket_addrs($addrs) {
                 Ok(addrs) => addrs,
@@ -64,7 +64,7 @@ macro_rules! each_addr {
 macro_rules! each_addr_sync {
     ($addrs: expr, $f: expr) => {
         {
-            use crate::utils::each_addr::EachAddrRes;
+            use $crate::utils::each_addr::EachAddrRes;
 
             let addrs = match std::net::ToSocketAddrs::to_socket_addrs($addrs) {
                 Ok(addrs) => addrs,

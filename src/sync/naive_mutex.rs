@@ -6,9 +6,8 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use crossbeam::utils::CachePadded;
-
 use crate::yield_now;
+use crossbeam::utils::CachePadded;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
@@ -18,11 +17,11 @@ use crate::yield_now;
 ///
 /// This structure is created by the [`lock`](NaiveMutex::lock)
 /// and [`try_lock`](NaiveMutex::try_lock) methods on [`NaiveMutex`].
-pub struct NaiveMutexGuard<'mutex, T> {
+pub struct NaiveMutexGuard<'mutex, T: ?Sized> {
     mutex: &'mutex NaiveMutex<T>,
 }
 
-impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
     /// Creates a new [`NaiveMutexGuard`].
     #[inline(always)]
     pub(crate) fn new(mutex: &'mutex NaiveMutex<T>) -> Self {
@@ -32,7 +31,7 @@ impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
     /// Returns a reference to the original [`NaiveMutex`].
     #[inline(always)]
     pub fn mutex(&self) -> &NaiveMutex<T> {
-        &self.mutex
+        self.mutex
     }
 
     /// Unlocks the [`mutex`](NaiveMutex). Calling `guard.unlock()` is equivalent to
@@ -54,6 +53,7 @@ impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
     /// The mutex is unlocked by calling [`NaiveMutex::unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'mutex NaiveMutex<T> {
+        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
         let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
@@ -66,18 +66,24 @@ impl<'mutex, T> NaiveMutexGuard<'mutex, T> {
     ///
     /// # Safety
     ///
-    /// The mutex is unlocked by calling [`NaiveMutex::unlock`] later or
-    /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
+    /// The mutex is locked now and will be unlocked by calling [`NaiveMutex::unlock`] or
+    /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool) later.
     #[inline(always)]
-    pub unsafe fn leak_to_atomic(self) -> &'mutex CachePadded<AtomicBool> {
-        let static_mutex = unsafe { mem::transmute(&self.mutex.is_locked) };
+    pub unsafe fn leak_to_atomic(self) -> &'static CachePadded<AtomicBool> {
+        debug_assert!(self.mutex.is_locked.load(Acquire));
+        let static_mutex = unsafe {
+            mem::transmute::<
+                &CachePadded<AtomicBool>,
+                &'static CachePadded<AtomicBool>
+            >(&self.mutex.is_locked)
+        };
         mem::forget(self);
 
         static_mutex
     }
 }
 
-impl<'mutex, T> Deref for NaiveMutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> Deref for NaiveMutexGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -85,17 +91,20 @@ impl<'mutex, T> Deref for NaiveMutexGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T> DerefMut for NaiveMutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> DerefMut for NaiveMutexGuard<'mutex, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.value.get() }
     }
 }
 
-impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> Drop for NaiveMutexGuard<'mutex, T> {
     fn drop(&mut self) {
         unsafe { self.mutex.unlock() };
     }
 }
+
+unsafe impl<T: ?Sized + Send + Sync> Sync for NaiveMutexGuard<'_, T> {}
+unsafe impl<T: ?Sized + Send> Send for NaiveMutexGuard<'_, T> {}
 
 /// A mutual exclusion primitive useful for protecting shared data.
 ///
@@ -129,7 +138,7 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::collections::HashMap;
 /// use orengine::sync::NaiveMutex;
 ///
@@ -145,19 +154,27 @@ impl<'mutex, T> Drop for NaiveMutexGuard<'mutex, T> {
 ///     // lock is released when `guard` goes out of scope
 /// }
 /// ```
-pub struct NaiveMutex<T> {
+pub struct NaiveMutex<T: ?Sized> {
     is_locked: CachePadded<AtomicBool>,
     value: UnsafeCell<T>,
 }
 
-impl<T> NaiveMutex<T> {
+impl<T: ?Sized> NaiveMutex<T> {
     /// Creates a new [`NaiveMutex`].
-    #[inline(always)]
-    pub fn new(value: T) -> NaiveMutex<T> {
-        NaiveMutex {
+    pub const fn new(value: T) -> Self
+    where
+        T: Sized,
+    {
+        Self {
             is_locked: CachePadded::new(AtomicBool::new(false)),
             value: UnsafeCell::new(value),
         }
+    }
+
+    /// Returns whether the mutex is locked.
+    #[inline(always)]
+    pub fn is_locked(&self) -> bool {
+        self.is_locked.load(Acquire)
     }
 
     /// Returns a [`Future`] that resolves to [`NaiveMutexGuard`] that allows
@@ -165,7 +182,10 @@ impl<T> NaiveMutex<T> {
     ///
     /// It blocks the current task if the mutex is locked.
     #[inline(always)]
-    pub async fn lock(&self) -> NaiveMutexGuard<T> {
+    pub async fn lock(&self) -> NaiveMutexGuard<T>
+    where
+        T: Send + Sync,
+    {
         loop {
             for step in 0..=6 {
                 if let Some(guard) = self.try_lock() {
@@ -186,7 +206,7 @@ impl<T> NaiveMutex<T> {
     pub fn try_lock(&self) -> Option<NaiveMutexGuard<T>> {
         if self
             .is_locked
-            .compare_exchange(false, true, Acquire, Relaxed)
+            .compare_exchange_weak(false, true, Acquire, Relaxed)
             .is_ok()
         {
             Some(NaiveMutexGuard::new(self))
@@ -205,9 +225,9 @@ impl<T> NaiveMutex<T> {
     ///
     /// # Safety
     ///
-    /// - The mutex must be locked.
+    /// - The [`mutex`](NaiveMutex) must be locked.
     ///
-    /// - And no tasks has an ownership of this [`mutex`](NaiveMutex).
+    /// - No other tasks has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
     pub unsafe fn unlock(&self) {
         debug_assert!(
@@ -226,6 +246,7 @@ impl<T> NaiveMutex<T> {
     ///
     /// - And only current task has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
+    #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
             self.is_locked.load(Acquire),
@@ -236,8 +257,8 @@ impl<T> NaiveMutex<T> {
     }
 }
 
-unsafe impl<T: Send + Sync> Sync for NaiveMutex<T> {}
-unsafe impl<T: Send> Send for NaiveMutex<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for NaiveMutex<T> {}
+unsafe impl<T: ?Sized + Send> Send for NaiveMutex<T> {}
 impl<T: UnwindSafe> UnwindSafe for NaiveMutex<T> {}
 impl<T: RefUnwindSafe> RefUnwindSafe for NaiveMutex<T> {}
 
@@ -270,12 +291,12 @@ mod tests {
             *value = true;
         });
 
-        let _ = wg.wait().await;
+        wg.wait().await;
         println!("2");
         let value = mutex.lock().await;
         println!("4");
 
-        assert_eq!(*value, true);
+        assert!(*value);
         drop(value);
     }
 
@@ -296,14 +317,14 @@ mod tests {
             let mut value = mutex_clone.lock().await;
             println!("1");
             lock_wg_clone.done();
-            let _ = unlock_wg_clone.wait().await;
+            unlock_wg_clone.wait().await;
             println!("4");
             *value = true;
             drop(value);
             second_lock_clone.done();
         });
 
-        let _ = lock_wg.wait().await;
+        lock_wg.wait().await;
         println!("2");
         let value = mutex.try_lock();
         println!("3");
@@ -311,11 +332,11 @@ mod tests {
         second_lock.inc();
         unlock_wg.done();
 
-        let _ = second_lock.wait().await;
+        second_lock.wait().await;
         let value = mutex.try_lock();
         println!("5");
         match value {
-            Some(v) => assert_eq!(*v, true, "not waited"),
+            Some(v) => assert!(*v, "not waited"),
             None => panic!("can't acquire lock"),
         }
     }
@@ -353,7 +374,7 @@ mod tests {
             work_with_lock(&mutex, &wg).await;
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
 
         assert_eq!(*mutex.lock().await, TRIES * PAR);
     }

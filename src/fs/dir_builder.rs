@@ -11,7 +11,7 @@ use std::path::Path;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::path::Path;
 /// use orengine::fs::DirBuilder;
 ///
@@ -35,8 +35,8 @@ impl DirBuilder {
     /// Creates a new set of options with default mode/security settings for all
     /// platforms and also non-recursive.
     #[must_use]
-    pub fn new() -> DirBuilder {
-        DirBuilder {
+    pub fn new() -> Self {
+        Self {
             mode: 0o666,
             recursive: false,
         }
@@ -47,12 +47,14 @@ impl DirBuilder {
     /// security and permissions settings.
     ///
     /// This option defaults to `false`.
+    #[must_use]
     pub fn recursive(mut self, recursive: bool) -> Self {
         self.recursive = recursive;
         self
     }
 
     /// Sets the mode for the new directory
+    #[must_use]
     pub fn mode(mut self, mode: u32) -> Self {
         self.mode = mode;
         self
@@ -66,7 +68,7 @@ impl DirBuilder {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::path::Path;
     /// use orengine::fs::DirBuilder;
     ///
@@ -75,7 +77,7 @@ impl DirBuilder {
     ///  assert!(Path::new("foo").exists());
     /// # Ok(())
     /// # }
-    pub async fn create<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+    pub async fn create<P: AsRef<Path> + Send>(&self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         if self.recursive {
             Self::create_dir_all(path, self.mode).await
@@ -89,7 +91,7 @@ impl DirBuilder {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::path::Path;
     /// use orengine::fs::{create_dir_all};
     ///
@@ -104,12 +106,11 @@ impl DirBuilder {
             offsets: &mut SmallVec<usize, STACK_CAP>,
             path: &Path,
         ) -> Result<usize, ()> {
-            let mut path_index;
-            if offsets.is_empty() {
-                path_index = path.as_os_str().len() - 1
+            let mut path_index = if offsets.is_empty() {
+                path.as_os_str().len() - 1
             } else {
-                path_index = unsafe { *offsets.get_unchecked(offsets.len() - 1) - 1 };
-            }
+                unsafe { *offsets.get_unchecked(offsets.len() - 1) - 1 }
+            };
 
             let bytes = path.as_os_str().as_encoded_bytes();
             loop {
@@ -159,7 +160,7 @@ impl DirBuilder {
                         tmp_path = Path::new(OsStr::from_bytes(
                             &path.as_os_str().as_encoded_bytes()
                                 [..*path_stack.get_unchecked(path_stack.len() - 1)],
-                        ))
+                        ));
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
@@ -170,7 +171,7 @@ impl DirBuilder {
                             ));
                             tmp_mode = 0o777;
                         }
-                        Err(_) => {
+                        Err(()) => {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
                                 "failed to create path tree",
@@ -191,6 +192,12 @@ impl DirBuilder {
     }
 }
 
+impl Default for DirBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,11 +209,11 @@ mod tests {
     fn test_dir_builder() {
         let dir_builder = DirBuilder::new();
         assert_eq!(dir_builder.mode, 0o666);
-        assert_eq!(dir_builder.recursive, false);
+        assert!(!dir_builder.recursive);
 
         let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
         assert_eq!(dir_builder.mode, 0o777);
-        assert_eq!(dir_builder.recursive, true);
+        assert!(dir_builder.recursive);
     }
 
     #[orengine_macros::test_local]
@@ -217,8 +224,8 @@ mod tests {
         let mut path = PathBuf::from(TEST_DIR_PATH);
         path.push("test_dir");
         match dir_builder.create(path.clone()).await {
-            Ok(_) => assert!(is_exists(path)),
-            Err(err) => panic!("Can't create dir: {}", err),
+            Ok(()) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir: {err}"),
         }
 
         let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
@@ -229,8 +236,8 @@ mod tests {
         path.push("test_dir4");
         path.push("test_dir5");
         match dir_builder.create(path.clone()).await {
-            Ok(_) => assert!(is_exists(path)),
-            Err(err) => panic!("Can't create dir all: {}", err),
+            Ok(()) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir all: {err}"),
         }
 
         let mut path = PathBuf::from(TEST_DIR_PATH);

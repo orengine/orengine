@@ -23,7 +23,7 @@ impl Future for Sleep {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            let task = get_task_from_context!(cx);
+            let task = unsafe { get_task_from_context!(cx) };
 
             loop {
                 let sleeping_tasks_map = local_executor().sleeping_tasks();
@@ -51,12 +51,10 @@ impl Future for Sleep {
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
-/// fn main() {
-///     orengine::Executor::init().run_with_local_future(async {
-///         sleep(Duration::from_millis(100)).await;
-///         println!("Hello after at least 100 millis!");
-///     });
-/// }
+/// orengine::Executor::init().run_with_local_future(async {
+///     sleep(Duration::from_millis(100)).await;
+///     println!("Hello after at least 100 millis!");
+/// });
 /// ```
 #[inline(always)]
 #[must_use]
@@ -72,11 +70,11 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::local::Local;
-    use std::ops::Deref;
     use std::time::Duration;
 
     #[orengine_macros::test_local]
     fn test_sleep() {
+        #[allow(clippy::future_not_send)] // because it is `local`
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
             arr.get_mut().push(number);
@@ -91,7 +89,7 @@ mod tests {
         ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
+        assert_eq!(&vec![1, 2, 3, 4], &*arr);
 
         let arr = Local::new(Vec::new());
 
@@ -101,6 +99,6 @@ mod tests {
         ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], arr.deref());
+        assert_eq!(&vec![1, 2, 3, 4], &*arr);
     }
 }

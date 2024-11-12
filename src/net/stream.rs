@@ -1,15 +1,16 @@
+use crate::io::{AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
+use crate::net::Socket;
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
 use std::time::Duration;
-use crate::io::{AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
-use crate::net::Socket;
 
 /// The `Stream` trait defines common operations for bidirectional communication streams, such as
-/// TCP connections or similar. It extends the `Socket` trait and integrates asynchronous methods
-/// for sending, receiving, and peeking data, as well as shutting down the stream. Additionally,
-/// it provides methods for controlling socket options like linger and TCP_NODELAY, and querying
-/// the peer address.
+/// TCP connections or similar.
+///
+/// It extends the [`Socket`] trait and integrates asynchronous methods for sending, receiving,
+/// and peeking data, as well as shutting down the stream. Additionally, it provides methods
+/// for controlling socket options like linger and `TCP_NODELAY`, and querying the peer address.
 ///
 /// # Implemented Traits
 ///
@@ -28,7 +29,7 @@ use crate::net::Socket;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::local_executor;
 /// use orengine::net::Stream;
@@ -47,7 +48,7 @@ use crate::net::Socket;
 /// }
 /// ```
 pub trait Stream:
-    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown {
+Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown {
     /// Sets the socket linger option, which controls the behavior when the stream is closed.
     /// If `Some(duration)` is provided, the system will try to send any unsent data before
     /// closing the connection for up to the specified duration. If `None` is provided, the
@@ -55,7 +56,7 @@ pub trait Stream:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncConnectStream;
     /// use orengine::net::{TcpStream, Stream};
     ///
@@ -78,7 +79,7 @@ pub trait Stream:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncConnectStream;
     /// use orengine::net::{TcpStream, Stream};
     ///
@@ -96,13 +97,13 @@ pub trait Stream:
         socket_ref.linger()
     }
 
-    /// Sets the TCP_NODELAY option for the stream. When enabled (`true`), this option disables
+    /// Sets the `TCP_NODELAY` option for the stream. When enabled (`true`), this option disables
     /// Nagle's algorithm, which reduces latency by sending small packets immediately. If
     /// disabled (`false`), small packets may be combined into larger ones for efficiency.
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncConnectStream;
     /// use orengine::net::{TcpStream, Stream};
     ///
@@ -119,11 +120,11 @@ pub trait Stream:
         socket_ref.set_nodelay(nodelay)
     }
 
-    /// Returns the current state of the TCP_NODELAY option for the stream.
+    /// Returns the current state of the `TCP_NODELAY` option for the stream.
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncConnectStream;
     /// use orengine::net::{TcpStream, Stream};
     ///
@@ -147,7 +148,7 @@ pub trait Stream:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::AsyncConnectStream;
     /// use orengine::net::{TcpStream, Stream};
     ///
@@ -162,7 +163,7 @@ pub trait Stream:
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
+        socket_ref.peer_addr()?.as_socket().ok_or_else(|| Error::new(
             io::ErrorKind::Other,
             "failed to get local address",
         ))

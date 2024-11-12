@@ -71,7 +71,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::time::Duration;
 /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 /// use orengine::sleep;
@@ -114,7 +114,7 @@ impl WaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
@@ -148,7 +148,7 @@ impl WaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
@@ -182,7 +182,7 @@ impl WaitGroup {
     ///
     /// Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::WaitGroup;
     ///
     /// # async fn foo() {
@@ -210,7 +210,7 @@ impl WaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::sync::{shared_scope, WaitGroup};
     ///
     /// # async fn foo() {
@@ -251,7 +251,7 @@ impl WaitGroup {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::time::Duration;
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use orengine::sleep;
@@ -278,7 +278,13 @@ impl WaitGroup {
     /// ```
     #[inline(always)]
     pub async fn wait(&self) {
-        Wait::new(self).await
+        Wait::new(self).await;
+    }
+}
+
+impl Default for WaitGroup {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -310,9 +316,7 @@ mod tests {
 
             sched_future_to_another_thread(async move {
                 wait_group.wait().await;
-                if !*check_value.lock().unwrap() {
-                    panic!("not waited");
-                }
+                assert!(*check_value.lock().unwrap(), "not waited");
             });
         }
 
@@ -340,9 +344,7 @@ mod tests {
         }
 
         wait_group.wait().await;
-        if *check_value.lock().unwrap() != 0 {
-            panic!("not waited");
-        }
+        assert_eq!(*check_value.lock().unwrap(), 0, "not waited");
     }
 
     #[orengine_macros::test_shared]
@@ -362,8 +364,6 @@ mod tests {
         }
 
         wait_group.wait().await;
-        if *check_value.lock().unwrap() != 0 {
-            panic!("not waited");
-        }
+        assert_eq!(*check_value.lock().unwrap(), 0, "not waited");
     }
 }

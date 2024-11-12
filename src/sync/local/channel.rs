@@ -4,7 +4,6 @@ use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ops::Deref;
 use std::ptr;
 use std::ptr::drop_in_place;
 use std::task::{Context, Poll};
@@ -48,6 +47,7 @@ struct Inner<T> {
 
 /// This struct represents a future that waits for a value to be sent
 /// into the [`local channel`](LocalChannel).
+///
 /// When the future is polled, it either sends the value immediately (if there is capacity) or
 /// gets parked in the list of waiting senders.
 ///
@@ -93,11 +93,11 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
                     return Poll::Ready(Err(unsafe { ManuallyDrop::take(&mut this.value) }));
                 }
 
-                if this.inner.receivers.len() > 0 {
+                if !this.inner.receivers.is_empty() {
                     let (task, slot, call_state) =
                         unsafe { this.inner.receivers.pop_front().unwrap_unchecked() };
                     unsafe {
-                        ptr::copy_nonoverlapping(this.value.deref(), slot, 1);
+                        ptr::copy_nonoverlapping(&*this.value, slot, 1);
                         call_state.write(RecvCallState::WokenToReturnReady);
                     };
                     local_executor().exec_task(task);
@@ -106,7 +106,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 
                 let len = this.inner.storage.len();
                 if len >= this.inner.capacity {
-                    let task = get_task_from_context!(cx);
+                    let task = unsafe { get_task_from_context!(cx) };
                     this.inner.senders.push_back((task, &mut this.call_state));
                     return Poll::Pending;
                 }
@@ -128,7 +128,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
             }
             SendCallState::WokenToWriteIntoTheSlot(slot) => {
                 unsafe {
-                    ptr::copy_nonoverlapping(this.value.deref(), slot, 1);
+                    ptr::copy_nonoverlapping(&*this.value, slot, 1);
                 }
                 Poll::Ready(Ok(()))
             }
@@ -151,6 +151,7 @@ impl<'future, T> Drop for WaitLocalSend<'future, T> {
 
 /// This struct represents a future that waits for a value to be
 /// received from the [`local channel`](LocalChannel).
+///
 /// When the future is polled, it either receives the value immediately (if available) or
 /// gets parked in the list of waiting receivers.
 pub struct WaitLocalRecv<'future, T> {
@@ -196,7 +197,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
                         }
                     }
 
-                    let task = get_task_from_context!(cx);
+                    let task = unsafe { get_task_from_context!(cx) };
                     this.inner
                         .receivers
                         .push_back((task, this.slot, &mut this.call_state));
@@ -204,8 +205,7 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
                 }
 
                 unsafe {
-                    this.slot
-                        .write(this.inner.storage.pop_front().unwrap_unchecked())
+                    this.slot.write(this.inner.storage.pop_front().unwrap_unchecked());
                 }
 
                 let sender_ = this.inner.senders.pop_front();
@@ -252,13 +252,15 @@ fn close<T>(inner: &mut Inner<T>) {
 // region sender
 
 /// The `LocalSender` allows sending values into the [`LocalChannel`].
+///
 /// When the [`local channel`](LocalChannel) is not full, values are sent immediately.
+///
 /// If the [`local channel`](LocalChannel) is full, the sender waits until capacity
 /// is available or the [`local channel`](LocalChannel) is closed.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::LocalChannel::bounded(2); // capacity = 2
 ///     let (sender, receiver) = channel.split();
@@ -296,7 +298,7 @@ impl<'channel, T> LocalSender<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -334,13 +336,15 @@ unsafe impl<'channel, T> Sync for LocalSender<'channel, T> {}
 // region receiver
 
 /// The `LocalReceiver` allows receiving values from the [`LocalChannel`].
+///
 /// When the [`local channel`](LocalChannel) is not empty, values are received immediately.
+///
 /// If the [`local channel`](LocalChannel) is empty, the receiver waits until a value
 /// is available or the [`local channel`](LocalChannel) is closed.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::LocalChannel::bounded(2); // capacity = 2
 ///     let (sender, receiver) = channel.split();
@@ -379,7 +383,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -391,12 +395,13 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     /// }
     /// ```
     #[inline(always)]
+    #[allow(clippy::future_not_send)] // because it is `local`
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
             match self.recv_in_ptr(slot.as_mut_ptr()).await {
-                Ok(_) => Ok(slot.assume_init()),
-                Err(_) => Err(()),
+                Ok(()) => Ok(slot.assume_init()),
+                Err(()) => Err(()),
             }
         }
     }
@@ -418,7 +423,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -450,9 +455,14 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     ///
     /// __Doesn't drop__ the old value in the slot.
     ///
+    /// # Safety
+    ///
+    /// - Provided pointer is valid and aligned
+    /// - Previous value is dropped
+    ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
     ///     let (sender, receiver) = channel.split();
@@ -518,7 +528,7 @@ unsafe impl<'channel, T> Sync for LocalReceiver<'channel, T> {}
 ///
 /// ## Don't split
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
 ///
@@ -530,7 +540,7 @@ unsafe impl<'channel, T> Sync for LocalReceiver<'channel, T> {}
 ///
 /// ## Split into receiver and sender
 ///
-/// ```no_run
+/// ```rust
 /// async fn foo() {
 ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
 ///     let (sender, receiver) = channel.split();
@@ -555,7 +565,7 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1);
     ///
@@ -583,7 +593,7 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::unbounded();
     ///
@@ -617,7 +627,7 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(0);
     ///     channel.send(1).await.unwrap(); // blocked
@@ -639,19 +649,20 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::<usize>::bounded(1);
     ///     let res = channel.recv().await.unwrap(); // blocked until a value is sent
     /// }
     /// ```
     #[inline(always)]
+    #[allow(clippy::future_not_send)] // because it is `local`
     pub async fn recv(&self) -> Result<T, ()> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
             match self.recv_in_ptr(slot.as_mut_ptr()).await {
-                Ok(_) => Ok(slot.assume_init()),
-                Err(_) => Err(()),
+                Ok(()) => Ok(slot.assume_init()),
+                Err(()) => Err(()),
             }
         }
     }
@@ -673,7 +684,7 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1);
     ///
@@ -704,9 +715,14 @@ impl<T> LocalChannel<T> {
     ///
     /// __Doesn't drop__ the old value in the slot.
     ///
+    /// # Safety
+    ///
+    /// - Provided pointer is valid and aligned
+    /// - Previous value is dropped
+    ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1); // capacity = 1
     ///
@@ -721,7 +737,7 @@ impl<T> LocalChannel<T> {
     /// ```
     #[inline(always)]
     pub unsafe fn recv_in_ptr<'future>(&self, slot: *mut T) -> WaitLocalRecv<'future, T> {
-        WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot as _)
+        WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot.cast())
     }
 
     /// Closes the `LocalChannel`. It wakes all waiting receivers and senders.
@@ -736,7 +752,7 @@ impl<T> LocalChannel<T> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// async fn foo() {
     ///     let channel = orengine::sync::LocalChannel::bounded(1);
     ///     let (sender, receiver) = channel.split();
@@ -790,11 +806,11 @@ mod tests {
             assert_eq!(res, 2);
 
             match ch.send(2).await {
-                Err(_) => assert!(true),
+                Err(value) => assert_eq!(value, 2),
                 _ => panic!("should be closed"),
             };
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]
@@ -819,12 +835,9 @@ mod tests {
                 assert_eq!(res, i);
             }
 
-            match ch.recv().await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed"),
-            };
+            assert!(ch.recv().await.is_err(), "should be closed");
         })
-        .await;
+            .await;
     }
 
     const N: usize = 125;
@@ -855,12 +868,9 @@ mod tests {
                 assert_eq!(res, i);
             }
 
-            match ch.recv().await {
-                Err(_) => assert!(true),
-                _ => panic!("should be closed"),
-            };
+            assert!(ch.recv().await.is_err(), "should be closed");
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]
@@ -879,14 +889,14 @@ mod tests {
             });
 
             for i in 0..N {
-                let _ = ch.send(i).await.expect("closed");
+                ch.send(i).await.expect("closed");
             }
 
             yield_now().await;
 
-            let _ = ch.send(N).await.expect("closed");
+            ch.send(N).await.expect("closed");
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]
@@ -911,7 +921,7 @@ mod tests {
                 ch.send(i).await.expect("closed");
             }
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]
@@ -931,7 +941,7 @@ mod tests {
                 ch.send(i).await.expect("closed");
             }
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]
@@ -951,7 +961,7 @@ mod tests {
                 tx.send(i).await.expect("closed");
             }
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_local]

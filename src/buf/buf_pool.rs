@@ -6,9 +6,11 @@ use std::mem::ManuallyDrop;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.
-    pub(crate) static BUF_POOL: UnsafeCell<ManuallyDrop<BufPool>> = UnsafeCell::new(
-        ManuallyDrop::new(BufPool::new())
-    );
+    pub(crate) static BUF_POOL: UnsafeCell<ManuallyDrop<BufPool>> = const {
+        UnsafeCell::new(
+            ManuallyDrop::new(BufPool::new())
+        )
+    };
 }
 
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
@@ -33,7 +35,7 @@ pub fn buffer() -> Buffer {
 /// Use [`full_buffer`] if you need to read into the buffer,
 /// because [`buffer`] returns empty buffer.
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::buf_pool::full_buffer;
 /// use orengine::io::{AsyncPollFd, AsyncRecv};
 /// use orengine::net::TcpStream;
@@ -110,7 +112,7 @@ impl BufPool {
     ///
     /// # Safety
     ///
-    /// - buf.cap() == self.buffer_len
+    /// - `buf.cap()` == `self.buffer_len`
     #[inline(always)]
     pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
         buf.clear();

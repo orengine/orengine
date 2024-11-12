@@ -33,7 +33,7 @@ use crate::runtime::local_executor;
 ///
 /// ## Usage without [`connect`](AsyncConnectDatagram)
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::UdpSocket;
 /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
 /// use orengine::buf::full_buffer;
@@ -55,7 +55,7 @@ use crate::runtime::local_executor;
 ///
 /// ## Usage with [`connect`](AsyncConnectDatagram)
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
@@ -203,10 +203,10 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::io::{AsyncBind, AsyncRecv, AsyncSend};
-    use crate::{yield_now, Local};
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
-    use crate::sync::{LocalCondVar, LocalMutex};
+    use crate::sync::{AsyncMutex, LocalCondVar, LocalMutex};
+    use crate::{yield_now, Local};
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -263,11 +263,11 @@ mod tests {
 
         server_thread.join().expect("server thread join failed");
     }
-    
+
     async fn test_server_with_config(
         server_addr_str: String,
         client_addr_str: String,
-        config: BindConfig
+        config: BindConfig,
     ) {
         let is_server_ready = Local::new(
             (LocalMutex::new(false), LocalCondVar::new())
@@ -290,7 +290,7 @@ mod tests {
                 let mut buf = vec![0u8; REQUEST.len()];
                 let (n, src) = server.recv_from_with_timeout(
                     &mut buf,
-                    Duration::from_secs(10)
+                    Duration::from_secs(10),
                 )
                     .await
                     .expect("accept failed");
@@ -326,40 +326,40 @@ mod tests {
                 .await
                 .expect("recv failed");
         }
-        
+
         yield_now().await;
         thread::yield_now();
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_without_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10037".to_string(),
             "127.0.0.1:9082".to_string(),
-            config.reuse_port(ReusePort::Disabled)
+            config.reuse_port(ReusePort::Disabled),
         )
-        .await;
+            .await;
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_with_default_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10038".to_string(),
             "127.0.0.1:9083".to_string(),
-            config.reuse_port(ReusePort::Default)
+            config.reuse_port(ReusePort::Default),
         )
-        .await;
+            .await;
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_with_cpu_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10039".to_string(),
             "127.0.0.1:9084".to_string(),
-            config.reuse_port(ReusePort::CPU)
+            config.reuse_port(ReusePort::CPU),
         )
             .await;
     }

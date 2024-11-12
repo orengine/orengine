@@ -16,19 +16,19 @@
 ///
 /// - vis: Visibility specifier for the generated structs and methods (e.g., pub, pub(self)).
 ///
-/// - pool_thread_static_name: Name of the thread-local static pool.
+/// - `pool_thread_static_name`: Name of the thread-local static pool.
 ///
-/// - pool_struct_name: Name of the pool struct.
+/// - `pool_struct_name`: Name of the pool struct.
 ///
-/// - value_type: Type of values stored in the pool.
+/// - `value_type`: Type of values stored in the pool.
 ///
-/// - guard_name: Name of the guard struct that manages values acquired from the pool.
+/// - `guard_name`: Name of the guard struct that manages values acquired from the pool.
 ///
 /// - new: A block that defines how to create new instances of the value type when the pool is empty.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::ops::Deref;
 /// use orengine::new_local_pool;
 ///
@@ -41,15 +41,13 @@
 ///     { String::with_capacity(1024) }
 /// }
 ///
-/// fn main() {
-///     let mut guard = MyPool::acquire();
+/// let mut guard = MyPool::acquire();
 ///
-///     assert_eq!(guard.capacity(), 1024);
-///     // do some work
+/// assert_eq!(guard.capacity(), 1024);
+/// // do some work
 ///
-///     guard.clear(); // clear the value after use
-///     // guard is dropped and released back to the pool
-/// }
+/// guard.clear(); // clear the value after use
+/// // guard is dropped and released back to the pool
 /// ```
 #[macro_export]
 macro_rules! new_local_pool {
@@ -72,7 +70,7 @@ macro_rules! new_local_pool {
         ///
         /// # Example
         ///
-        /// ```no_run
+        /// ```rust
         /// use std::ops::Deref;
         /// use orengine::new_local_pool;
         ///
@@ -85,17 +83,16 @@ macro_rules! new_local_pool {
         ///     { String::with_capacity(1024) }
         /// }
         ///
-        /// fn main() {
-        ///     let mut guard = MyPool::acquire();
+        /// let mut guard = MyPool::acquire();
         ///
-        ///     assert_eq!(*guard.deref().capacity(), 1024);
-        ///     guard.push_str("Hello, world!");
-        ///     assert_eq!(*guard, "Hello, world!");
+        /// assert_eq!(*guard.deref().capacity(), 1024);
+        /// guard.push_str("Hello, world!");
+        /// assert_eq!(*guard, "Hello, world!");
         ///
-        ///     guard.clear(); // clear the value after use
-        ///     // guard is dropped and released back to the pool
-        /// }
+        /// guard.clear(); // clear the value after use
+        /// // guard is dropped and released back to the pool
         /// ```
+        #[allow(clippy::needless_pub_self)]
         $vis struct $guard_name {
             value: std::mem::ManuallyDrop<$value_type>
         }
@@ -104,6 +101,7 @@ macro_rules! new_local_pool {
             /// Returns the value from the guard, consuming the guard.
             #[allow(dead_code)]
             #[inline(always)]
+            #[allow(clippy::needless_pub_self)]
             $vis fn into_inner(mut self) -> $value_type {
                 let value = unsafe { std::mem::ManuallyDrop::take(&mut self.value) };
                 std::mem::forget(self);
@@ -151,7 +149,7 @@ macro_rules! new_local_pool {
         ///
         /// # Example
         ///
-        /// ```no_run
+        /// ```rust
         /// use std::ops::Deref;
         /// use orengine::new_local_pool;
         ///
@@ -164,16 +162,15 @@ macro_rules! new_local_pool {
         ///     { String::with_capacity(1024) }
         /// }
         ///
-        /// fn main() {
-        ///     let mut guard = MyPool::acquire();
+        /// let mut guard = MyPool::acquire();
         ///
-        ///     assert_eq!(guard.capacity(), 1024);
-        ///     // do some work
+        /// assert_eq!(guard.capacity(), 1024);
+        /// // do some work
         ///
-        ///     guard.clear(); // clear the value after use
-        ///     // guard is dropped and released back to the pool
-        /// }
+        /// guard.clear(); // clear the value after use
+        /// // guard is dropped and released back to the pool
         /// ```
+        #[allow(clippy::needless_pub_self)]
         $vis struct $pool_struct_name {
             storage: Vec<$value_type>
         }
@@ -199,6 +196,7 @@ macro_rules! new_local_pool {
             /// If you want to get value from guard you can use the guard's method `into_inner`.
             #[allow(dead_code)]
             #[inline(always)]
+            #[allow(clippy::needless_pub_self)]
             $vis fn acquire() -> $guard_name {
                 $pool_thread_static_name.with(|pool_cell| -> $guard_name {
                     let pool = unsafe { &mut *pool_cell.get() };
@@ -221,7 +219,6 @@ macro_rules! new_local_pool {
 #[cfg(test)]
 mod tests {
     use crate as orengine;
-    use std::ops::Deref;
 
     new_local_pool! {
         pub(self),
@@ -235,14 +232,14 @@ mod tests {
     #[orengine_macros::test_local]
     fn test_new_local_pool() {
         let mut guard = TestPool::acquire();
-        assert_eq!(*guard.deref(), 0);
+        assert_eq!(*guard, 0);
 
         *guard = 1;
-        assert_eq!(*guard.deref(), 1);
+        assert_eq!(*guard, 1);
         drop(guard);
 
         let guard = TestPool::acquire();
-        assert_eq!(*guard.deref(), 1);
+        assert_eq!(*guard, 1);
 
         let guard2 = TestPool::acquire();
         assert_eq!(guard2.into_inner(), 0);

@@ -1,5 +1,7 @@
 //! The io/net module provides a comprehensive set of asynchronous traits and utilities for working
-//! with network sockets. These abstractions facilitate the creation and management
+//! with network sockets.
+//!
+//! These abstractions facilitate the creation and management
 //! of TCP and UDP connections, along with supporting operations like connecting, accepting,
 //! sending, receiving, binding, and shutting down sockets.
 pub mod connect;
@@ -16,14 +18,14 @@ pub mod send_to;
 pub mod socket;
 
 pub use accept::*;
-pub use send::*;
-pub use recv::*;
-pub use recv_from::*;
-pub use send_to::*;
+pub use bind::*;
+pub use connect::*;
 pub use peek::*;
 pub use peek_from::*;
-pub use connect::*;
 pub use poll_fd::*;
-pub use bind::*;
+pub use recv::*;
+pub use recv_from::*;
+pub use send::*;
+pub use send_to::*;
 pub use shutdown::*;
 pub use socket::*;

@@ -1,6 +1,7 @@
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::RawFd;
 use crate::io::worker::{local_worker, IoWorker};
+use crate as orengine;
 use orengine_macros::poll_for_io_request;
 use socket2::{Domain, Protocol, Type};
 use std::future::Future;

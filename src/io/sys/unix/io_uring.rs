@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 /// # Fields
 ///
 /// - `number_of_entries`: number of entries in `io_uring`. Must be greater than 0.
-/// Every entry is 64 bytes, but [`IOUringWorker`] can't process more requests at a one time
-/// than the number of entries.
+///   Every entry is 64 bytes, but [`IOUringWorker`] can't process more requests at a one time
+///   than the number of entries.
 #[derive(Clone, Copy)]
 pub struct IOUringConfig {
     /// Number of entries in `io_uring`. Must be greater than 0. Every entry is 64 bytes, but
@@ -44,7 +44,7 @@ impl IOUringConfig {
     /// # Errors
     ///
     /// - [`IOUringConfig.number_of_entries`](#field.number_of_entries) must be greater than 0.
-    pub const fn validate(&self) -> Result<(), &'static str> {
+    pub const fn validate(self) -> Result<(), &'static str> {
         if self.number_of_entries > 0 {
             Ok(())
         } else {
@@ -65,13 +65,13 @@ pub(crate) struct IOUringWorker {
     /// For example, we can't use `&mut self` in [`Scheduler::handle_coroutine_state`] function, because we are borrowing the `ring` before [`Scheduler::handle_coroutine_state`].
     /// So we need some cell not to destroy the abstraction.
     ///
-    /// # Why we use UnsafeCell?
+    /// # Why we use [`UnsafeCell`]?
     ///
     /// Because we can guarantee that:
     /// * only one thread can borrow the [`IOUringWorker`] at the same time
     /// * only in the [`poll`] method we borrow the `ring` field for [`CompletionQueue`] and [`SubmissionQueue`],
-    /// but only after the [`SubmissionQueue`] is submitted we start using the [`CompletionQueue`] that can call the [`IOUringWorker::push_sqe`]
-    /// but it is safe, because the [`SubmissionQueue`] has already been read and submitted.
+    ///   but only after the [`SubmissionQueue`] is submitted we start using the [`CompletionQueue`] that can call the [`IOUringWorker::push_sqe`]
+    ///   but it is safe, because the [`SubmissionQueue`] has already been read and submitted.
     ring: UnsafeCell<IoUring<Entry, cqueue::Entry>>,
     backlog: VecDeque<Entry>,
     probe: Probe,
@@ -101,20 +101,20 @@ impl IOUringWorker {
         }
     }
 
-    /// Add a new sqe to the submission queue with setting user_data.
+    /// Add a new sqe to the submission queue with setting `user_data`.
     #[inline(always)]
     fn register_entry_with_u64_data(&mut self, sqe: Entry, data: u64) {
         let sqe = sqe.user_data(data);
         self.add_sqe(sqe);
     }
 
-    /// Add a new sqe to the submission queue with setting user_data.
+    /// Add a new sqe to the submission queue with setting `user_data`.
     #[inline(always)]
     fn register_entry(&mut self, sqe: Entry, data: *mut IoRequestData) {
         self.register_entry_with_u64_data(sqe, data as _);
     }
 
-    /// Cancels a request with the given user_data.
+    /// Cancels a request with the given `user_data`.
     #[inline(always)]
     fn cancel_entry(&mut self, data: u64) {
         self.add_sqe(opcode::AsyncCancel::new(data).build().user_data(ASYNC_CLOSE_DATA));
@@ -134,7 +134,7 @@ impl IOUringWorker {
                 self.cancel_entry(time_bounded_io_task.user_data());
             } else {
                 self.time_bounded_io_task_queue
-                    .insert(time_bounded_io_task.clone());
+                    .insert(time_bounded_io_task);
                 break;
             }
         }
@@ -158,7 +158,7 @@ impl IOUringWorker {
                 match submitter.submit() {
                     Ok(_) => (),
                     Err(ref err) if err.raw_os_error() == Some(libc::EBUSY) => break,
-                    Err(err) => return Err(err.into()),
+                    Err(err) => return Err(err),
                 }
             }
             sq.sync();
@@ -177,7 +177,7 @@ impl IOUringWorker {
             Ok(_) => (),
             Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => (),
             Err(ref err) if err.raw_os_error() == Some(libc::EBUSY) => (),
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         }
 
         Ok(true)
@@ -245,12 +245,13 @@ impl IoWorker for IOUringWorker {
             let io_request = unsafe { &mut *io_request_ptr };
 
             if ret < 0 {
-                if ret != -libc::ECANCELED {
-                    io_request.set_ret(Err(Error::from_raw_os_error(-ret)));
-                } else {
+                if ret == -libc::ECANCELED {
                     io_request.set_ret(Err(Error::from(ErrorKind::TimedOut)));
+                } else {
+                    io_request.set_ret(Err(Error::from_raw_os_error(-ret)));
                 }
             } else {
+                #[allow(clippy::cast_sign_loss, reason = "the sing was checked above")]
                 io_request.set_ret(Ok(ret as _));
             }
 
@@ -278,16 +279,17 @@ impl IoWorker for IOUringWorker {
                 opcode::Socket::new(
                     c_int::from(domain),
                     c_int::from(sock_type),
-                    c_int::from(protocol)
+                    c_int::from(protocol),
                 ).build(),
                 request_ptr,
             );
-            
+
             return;
         }
 
         let request = unsafe { &mut *request_ptr };
         let socket_ = socket2::Socket::new(domain, sock_type, Some(protocol));
+        #[allow(clippy::cast_sign_loss, reason = "the sing was checked by map() method")]
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
         local_executor().spawn_local_task(unsafe { request.task() });
@@ -340,6 +342,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Recv::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
         );
@@ -368,8 +371,9 @@ impl IoWorker for IOUringWorker {
         //     );
         //     return;
         // }
-        
+
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
         );
@@ -390,7 +394,7 @@ impl IoWorker for IOUringWorker {
         //     );
         //     return;
         // }
-        
+
         self.register_entry(
             opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
             request_ptr,
@@ -400,6 +404,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
                 .flags(libc::MSG_PEEK)
                 .build(),
@@ -408,10 +413,10 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn peek_from<'peeking>(
+    fn peek_from(
         &mut self,
         fd: RawFd,
-        msg_header: &mut MessageRecvHeader<'peeking>,
+        msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     ) {
         let msg_header = &mut *msg_header;
@@ -485,6 +490,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
         );
@@ -500,6 +506,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
                 .offset(offset as _)
                 .build(),
@@ -516,6 +523,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(),
             request_ptr,
         );
@@ -531,6 +539,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
+            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
             opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
                 .offset(offset as _)
                 .build(),
@@ -557,7 +566,7 @@ impl IoWorker for IOUringWorker {
                 types::Fd(libc::AT_FDCWD),
                 new_path,
             )
-            .build(),
+                .build(),
             request_ptr,
         );
     }

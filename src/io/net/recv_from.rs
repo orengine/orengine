@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -50,6 +51,7 @@ impl<'fut> Future for RecvFrom<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `RecvFrom` is `Send`
 unsafe impl Send for RecvFrom<'_> {}
 
 /// `recv_from` io operation with deadline.
@@ -97,10 +99,12 @@ impl<'fut> Future for RecvFromWithDeadline<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `RecvFromWithDeadline` is `Send`
 unsafe impl Send for RecvFromWithDeadline<'_> {}
 
 /// The `AsyncRecvFrom` trait provides asynchronous methods for receiving at the incoming data
 /// with consuming it from the socket (datagram).
+///
 /// It returns [`SocketAddr`](SocketAddr) of the sender.
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
@@ -109,7 +113,7 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd, AsyncRecvFrom};
 /// use orengine::net::UdpSocket;
@@ -130,7 +134,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;
@@ -148,7 +152,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     #[inline(always)]
     async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFrom::new(self.as_raw_fd(), &mut (buf as *mut [u8]), &mut sock_addr).await?;
+        let n = RecvFrom::new(self.as_raw_fd(), &mut std::ptr::from_mut::<[u8]>(buf), &mut sock_addr).await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -162,7 +166,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;
@@ -188,9 +192,9 @@ pub trait AsyncRecvFrom: AsRawFd {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFromWithDeadline::new(
             self.as_raw_fd(),
-            &mut (buf as *mut [u8]),
+            &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
-            deadline
+            deadline,
         ).await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
@@ -205,7 +209,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;

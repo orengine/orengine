@@ -1,7 +1,7 @@
+use crate::utils::{get_core_ids, CoreId};
+use crate::BUG_MESSAGE;
 use std::collections::VecDeque;
 use std::sync::{LazyLock, Mutex};
-use crate::BUG_MESSAGE;
-use crate::utils::{get_core_ids, CoreId};
 
 /// A list of cores ids. It is needed for balancing the [`executors`](crate::Executor) between cores.
 static CORES_IDS_LIST: LazyLock<Mutex<VecDeque<CoreId>>> = LazyLock::new(|| {
@@ -11,6 +11,7 @@ static CORES_IDS_LIST: LazyLock<Mutex<VecDeque<CoreId>>> = LazyLock::new(|| {
 
 /// Returns core id for executor. It is already balanced between cores.
 #[inline(always)]
+#[allow(clippy::missing_panics_doc)] // It panics only when a bug is occurred.
 pub fn get_core_id_for_executor() -> CoreId {
     let mut table = CORES_IDS_LIST.lock().expect(BUG_MESSAGE);
     let core_id = table.pop_front().expect(BUG_MESSAGE);

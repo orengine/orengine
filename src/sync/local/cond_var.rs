@@ -1,28 +1,28 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
-use crate::sync::{LocalMutex, LocalMutexGuard};
+use crate::sync::{AsyncMutex, LocalMutex, LocalMutexGuard};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Current state of the [`WaitCondVar`].
-enum State {
+enum WaitState {
     /// Default state.
-    WaitSleep,
+    Sleep,
     /// The [`WaitCondVar`] is parked and will be woken up when [`LocalCondVar::notify`] is called.
-    WaitWake,
+    Wake,
     /// The [`WaitCondVar`] has been woken up, and it is parked on a [`LocalMutex`],
     /// because the [`LocalMutex`] is locked.
-    WaitLock,
+    Lock,
 }
 
 /// `WaitCondVar` represents a future returned by the [`LocalCondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
 pub struct WaitCondVar<'mutex, 'cond_var, T> {
-    state: State,
+    state: WaitState,
     cond_var: &'cond_var LocalCondVar,
     local_mutex: &'mutex LocalMutex<T>,
 }
@@ -33,9 +33,9 @@ impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
     pub fn new(
         cond_var: &'cond_var LocalCondVar,
         local_mutex: &'mutex LocalMutex<T>,
-    ) -> WaitCondVar<'mutex, 'cond_var, T> {
+    ) -> Self {
         WaitCondVar {
-            state: State::WaitSleep,
+            state: WaitState::Sleep,
             cond_var,
             local_mutex,
         }
@@ -49,23 +49,24 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
         let this = unsafe { self.get_unchecked_mut() };
 
         match this.state {
-            State::WaitSleep => {
-                this.state = State::WaitWake;
-                let task = get_task_from_context!(cx);
+            WaitState::Sleep => {
+                this.state = WaitState::Wake;
+                let task = unsafe { get_task_from_context!(cx) };
                 let wait_queue = unsafe { &mut *this.cond_var.wait_queue.get() };
                 wait_queue.push(task);
                 Poll::Pending
             }
-            State::WaitWake => match this.local_mutex.try_lock() {
-                Some(guard) => Poll::Ready(guard),
-                None => {
-                    this.state = State::WaitLock;
-                    let task = get_task_from_context!(cx);
+            WaitState::Wake => {
+                if let Some(guard) = this.local_mutex.try_lock() {
+                    Poll::Ready(guard)
+                } else {
+                    this.state = WaitState::Lock;
+                    let task = unsafe { get_task_from_context!(cx) };
                     unsafe { this.local_mutex.subscribe(task) };
                     Poll::Pending
                 }
-            },
-            State::WaitLock => Poll::Ready(LocalMutexGuard::new(this.local_mutex)),
+            }
+            WaitState::Lock => Poll::Ready(LocalMutexGuard::new(this.local_mutex)),
         }
     }
 }
@@ -89,8 +90,8 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///
 /// # Example
 ///
-/// ```no_run
-/// use orengine::sync::{LocalCondVar, LocalMutex, local_scope};
+/// ```rust
+/// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex};
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
@@ -103,7 +104,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///         sleep(Duration::from_secs(1)).await;
 ///         let mut lock = is_ready.lock().await;
 ///         *lock = true;
-///         lock.unlock();
+///         drop(lock);
 ///         cvar.notify_one();
 ///     });
 ///
@@ -123,8 +124,8 @@ pub struct LocalCondVar {
 impl LocalCondVar {
     /// Creates a new [`LocalCondVar`].
     #[inline(always)]
-    pub fn new() -> LocalCondVar {
-        LocalCondVar {
+    pub fn new() -> Self {
+        Self {
             wait_queue: UnsafeCell::new(Vec::new()),
             no_send_marker: std::marker::PhantomData,
         }
@@ -134,8 +135,8 @@ impl LocalCondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope};
+    /// ```rust
+    /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex};
     /// use orengine::sleep;
     /// use std::time::Duration;
     ///
@@ -148,7 +149,7 @@ impl LocalCondVar {
     ///         sleep(Duration::from_secs(1)).await;
     ///         let mut lock = is_ready.lock().await;
     ///         *lock = true;
-    ///         lock.unlock();
+    ///         drop(lock);
     ///         cvar.notify_one();
     ///     });
     ///
@@ -174,13 +175,13 @@ impl LocalCondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// use orengine::sync::{LocalMutex, LocalCondVar};
+    /// ```rust
+    /// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex};
     ///
     /// async fn inc_counter_and_notify(counter: &LocalMutex<i32>, cvar: &LocalCondVar) {
     ///     let mut lock = counter.lock().await;
     ///     *lock += 1;
-    ///     lock.unlock();
+    ///     drop(lock);
     ///     cvar.notify_one();
     /// }
     /// ```
@@ -201,13 +202,13 @@ impl LocalCondVar {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// use orengine::sync::{LocalMutex, LocalCondVar};
+    /// ```rust
+    /// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex};
     ///
     /// async fn inc_counter_and_notify_all(counter: &LocalMutex<i32>, cvar: &LocalCondVar) {
     ///     let mut lock = counter.lock().await;
     ///     *lock += 1;
-    ///     lock.unlock();
+    ///     drop(lock);
     ///     cvar.notify_all();
     /// }
     /// ```
@@ -221,6 +222,12 @@ impl LocalCondVar {
     }
 }
 
+impl Default for LocalCondVar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Sync for LocalCondVar {}
 
 #[cfg(test)]
@@ -229,20 +236,20 @@ mod tests {
     use crate as orengine;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
-    use crate::sync::LocalWaitGroup;
-    use std::ops::Deref;
+    use crate::sync::{AsyncMutex, LocalWaitGroup};
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
+    #[allow(clippy::future_not_send)] // because it is `local`
     async fn test_notify_one(need_drop: bool) {
         let start = Instant::now();
         let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
         let pair2 = pair.clone();
         // Inside our lock, spawn a new thread, and then wait for it to start.
         local_executor().spawn_local(async move {
-            let (lock, cvar) = pair2.deref();
+            let (lock, cvar) = &*pair2;
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
             *started = true;
@@ -254,7 +261,7 @@ mod tests {
         });
 
         // Wait for the thread to start up.
-        let (lock, cvar) = pair.deref();
+        let (lock, cvar) = &*pair;
         let mut started = lock.lock().await;
         while !*started {
             started = cvar.wait(started).await;
@@ -263,6 +270,7 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
+    #[allow(clippy::future_not_send)] // because it is `local`
     async fn test_notify_all(need_drop: bool) {
         const NUMBER_OF_WAITERS: usize = 10;
 
@@ -271,7 +279,7 @@ mod tests {
         let pair2 = pair.clone();
         // Inside our lock, spawn a new thread, and then wait for it to start.
         local_executor().spawn_local(async move {
-            let (lock, cvar) = pair2.deref();
+            let (lock, cvar) = &*pair2;
             let mut started = lock.lock().await;
             sleep(TIME_TO_SLEEP).await;
             *started = true;
@@ -288,7 +296,7 @@ mod tests {
             let wg = wg.clone();
             wg.add(1);
             local_executor().spawn_local(async move {
-                let (lock, cvar) = pair.deref();
+                let (lock, cvar) = &*pair;
                 let mut started = lock.lock().await;
                 while !*started {
                     started = cvar.wait(started).await;

@@ -1,4 +1,5 @@
-//! This module provides an asynchronous rw_lock (e.g. [`std::sync::RwLock`]) type [`RWLock`].
+//! This module provides an asynchronous `rw_lock` (e.g. [`std::sync::RwLock`]) type [`RWLock`].
+//!
 //! It allows for asynchronous read or write locking and unlocking, and provides
 //! ownership-based locking through [`ReadLockGuard`] and [`WriteLockGuard`].
 use std::cell::UnsafeCell;
@@ -18,11 +19,11 @@ use crate::yield_now;
 ///
 /// This structure is created by the [`RWLock::read`](RWLock::read)
 /// and [`RWLock::try_read`](RWLock::try_read).
-pub struct ReadLockGuard<'rw_lock, T> {
+pub struct ReadLockGuard<'rw_lock, T: ?Sized> {
     rw_lock: &'rw_lock RWLock<T>,
 }
 
-impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> ReadLockGuard<'rw_lock, T> {
     /// Creates a new `ReadLockGuard`.
     #[inline(always)]
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
@@ -32,7 +33,7 @@ impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
     /// Returns a reference to the original [`RWLock`].
     #[inline(always)]
     pub fn rw_lock(&self) -> &RWLock<T> {
-        &self.rw_lock
+        self.rw_lock
     }
 
     /// Release the shared read access of a lock.
@@ -52,9 +53,14 @@ impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
     ///
     /// # Safety
     ///
-    /// The rw_lock is read unlocked by calling [`RWLock::read_unlock`] later.
+    /// The [`RWLock`] is read unlocked by calling [`RWLock::read_unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'rw_lock T {
+        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        #[allow(
+            clippy::transmute_ptr_to_ptr,
+            reason = "It is not possible to write it any other way"
+        )]
         let static_mutex = unsafe { mem::transmute(self.rw_lock) };
         mem::forget(self);
 
@@ -62,7 +68,7 @@ impl<'rw_lock, T> ReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Deref for ReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Deref for ReadLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -70,7 +76,7 @@ impl<'rw_lock, T> Deref for ReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Drop for ReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Drop for ReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
         unsafe {
             self.rw_lock.read_unlock();
@@ -78,16 +84,19 @@ impl<'rw_lock, T> Drop for ReadLockGuard<'rw_lock, T> {
     }
 }
 
+unsafe impl<T: ?Sized + Send + Sync> Sync for ReadLockGuard<'_, T> {}
+unsafe impl<T: ?Sized + Send> Send for ReadLockGuard<'_, T> {}
+
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 ///
 /// This structure is created by the [`RWLock::write`](RWLock::write)
 /// and [`RWLock::try_write`](RWLock::try_write).
-pub struct WriteLockGuard<'rw_lock, T> {
+pub struct WriteLockGuard<'rw_lock, T: ?Sized> {
     rw_lock: &'rw_lock RWLock<T>,
 }
 
-impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> WriteLockGuard<'rw_lock, T> {
     /// Creates a new `WriteLockGuard`.
     #[inline(always)]
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
@@ -97,7 +106,7 @@ impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
     /// Returns a reference to the original [`RWLock`].
     #[inline(always)]
     pub fn rw_lock(&self) -> &RWLock<T> {
-        &self.rw_lock
+        self.rw_lock
     }
 
     /// Release the exclusive write access of a lock.
@@ -117,9 +126,14 @@ impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
     ///
     /// # Safety
     ///
-    /// The rw_lock is write unlocked by calling [`RWLock::write_unlock`] later.
+    /// The [`RWLock`] is write-unlocked by calling [`RWLock::write_unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> &'rw_lock T {
+        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        #[allow(
+            clippy::transmute_ptr_to_ptr,
+            reason = "It is not possible to write it any other way"
+        )]
         let static_mutex = unsafe { mem::transmute(self.rw_lock) };
         mem::forget(self);
 
@@ -127,7 +141,7 @@ impl<'rw_lock, T> WriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Deref for WriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Deref for WriteLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -135,19 +149,22 @@ impl<'rw_lock, T> Deref for WriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> DerefMut for WriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> DerefMut for WriteLockGuard<'rw_lock, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.rw_lock.value.get() }
     }
 }
 
-impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Drop for WriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
         unsafe {
             self.rw_lock.write_unlock();
         }
     }
 }
+
+unsafe impl<T: ?Sized + Send + Sync> Sync for WriteLockGuard<'_, T> {}
+unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 
 // endregion
 
@@ -177,7 +194,7 @@ impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::collections::HashMap;
 /// use orengine::Local;
 /// use orengine::sync::RWLock;
@@ -194,26 +211,39 @@ impl<'rw_lock, T> Drop for WriteLockGuard<'rw_lock, T> {
 ///     // read lock is released when `guard` goes out of scope
 /// }
 /// ```
-pub struct RWLock<T> {
+pub struct RWLock<T: ?Sized> {
     number_of_readers: CachePadded<AtomicIsize>,
     value: UnsafeCell<T>,
 }
 
-impl<T> RWLock<T> {
+pub enum LockStatus {
+    Unlocked,
+    WriteLocked,
+    ReadLocked(usize),
+}
+
+impl<T: ?Sized> RWLock<T> {
     /// Creates a new `RWLock` with the given value.
-    #[inline(always)]
-    pub fn new(value: T) -> RWLock<T> {
-        RWLock {
+    pub const fn new(value: T) -> Self
+    where
+        T: Sized,
+    {
+        Self {
             number_of_readers: CachePadded::new(AtomicIsize::new(0)),
             value: UnsafeCell::new(value),
         }
     }
 
+    /// Returns
+
     /// Returns [`WriteLockGuard`] that allows mutable access to the inner value.
     ///
     /// It will block the current task if the lock is already acquired for writing or reading.
     #[inline(always)]
-    pub async fn write(&self) -> WriteLockGuard<T> {
+    pub async fn write(&self) -> WriteLockGuard<T>
+    where
+        T: Send,
+    {
         loop {
             match self.try_write() {
                 Some(guard) => return guard,
@@ -226,7 +256,10 @@ impl<T> RWLock<T> {
     ///
     /// It will block the current task if the lock is already acquired for writing.
     #[inline(always)]
-    pub async fn read(&self) -> ReadLockGuard<T> {
+    pub async fn read(&self) -> ReadLockGuard<T>
+    where
+        T: Send,
+    {
         loop {
             match self.try_read() {
                 Some(guard) => return guard,
@@ -280,18 +313,14 @@ impl<T> RWLock<T> {
     ///
     /// # Safety
     ///
-    /// - The rw_lock must be read-locked.
+    /// [`RWLock`] is read-locked and leaked via [`ReadLockGuard::leak`].
     #[inline(always)]
+    #[allow(clippy::missing_panics_doc, reason = "False positive")]
     pub unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
-            if current < 0 {
-                panic!("NaiveRWLock is locked for write");
-            }
-
-            if current == 0 {
-                panic!("NaiveRWLock is already unlocked");
-            }
+            assert_ne!(current, 0, "RWLock is already unlocked");
+            assert!(current > 0, "RWLock is locked for write");
         }
 
         self.number_of_readers.fetch_sub(1, Release);
@@ -301,18 +330,16 @@ impl<T> RWLock<T> {
     ///
     /// # Safety
     ///
-    /// - The rw_lock must be write-locked.
+    /// - [`RWLock`] is write-locked and leaked via [`WriteLockGuard::leak`].
+    ///
+    /// - No other tasks has an ownership of this [`RWLock`].
     #[inline(always)]
+    #[allow(clippy::missing_panics_doc, reason = "False positive")]
     pub unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
-            if current == 0 {
-                panic!("NaiveRWLock is already unlocked");
-            }
-
-            if current > 0 {
-                panic!("NaiveRWLock is locked for read");
-            }
+            assert_ne!(current, 0, "RWLock is already unlocked");
+            assert!(current < 0, "RWLock is locked for read");
         }
 
         self.number_of_readers.store(0, Release);
@@ -322,18 +349,14 @@ impl<T> RWLock<T> {
     ///
     /// # Safety
     ///
-    /// - The mutex must be read-locked.
+    /// - [`RWLock`] must be read-locked.
     #[inline(always)]
+    #[allow(clippy::missing_panics_doc, reason = "False positive")]
     pub unsafe fn get_read_locked(&self) -> &T {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
-            if current < 0 {
-                panic!("NaiveRWLock is locked for write");
-            }
-
-            if current == 0 {
-                panic!("NaiveRWLock is unlocked but get_read_locked is called");
-            }
+            assert_ne!(current, 0, "RWLock is already unlocked");
+            assert!(current > 0, "RWLock is locked for write");
         }
 
         unsafe { &*self.value.get() }
@@ -343,26 +366,25 @@ impl<T> RWLock<T> {
     ///
     /// # Safety
     ///
-    /// - The mutex must be write-locked.
+    /// - [`RWLock`] must be write-locked
+    ///
+    /// - No tasks has an ownership of this [`RWLock`].
     #[inline(always)]
+    #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
+    #[allow(clippy::missing_panics_doc, reason = "False positive")]
     pub unsafe fn get_write_locked(&self) -> &mut T {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
-            if current == 0 {
-                panic!("NaiveRWLock is unlocked but get_write_locked is called");
-            }
-
-            if current > 0 {
-                panic!("NaiveRWLock is locked for read");
-            }
+            assert_ne!(current, 0, "RWLock is already unlocked");
+            assert!(current < 0, "RWLock is locked for read");
         }
 
         unsafe { &mut *self.value.get() }
     }
 }
 
-unsafe impl<T: Send + Sync> Sync for RWLock<T> {}
-unsafe impl<T: Send> Send for RWLock<T> {}
+unsafe impl<T: ?Sized + Send> Sync for RWLock<T> {}
+unsafe impl<T: ?Sized + Send> Send for RWLock<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -394,7 +416,7 @@ mod tests {
             assert_eq!(*write_lock, 1);
             assert_eq!(rw_lock.number_of_readers.load(SeqCst), -1);
         })
-        .await;
+            .await;
     }
 
     #[orengine_macros::test_shared]
@@ -435,6 +457,6 @@ mod tests {
                 "Successful attempt to acquire write lock when rw_lock locked for write"
             );
         })
-        .await;
+            .await;
     }
 }

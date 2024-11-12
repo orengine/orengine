@@ -20,7 +20,7 @@ use crate::runtime::local_executor;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncAccept, AsyncBind};
 /// use orengine::local_executor;
@@ -175,7 +175,7 @@ mod tests {
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
-    use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
+    use crate::sync::{AsyncMutex, LocalCondVar, LocalMutex, LocalWaitGroup};
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -440,7 +440,7 @@ mod tests {
                         .expect("connect with timeout failed");
 
                     let buf = vec![0u8; 1 << 24]; // 16 MB.
-                                                  // It is impossible to send 16 MB in 1 microsecond (16 TB/s).
+                    // It is impossible to send 16 MB in 1 microsecond (16 TB/s).
                     let res = stream
                         .send_all_with_deadline(&buf, Instant::now() + Duration::from_micros(1))
                         .await;
