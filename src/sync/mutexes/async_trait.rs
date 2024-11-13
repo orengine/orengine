@@ -103,6 +103,7 @@ pub trait AsyncMutex<T: ?Sized> {
     /// - The `mutex` must be locked.
     ///
     /// - Only current task has an ownership of this `lock`.
+    #[allow(clippy::mut_from_ref, reason = "The caller guarantees this safety")]
     unsafe fn get_locked(&self) -> &mut T;
 }
 

@@ -2,7 +2,7 @@
 //! [`sched_future_to_another_thread`] or [`sched_future`](ExecutorPool::sched_future).
 use crate::bug_message::BUG_MESSAGE;
 use crate::runtime::Config;
-use crate::sync::Channel;
+use crate::sync::{AsyncChannel, AsyncReceiver, AsyncSender, Channel, RecvResult, SendResult};
 use crate::{local_executor, Executor};
 use crossbeam::queue::SegQueue;
 use std::future::Future;
@@ -12,8 +12,15 @@ use std::sync::Arc;
 use std::task::Poll;
 use std::{panic, ptr, thread};
 
+struct Result {
+    future_result: thread::Result<()>,
+    sender: Arc<Channel<Job>>,
+}
+
+unsafe impl Send for Result {}
+
 /// Short type alias for `Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>`
-type ResultSender = Arc<Channel<(thread::Result<()>, Arc<Channel<Job>>)>>;
+type ResultSender = Arc<Channel<Result>>;
 
 /// `Job` is a wrapper for a [`Future`] via polling it and sending the result
 /// (caught panic) to the `result_sender`.
@@ -64,9 +71,12 @@ impl Future for Job {
                 local_executor().exec_shared_future(async move {
                     let send_res = this
                         .result_sender
-                        .send((Ok(()), sender))
+                        .send(Result {
+                            future_result: Ok(()),
+                            sender,
+                        })
                         .await;
-                    assert!(send_res.is_ok(), "{BUG_MESSAGE}");
+                    assert!(matches!(send_res, SendResult::Ok), "{BUG_MESSAGE}");
                 });
 
                 return Poll::Ready(());
@@ -78,12 +88,12 @@ impl Future for Job {
             local_executor().exec_shared_future(async move {
                 let send_res = this
                     .result_sender
-                    .send((
-                        Err(Box::new(handle.unwrap_err())),
+                    .send(Result {
+                        future_result: Err(Box::new(handle.unwrap_err())),
                         sender,
-                    ))
+                    })
                     .await;
-                assert!(send_res.is_ok(), "{BUG_MESSAGE}");
+                assert!(matches!(send_res, SendResult::Ok), "{BUG_MESSAGE}");
             });
 
             Poll::Ready(())
@@ -129,14 +139,16 @@ impl ExecutorPoolJoinHandle {
     /// If test fn was panicked. It is used to `should_panic`.
     pub async fn join(mut self) {
         self.was_joined = true;
-        let (res, sender) = self.channel.recv().await.expect(BUG_MESSAGE);
-        self.pool.senders_to_executors.push(sender);
+        let res = self.channel.recv().await.unwrap();
+        self.pool.senders_to_executors.push(res.sender);
 
-        if let Err(err) = res {
+        if let Err(err) = res.future_result {
             panic::resume_unwind(err);
         }
     }
 }
+
+unsafe impl Send for ExecutorPoolJoinHandle {}
 
 impl Drop for ExecutorPoolJoinHandle {
     fn drop(&mut self) {
@@ -156,6 +168,8 @@ impl Drop for ExecutorPoolJoinHandle {
 pub struct ExecutorPool {
     senders_to_executors: SegQueue<Arc<Channel<Job>>>,
 }
+
+unsafe impl Send for ExecutorPool {}
 
 /// Returns [`Config`] for creating [`Executor`] in the [`pool`](ExecutorPool).
 fn executor_pool_cfg() -> Config {
@@ -180,7 +194,7 @@ impl ExecutorPool {
         thread::spawn(move || {
             let ex = Executor::init_with_config(executor_pool_cfg());
             ex.run_and_block_on_shared(async move {
-                while let Ok(job) = channel_clone.recv().await {
+                while let RecvResult::Ok(job) = channel_clone.recv().await {
                     job.await;
                 }
             })
@@ -245,7 +259,7 @@ impl ExecutorPool {
         let send_res = sender
             .send(Job::new(future, sender.clone(), result_channel.clone()))
             .await;
-        assert!(send_res.is_ok(), "{BUG_MESSAGE}");
+        assert!(matches!(send_res, SendResult::Ok), "{BUG_MESSAGE}");
 
         ExecutorPoolJoinHandle::new(result_channel, &EXECUTOR_POOL)
     }
