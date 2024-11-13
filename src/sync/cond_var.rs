@@ -89,7 +89,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// # Example
 ///
 /// ```rust
-/// use orengine::sync::{CondVar, Mutex, shared_scope};
+/// use orengine::sync::{CondVar, Mutex, shared_scope, AsyncMutex};
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
@@ -102,7 +102,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 ///         sleep(Duration::from_secs(1)).await;
 ///         let mut lock = is_ready.lock().await;
 ///         *lock = true;
-///         lock.unlock();
+///         drop(lock);
 ///         cvar.notify_one();
 ///     });
 ///
@@ -131,7 +131,7 @@ impl CondVar {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::sync::{CondVar, Mutex, shared_scope};
+    /// use orengine::sync::{CondVar, Mutex, shared_scope, AsyncMutex};
     /// use orengine::sleep;
     /// use std::time::Duration;
     ///
@@ -144,7 +144,7 @@ impl CondVar {
     ///         sleep(Duration::from_secs(1)).await;
     ///         let mut lock = is_ready.lock().await;
     ///         *lock = true;
-    ///         lock.unlock();
+    ///         drop(lock);
     ///         cvar.notify_one();
     ///     });
     ///
@@ -171,12 +171,12 @@ impl CondVar {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::sync::{Mutex, CondVar};
+    /// use orengine::sync::{Mutex, CondVar, AsyncMutex};
     ///
     /// async fn inc_counter_and_notify(counter: &Mutex<i32>, cvar: &CondVar) {
     ///     let mut lock = counter.lock().await;
     ///     *lock += 1;
-    ///     lock.unlock();
+    ///     drop(lock);
     ///     cvar.notify_one();
     /// }
     /// ```
@@ -196,12 +196,12 @@ impl CondVar {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::sync::{Mutex, CondVar};
+    /// use orengine::sync::{Mutex, CondVar, AsyncMutex};
     ///
     /// async fn inc_counter_and_notify_all(counter: &Mutex<i32>, cvar: &CondVar) {
     ///     let mut lock = counter.lock().await;
     ///     *lock += 1;
-    ///     lock.unlock();
+    ///     drop(lock);
     ///     cvar.notify_all();
     /// }
     /// ```
@@ -232,7 +232,7 @@ mod tests {
 
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
-    use crate::sync::WaitGroup;
+    use crate::sync::{AsyncMutex, WaitGroup};
 
     use super::*;
     use crate as orengine;

@@ -6,6 +6,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
+use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use crate::yield_now;
 use crossbeam::utils::CachePadded;
 
@@ -28,38 +29,6 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
         Self { mutex }
     }
 
-    /// Returns a reference to the original [`NaiveMutex`].
-    #[inline(always)]
-    pub fn mutex(&self) -> &NaiveMutex<T> {
-        self.mutex
-    }
-
-    /// Unlocks the [`mutex`](NaiveMutex). Calling `guard.unlock()` is equivalent to
-    /// calling `drop(guard)`. This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the [`mutex`](NaiveMutex) will be unlocked after the `guard` is dropped.
-    #[inline(always)]
-    pub fn unlock(self) {}
-
-    /// Returns a reference to the original [`NaiveMutex`].
-    ///
-    /// The mutex will never be unlocked.
-    ///
-    /// # Safety
-    ///
-    /// The mutex is unlocked by calling [`NaiveMutex::unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'mutex NaiveMutex<T> {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
-        let static_mutex = unsafe { mem::transmute(self.mutex) };
-        mem::forget(self);
-
-        static_mutex
-    }
-
     /// Returns a reference to the [`CachePadded<AtomicBool>`]
     /// associated with the original [`NaiveMutex`] to
     /// use [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
@@ -77,6 +46,22 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
                 &'static CachePadded<AtomicBool>
             >(&self.mutex.is_locked)
         };
+        mem::forget(self);
+
+        static_mutex
+    }
+}
+
+impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for NaiveMutexGuard<'mutex, T> {
+    type Mutex = NaiveMutex<T>;
+
+    fn mutex(&self) -> &Self::Mutex {
+        self.mutex
+    }
+
+    unsafe fn leak(self) -> &'mutex Self::Mutex {
+        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
         static_mutex
@@ -140,7 +125,7 @@ unsafe impl<T: ?Sized + Send> Send for NaiveMutexGuard<'_, T> {}
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use orengine::sync::NaiveMutex;
+/// use orengine::sync::{AsyncMutex, NaiveMutex};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
@@ -170,22 +155,20 @@ impl<T: ?Sized> NaiveMutex<T> {
             value: UnsafeCell::new(value),
         }
     }
+}
 
-    /// Returns whether the mutex is locked.
+impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
+    type Guard<'guard> = NaiveMutexGuard<'guard, T>
+    where
+        T: 'guard;
+
     #[inline(always)]
-    pub fn is_locked(&self) -> bool {
+    fn is_locked(&self) -> bool {
         self.is_locked.load(Acquire)
     }
 
-    /// Returns a [`Future`] that resolves to [`NaiveMutexGuard`] that allows
-    /// access to the inner value.
-    ///
-    /// It blocks the current task if the mutex is locked.
     #[inline(always)]
-    pub async fn lock(&self) -> NaiveMutexGuard<T>
-    where
-        T: Send + Sync,
-    {
+    async fn lock(&self) -> Self::Guard<'_> {
         loop {
             for step in 0..=6 {
                 if let Some(guard) = self.try_lock() {
@@ -200,10 +183,8 @@ impl<T: ?Sized> NaiveMutex<T> {
         }
     }
 
-    /// If the mutex is unlocked, returns [`NaiveMutexGuard`] that allows access to the inner value,
-    /// otherwise returns [`None`].
     #[inline(always)]
-    pub fn try_lock(&self) -> Option<NaiveMutexGuard<T>> {
+    fn try_lock(&self) -> Option<Self::Guard<'_>> {
         if self
             .is_locked
             .compare_exchange_weak(false, true, Acquire, Relaxed)
@@ -215,21 +196,13 @@ impl<T: ?Sized> NaiveMutex<T> {
         }
     }
 
-    /// Returns a reference to the underlying data. It is safe because it uses `&mut self`.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
+    fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    /// Unlocks the mutex.
-    ///
-    /// # Safety
-    ///
-    /// - The [`mutex`](NaiveMutex) must be locked.
-    ///
-    /// - No other tasks has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
-    pub unsafe fn unlock(&self) {
+    unsafe fn unlock(&self) {
         debug_assert!(
             self.is_locked.load(Acquire),
             "NaiveMutex is unlocked, but calling unlock it must be locked"
@@ -238,16 +211,9 @@ impl<T: ?Sized> NaiveMutex<T> {
         self.is_locked.store(false, Release);
     }
 
-    /// Returns a reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - The mutex must be locked.
-    ///
-    /// - And only current task has an ownership of this [`mutex`](NaiveMutex).
     #[inline(always)]
     #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
-    pub unsafe fn get_locked(&self) -> &mut T {
+    unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
             self.is_locked.load(Acquire),
             "NaiveMutex is unlocked, but calling get_locked it must be locked"
@@ -258,7 +224,6 @@ impl<T: ?Sized> NaiveMutex<T> {
 }
 
 unsafe impl<T: ?Sized + Send + Sync> Sync for NaiveMutex<T> {}
-unsafe impl<T: ?Sized + Send> Send for NaiveMutex<T> {}
 impl<T: UnwindSafe> UnwindSafe for NaiveMutex<T> {}
 impl<T: RefUnwindSafe> RefUnwindSafe for NaiveMutex<T> {}
 

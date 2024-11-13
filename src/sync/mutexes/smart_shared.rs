@@ -16,6 +16,7 @@ use crossbeam::utils::{Backoff, CachePadded};
 
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Task};
+use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use crate::sync_task_queue::SyncTaskList;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
@@ -26,32 +27,16 @@ use crate::sync_task_queue::SyncTaskList;
 ///
 /// This structure is created by the [`lock`](Mutex::lock)
 /// and [`try_lock`](Mutex::try_lock) methods on [`Mutex`].
-pub struct MutexGuard<'mutex, T> {
+pub struct MutexGuard<'mutex, T: ?Sized> {
     mutex: &'mutex Mutex<T>,
 }
 
-impl<'mutex, T> MutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> MutexGuard<'mutex, T> {
     /// Creates a new [`MutexGuard`].
     #[inline(always)]
     pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
         Self { mutex }
     }
-
-    /// Returns a reference to the original [`Mutex`].
-    #[inline(always)]
-    pub fn mutex(&self) -> &Mutex<T> {
-        self.mutex
-    }
-
-    /// Unlocks the [`mutex`](Mutex). Calling `guard.unlock()` is equivalent to
-    /// calling `drop(guard)`. This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the [`mutex`](Mutex) will be unlocked after the `guard` is dropped.
-    #[inline(always)]
-    pub fn unlock(self) {}
 
     /// Returns a reference to the original [`Mutex`].
     ///
@@ -60,26 +45,25 @@ impl<'mutex, T> MutexGuard<'mutex, T> {
     pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
         self.mutex
     }
+}
 
-    /// Returns a reference to the original [`Mutex`].
-    ///
-    /// The mutex will never be unlocked.
-    ///
-    /// # Safety
-    ///
-    /// The mutex is unlocked by calling [`Mutex::unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'static Mutex<T> {
-        let static_mutex = unsafe {
-            mem::transmute::<&Mutex<T>, &'static Mutex<T>>(self.mutex)
-        };
+impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for MutexGuard<'mutex, T> {
+    type Mutex = Mutex<T>;
+
+    fn mutex(&self) -> &Self::Mutex {
+        self.mutex
+    }
+
+    unsafe fn leak(self) -> &'mutex Self::Mutex {
+        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
         static_mutex
     }
 }
 
-impl<'mutex, T> Deref for MutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> Deref for MutexGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -87,25 +71,28 @@ impl<'mutex, T> Deref for MutexGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T> DerefMut for MutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> DerefMut for MutexGuard<'mutex, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.value.get() }
     }
 }
 
-impl<'mutex, T> Drop for MutexGuard<'mutex, T> {
+impl<'mutex, T: ?Sized> Drop for MutexGuard<'mutex, T> {
     fn drop(&mut self) {
         unsafe { self.mutex.unlock() };
     }
 }
 
+unsafe impl<T: ?Sized + Send + Sync> Sync for MutexGuard<'_, T> {}
+unsafe impl<T: ?Sized + Send> Send for MutexGuard<'_, T> {}
+
 /// `MutexWait` is a future that will be resolved when the lock is acquired.
-pub struct MutexWait<'mutex, T> {
+pub struct MutexWait<'mutex, T: ?Sized> {
     was_called: bool,
     mutex: &'mutex Mutex<T>,
 }
 
-impl<'mutex, T> MutexWait<'mutex, T> {
+impl<'mutex, T: ?Sized> MutexWait<'mutex, T> {
     /// Creates a new [`MutexWait`].
     #[inline(always)]
     fn new(local_mutex: &'mutex Mutex<T>) -> Self {
@@ -116,7 +103,7 @@ impl<'mutex, T> MutexWait<'mutex, T> {
     }
 }
 
-impl<'mutex, T> Future for MutexWait<'mutex, T> {
+impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
     type Output = MutexGuard<'mutex, T>;
 
     #[allow(unused)] // because #[cfg(debug_assertions)]
@@ -176,7 +163,7 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use orengine::sync::Mutex;
+/// use orengine::sync::{AsyncMutex, Mutex};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
@@ -190,52 +177,24 @@ impl<'mutex, T> Future for MutexWait<'mutex, T> {
 ///     // lock is released when `guard` goes out of scope
 /// }
 /// ```
-pub struct Mutex<T> {
+pub struct Mutex<T: ?Sized> {
     counter: CachePadded<AtomicUsize>,
     wait_queue: SyncTaskList,
-    value: UnsafeCell<T>,
     expected_count: Cell<usize>,
+    value: UnsafeCell<T>,
 }
 
-impl<T> Mutex<T> {
+impl<T: ?Sized> Mutex<T> {
     /// Creates a new [`Mutex`].
-    #[inline(always)]
-    pub fn new(value: T) -> Self {
+    pub const fn new(value: T) -> Self
+    where
+        T: Sized,
+    {
         Self {
             counter: CachePadded::new(AtomicUsize::new(0)),
             wait_queue: SyncTaskList::new(),
             value: UnsafeCell::new(value),
             expected_count: Cell::new(1),
-        }
-    }
-
-    /// Returns a [`Future`] that resolves to [`MutexGuard`] that allows access to the inner value.
-    ///
-    /// It blocks the current task if the mutex is locked.
-    #[inline(always)]
-    // TODO is this Send
-    pub fn lock(&self) -> MutexWait<T> {
-        MutexWait::new(self)
-    }
-
-    /// If the mutex is unlocked, returns [`MutexGuard`] that allows access to the inner value,
-    /// otherwise returns [`None`].
-    ///
-    /// # The difference between `try_lock` and [`try_lock_with_spinning`](Mutex::try_lock_with_spinning)
-    ///
-    /// `try_lock` tries to acquire the lock only once.
-    /// It can be more useful in cases where the lock is likely to be locked for
-    /// __more than 30 nanoseconds__.
-    #[inline(always)]
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self
-            .counter
-            .compare_exchange(0, 1, Acquire, Relaxed)
-            .is_ok()
-        {
-            Some(MutexGuard::new(self))
-        } else {
-            None
         }
     }
 
@@ -272,12 +231,6 @@ impl<T> Mutex<T> {
         None
     }
 
-    /// Returns the inner value. It is safe because it uses `&mut self`.
-    #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.value.get_mut()
-    }
-
     /// Add current task to wait queue.
     ///
     /// # Safety
@@ -291,16 +244,38 @@ impl<T> Mutex<T> {
             self.wait_queue.push(task);
         }
     }
+}
 
-    /// Unlocks the mutex.
-    ///
-    /// # Safety
-    ///
-    /// - The mutex must be locked.
-    ///
-    /// - And no tasks has an ownership of this [`mutex`](Mutex).
-    #[inline(always)]
-    pub unsafe fn unlock(&self) {
+impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
+    type Guard<'mutex> = MutexGuard<'mutex, T>
+    where
+        Self: 'mutex;
+
+    fn is_locked(&self) -> bool {
+        self.counter.load(Acquire) != 0
+    }
+
+    fn lock(&self) -> impl Future<Output=Self::Guard<'_>> {
+        MutexWait::new(self)
+    }
+
+    fn try_lock(&self) -> Option<Self::Guard<'_>> {
+        if self
+            .counter
+            .compare_exchange(0, 1, Acquire, Relaxed)
+            .is_ok()
+        {
+            Some(MutexGuard::new(self))
+        } else {
+            None
+        }
+    }
+
+    fn get_mut(&mut self) -> &mut T {
+        self.value.get_mut()
+    }
+
+    unsafe fn unlock(&self) {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
         let was_swapped = self
@@ -330,28 +305,19 @@ impl<T> Mutex<T> {
         }
     }
 
-    /// Returns a reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - The mutex must be locked.
-    ///
-    /// - And only current task has an ownership of this [`mutex`](Mutex).
-    #[inline(always)]
-    pub unsafe fn get_locked(&self) -> &T {
+    unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(
             self.counter.load(Acquire) != 0,
             "Mutex is unlocked, but calling get_locked it must be locked"
         );
 
-        unsafe { &*self.value.get() }
+        unsafe { &mut *self.value.get() }
     }
 }
 
-unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
-unsafe impl<T: Send> Send for Mutex<T> {}
-impl<T: UnwindSafe> UnwindSafe for Mutex<T> {}
-impl<T: RefUnwindSafe> RefUnwindSafe for Mutex<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for Mutex<T> {}
+impl<T: ?Sized + UnwindSafe> UnwindSafe for Mutex<T> {}
+impl<T: ?Sized + RefUnwindSafe> RefUnwindSafe for Mutex<T> {}
 
 #[cfg(test)]
 mod tests {

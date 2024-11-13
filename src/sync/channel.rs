@@ -1,5 +1,6 @@
 use crate::runtime::{local_executor, Task};
-use crate::sync::naive_mutex::NaiveMutex;
+use crate::sync::mutexes::naive::NaiveMutex;
+use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use crate::{get_task_from_context, panic_if_local_in_future};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -205,7 +206,7 @@ impl<'future, T: Send> Future for WaitSend<'future, T> {
                     .pop_front();
                 if let Some((task, slot, call_state)) = receiver {
                     unsafe {
-                        inner_lock.unlock();
+                        drop(inner_lock);
 
                         ptr::copy_nonoverlapping(&*this.value, slot, 1);
                         call_state.write(RecvCallState::WokenToReturnReady);
@@ -310,7 +311,7 @@ impl<'future, T: Send> Future for WaitRecv<'future, T> {
                     let sender_ = inner_lock.senders.pop_front();
                     if let Some((task, call_state)) = sender_ {
                         unsafe {
-                            inner_lock.unlock();
+                            drop(inner_lock);
 
                             call_state.write(SendCallState::WokenToWriteIntoTheSlot(this.slot));
                             local_executor().exec_task(task);
