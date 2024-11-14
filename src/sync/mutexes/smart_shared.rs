@@ -14,10 +14,11 @@ use std::task::{Context, Poll};
 
 use crossbeam::utils::{Backoff, CachePadded};
 
-use crate::panic_if_local_in_future;
-use crate::runtime::{local_executor, Task};
+use crate::runtime::local_executor;
+use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use crate::sync_task_queue::SyncTaskList;
+use crate::{get_task_from_context, panic_if_local_in_future};
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
@@ -50,7 +51,7 @@ impl<'mutex, T: ?Sized> MutexGuard<'mutex, T> {
 impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for MutexGuard<'mutex, T> {
     type Mutex = Mutex<T>;
 
-    fn mutex(&self) -> &Self::Mutex {
+    fn mutex(&self) -> &'mutex Self::Mutex {
         self.mutex
     }
 
@@ -230,20 +231,6 @@ impl<T: ?Sized> Mutex<T> {
 
         None
     }
-
-    /// Add current task to wait queue.
-    ///
-    /// # Safety
-    ///
-    /// Called by owner of the lock of this [`Mutex`].
-    #[inline(always)]
-    pub(crate) unsafe fn subscribe(&self, task: Task) {
-        debug_assert!(self.counter.load(Acquire) != 1, "Mutex is unlocked");
-        self.expected_count.set(self.expected_count.get() - 1);
-        unsafe {
-            self.wait_queue.push(task);
-        }
-    }
 }
 
 impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
@@ -251,14 +238,20 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
     where
         Self: 'mutex;
 
+    #[inline(always)]
     fn is_locked(&self) -> bool {
         self.counter.load(Acquire) != 0
     }
 
-    fn lock(&self) -> impl Future<Output=Self::Guard<'_>> {
+    #[inline(always)]
+    fn lock<'mutex>(&'mutex self) -> impl Future<Output=Self::Guard<'mutex>>
+    where
+        T: 'mutex,
+    {
         MutexWait::new(self)
     }
 
+    #[inline(always)]
     fn try_lock(&self) -> Option<Self::Guard<'_>> {
         if self
             .counter
@@ -271,10 +264,12 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
         }
     }
 
+    #[inline(always)]
     fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
+    #[inline(always)]
     unsafe fn unlock(&self) {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
@@ -305,13 +300,26 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
         }
     }
 
-    unsafe fn get_locked(&self) -> &mut T {
+    #[inline(always)]
+    unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             self.counter.load(Acquire) != 0,
             "Mutex is unlocked, but calling get_locked it must be locked"
         );
 
-        unsafe { &mut *self.value.get() }
+        Self::Guard::new(self)
+    }
+}
+
+impl<T: ?Sized> AsyncSubscribableMutex<T> for Mutex<T> {
+    #[inline(always)]
+    fn low_level_subscribe(&self, cx: &Context) {
+        let task = unsafe { get_task_from_context!(cx) };
+
+        self.expected_count.set(self.expected_count.get() - 1);
+        unsafe {
+            self.wait_queue.push(task);
+        }
     }
 }
 

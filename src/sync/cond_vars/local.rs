@@ -1,49 +1,68 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
-use crate::sync::{AsyncMutex, LocalMutex, LocalMutexGuard};
+use crate::sync::mutexes::AsyncSubscribableMutex;
+use crate::sync::{AsyncCondVar, AsyncMutex, AsyncMutexGuard, LocalMutex};
 use std::cell::UnsafeCell;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Current state of the [`WaitCondVar`].
+/// Current state of the [`WaitLocalCondVar`].
 enum WaitState {
     /// Default state.
     Sleep,
-    /// The [`WaitCondVar`] is parked and will be woken up when [`LocalCondVar::notify`] is called.
+    /// The [`WaitLocalCondVar`] is parked and will be woken up when [`LocalCondVar::notify`] is called.
     Wake,
-    /// The [`WaitCondVar`] has been woken up, and it is parked on a [`LocalMutex`],
+    /// The [`WaitLocalCondVar`] has been woken up, and it is parked on a [`LocalMutex`],
     /// because the [`LocalMutex`] is locked.
     Lock,
 }
 
-/// `WaitCondVar` represents a future returned by the [`LocalCondVar::wait`] method.
+/// `WaitLocalCondVar` represents a future returned by the [`LocalCondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
-pub struct WaitCondVar<'mutex, 'cond_var, T> {
+pub struct WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
     state: WaitState,
     cond_var: &'cond_var LocalCondVar,
-    local_mutex: &'mutex LocalMutex<T>,
+    mutex: &'mutex Guard::Mutex,
+    pd: PhantomData<T>,
 }
 
-impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
-    /// Creates a new [`WaitCondVar`].
+impl<'mutex, 'cond_var, Guard, T> WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
+    /// Creates a new [`WaitLocalCondVar`].
     #[inline(always)]
     pub fn new(
         cond_var: &'cond_var LocalCondVar,
-        local_mutex: &'mutex LocalMutex<T>,
+        mutex: &'mutex Guard::Mutex,
     ) -> Self {
-        WaitCondVar {
+        WaitLocalCondVar {
             state: WaitState::Sleep,
             cond_var,
-            local_mutex,
+            mutex,
+            pd: PhantomData,
         }
     }
 }
 
-impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
-    type Output = LocalMutexGuard<'mutex, T>;
+impl<'mutex, 'cond_var, Guard, T> Future for WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
+    type Output = <<Guard as AsyncMutexGuard<'mutex, T>>::Mutex as AsyncMutex<T>>::Guard<'mutex>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -57,16 +76,15 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 Poll::Pending
             }
             WaitState::Wake => {
-                if let Some(guard) = this.local_mutex.try_lock() {
+                if let Some(guard) = this.mutex.try_lock() {
                     Poll::Ready(guard)
                 } else {
                     this.state = WaitState::Lock;
-                    let task = unsafe { get_task_from_context!(cx) };
-                    unsafe { this.local_mutex.subscribe(task) };
+                    this.mutex.low_level_subscribe(cx);
                     Poll::Pending
                 }
             }
-            WaitState::Lock => Poll::Ready(LocalMutexGuard::new(this.local_mutex)),
+            WaitState::Lock => Poll::Ready(unsafe { this.mutex.get_locked() }),
         }
     }
 }
@@ -91,7 +109,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// # Example
 ///
 /// ```rust
-/// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex};
+/// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex, AsyncCondVar};
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
@@ -124,98 +142,47 @@ pub struct LocalCondVar {
 impl LocalCondVar {
     /// Creates a new [`LocalCondVar`].
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             wait_queue: UnsafeCell::new(Vec::new()),
-            no_send_marker: std::marker::PhantomData,
+            no_send_marker: PhantomData,
+        }
+    }
+}
+
+impl AsyncCondVar for LocalCondVar {
+    type SubscribableMutex<T> = LocalMutex<T>
+    where
+        T: ?Sized;
+
+    #[inline(always)]
+    fn wait<'mutex, T>(
+        &self,
+        guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
+    ) -> impl Future<Output=<Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
+    where
+        T: ?Sized + 'mutex,
+    {
+        WaitLocalCondVar::<
+            'mutex,
+            '_,
+            <<Self as AsyncCondVar>::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
+            T
+        >::new(self, guard.mutex())
+    }
+
+    #[inline(always)]
+    fn notify_one(&self) {
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        if let Some(task) = wait_queue.pop() {
+            local_executor().exec_task(task);
         }
     }
 
-    /// Wait a notification.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex};
-    /// use orengine::sleep;
-    /// use std::time::Duration;
-    ///
-    /// # async fn test() {
-    /// let cvar = LocalCondVar::new();
-    /// let is_ready = LocalMutex::new(false);
-    ///
-    /// local_scope(|scope| async {
-    ///     scope.spawn(async {
-    ///         sleep(Duration::from_secs(1)).await;
-    ///         let mut lock = is_ready.lock().await;
-    ///         *lock = true;
-    ///         drop(lock);
-    ///         cvar.notify_one();
-    ///     });
-    ///
-    ///     let mut lock = is_ready.lock().await;
-    ///     while !*lock {
-    ///         lock = cvar.wait(lock).await; // wait 1 second
-    ///     }
-    /// }).await;
-    /// # }
     #[inline(always)]
-    pub fn wait<'mutex, 'cond_var, T>(
-        &'cond_var self,
-        local_mutex_guard: LocalMutexGuard<'mutex, T>,
-    ) -> WaitCondVar<'mutex, 'cond_var, T> {
-        WaitCondVar::new(self, local_mutex_guard.into_local_mutex())
-    }
-
-    /// Notifies one waiting task.
-    ///
-    /// # Attention
-    ///
-    /// Drop a lock before call [`notify_one`](LocalCondVar::notify_one).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex};
-    ///
-    /// async fn inc_counter_and_notify(counter: &LocalMutex<i32>, cvar: &LocalCondVar) {
-    ///     let mut lock = counter.lock().await;
-    ///     *lock += 1;
-    ///     drop(lock);
-    ///     cvar.notify_one();
-    /// }
-    /// ```
-    #[inline(always)]
-    pub fn notify_one(&self) {
-        let wait_queue = unsafe { &mut *self.wait_queue.get() };
-        if !wait_queue.is_empty() {
-            let task = wait_queue.pop();
-            local_executor().exec_task(unsafe { task.unwrap_unchecked() });
-        }
-    }
-
-    /// Notifies all waiting tasks.
-    ///
-    /// # Attention
-    ///
-    /// Drop a lock before call [`notify_one`](LocalCondVar::notify_one).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex};
-    ///
-    /// async fn inc_counter_and_notify_all(counter: &LocalMutex<i32>, cvar: &LocalCondVar) {
-    ///     let mut lock = counter.lock().await;
-    ///     *lock += 1;
-    ///     drop(lock);
-    ///     cvar.notify_all();
-    /// }
-    /// ```
-    #[inline(always)]
-    pub fn notify_all(&self) {
-        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+    fn notify_all(&self) {
         let executor = local_executor();
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
         while let Some(task) = wait_queue.pop() {
             executor.exec_task(task);
         }
@@ -236,7 +203,7 @@ mod tests {
     use crate as orengine;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
-    use crate::sync::{AsyncMutex, LocalWaitGroup};
+    use crate::sync::{AsyncMutex, LocalMutex, LocalWaitGroup};
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 

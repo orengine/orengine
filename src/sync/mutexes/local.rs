@@ -5,6 +5,7 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
+use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use std::cell::UnsafeCell;
 use std::future::Future;
@@ -49,7 +50,7 @@ impl<'mutex, T: ?Sized> LocalMutexGuard<'mutex, T> {
 impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for LocalMutexGuard<'mutex, T> {
     type Mutex = LocalMutex<T>;
 
-    fn mutex(&self) -> &Self::Mutex {
+    fn mutex(&self) -> &'mutex Self::Mutex {
         self.local_mutex
     }
 
@@ -194,52 +195,51 @@ impl<T> LocalMutex<T> {
             no_send_marker: std::marker::PhantomData,
         }
     }
-
-    /// Add current task to wait queue.
-    ///
-    /// # Safety
-    ///
-    /// Called by owner of the lock of this [`LocalMutex`].
-    #[inline(always)]
-    pub(crate) unsafe fn subscribe(&self, task: Task) {
-        let wait_queue = unsafe { &mut *self.wait_queue.get() };
-        wait_queue.push(task);
-    }
 }
 
 impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
-    type Guard<'guard> = LocalMutexGuard<'guard, T>
+    type Guard<'mutex> = LocalMutexGuard<'mutex, T>
     where
-        T: 'guard;
+        Self: 'mutex;
 
+    #[inline(always)]
     fn is_locked(&self) -> bool {
         unsafe { *self.is_locked.get() }
     }
 
-    async fn lock(&self) -> Self::Guard<'_> {
+    #[inline(always)]
+    async fn lock<'mutex>(&'mutex self) -> Self::Guard<'mutex>
+    where
+        T: 'mutex,
+    {
         let is_locked = unsafe { &mut *self.is_locked.get() };
         if !*is_locked {
             *is_locked = true;
+
             LocalMutexGuard::new(self)
         } else {
             LocalMutexWait::new(self).await
         }
     }
 
+    #[inline(always)]
     fn try_lock(&self) -> Option<Self::Guard<'_>> {
         let is_locked = unsafe { &mut *self.is_locked.get() };
         if !*is_locked {
             *is_locked = true;
+
             Some(LocalMutexGuard::new(self))
         } else {
             None
         }
     }
 
+    #[inline(always)]
     fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.value.get() }
     }
 
+    #[inline(always)]
     unsafe fn unlock(&self) {
         debug_assert!(unsafe { self.is_locked.get().read() });
 
@@ -253,13 +253,23 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
         }
     }
 
-    unsafe fn get_locked(&self) -> &mut T {
+    #[inline(always)]
+    unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             unsafe { self.is_locked.get().read() },
             "LocalMutex is unlocked, but calling get_locked it must be locked"
         );
 
-        unsafe { &mut *self.value.get() }
+        Self::Guard::new(self)
+    }
+}
+
+impl<T: ?Sized> AsyncSubscribableMutex<T> for LocalMutex<T> {
+    #[inline(always)]
+    fn low_level_subscribe(&self, cx: &Context) {
+        let task = unsafe { get_task_from_context!(cx) };
+        let wait_queue = unsafe { &mut *self.wait_queue.get() };
+        wait_queue.push(task);
     }
 }
 

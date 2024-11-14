@@ -205,7 +205,7 @@ mod tests {
     use crate::io::{AsyncBind, AsyncRecv, AsyncSend};
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
-    use crate::sync::{AsyncMutex, LocalCondVar, LocalMutex};
+    use crate::sync::{AsyncCondVar, AsyncMutex, LocalCondVar, LocalMutex};
     use crate::{yield_now, Local};
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";

@@ -9,14 +9,14 @@ use std::ops::{Deref, DerefMut};
 ///
 /// This structure is created by the [`lock`](AsyncMutex::lock)
 /// and [`try_lock`](AsyncMutex::try_lock).
-pub trait AsyncMutexGuard<'mutex, T: ?Sized>: Deref<Target=T> + DerefMut {
+pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target=T> + DerefMut {
     /// The type of the `mutex` associated with this `guard`.
     ///
     /// It implements [`AsyncMutex`].
     type Mutex: AsyncMutex<T> + ?Sized;
 
     /// Returns a reference to the original [`Mutex`].
-    fn mutex(&self) -> &Self::Mutex;
+    fn mutex(&self) -> &'mutex Self::Mutex;
 
     /// Returns a reference to the original [`Mutex`](Self::Mutex).
     ///
@@ -69,7 +69,8 @@ pub trait AsyncMutex<T: ?Sized> {
     /// [`Deref`](Deref) and [`DerefMut`] implementations.
     type Guard<'mutex>: AsyncMutexGuard<'mutex, T, Mutex=Self>
     where
-        Self: 'mutex;
+        Self: 'mutex,
+        T: 'mutex;
 
     /// Returns whether the `mutex` is locked.
     fn is_locked(&self) -> bool;
@@ -78,7 +79,9 @@ pub trait AsyncMutex<T: ?Sized> {
     /// that allows access to the inner value.
     ///
     /// It blocks the current task if the `mutex` is locked.
-    fn lock(&self) -> impl Future<Output=Self::Guard<'_>>;
+    fn lock<'mutex>(&'mutex self) -> impl Future<Output=Self::Guard<'mutex>>
+    where
+        T: 'mutex;
 
     /// If the `mutex` is not locked, locks it and returns [`AsyncMutexGuard`],
     /// otherwise returns [`None`].
@@ -96,7 +99,9 @@ pub trait AsyncMutex<T: ?Sized> {
     /// - No other tasks has an ownership of this `lock`.
     unsafe fn unlock(&self);
 
-    /// Returns a reference to the inner value.
+    /// Returns [`guard`](AsyncMutex::Guard) associated with the `mutex` without locking.
+    ///
+    /// It is used to transfer `lock` without additional locking/unlocking.
     ///
     /// # Safety
     ///
@@ -104,7 +109,7 @@ pub trait AsyncMutex<T: ?Sized> {
     ///
     /// - Only current task has an ownership of this `lock`.
     #[allow(clippy::mut_from_ref, reason = "The caller guarantees this safety")]
-    unsafe fn get_locked(&self) -> &mut T;
+    unsafe fn get_locked(&self) -> Self::Guard<'_>;
 }
 
 /// ```compile_fail

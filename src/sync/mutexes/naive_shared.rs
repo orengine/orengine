@@ -55,7 +55,7 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
 impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for NaiveMutexGuard<'mutex, T> {
     type Mutex = NaiveMutex<T>;
 
-    fn mutex(&self) -> &Self::Mutex {
+    fn mutex(&self) -> &'mutex Self::Mutex {
         self.mutex
     }
 
@@ -158,9 +158,9 @@ impl<T: ?Sized> NaiveMutex<T> {
 }
 
 impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
-    type Guard<'guard> = NaiveMutexGuard<'guard, T>
+    type Guard<'mutex> = NaiveMutexGuard<'mutex, T>
     where
-        T: 'guard;
+        Self: 'mutex;
 
     #[inline(always)]
     fn is_locked(&self) -> bool {
@@ -168,12 +168,16 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
     }
 
     #[inline(always)]
-    async fn lock(&self) -> Self::Guard<'_> {
+    async fn lock<'mutex>(&'mutex self) -> Self::Guard<'mutex>
+    where
+        T: 'mutex,
+    {
         loop {
             for step in 0..=6 {
                 if let Some(guard) = self.try_lock() {
                     return guard;
                 }
+
                 for _ in 0..1 << step {
                     spin_loop();
                 }
@@ -213,13 +217,13 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
 
     #[inline(always)]
     #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
-    unsafe fn get_locked(&self) -> &mut T {
+    unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             self.is_locked.load(Acquire),
             "NaiveMutex is unlocked, but calling get_locked it must be locked"
         );
 
-        unsafe { &mut *self.value.get() }
+        Self::Guard::new(self)
     }
 }
 

@@ -70,6 +70,7 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::local::Local;
+    use crate::yield_now;
     use std::time::Duration;
 
     #[orengine_macros::test_local]
@@ -82,6 +83,8 @@ mod tests {
 
         let arr = Local::new(Vec::new());
         let ex = local_executor();
+
+        yield_now().await; // release exec_series
 
         ex.exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
         ex.exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));

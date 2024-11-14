@@ -3,10 +3,10 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
-use crate::sync::{Mutex, MutexGuard};
+use crate::sync::{AsyncSubscribableMutex, Mutex, MutexGuard};
 use crate::sync_task_queue::SyncTaskList;
-use crate::{get_task_from_context, panic_if_local_in_future};
 
 /// Current state of the [`WaitCondVar`].
 enum WaitState {
@@ -57,10 +57,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                     Poll::Ready(guard)
                 } else {
                     this.state = WaitState::Lock;
-                    let task = unsafe { get_task_from_context!(cx) };
-                    unsafe {
-                        this.mutex.subscribe(task);
-                    }
+                    this.mutex.low_level_subscribe(cx);
                     Poll::Pending
                 }
             }

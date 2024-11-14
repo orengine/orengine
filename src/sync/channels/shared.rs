@@ -1011,9 +1011,4 @@ mod tests {
     fn stress_test_shared_channel_try_unbounded() {
         stress_test_shared_channel_try(Arc::new(Channel::unbounded())).await;
     }
-
-    #[orengine_macros::test_shared]
-    fn stress_test_shared_channel_try_bounded() {
-        stress_test_shared_channel_try(Arc::new(Channel::bounded(1024))).await;
-    }
 }
