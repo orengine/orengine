@@ -231,6 +231,56 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for NaiveMutex<T> {}
 impl<T: UnwindSafe> UnwindSafe for NaiveMutex<T> {}
 impl<T: RefUnwindSafe> RefUnwindSafe for NaiveMutex<T> {}
 
+/// ```compile_fail
+/// use orengine::sync::{NaiveMutex, AsyncMutex};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = NaiveMutex::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = check_send(mutex.lock()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```rust
+/// use orengine::sync::{NaiveMutex, AsyncMutex};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = NaiveMutex::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = check_send(mutex.lock()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_naive() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -581,6 +581,76 @@ unsafe impl<T> Sync for LocalChannel<T> {}
 
 // endregion
 
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncSender, LocalChannel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let channel = LocalChannel::bounded(1);
+///
+///     check_send(channel.send(NonSend { value: 1, no_send_marker: PhantomData })).await;
+/// }
+/// ```
+///
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncReceiver, LocalChannel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let channel = LocalChannel::<NonSend>::bounded(1);
+///
+///     check_send(channel.recv().await);
+/// }
+/// ```
+///
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncSender, LocalChannel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let channel = LocalChannel::bounded(1);
+///
+///     check_send(channel.send(1)).await;
+/// }
+/// ```
+///
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncReceiver, LocalChannel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let channel = LocalChannel::<usize>::bounded(1);
+///
+///     check_send(channel.recv().await);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

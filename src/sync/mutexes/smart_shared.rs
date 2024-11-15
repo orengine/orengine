@@ -38,14 +38,6 @@ impl<'mutex, T: ?Sized> MutexGuard<'mutex, T> {
     pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
         Self { mutex }
     }
-
-    /// Returns a reference to the original [`Mutex`].
-    ///
-    /// The mutex will be unlocked.
-    #[inline(always)]
-    pub(crate) fn into_mutex(self) -> &'mutex Mutex<T> {
-        self.mutex
-    }
 }
 
 impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for MutexGuard<'mutex, T> {

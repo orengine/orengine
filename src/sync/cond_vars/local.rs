@@ -23,7 +23,7 @@ enum WaitState {
 /// `WaitLocalCondVar` represents a future returned by the [`LocalCondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
-pub struct WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+pub struct WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -35,7 +35,7 @@ where
     pd: PhantomData<T>,
 }
 
-impl<'mutex, 'cond_var, Guard, T> WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+impl<'mutex, 'cond_var, T, Guard> WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<'mutex, 'cond_var, Guard, T> Future for WaitLocalCondVar<'mutex, 'cond_var, Guard, T>
+impl<'mutex, 'cond_var, T, Guard> Future for WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -166,8 +166,8 @@ impl AsyncCondVar for LocalCondVar {
         WaitLocalCondVar::<
             'mutex,
             '_,
-            <<Self as AsyncCondVar>::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
-            T
+            T,
+            <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>
         >::new(self, guard.mutex())
     }
 

@@ -659,6 +659,76 @@ impl<T: RefUnwindSafe> RefUnwindSafe for Channel<T> {}
 
 // endregion
 
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncSender, Channel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let channel = Channel::bounded(1);
+///
+///     check_send(channel.send(NonSend { value: 1, no_send_marker: PhantomData })).await;
+/// }
+/// ```
+///
+/// ```fail_compile
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncReceiver, Channel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let channel = Channel::<NonSend>::bounded(1);
+///
+///     check_send(channel.recv().await);
+/// }
+/// ```
+///
+/// ```rust
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncSender, Channel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let channel = Channel::bounded(1);
+///
+///     check_send(channel.send(1)).await;
+/// }
+/// ```
+///
+/// ```rust
+/// use std::marker::PhantomData;
+/// use orengine::sync::{AsyncChannel, AsyncReceiver, Channel};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let channel = Channel::<usize>::bounded(1);
+///
+///     check_send(channel.recv().await);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_shared() {}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicUsize;

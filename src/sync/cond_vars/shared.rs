@@ -5,7 +5,7 @@ use std::task::{Context, Poll};
 
 use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
-use crate::sync::{AsyncSubscribableMutex, Mutex, MutexGuard};
+use crate::sync::{AsyncCondVar, AsyncMutex, AsyncMutexGuard, AsyncSubscribableMutex, Mutex};
 use crate::sync_task_queue::SyncTaskList;
 
 /// Current state of the [`WaitCondVar`].
@@ -18,18 +18,28 @@ enum WaitState {
 /// `WaitCondVar` represents a future returned by the [`CondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
-pub struct WaitCondVar<'mutex, 'cond_var, T> {
+pub struct WaitCondVar<'mutex, 'cond_var, T, Guard>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
     state: WaitState,
     cond_var: &'cond_var CondVar,
-    mutex: &'mutex Mutex<T>,
+    mutex: &'mutex Guard::Mutex,
 }
 
-impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
+impl<'mutex, 'cond_var, T, Guard> WaitCondVar<'mutex, 'cond_var, T, Guard>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
     /// Creates a new [`WaitCondVar`].
     #[inline(always)]
     pub fn new(
         cond_var: &'cond_var CondVar,
-        mutex: &'mutex Mutex<T>,
+        mutex: &'mutex Guard::Mutex,
     ) -> Self {
         WaitCondVar {
             state: WaitState::Sleep,
@@ -39,8 +49,13 @@ impl<'mutex, 'cond_var, T> WaitCondVar<'mutex, 'cond_var, T> {
     }
 }
 
-impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
-    type Output = MutexGuard<'mutex, T>;
+impl<'mutex, 'cond_var, T, Guard> Future for WaitCondVar<'mutex, 'cond_var, T, Guard>
+where
+    T: 'mutex + ?Sized,
+    Guard: AsyncMutexGuard<'mutex, T>,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{
+    type Output = <<Guard as AsyncMutexGuard<'mutex, T>>::Mutex as AsyncMutex<T>>::Guard<'mutex>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -53,7 +68,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                 Poll::Pending
             }
             WaitState::Wake => {
-                if let Some(guard) = this.mutex.try_lock_with_spinning() {
+                if let Some(guard) = this.mutex.try_lock() {
                     Poll::Ready(guard)
                 } else {
                     this.state = WaitState::Lock;
@@ -61,10 +76,17 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
                     Poll::Pending
                 }
             }
-            WaitState::Lock => Poll::Ready(MutexGuard::new(this.mutex)),
+            WaitState::Lock => Poll::Ready(unsafe { this.mutex.get_locked() }),
         }
     }
 }
+
+unsafe impl<'mutex, 'cond_var, T, Guard> Send for WaitCondVar<'mutex, 'cond_var, T, Guard>
+where
+    T: 'mutex + ?Sized + Send,
+    Guard: AsyncMutexGuard<'mutex, T> + Send,
+    Guard::Mutex: AsyncSubscribableMutex<T>,
+{}
 
 /// `CondVar` is a condition variable that allows tasks to wait until
 /// notified by another task.
@@ -86,7 +108,7 @@ impl<'mutex, 'cond_var, T> Future for WaitCondVar<'mutex, 'cond_var, T> {
 /// # Example
 ///
 /// ```rust
-/// use orengine::sync::{CondVar, Mutex, shared_scope, AsyncMutex};
+/// use orengine::sync::{CondVar, Mutex, shared_scope, AsyncMutex, AsyncCondVar};
 /// use orengine::sleep;
 /// use std::time::Duration;
 ///
@@ -122,88 +144,38 @@ impl CondVar {
             wait_queue: SyncTaskList::new(),
         }
     }
+}
 
-    /// Wait a notification.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{CondVar, Mutex, shared_scope, AsyncMutex};
-    /// use orengine::sleep;
-    /// use std::time::Duration;
-    ///
-    /// # async fn test() {
-    /// let cvar = CondVar::new();
-    /// let is_ready = Mutex::new(false);
-    ///
-    /// shared_scope(|scope| async {
-    ///     scope.spawn(async {
-    ///         sleep(Duration::from_secs(1)).await;
-    ///         let mut lock = is_ready.lock().await;
-    ///         *lock = true;
-    ///         drop(lock);
-    ///         cvar.notify_one();
-    ///     });
-    ///
-    ///     let mut lock = is_ready.lock().await;
-    ///     while !*lock {
-    ///         lock = cvar.wait(lock).await; // wait 1 second
-    ///     }
-    /// }).await;
-    /// # }
+impl AsyncCondVar for CondVar {
+    type SubscribableMutex<T> = Mutex<T>
+    where
+        T: ?Sized;
+
     #[inline(always)]
-    pub fn wait<'mutex, 'cond_var, T>(
-        &'cond_var self,
-        mutex_guard: MutexGuard<'mutex, T>,
-    ) -> WaitCondVar<'mutex, 'cond_var, T> {
-        WaitCondVar::new(self, mutex_guard.into_mutex())
+    fn wait<'mutex, T>(
+        &self,
+        guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
+    ) -> impl Future<Output=<Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
+    where
+        T: ?Sized + 'mutex,
+    {
+        WaitCondVar::<
+            'mutex,
+            '_,
+            T,
+            <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>
+        >::new(self, guard.mutex())
     }
 
-    /// Notifies one waiting task.
-    ///
-    /// # Attention
-    ///
-    /// Drop a lock before call [`notify_one`](CondVar::notify_one).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{Mutex, CondVar, AsyncMutex};
-    ///
-    /// async fn inc_counter_and_notify(counter: &Mutex<i32>, cvar: &CondVar) {
-    ///     let mut lock = counter.lock().await;
-    ///     *lock += 1;
-    ///     drop(lock);
-    ///     cvar.notify_one();
-    /// }
-    /// ```
     #[inline(always)]
-    pub fn notify_one(&self) {
+    fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
             local_executor().spawn_shared_task(task);
         }
     }
 
-    /// Notifies all waiting tasks.
-    ///
-    /// # Attention
-    ///
-    /// Drop a lock before call [`notify_one`](CondVar::notify_one).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{Mutex, CondVar, AsyncMutex};
-    ///
-    /// async fn inc_counter_and_notify_all(counter: &Mutex<i32>, cvar: &CondVar) {
-    ///     let mut lock = counter.lock().await;
-    ///     *lock += 1;
-    ///     drop(lock);
-    ///     cvar.notify_all();
-    /// }
-    /// ```
     #[inline(always)]
-    pub fn notify_all(&self) {
+    fn notify_all(&self) {
         let executor = local_executor();
         while let Some(task) = self.wait_queue.pop() {
             executor.spawn_shared_task(task);
