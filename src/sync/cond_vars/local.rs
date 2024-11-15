@@ -32,6 +32,8 @@ where
     state: WaitState,
     cond_var: &'cond_var LocalCondVar,
     mutex: &'mutex Guard::Mutex,
+    // impl !Send
+    no_send_marker: PhantomData<*const ()>,
     pd: PhantomData<T>,
 }
 
@@ -51,6 +53,7 @@ where
             state: WaitState::Sleep,
             cond_var,
             mutex,
+            no_send_marker: PhantomData,
             pd: PhantomData,
         }
     }
@@ -156,6 +159,7 @@ impl AsyncCondVar for LocalCondVar {
         T: ?Sized;
 
     #[inline(always)]
+    #[allow(clippy::future_not_send, reason = "LocalCondVar is !Send")]
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
@@ -196,6 +200,60 @@ impl Default for LocalCondVar {
 }
 
 unsafe impl Sync for LocalCondVar {}
+
+/// ```compile_fail
+/// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex, AsyncCondVar};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = LocalMutex::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = mutex.lock().await;
+///     let cvar = LocalCondVar::new();
+///     let guard = check_send(cvar.wait(guard)).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use orengine::sync::{LocalMutex, LocalCondVar, AsyncMutex, AsyncCondVar};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = LocalMutex::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = mutex.lock().await;
+///     let cvar = LocalCondVar::new();
+///     let guard = check_send(cvar.wait(guard)).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}
 
 #[cfg(test)]
 mod tests {

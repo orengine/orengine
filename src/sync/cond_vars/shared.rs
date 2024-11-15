@@ -194,6 +194,60 @@ unsafe impl Send for CondVar {}
 impl UnwindSafe for CondVar {}
 impl RefUnwindSafe for CondVar {}
 
+/// ```compile_fail
+/// use orengine::sync::{Mutex, CondVar, AsyncMutex, AsyncCondVar};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = Mutex::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = mutex.lock().await;
+///     let cvar = CondVar::new();
+///     let guard = check_send(cvar.wait(guard)).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```rust
+/// use orengine::sync::{Mutex, CondVar, AsyncMutex, AsyncCondVar};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = Mutex::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = mutex.lock().await;
+///     let cvar = CondVar::new();
+///     let guard = check_send(cvar.wait(guard)).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_shared() {}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

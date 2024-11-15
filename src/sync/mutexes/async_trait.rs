@@ -112,56 +112,6 @@ pub trait AsyncMutex<T: ?Sized> {
     unsafe fn get_locked(&self) -> Self::Guard<'_>;
 }
 
-/// ```compile_fail
-/// use orengine::sync::{Mutex, AsyncMutex};
-/// use orengine::yield_now;
-///
-/// fn check_send<T: Send>(value: T) -> T { value }
-///
-/// struct NonSend {
-///     value: i32,
-///     // impl !Send
-///     no_send_marker: std::marker::PhantomData<*const ()>,
-/// }
-///
-/// async fn test() {
-///     let mutex = Mutex::new(NonSend {
-///         value: 0,
-///         no_send_marker: std::marker::PhantomData,
-///     });
-///
-///     let guard = check_send(mutex.lock()).await;
-///     yield_now().await;
-///     assert_eq!(guard.value, 0);
-///     drop(guard);
-/// }
-/// ```
-///
-/// ```rust
-/// use orengine::sync::{Mutex, AsyncMutex};
-/// use orengine::yield_now;
-///
-/// fn check_send<T: Send>(value: T) -> T { value }
-///
-/// // impl Send
-/// struct CanSend {
-///     value: i32,
-/// }
-///
-/// async fn test() {
-///     let mutex = Mutex::new(CanSend {
-///         value: 0,
-///     });
-///
-///     let guard = check_send(mutex.lock()).await;
-///     yield_now().await;
-///     assert_eq!(guard.value, 0);
-///     drop(guard);
-/// }
-/// ```
-#[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_smart() {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

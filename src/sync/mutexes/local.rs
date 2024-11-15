@@ -87,6 +87,7 @@ impl<'mutex, T: ?Sized> Drop for LocalMutexGuard<'mutex, T> {
 pub struct LocalMutexWait<'mutex, T: ?Sized> {
     was_called: bool,
     local_mutex: &'mutex LocalMutex<T>,
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
 impl<'mutex, T: ?Sized> LocalMutexWait<'mutex, T> {
@@ -96,6 +97,7 @@ impl<'mutex, T: ?Sized> LocalMutexWait<'mutex, T> {
         Self {
             was_called: false,
             local_mutex,
+            no_send_marker: std::marker::PhantomData,
         }
     }
 }
@@ -274,6 +276,56 @@ impl<T: ?Sized> AsyncSubscribableMutex<T> for LocalMutex<T> {
 }
 
 unsafe impl<T> Sync for LocalMutex<T> {}
+
+/// ```no_compile
+/// use orengine::sync::{LocalMutex, AsyncMutex};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = LocalMutex::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = check_send(mutex.lock()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```no_compile
+/// use orengine::sync::{LocalMutex, AsyncMutex};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = LocalMutex::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = check_send(mutex.lock()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}
 
 #[cfg(test)]
 mod tests {
