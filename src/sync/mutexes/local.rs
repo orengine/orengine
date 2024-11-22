@@ -55,7 +55,10 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for LocalMutexGuard<'mutex, T
     }
 
     unsafe fn leak(self) -> &'mutex Self::Mutex {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         let static_local_mutex = unsafe { mem::transmute(self.local_mutex) };
         mem::forget(self);
 
@@ -325,7 +328,7 @@ unsafe impl<T> Sync for LocalMutex<T> {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_local_mutex() {}
 
 #[cfg(test)]
 mod tests {
@@ -359,7 +362,8 @@ mod tests {
             let elapsed = start.elapsed();
             assert!(elapsed >= SLEEP_DURATION);
             assert!(*value);
-        }).await;
+        })
+        .await;
     }
 
     #[orengine_macros::test_local]

@@ -172,7 +172,7 @@ impl RefUnwindSafe for WaitGroup {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_shared_wait_group() {}
 
 #[cfg(test)]
 mod tests {

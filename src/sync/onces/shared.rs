@@ -127,7 +127,7 @@ unsafe impl Send for Once {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_shared_once() {}
 
 #[cfg(test)]
 mod tests {

@@ -729,7 +729,7 @@ impl<T: RefUnwindSafe> RefUnwindSafe for Channel<T> {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_shared() {}
+fn test_compile_shared_channel() {}
 
 #[cfg(test)]
 mod tests {

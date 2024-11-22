@@ -15,7 +15,10 @@ pub use mutexes::{
 };
 pub use naive_rw_lock::*;
 pub use onces::{async_trait::*, local::LocalOnce, shared::Once, state::*};
-pub use scope::*;
+pub use scopes::{
+    local::{local_scope, LocalScope},
+    shared::{shared_scope, Scope},
+};
 pub use wait_groups::{async_trait::*, local::LocalWaitGroup, shared::WaitGroup};
 
 pub mod channels;
@@ -24,5 +27,5 @@ pub mod local;
 pub mod mutexes;
 pub mod naive_rw_lock;
 pub mod onces;
-pub mod scope;
+pub mod scopes;
 pub mod wait_groups;

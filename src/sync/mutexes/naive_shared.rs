@@ -41,10 +41,9 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
     pub unsafe fn leak_to_atomic(self) -> &'static CachePadded<AtomicBool> {
         debug_assert!(self.mutex.is_locked.load(Acquire));
         let static_mutex = unsafe {
-            mem::transmute::<
-                &CachePadded<AtomicBool>,
-                &'static CachePadded<AtomicBool>
-            >(&self.mutex.is_locked)
+            mem::transmute::<&CachePadded<AtomicBool>, &'static CachePadded<AtomicBool>>(
+                &self.mutex.is_locked,
+            )
         };
         mem::forget(self);
 
@@ -60,7 +59,10 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for NaiveMutexGuard<'mutex, T
     }
 
     unsafe fn leak(self) -> &'mutex Self::Mutex {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
@@ -216,7 +218,10 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
     }
 
     #[inline(always)]
-    #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "The caller guarantees safety using this code"
+    )]
     unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             self.is_locked.load(Acquire),
@@ -279,7 +284,7 @@ impl<T: RefUnwindSafe> RefUnwindSafe for NaiveMutex<T> {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_naive() {}
+fn test_compile_naive_mutex() {}
 
 #[cfg(test)]
 mod tests {

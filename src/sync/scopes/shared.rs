@@ -210,6 +210,19 @@ where
     scope.wg.wait().await;
 }
 
+/// ```rust
+/// use orengine::sync::shared_scope;
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     check_send(shared_scope(|_| async {})).await;
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_shared_scope() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

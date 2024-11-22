@@ -48,7 +48,10 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for MutexGuard<'mutex, T> {
     }
 
     unsafe fn leak(self) -> &'mutex Self::Mutex {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         let static_mutex = unsafe { mem::transmute(self.mutex) };
         mem::forget(self);
 
@@ -202,9 +205,7 @@ impl<T: ?Sized> Mutex<T> {
     #[inline(always)]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
-            let lock_res = self
-                .counter
-                .compare_exchange(0, 1, Acquire, Acquire);
+            let lock_res = self.counter.compare_exchange(0, 1, Acquire, Acquire);
             return match lock_res {
                 Ok(_) => Some(MutexGuard::new(self)),
                 Err(count) => {
@@ -236,7 +237,7 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
     }
 
     #[inline(always)]
-    fn lock<'mutex>(&'mutex self) -> impl Future<Output=Self::Guard<'mutex>>
+    fn lock<'mutex>(&'mutex self) -> impl Future<Output = Self::Guard<'mutex>>
     where
         T: 'mutex,
     {
@@ -367,7 +368,7 @@ impl<T: ?Sized + RefUnwindSafe> RefUnwindSafe for Mutex<T> {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_smart() {}
+fn test_compile_smart_mutex() {}
 
 #[cfg(test)]
 mod tests {

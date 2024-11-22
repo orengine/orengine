@@ -45,10 +45,7 @@ where
 {
     /// Creates a new [`WaitLocalCondVar`].
     #[inline(always)]
-    pub fn new(
-        cond_var: &'cond_var LocalCondVar,
-        mutex: &'mutex Guard::Mutex,
-    ) -> Self {
+    pub fn new(cond_var: &'cond_var LocalCondVar, mutex: &'mutex Guard::Mutex) -> Self {
         WaitLocalCondVar {
             state: WaitState::Sleep,
             cond_var,
@@ -163,7 +160,7 @@ impl AsyncCondVar for LocalCondVar {
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
-    ) -> impl Future<Output=<Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
+    ) -> impl Future<Output = <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
     where
         T: ?Sized + 'mutex,
     {
@@ -171,7 +168,7 @@ impl AsyncCondVar for LocalCondVar {
             'mutex,
             '_,
             T,
-            <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>
+            <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
         >::new(self, guard.mutex())
     }
 
@@ -253,7 +250,7 @@ unsafe impl Sync for LocalCondVar {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_local_cond_var() {}
 
 #[cfg(test)]
 mod tests {

@@ -161,7 +161,7 @@ unsafe impl Sync for LocalWaitGroup {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_local_wait_group() {}
 
 #[cfg(test)]
 mod tests {

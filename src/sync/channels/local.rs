@@ -1,6 +1,9 @@
 use crate::get_task_from_context;
 use crate::runtime::{local_executor, Task};
-use crate::sync::{AsyncChannel, AsyncReceiver, AsyncSender, RecvInResult, SendResult, TryRecvInResult, TrySendResult};
+use crate::sync::{
+    AsyncChannel, AsyncReceiver, AsyncSender, RecvInResult, SendResult, TryRecvInResult,
+    TrySendResult,
+};
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -86,7 +89,9 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
         match this.call_state {
             SendCallState::FirstCall => {
                 if this.inner.is_closed {
-                    return Poll::Ready(SendResult::Closed(unsafe { ManuallyDrop::take(&mut this.value) }));
+                    return Poll::Ready(SendResult::Closed(unsafe {
+                        ManuallyDrop::take(&mut this.value)
+                    }));
                 }
 
                 if !this.inner.receivers.is_empty() {
@@ -106,7 +111,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
                     this.inner.senders.push_back((
                         task,
                         &mut this.call_state,
-                        ptr::from_ref(&this.value).cast()
+                        ptr::from_ref(&this.value).cast(),
                     ));
                     return Poll::Pending;
                 }
@@ -118,12 +123,10 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
                 }
                 Poll::Ready(SendResult::Ok)
             }
-            SendCallState::WokenToReturnReady => {
-                Poll::Ready(SendResult::Ok)
-            }
-            SendCallState::WokenByClose => {
-                Poll::Ready(SendResult::Closed(unsafe { ManuallyDrop::take(&mut this.value) }))
-            }
+            SendCallState::WokenToReturnReady => Poll::Ready(SendResult::Ok),
+            SendCallState::WokenByClose => Poll::Ready(SendResult::Closed(unsafe {
+                ManuallyDrop::take(&mut this.value)
+            })),
         }
     }
 }
@@ -195,7 +198,8 @@ impl<'future, T> Future for WaitLocalRecv<'future, T> {
                 }
 
                 unsafe {
-                    this.slot.write(this.inner.storage.pop_front().unwrap_unchecked());
+                    this.slot
+                        .write(this.inner.storage.pop_front().unwrap_unchecked());
                 }
 
                 let sender_ = this.inner.senders.pop_front();
@@ -226,7 +230,9 @@ fn close<T>(inner: &mut Inner<T>) {
     let executor = local_executor();
 
     for (task, state_ptr, _) in inner.senders.drain(..) {
-        unsafe { state_ptr.write(SendCallState::WokenByClose); };
+        unsafe {
+            state_ptr.write(SendCallState::WokenByClose);
+        };
         executor.exec_task(task);
     }
 
@@ -246,11 +252,7 @@ macro_rules! generate_try_send {
                 return TrySendResult::Closed(value);
             }
 
-            if let Some((
-                            task,
-                            slot,
-                            call_state
-                        )) = inner.receivers.pop_front() {
+            if let Some((task, slot, call_state)) = inner.receivers.pop_front() {
                 unsafe {
                     slot.write(value);
                     call_state.write(RecvCallState::WokenToReturnReady);
@@ -312,7 +314,7 @@ impl<'channel, T> LocalSender<'channel, T> {
 }
 
 impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
-    fn send(&self, value: T) -> impl Future<Output=SendResult<T>> {
+    fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
     }
 
@@ -390,7 +392,9 @@ macro_rules! generate_try_recv_in_ptr {
                 return TryRecvInResult::Empty;
             }
 
-            unsafe { slot.write(inner.storage.pop_front().unwrap_unchecked()); };
+            unsafe {
+                slot.write(inner.storage.pop_front().unwrap_unchecked());
+            };
 
             let sender_ = inner.senders.pop_front();
             if let Some((task, call_state, value)) = sender_ {
@@ -418,7 +422,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
 }
 
 impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult> {
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
     }
 
@@ -552,7 +556,7 @@ impl<T> AsyncChannel<T> for LocalChannel<T> {
 }
 
 impl<T> AsyncReceiver<T> for LocalChannel<T> {
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult> {
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
     }
 
@@ -565,7 +569,7 @@ impl<T> AsyncReceiver<T> for LocalChannel<T> {
 }
 
 impl<T> AsyncSender<T> for LocalChannel<T> {
-    fn send(&self, value: T) -> impl Future<Output=SendResult<T>> {
+    fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
     }
 
@@ -649,7 +653,7 @@ unsafe impl<T> Sync for LocalChannel<T> {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_local_channel() {}
 
 #[cfg(test)]
 mod tests {
@@ -686,7 +690,7 @@ mod tests {
                 _ => panic!("should be closed"),
             };
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -712,34 +716,68 @@ mod tests {
                 assert_eq!(res, i);
             }
 
-            assert!(matches!(ch.recv().await, RecvResult::Closed), "should be closed");
+            assert!(
+                matches!(ch.recv().await, RecvResult::Closed),
+                "should be closed"
+            );
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
     fn test_local_channel_try() {
         let ch = LocalChannel::bounded(1);
 
-        assert!(matches!(ch.try_recv(), TryRecvResult::Empty), "should be empty");
-        assert!(matches!(ch.try_send(1), TrySendResult::Ok), "should be empty");
-        assert!(matches!(ch.try_recv(), TryRecvResult::Ok(1)), "should be not empty");
-        assert!(matches!(ch.try_send(2), TrySendResult::Ok), "should be empty");
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Empty),
+            "should be empty"
+        );
+        assert!(
+            matches!(ch.try_send(1), TrySendResult::Ok),
+            "should be empty"
+        );
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Ok(1)),
+            "should be not empty"
+        );
+        assert!(
+            matches!(ch.try_send(2), TrySendResult::Ok),
+            "should be empty"
+        );
         match ch.try_send(3) {
-            TrySendResult::Ok => { panic!("should be full") }
-            TrySendResult::Full(value) => { assert_eq!(value, 3) }
-            TrySendResult::Locked(_) => { panic!("unreachable") }
-            TrySendResult::Closed(_) => { panic!("should not be closed") }
+            TrySendResult::Ok => {
+                panic!("should be full")
+            }
+            TrySendResult::Full(value) => {
+                assert_eq!(value, 3)
+            }
+            TrySendResult::Locked(_) => {
+                panic!("unreachable")
+            }
+            TrySendResult::Closed(_) => {
+                panic!("should not be closed")
+            }
         }
 
         ch.close().await;
 
-        assert!(matches!(ch.try_recv(), TryRecvResult::Closed), "should be closed");
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Closed),
+            "should be closed"
+        );
         match ch.try_send(4) {
-            TrySendResult::Ok => { panic!("should be not empty") }
-            TrySendResult::Full(_) => { panic!("should be not full") }
-            TrySendResult::Locked(_) => { panic!("unreachable") }
-            TrySendResult::Closed(value) => { assert_eq!(value, 4) }
+            TrySendResult::Ok => {
+                panic!("should be not empty")
+            }
+            TrySendResult::Full(_) => {
+                panic!("should be not full")
+            }
+            TrySendResult::Locked(_) => {
+                panic!("unreachable")
+            }
+            TrySendResult::Closed(value) => {
+                assert_eq!(value, 4)
+            }
         }
     }
 
@@ -771,9 +809,12 @@ mod tests {
                 assert_eq!(res, i);
             }
 
-            assert!(matches!(ch.recv().await, RecvResult::Closed), "should be closed");
+            assert!(
+                matches!(ch.recv().await, RecvResult::Closed),
+                "should be closed"
+            );
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -799,7 +840,7 @@ mod tests {
 
             ch.send(N).await.unwrap();
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -824,7 +865,7 @@ mod tests {
                 ch.send(i).await.unwrap();
             }
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -844,7 +885,7 @@ mod tests {
                 ch.send(i).await.unwrap();
             }
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -864,7 +905,7 @@ mod tests {
                 tx.send(i).await.unwrap();
             }
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -889,7 +930,10 @@ mod tests {
 
         channel.close().await;
 
-        match channel.send(DroppableElement::new(5, dropped.clone())).await {
+        match channel
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+        {
             SendResult::Closed(elem) => {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
@@ -917,7 +961,10 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2]);
 
         sender.sender_close().await;
-        match channel.send(DroppableElement::new(5, dropped.clone())).await {
+        match channel
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+        {
             SendResult::Closed(elem) => {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
@@ -982,7 +1029,8 @@ mod tests {
                         }
                     });
                 }
-            }).await;
+            })
+            .await;
 
             assert_eq!(*res, PAR * COUNT * (COUNT - 1) / 2);
         }

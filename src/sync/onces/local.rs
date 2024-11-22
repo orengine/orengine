@@ -113,7 +113,7 @@ impl Default for LocalOnce {
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_local_once() {}
 
 #[cfg(test)]
 mod tests {

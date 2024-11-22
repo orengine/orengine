@@ -37,10 +37,7 @@ where
 {
     /// Creates a new [`WaitCondVar`].
     #[inline(always)]
-    pub fn new(
-        cond_var: &'cond_var CondVar,
-        mutex: &'mutex Guard::Mutex,
-    ) -> Self {
+    pub fn new(cond_var: &'cond_var CondVar, mutex: &'mutex Guard::Mutex) -> Self {
         WaitCondVar {
             state: WaitState::Sleep,
             cond_var,
@@ -86,7 +83,8 @@ where
     T: 'mutex + ?Sized + Send,
     Guard: AsyncMutexGuard<'mutex, T> + Send,
     Guard::Mutex: AsyncSubscribableMutex<T>,
-{}
+{
+}
 
 /// `CondVar` is a condition variable that allows tasks to wait until
 /// notified by another task.
@@ -155,7 +153,7 @@ impl AsyncCondVar for CondVar {
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
-    ) -> impl Future<Output=<Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
+    ) -> impl Future<Output = <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
     where
         T: ?Sized + 'mutex,
     {
@@ -246,7 +244,7 @@ impl RefUnwindSafe for CondVar {}
 /// }
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_shared() {}
+fn test_compile_shared_cond_var() {}
 
 #[cfg(test)]
 mod tests {

@@ -214,6 +214,19 @@ where
     yield_now().await // TODO FIXME: you can't call 2 local_scopes in the same task if you don't yield
 }
 
+/// ```compile_fail
+/// use orengine::sync::local_scope;
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     check_send(local_scope(|_| async {})).await;
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local_scope() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
