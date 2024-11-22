@@ -1,6 +1,9 @@
 use crate::runtime::{local_executor, Task};
 use crate::sync::mutexes::naive_shared::NaiveMutex;
-use crate::sync::{AsyncChannel, AsyncMutex, AsyncReceiver, AsyncSender, RecvInResult, SendResult, TryRecvInResult, TrySendResult};
+use crate::sync::{
+    AsyncChannel, AsyncMutex, AsyncReceiver, AsyncSender, RecvInResult, SendResult,
+    TryRecvInResult, TrySendResult,
+};
 use crate::{get_task_from_context, panic_if_local_in_future};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -136,12 +139,12 @@ impl<'future, T> Future for WaitSend<'future, T> {
             SendCallState::FirstCall => {
                 let mut inner_lock = acquire_lock!(this.inner);
                 if inner_lock.is_closed {
-                    return Poll::Ready(SendResult::Closed(unsafe { ManuallyDrop::take(&mut this.value) }));
+                    return Poll::Ready(SendResult::Closed(unsafe {
+                        ManuallyDrop::take(&mut this.value)
+                    }));
                 }
 
-                let receiver = inner_lock
-                    .receivers
-                    .pop_front();
+                let receiver = inner_lock.receivers.pop_front();
                 if let Some((task, slot, call_state)) = receiver {
                     unsafe {
                         drop(inner_lock);
@@ -160,7 +163,7 @@ impl<'future, T> Future for WaitSend<'future, T> {
                     inner_lock.senders.push_back((
                         task,
                         &mut this.call_state,
-                        ptr::from_ref(&this.value).cast()
+                        ptr::from_ref(&this.value).cast(),
                     ));
                     return_pending_and_release_lock!(local_executor(), inner_lock);
                 }
@@ -174,9 +177,9 @@ impl<'future, T> Future for WaitSend<'future, T> {
                 Poll::Ready(SendResult::Ok)
             }
             SendCallState::WokenToReturnReady => Poll::Ready(SendResult::Ok),
-            SendCallState::WokenByClose => Poll::Ready(
-                SendResult::Closed(unsafe { ManuallyDrop::take(&mut this.value) })
-            )
+            SendCallState::WokenByClose => Poll::Ready(SendResult::Closed(unsafe {
+                ManuallyDrop::take(&mut this.value)
+            })),
         }
     }
 }
@@ -256,7 +259,8 @@ impl<'future, T> Future for WaitRecv<'future, T> {
                 }
 
                 unsafe {
-                    this.slot.write(inner_lock.storage.pop_front().unwrap_unchecked());
+                    this.slot
+                        .write(inner_lock.storage.pop_front().unwrap_unchecked());
                 }
 
                 let sender_ = inner_lock.senders.pop_front();
@@ -316,9 +320,7 @@ macro_rules! generate_try_send {
                         return TrySendResult::Closed(value);
                     }
 
-                    let receiver = inner_lock
-                        .receivers
-                        .pop_front();
+                    let receiver = inner_lock.receivers.pop_front();
                     if let Some((task, slot, call_state)) = receiver {
                         unsafe {
                             drop(inner_lock);
@@ -382,7 +384,7 @@ impl<'channel, T> Sender<'channel, T> {
 }
 
 impl<'channel, T> AsyncSender<T> for Sender<'channel, T> {
-    fn send(&self, value: T) -> impl Future<Output=SendResult<T>> {
+    fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitSend::new(value, self.inner)
     }
 
@@ -449,7 +451,7 @@ macro_rules! generate_try_recv_in {
 
                     TryRecvInResult::Ok
                 }
-                None => TryRecvInResult::Locked
+                None => TryRecvInResult::Locked,
             }
         }
     };
@@ -490,13 +492,13 @@ impl<'channel, T> Receiver<'channel, T> {
 }
 
 impl<'channel, T> AsyncReceiver<T> for Receiver<'channel, T> {
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult> {
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitRecv::new(self.inner, slot)
     }
 
     generate_try_recv_in!();
 
-    fn receiver_close(&self) -> impl Future<Output=()> {
+    fn receiver_close(&self) -> impl Future<Output = ()> {
         close(self.inner)
     }
 }
@@ -623,13 +625,13 @@ impl<T> AsyncChannel<T> for Channel<T> {
         (Sender::new(&self.inner), Receiver::new(&self.inner))
     }
 
-    fn close(&self) -> impl Future<Output=()> {
+    fn close(&self) -> impl Future<Output = ()> {
         close(&self.inner)
     }
 }
 
 impl<T> AsyncSender<T> for Channel<T> {
-    fn send(&self, value: T) -> impl Future<Output=SendResult<T>> {
+    fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitSend::new(value, &self.inner)
     }
 
@@ -641,13 +643,13 @@ impl<T> AsyncSender<T> for Channel<T> {
 }
 
 impl<T> AsyncReceiver<T> for Channel<T> {
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult> {
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitRecv::new(&self.inner, slot)
     }
 
     generate_try_recv_in!();
 
-    fn receiver_close(&self) -> impl Future<Output=()> {
+    fn receiver_close(&self) -> impl Future<Output = ()> {
         close(&self.inner)
     }
 }
@@ -737,7 +739,10 @@ mod tests {
     use std::time::Duration;
 
     use crate as orengine;
-    use crate::sync::{AsyncChannel, AsyncReceiver, AsyncSender, Channel, RecvResult, SendResult, TryRecvResult, TrySendResult, WaitGroup};
+    use crate::sync::{
+        AsyncChannel, AsyncReceiver, AsyncSender, AsyncWaitGroup, Channel, RecvResult, SendResult,
+        TryRecvResult, TrySendResult, WaitGroup,
+    };
     use crate::test::{sched_future_to_another_thread, ExecutorPool};
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
@@ -772,25 +777,56 @@ mod tests {
     fn test_shared_channel_try() {
         let ch = Channel::bounded(1);
 
-        assert!(matches!(ch.try_recv(), TryRecvResult::Empty), "should be empty");
-        assert!(matches!(ch.try_send(1), TrySendResult::Ok), "should be empty");
-        assert!(matches!(ch.try_recv(), TryRecvResult::Ok(1)), "should be not empty");
-        assert!(matches!(ch.try_send(2), TrySendResult::Ok), "should be empty");
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Empty),
+            "should be empty"
+        );
+        assert!(
+            matches!(ch.try_send(1), TrySendResult::Ok),
+            "should be empty"
+        );
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Ok(1)),
+            "should be not empty"
+        );
+        assert!(
+            matches!(ch.try_send(2), TrySendResult::Ok),
+            "should be empty"
+        );
         match ch.try_send(3) {
-            TrySendResult::Ok => { panic!("should be full") }
-            TrySendResult::Full(value) => { assert_eq!(value, 3) }
-            TrySendResult::Locked(_) => { panic!("should not be locked") }
-            TrySendResult::Closed(_) => { panic!("should not be closed") }
+            TrySendResult::Ok => {
+                panic!("should be full")
+            }
+            TrySendResult::Full(value) => {
+                assert_eq!(value, 3)
+            }
+            TrySendResult::Locked(_) => {
+                panic!("should not be locked")
+            }
+            TrySendResult::Closed(_) => {
+                panic!("should not be closed")
+            }
         }
 
         ch.close().await;
 
-        assert!(matches!(ch.try_recv(), TryRecvResult::Closed), "should be closed");
+        assert!(
+            matches!(ch.try_recv(), TryRecvResult::Closed),
+            "should be closed"
+        );
         match ch.try_send(4) {
-            TrySendResult::Ok => { panic!("should be not empty") }
-            TrySendResult::Full(_) => { panic!("should be not full") }
-            TrySendResult::Locked(_) => { panic!("should not be locked") }
-            TrySendResult::Closed(value) => { assert_eq!(value, 4) }
+            TrySendResult::Ok => {
+                panic!("should be not empty")
+            }
+            TrySendResult::Full(_) => {
+                panic!("should be not full")
+            }
+            TrySendResult::Locked(_) => {
+                panic!("should not be locked")
+            }
+            TrySendResult::Closed(value) => {
+                assert_eq!(value, 4)
+            }
         }
     }
 
@@ -820,7 +856,10 @@ mod tests {
             wg.done();
         }
 
-        assert!(matches!(ch.recv().await, RecvResult::Closed), "should be closed");
+        assert!(
+            matches!(ch.recv().await, RecvResult::Closed),
+            "should be closed"
+        );
     }
 
     #[orengine_macros::test_shared]
@@ -890,7 +929,10 @@ mod tests {
 
         wg.done();
 
-        assert!(matches!(ch.recv().await, RecvResult::Closed), "should be closed");
+        assert!(
+            matches!(ch.recv().await, RecvResult::Closed),
+            "should be closed"
+        );
     }
 
     #[orengine_macros::test_shared]
@@ -914,7 +956,10 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2]);
 
         channel.receiver_close().await;
-        match channel.send(DroppableElement::new(5, dropped.clone())).await {
+        match channel
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+        {
             SendResult::Closed(elem) => {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
@@ -942,7 +987,10 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2]);
 
         sender.sender_close().await;
-        match channel.send(DroppableElement::new(5, dropped.clone())).await {
+        match channel
+            .send(DroppableElement::new(5, dropped.clone()))
+            .await
+        {
             SendResult::Closed(elem) => {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
@@ -1015,58 +1063,64 @@ mod tests {
                 let wg = wg.clone();
                 let channel = channel.clone();
 
-                handles.push(ExecutorPool::sched_future(async move {
-                    if i % 2 == 0 {
-                        for j in 0..COUNT {
-                            loop {
-                                match channel.try_send(j) {
-                                    TrySendResult::Ok => break,
-                                    TrySendResult::Full(_) | TrySendResult::Locked(_) => {
-                                        yield_now().await;
+                handles.push(
+                    ExecutorPool::sched_future(async move {
+                        if i % 2 == 0 {
+                            for j in 0..COUNT {
+                                loop {
+                                    match channel.try_send(j) {
+                                        TrySendResult::Ok => break,
+                                        TrySendResult::Full(_) | TrySendResult::Locked(_) => {
+                                            yield_now().await;
+                                        }
+                                        TrySendResult::Closed(_) => panic!("send failed"),
                                     }
-                                    TrySendResult::Closed(_) => panic!("send failed"),
                                 }
                             }
+                        } else {
+                            for j in 0..COUNT {
+                                channel.send(j).await.unwrap();
+                            }
                         }
-                    } else {
-                        for j in 0..COUNT {
-                            channel.send(j).await.unwrap();
-                        }
-                    }
 
-                    wg.done();
-                }).await);
+                        wg.done();
+                    })
+                    .await,
+                );
             }
 
             let res = res.clone();
             let wg = wg.clone();
             let channel = channel.clone();
 
-            handles.push(ExecutorPool::sched_future(async move {
-                if i % 2 == 0 {
-                    for _ in 0..COUNT {
-                        loop {
-                            match channel.try_recv() {
-                                TryRecvResult::Ok(v) => {
-                                    res.fetch_add(v, SeqCst);
-                                    break;
+            handles.push(
+                ExecutorPool::sched_future(async move {
+                    if i % 2 == 0 {
+                        for _ in 0..COUNT {
+                            loop {
+                                match channel.try_recv() {
+                                    TryRecvResult::Ok(v) => {
+                                        res.fetch_add(v, SeqCst);
+                                        break;
+                                    }
+                                    TryRecvResult::Empty | TryRecvResult::Locked => {
+                                        yield_now().await;
+                                    }
+                                    TryRecvResult::Closed => panic!("recv failed"),
                                 }
-                                TryRecvResult::Empty | TryRecvResult::Locked => {
-                                    yield_now().await;
-                                }
-                                TryRecvResult::Closed => panic!("recv failed"),
                             }
                         }
+                    } else {
+                        for _ in 0..COUNT {
+                            let r = channel.recv().await.unwrap();
+                            res.fetch_add(r, SeqCst);
+                        }
                     }
-                } else {
-                    for _ in 0..COUNT {
-                        let r = channel.recv().await.unwrap();
-                        res.fetch_add(r, SeqCst);
-                    }
-                }
 
-                wg.done();
-            }).await);
+                    wg.done();
+                })
+                .await,
+            );
         }
 
         for handle in handles {

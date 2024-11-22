@@ -1,6 +1,6 @@
 use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Locality};
-use crate::sync::WaitGroup;
+use crate::sync::{AsyncWaitGroup, WaitGroup};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
@@ -34,7 +34,7 @@ impl<'scope> Scope<'scope> {
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     /// use std::time::Duration;
     /// use orengine::sleep;
-    /// use orengine::sync::{shared_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, AsyncWaitGroup, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wg = WaitGroup::new();
@@ -59,7 +59,7 @@ impl<'scope> Scope<'scope> {
     /// # }
     /// ```
     #[inline(always)]
-    pub fn exec<F: Future<Output=()> + Send>(&'scope self, future: F) {
+    pub fn exec<F: Future<Output = ()> + Send>(&'scope self, future: F) {
         self.wg.inc();
         let handle = ScopedHandle {
             scope: self,
@@ -82,7 +82,7 @@ impl<'scope> Scope<'scope> {
     ///
     /// ```rust
     /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-    /// use orengine::sync::{shared_scope, WaitGroup};
+    /// use orengine::sync::{shared_scope, AsyncWaitGroup, WaitGroup};
     ///
     /// # async fn foo() {
     /// let wg = WaitGroup::new();
@@ -106,7 +106,7 @@ impl<'scope> Scope<'scope> {
     /// # }
     /// ```
     #[inline(always)]
-    pub fn spawn<F: Future<Output=()> + Send>(&'scope self, future: F) {
+    pub fn spawn<F: Future<Output = ()> + Send>(&'scope self, future: F) {
         self.wg.inc();
         let handle = ScopedHandle {
             scope: self,
@@ -122,12 +122,12 @@ unsafe impl Sync for Scope<'_> {}
 
 /// `ScopedHandle` is a wrapper of `Future<Output = ()>`
 /// to decrement the wait group when the future is done.
-pub(crate) struct ScopedHandle<'scope, Fut: Future<Output=()> + Send> {
+pub(crate) struct ScopedHandle<'scope, Fut: Future<Output = ()> + Send> {
     scope: &'scope Scope<'scope>,
     fut: Fut,
 }
 
-impl<'scope, Fut: Future<Output=()> + Send> Future for ScopedHandle<'scope, Fut> {
+impl<'scope, Fut: Future<Output = ()> + Send> Future for ScopedHandle<'scope, Fut> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
@@ -145,8 +145,8 @@ impl<'scope, Fut: Future<Output=()> + Send> Future for ScopedHandle<'scope, Fut>
     }
 }
 
-unsafe impl<F: Future<Output=()> + Send> Send for ScopedHandle<'_, F> {}
-unsafe impl<F: Future<Output=()> + Send> Sync for ScopedHandle<'_, F> {}
+unsafe impl<F: Future<Output = ()> + Send> Send for ScopedHandle<'_, F> {}
+unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 
 /// Creates a [`shared scope`](SharedScope) for spawning scoped shared tasks.
 ///
@@ -169,7 +169,7 @@ unsafe impl<F: Future<Output=()> + Send> Sync for ScopedHandle<'_, F> {}
 /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 /// use std::time::Duration;
 /// use orengine::sleep;
-/// use orengine::sync::{shared_scope, WaitGroup};
+/// use orengine::sync::{shared_scope, AsyncWaitGroup, WaitGroup};
 ///
 /// # async fn foo() {
 /// let wg = WaitGroup::new();
@@ -196,7 +196,7 @@ unsafe impl<F: Future<Output=()> + Send> Sync for ScopedHandle<'_, F> {}
 #[inline(always)]
 pub async fn shared_scope<'scope, Fut, F>(f: F)
 where
-    Fut: Future<Output=()> + Send,
+    Fut: Future<Output = ()> + Send,
     F: FnOnce(&'scope Scope<'scope>) -> Fut,
 {
     let scope = Scope {
@@ -242,7 +242,7 @@ mod tests {
                 a.fetch_add(1, SeqCst);
             });
         })
-            .await;
+        .await;
 
         yield_now().await;
 
@@ -276,7 +276,7 @@ mod tests {
             assert_eq!(a.load(SeqCst), 2);
             a.fetch_add(1, SeqCst);
         })
-            .await;
+        .await;
 
         yield_now().await;
 
@@ -307,7 +307,7 @@ mod tests {
                 a.fetch_add(1, SeqCst);
             });
         })
-            .await;
+        .await;
 
         yield_now().await;
 
@@ -341,7 +341,7 @@ mod tests {
             assert_eq!(a.load(SeqCst), 0);
             a.fetch_add(1, SeqCst);
         })
-            .await;
+        .await;
 
         yield_now().await;
 

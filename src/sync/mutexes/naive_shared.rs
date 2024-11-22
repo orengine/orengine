@@ -286,7 +286,7 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::sleep;
-    use crate::sync::WaitGroup;
+    use crate::sync::{AsyncWaitGroup, WaitGroup};
     use crate::test::sched_future_to_another_thread;
     use std::sync::Arc;
     use std::time::Duration;

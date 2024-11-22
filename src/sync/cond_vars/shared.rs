@@ -255,7 +255,7 @@ mod tests {
 
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
-    use crate::sync::{AsyncMutex, WaitGroup};
+    use crate::sync::{AsyncMutex, AsyncWaitGroup, WaitGroup};
 
     use super::*;
     use crate as orengine;

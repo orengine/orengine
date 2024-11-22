@@ -175,7 +175,7 @@ mod tests {
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
-    use crate::sync::{AsyncCondVar, AsyncMutex, LocalCondVar, LocalMutex, LocalWaitGroup};
+    use crate::sync::{AsyncCondVar, AsyncMutex, AsyncWaitGroup, LocalCondVar, LocalMutex, LocalWaitGroup};
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};

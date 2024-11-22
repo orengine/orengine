@@ -22,18 +22,20 @@ impl OnceState {
     }
 }
 
-impl Into<isize> for OnceState {
-    fn into(self) -> isize {
-        self as isize
+impl From<OnceState> for isize {
+    fn from(state: OnceState) -> Self {
+        state as Self
     }
 }
 
-impl From<isize> for OnceState {
-    fn from(state: isize) -> Self {
-        match state {
-            0 => OnceState::NotCalled,
-            1 => OnceState::Called,
-            _ => panic!("Invalid once state. It can be 0 (NotCalled) or 1 (Called)"),
+impl TryFrom<isize> for OnceState {
+    type Error = ();
+
+    fn try_from(value: isize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::NotCalled),
+            1 => Ok(Self::Called),
+            _ => Err(()),
         }
     }
 }

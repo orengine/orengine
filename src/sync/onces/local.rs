@@ -1,5 +1,5 @@
-use crate::sync::AsyncOnce;
 use crate::sync::OnceState;
+use crate::sync::{AsyncOnce, CallOnceResult};
 use std::cell::Cell;
 use std::future::Future;
 
@@ -23,16 +23,16 @@ use std::future::Future;
 /// static START: LocalOnce = LocalOnce::new();
 ///
 /// async fn async_print_msg_on_start() {
-///     let was_called = START.call_once(async {
+///     START.call_once(async {
 ///         // some async code
 ///         println!("start");
-///     }).await.is_ok();
+///     }).await;
 /// }
 ///
 /// async fn print_msg_on_start() {
-///     let was_called = START.call_once_sync(|| {
+///     START.call_once_sync(|| {
 ///         println!("start");
-///     }).is_ok();
+///     });
 /// }
 /// ```
 pub struct LocalOnce {
@@ -50,39 +50,41 @@ impl LocalOnce {
         }
     }
 
+    /// Non-Send future that implements [`AsyncOnce::call_once`].
+    #[allow(clippy::future_not_send, reason = "It is `local`")]
     async fn call_once_no_send<Fut: Future<Output = ()>>(
         &self,
         f: Fut,
         _: std::marker::PhantomData<*const ()>,
-    ) -> Result<(), ()> {
+    ) -> CallOnceResult {
         if self.is_completed() {
-            return Err(());
+            return CallOnceResult::WasAlreadyCompleted;
         }
 
         self.state.replace(OnceState::Called);
         f.await;
 
-        Ok(())
+        CallOnceResult::Called
     }
 }
 
 impl AsyncOnce for LocalOnce {
     #[inline(always)]
     #[allow(clippy::future_not_send, reason = "It is `local`")]
-    async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
+    async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> CallOnceResult {
         self.call_once_no_send(f, std::marker::PhantomData).await
     }
 
     #[inline(always)]
-    fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
+    fn call_once_sync<F: FnOnce()>(&self, f: F) -> CallOnceResult {
         if self.is_completed() {
-            return Err(());
+            return CallOnceResult::WasAlreadyCompleted;
         }
 
         self.state.replace(OnceState::Called);
         f();
 
-        Ok(())
+        CallOnceResult::Called
     }
 
     #[inline(always)]
@@ -124,11 +126,14 @@ mod tests {
         assert_eq!(once.state(), OnceState::NotCalled);
         assert!(!once.is_completed());
 
-        assert_eq!(once.call_once_sync(|| ()), Ok(()));
+        assert_eq!(once.call_once_sync(|| ()), CallOnceResult::Called);
         assert_eq!(once.state(), OnceState::Called);
 
         assert!(once.is_completed());
-        assert_eq!(once.call_once_sync(|| ()), Err(()));
+        assert_eq!(
+            once.call_once_sync(|| ()),
+            CallOnceResult::WasAlreadyCompleted
+        );
     }
 
     #[orengine_macros::test_local]
@@ -137,10 +142,13 @@ mod tests {
         assert_eq!(async_once.state(), OnceState::NotCalled);
         assert!(!async_once.is_completed());
 
-        assert_eq!(async_once.call_once(async {}).await, Ok(()));
+        assert_eq!(async_once.call_once(async {}).await, CallOnceResult::Called);
         assert_eq!(async_once.state(), OnceState::Called);
 
         assert!(async_once.is_completed());
-        assert_eq!(async_once.call_once(async {}).await, Err(()));
+        assert_eq!(
+            async_once.call_once(async {}).await,
+            CallOnceResult::WasAlreadyCompleted
+        );
     }
 }

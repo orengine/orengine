@@ -1,6 +1,20 @@
 use crate::sync::OnceState;
 use std::future::Future;
 
+/// `CallOnceResult` is the result of [`call_once`](AsyncOnce::call_once) or
+/// [`call_once_sync`](AsyncOnce::call_once_sync).
+///
+/// It is used to determine whether the [`future`](Future) or the function has been called or not.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CallOnceResult {
+    /// The [`future`](Future) or the function has been called.
+    Called,
+    /// The [`future`](Future) or the function has not been called because
+    /// [`AsyncOnce::call_once`](AsyncOnce::call_once)
+    /// or [`AsyncOnce::call_once_sync`](AsyncOnce::call_once_sync) has been already called.
+    WasAlreadyCompleted,
+}
+
 /// `AsyncOnce` is an asynchronous [`std::Once`](std::sync::Once).
 ///
 /// # Usage
@@ -15,16 +29,16 @@ use std::future::Future;
 /// static START: LocalOnce = LocalOnce::new();
 ///
 /// async fn async_print_msg_on_start() {
-///     let was_called = START.call_once(async {
+///     START.call_once(async {
 ///         // some async code
 ///         println!("start");
-///     }).await.is_ok();
+///     }).await;
 /// }
 ///
 /// async fn print_msg_on_start() {
-///     let was_called = START.call_once_sync(|| {
+///     START.call_once_sync(|| {
 ///         println!("start");
-///     }).is_ok();
+///     });
 /// }
 /// ```
 pub trait AsyncOnce {
@@ -38,13 +52,13 @@ pub trait AsyncOnce {
     /// static START: LocalOnce = LocalOnce::new();
     ///
     /// async fn async_print_msg_on_start() {
-    ///     let was_called = START.call_once(async {
+    ///     START.call_once(async {
     ///         // some async code
     ///         println!("start");
-    ///     }).await.is_ok();
+    ///     }).await;
     /// }
     /// ```
-    fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> impl Future<Output = Result<(), ()>>;
+    fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> impl Future<Output = CallOnceResult>;
 
     /// Calls the function only once.
     ///
@@ -56,12 +70,12 @@ pub trait AsyncOnce {
     /// static START: LocalOnce = LocalOnce::new();
     ///
     /// async fn print_msg_on_start() {
-    ///     let was_called = START.call_once_sync(|| {
+    ///     START.call_once_sync(|| {
     ///         println!("start");
-    ///     }).is_ok();
+    ///     });
     /// }
     /// ```
-    fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()>;
+    fn call_once_sync<F: FnOnce()>(&self, f: F) -> CallOnceResult;
 
     /// Returns the [`state`](OnceState) of the `AsyncOnce`.
     fn state(&self) -> OnceState;

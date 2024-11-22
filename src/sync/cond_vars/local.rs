@@ -261,7 +261,7 @@ mod tests {
     use crate as orengine;
     use crate::runtime::local_executor;
     use crate::sleep::sleep;
-    use crate::sync::{AsyncMutex, LocalMutex, LocalWaitGroup};
+    use crate::sync::{AsyncMutex, AsyncWaitGroup, LocalMutex, LocalWaitGroup};
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 

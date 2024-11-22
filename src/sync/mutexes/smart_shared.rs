@@ -375,7 +375,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::sleep::sleep;
-    use crate::sync::WaitGroup;
+    use crate::sync::{AsyncWaitGroup, WaitGroup};
 
     use super::*;
     use crate as orengine;

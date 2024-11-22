@@ -2,9 +2,8 @@ use std::future::Future;
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
+use crate::sync::{AsyncOnce, CallOnceResult, OnceState};
 use crossbeam::utils::CachePadded;
-
-use crate::sync::{AsyncOnce, OnceState};
 
 /// `Once` is an asynchronous [`std::Once`](std::sync::Once).
 ///
@@ -26,16 +25,16 @@ use crate::sync::{AsyncOnce, OnceState};
 /// static START: Once = Once::new();
 ///
 /// async fn async_print_msg_on_start() {
-///     let was_called = START.call_once(async {
+///     START.call_once(async {
 ///         // some async code
 ///         println!("start");
-///     }).await.is_ok();
+///     }).await;
 /// }
 ///
 /// async fn print_msg_on_start() {
-///     let was_called = START.call_once_sync(|| {
+///     START.call_once_sync(|| {
 ///         println!("start");
-///     }).is_ok();
+///     });
 /// }
 /// ```
 pub struct Once {
@@ -53,7 +52,7 @@ impl Once {
 
 impl AsyncOnce for Once {
     #[inline(always)]
-    async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
+    async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> CallOnceResult {
         if self
             .state
             .compare_exchange(
@@ -65,14 +64,14 @@ impl AsyncOnce for Once {
             .is_ok()
         {
             f.await;
-            Ok(())
+            CallOnceResult::Called
         } else {
-            Err(())
+            CallOnceResult::WasAlreadyCompleted
         }
     }
 
     #[inline(always)]
-    fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
+    fn call_once_sync<F: FnOnce()>(&self, f: F) -> CallOnceResult {
         if self
             .state
             .compare_exchange(
@@ -84,15 +83,26 @@ impl AsyncOnce for Once {
             .is_ok()
         {
             f();
-            Ok(())
+
+            CallOnceResult::Called
         } else {
-            Err(())
+            CallOnceResult::WasAlreadyCompleted
         }
     }
 
     #[inline(always)]
     fn state(&self) -> OnceState {
-        OnceState::from(self.state.load(Acquire))
+        #[cfg(debug_assertions)]
+        {
+            use crate::bug_message::BUG_MESSAGE;
+
+            OnceState::try_from(self.state.load(Acquire)).expect(BUG_MESSAGE)
+        }
+
+        #[cfg(not(debug_assertions))]
+        unsafe {
+            OnceState::try_from(self.state.load(Acquire)).unwrap_unchecked()
+        }
     }
 }
 
@@ -124,7 +134,7 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::sleep;
-    use crate::sync::WaitGroup;
+    use crate::sync::{AsyncWaitGroup, WaitGroup};
     use crate::test::sched_future_to_another_thread;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering::SeqCst;
@@ -156,9 +166,12 @@ mod tests {
             });
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
         assert!(once.is_completed());
-        assert_eq!(once.call_once(async {}).await, Err(()));
+        assert_eq!(
+            once.call_once(async {}).await,
+            CallOnceResult::WasAlreadyCompleted
+        );
     }
 
     #[orengine_macros::test_shared]
@@ -183,8 +196,11 @@ mod tests {
             });
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
         assert!(once.is_completed());
-        assert_eq!(once.call_once_sync(|| ()), Err(()));
+        assert_eq!(
+            once.call_once_sync(|| ()),
+            CallOnceResult::WasAlreadyCompleted
+        );
     }
 }

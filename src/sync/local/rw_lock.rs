@@ -512,7 +512,7 @@ unsafe impl<T: Sync> Sync for LocalRWLock<T> {}
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::sync::LocalWaitGroup;
+    use crate::sync::{AsyncWaitGroup, LocalWaitGroup};
     use crate::yield_now;
     use std::rc::Rc;
 

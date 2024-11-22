@@ -1,5 +1,6 @@
 use crate::panic_if_local_in_future;
 use crate::runtime::local_executor;
+use crate::sync::wait_groups::AsyncWaitGroup;
 use crate::sync_task_queue::SyncTaskList;
 use std::future::Future;
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -9,13 +10,13 @@ use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
 
 /// A [`Future`] to wait for all tasks in the [`WaitGroup`] to complete.
-pub struct Wait<'wait_group> {
+pub struct WaitSharedWaitGroup<'wait_group> {
     wait_group: &'wait_group WaitGroup,
     was_called: bool,
 }
 
-impl<'wait_group> Wait<'wait_group> {
-    /// Creates a new [`Wait`] future.
+impl<'wait_group> WaitSharedWaitGroup<'wait_group> {
+    /// Creates a new [`WaitSharedWaitGroup`] future.
     #[inline(always)]
     pub(crate) fn new(wait_group: &'wait_group WaitGroup) -> Self {
         Self {
@@ -25,7 +26,7 @@ impl<'wait_group> Wait<'wait_group> {
     }
 }
 
-impl<'wait_group> Future for Wait<'wait_group> {
+impl<'wait_group> Future for WaitSharedWaitGroup<'wait_group> {
     type Output = ();
 
     #[allow(unused)] // because #[cfg(debug_assertions)]
@@ -60,8 +61,8 @@ impl<'wait_group> Future for Wait<'wait_group> {
     }
 }
 
-/// `WaitGroup` is a synchronization primitive that allows to wait
-/// until all tasks are completed.
+/// `WaitGroup` is a synchronization primitive that allows to [`wait`](Self::wait)
+/// until all tasks are [`completed`](Self::done).
 ///
 /// # The difference between `WaitGroup` and [`LocalWaitGroup`](crate::sync::LocalWaitGroup)
 ///
@@ -75,7 +76,7 @@ impl<'wait_group> Future for Wait<'wait_group> {
 /// use std::time::Duration;
 /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 /// use orengine::sleep;
-/// use orengine::sync::{shared_scope, WaitGroup};
+/// use orengine::sync::{shared_scope, AsyncWaitGroup, WaitGroup};
 ///
 /// # async fn foo() {
 /// let wait_group = WaitGroup::new();
@@ -109,126 +110,21 @@ impl WaitGroup {
             waited_tasks: SyncTaskList::new(),
         }
     }
+}
 
-    /// Adds `count` to the `WaitGroup` counter.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use std::time::Duration;
-    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-    /// use orengine::sleep;
-    /// use orengine::sync::{shared_scope, WaitGroup};
-    ///
-    /// # async fn foo() {
-    /// let wait_group = WaitGroup::new();
-    /// let number_executed_tasks = AtomicUsize::new(0);
-    ///
-    /// shared_scope(|scope| async {
-    ///     wait_group.add(10);
-    ///     for i in 0..10 {
-    ///         scope.spawn(async {
-    ///             sleep(Duration::from_millis(i)).await;
-    ///             number_executed_tasks.fetch_add(1, SeqCst);
-    ///             wait_group.done();
-    ///         });
-    ///     }
-    ///
-    ///     wait_group.wait().await; // wait until 10 tasks are completed
-    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
-    /// }).await;
-    /// # }
-    /// ```
+impl AsyncWaitGroup for WaitGroup {
     #[inline(always)]
-    pub fn add(&self, count: usize) {
+    fn add(&self, count: usize) {
         self.counter.fetch_add(count, Acquire);
     }
 
-    /// Adds 1 to the `WaitGroup` counter.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use std::time::Duration;
-    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-    /// use orengine::sleep;
-    /// use orengine::sync::{shared_scope, WaitGroup};
-    ///
-    /// # async fn foo() {
-    /// let wait_group = WaitGroup::new();
-    /// let number_executed_tasks = AtomicUsize::new(0);
-    ///
-    /// shared_scope(|scope| async {
-    ///     for i in 0..10 {
-    ///         wait_group.inc();
-    ///         scope.spawn(async {
-    ///             sleep(Duration::from_millis(i)).await;
-    ///             number_executed_tasks.fetch_add(1, SeqCst);
-    ///             wait_group.done();
-    ///         });
-    ///     }
-    ///
-    ///     wait_group.wait().await; // wait until all tasks are completed
-    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
-    /// }).await;
-    /// # }
-    /// ```
     #[inline(always)]
-    pub fn inc(&self) {
-        self.add(1);
-    }
-
-    /// Returns the `WaitGroup` counter.
-    ///
-    /// Example
-    ///
-    /// ```rust
-    /// use orengine::sync::WaitGroup;
-    ///
-    /// # async fn foo() {
-    /// let wait_group = WaitGroup::new();
-    /// assert_eq!(wait_group.count(), 0);
-    /// wait_group.inc();
-    /// assert_eq!(wait_group.count(), 1);
-    /// wait_group.done();
-    /// assert_eq!(wait_group.count(), 0);
-    /// # }
-    /// ```
-    #[inline(always)]
-    pub fn count(&self) -> usize {
+    fn count(&self) -> usize {
         self.counter.load(Acquire)
     }
 
-    /// Decreases the `WaitGroup` counter by 1 and wakes up all tasks that are waiting
-    /// if the counter reaches 0.
-    ///
-    /// Returns the previous value of the counter.
-    ///
-    /// # Safety
-    ///
-    /// The counter must be greater than 0.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::{shared_scope, WaitGroup};
-    ///
-    /// # async fn foo() {
-    /// let wait_group = WaitGroup::new();
-    ///
-    /// shared_scope(|scope| async {
-    ///     wait_group.inc();
-    ///     scope.spawn(async {
-    ///         // wake up the waiting task, because a current and the only one task is done
-    ///         wait_group.done();
-    ///     });
-    ///
-    ///     wait_group.wait().await; // wait until all tasks are completed
-    /// }).await;
-    /// # }
-    /// ```
     #[inline(always)]
-    pub fn done(&self) -> usize {
+    fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
         debug_assert!(
             prev_count > 0,
@@ -247,38 +143,9 @@ impl WaitGroup {
         prev_count
     }
 
-    /// Waits until the `WaitGroup` counter reaches 0.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use std::time::Duration;
-    /// use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-    /// use orengine::sleep;
-    /// use orengine::sync::{shared_scope, WaitGroup};
-    ///
-    /// # async fn foo() {
-    /// let wait_group = WaitGroup::new();
-    /// let number_executed_tasks = AtomicUsize::new(0);
-    ///
-    /// shared_scope(|scope| async {
-    ///     for i in 0..10 {
-    ///         wait_group.inc();
-    ///         scope.spawn(async {
-    ///             sleep(Duration::from_millis(i)).await;
-    ///             number_executed_tasks.fetch_add(1, SeqCst);
-    ///             wait_group.done();
-    ///         });
-    ///     }
-    ///
-    ///     wait_group.wait().await; // wait until all tasks are completed
-    ///     assert_eq!(number_executed_tasks.load(SeqCst), 10);
-    /// }).await;
-    /// # }
-    /// ```
     #[inline(always)]
-    pub async fn wait(&self) {
-        Wait::new(self).await;
+    fn wait(&self) -> impl Future<Output = ()> {
+        WaitSharedWaitGroup::new(self)
     }
 }
 
@@ -292,6 +159,20 @@ unsafe impl Sync for WaitGroup {}
 unsafe impl Send for WaitGroup {}
 impl UnwindSafe for WaitGroup {}
 impl RefUnwindSafe for WaitGroup {}
+
+/// ```rust
+/// use orengine::sync::{WaitGroup, shared_scope, AsyncWaitGroup};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let wg = WaitGroup::new();
+///     let _ = check_send(wg.wait()).await;
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}
 
 #[cfg(test)]
 mod tests {

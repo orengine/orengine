@@ -202,7 +202,7 @@ impl<T: ?Sized + RefUnwindSafe> RefUnwindSafe for SpinLock<T> {}
 #[cfg(test)]
 mod tests {
     use crate as orengine;
-    use crate::sync::WaitGroup;
+    use crate::sync::{AsyncWaitGroup, WaitGroup};
     use crate::test::sched_future_to_another_thread;
     use crate::utils::SpinLock;
     use std::sync::Arc;
