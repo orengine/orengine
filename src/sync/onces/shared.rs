@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
 use crossbeam::utils::CachePadded;
 
-use crate::sync::local::once::OnceState;
+use crate::sync::{AsyncOnce, OnceState};
 
 /// `Once` is an asynchronous [`std::Once`](std::sync::Once).
 ///
@@ -21,7 +21,7 @@ use crate::sync::local::once::OnceState;
 /// # Example
 ///
 /// ```rust
-/// use orengine::sync::Once;
+/// use orengine::sync::{AsyncOnce, Once};
 ///
 /// static START: Once = Once::new();
 ///
@@ -49,25 +49,11 @@ impl Once {
             state: CachePadded::new(AtomicIsize::new(OnceState::not_called())),
         }
     }
+}
 
-    /// Calls the future only once.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::Once;
-    ///
-    /// static START: Once = Once::new();
-    ///
-    /// async fn async_print_msg_on_start() {
-    ///     let was_called = START.call_once(async {
-    ///         // some async code
-    ///         println!("start");
-    ///     }).await.is_ok();
-    /// }
-    /// ```
+impl AsyncOnce for Once {
     #[inline(always)]
-    pub async fn call_once<Fut: Future<Output=()>>(&self, f: Fut) -> Result<(), ()> {
+    async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> Result<(), ()> {
         if self
             .state
             .compare_exchange(
@@ -85,23 +71,8 @@ impl Once {
         }
     }
 
-    /// Calls the function only once.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::sync::Once;
-    ///
-    /// static START: Once = Once::new();
-    ///
-    /// async fn print_msg_on_start() {
-    ///     let was_called = START.call_once_sync(|| {
-    ///         println!("start");
-    ///     }).is_ok();
-    /// }
-    /// ```
     #[inline(always)]
-    pub fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
+    fn call_once_sync<F: FnOnce()>(&self, f: F) -> Result<(), ()> {
         if self
             .state
             .compare_exchange(
@@ -119,21 +90,34 @@ impl Once {
         }
     }
 
-    /// Returns the [`state`](OnceState) of the `Once`.
     #[inline(always)]
-    pub fn state(&self) -> OnceState {
+    fn state(&self) -> OnceState {
         OnceState::from(self.state.load(Acquire))
     }
+}
 
-    /// Returns whether the `Once` has been called or not.
-    #[inline(always)]
-    pub fn was_called(&self) -> bool {
-        self.state() == OnceState::Called
+impl Default for Once {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 unsafe impl Sync for Once {}
 unsafe impl Send for Once {}
+
+/// ```rust
+/// use orengine::sync::{Once, AsyncOnce, shared_scope};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let once = Once::new();
+///     let _ = check_send(once.call_once(async {})).await;
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}
 
 #[cfg(test)]
 mod tests {
@@ -153,7 +137,7 @@ mod tests {
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
         assert_eq!(once.state(), OnceState::NotCalled);
-        assert!(!once.was_called());
+        assert!(!once.is_completed());
 
         for _ in 0..10 {
             let a = a.clone();
@@ -173,7 +157,7 @@ mod tests {
         }
 
         let _ = wg.wait().await;
-        assert!(once.was_called());
+        assert!(once.is_completed());
         assert_eq!(once.call_once(async {}).await, Err(()));
     }
 
@@ -183,7 +167,7 @@ mod tests {
         let wg = Arc::new(WaitGroup::new());
         let once = Arc::new(Once::new());
         assert_eq!(once.state(), OnceState::NotCalled);
-        assert!(!once.was_called());
+        assert!(!once.is_completed());
 
         for _ in 0..10 {
             let a = a.clone();
@@ -200,7 +184,7 @@ mod tests {
         }
 
         let _ = wg.wait().await;
-        assert!(once.was_called());
+        assert!(once.is_completed());
         assert_eq!(once.call_once_sync(|| ()), Err(()));
     }
 }
