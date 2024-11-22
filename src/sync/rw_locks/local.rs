@@ -5,12 +5,14 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
 use crate::runtime::task::Task;
+use crate::sync::{AsyncRWLock, AsyncReadLockGuard, AsyncWriteLockGuard, LockStatus};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 // region guards
 
 /// RAII structure used to release the shared read access of a lock when
@@ -18,13 +20,13 @@ use std::task::{Context, Poll};
 ///
 /// This structure is created by the [`LocalRWLock::read`](LocalRWLock::read)
 /// and [`LocalRWLock::try_read`](LocalRWLock::try_read).
-pub struct LocalReadLockGuard<'rw_lock, T> {
+pub struct LocalReadLockGuard<'rw_lock, T: ?Sized> {
     local_rw_lock: &'rw_lock LocalRWLock<T>,
     // impl !Send
     no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
-impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> LocalReadLockGuard<'rw_lock, T> {
     /// Creates a new `LocalReadLockGuard`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
@@ -33,33 +35,25 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
             no_send_marker: std::marker::PhantomData,
         }
     }
+}
 
-    /// Returns a reference to the original [`LocalRWLock`].
-    #[inline(always)]
-    pub fn local_rw_lock(&self) -> &LocalRWLock<T> {
-        &self.local_rw_lock
+impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for LocalReadLockGuard<'rw_lock, T> {
+    type RWLock = LocalRWLock<T>;
+
+    fn rw_lock(&self) -> &'rw_lock Self::RWLock {
+        self.local_rw_lock
     }
 
-    /// Release the shared read access of a lock.
-    /// Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
     #[inline(always)]
-    pub fn unlock(self) {}
-
-    /// Returns a reference to the original [`LocalRWLock`].
-    ///
-    /// The read portion of this lock will not be released.
-    ///
-    /// # Safety
-    ///
-    /// The rw_lock is read unlocked by calling [`LocalRWLock::read_unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'static LocalRWLock<T> {
+    unsafe fn leak(self) -> &'rw_lock Self::RWLock {
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
+        #[allow(
+            clippy::transmute_ptr_to_ptr,
+            reason = "It is not possible to write it any other way"
+        )]
         let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
         mem::forget(self);
 
@@ -67,7 +61,7 @@ impl<'rw_lock, T> LocalReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Deref for LocalReadLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -75,7 +69,7 @@ impl<'rw_lock, T> Deref for LocalReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Drop for LocalReadLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.read_unlock();
@@ -88,13 +82,13 @@ impl<'rw_lock, T> Drop for LocalReadLockGuard<'rw_lock, T> {
 ///
 /// This structure is created by the [`LocalRWLock::write`](LocalRWLock::write)
 /// and [`LocalRWLock::try_write`](LocalRWLock::try_write).
-pub struct LocalWriteLockGuard<'rw_lock, T> {
+pub struct LocalWriteLockGuard<'rw_lock, T: ?Sized> {
     local_rw_lock: &'rw_lock LocalRWLock<T>,
     // impl !Send
     no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
-impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> LocalWriteLockGuard<'rw_lock, T> {
     /// Creates a new `LocalWriteLockGuard`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
@@ -103,33 +97,25 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
             no_send_marker: std::marker::PhantomData,
         }
     }
+}
 
-    /// Returns a reference to the original [`LocalRWLock`].
-    #[inline(always)]
-    pub fn local_rw_lock(&self) -> &LocalRWLock<T> {
-        &self.local_rw_lock
+impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for LocalWriteLockGuard<'rw_lock, T> {
+    type RWLock = LocalRWLock<T>;
+
+    fn rw_lock(&self) -> &'rw_lock Self::RWLock {
+        self.local_rw_lock
     }
 
-    /// Release the exclusive write access of a lock.
-    /// Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
     #[inline(always)]
-    pub fn unlock(self) {}
-
-    /// Returns a reference to the original [`LocalRWLock`].
-    ///
-    /// The write portion of this lock will not be released.
-    ///
-    /// # Safety
-    ///
-    /// The rw_lock is write unlocked by calling [`LocalRWLock::write_unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'static LocalRWLock<T> {
+    unsafe fn leak(self) -> &'rw_lock Self::RWLock {
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
+        #[allow(
+            clippy::transmute_ptr_to_ptr,
+            reason = "It is not possible to write it any other way"
+        )]
         let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
         mem::forget(self);
 
@@ -137,7 +123,7 @@ impl<'rw_lock, T> LocalWriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> Deref for LocalWriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Deref for LocalWriteLockGuard<'rw_lock, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -145,13 +131,13 @@ impl<'rw_lock, T> Deref for LocalWriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Drop for LocalWriteLockGuard<'rw_lock, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.write_unlock();
@@ -164,23 +150,26 @@ impl<'rw_lock, T> Drop for LocalWriteLockGuard<'rw_lock, T> {
 // region futures
 
 /// `ReadLockWait` is a future that will be resolved when the read lock is acquired.
-pub struct ReadLockWait<'rw_lock, T> {
+pub struct ReadLockWait<'rw_lock, T: ?Sized> {
     was_called: bool,
     local_rw_lock: &'rw_lock LocalRWLock<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
-impl<'rw_lock, T> ReadLockWait<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> ReadLockWait<'rw_lock, T> {
     /// Creates a new `ReadLockWait`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             was_called: false,
             local_rw_lock,
+            no_send_marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Future for ReadLockWait<'rw_lock, T> {
     type Output = LocalReadLockGuard<'rw_lock, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -197,23 +186,26 @@ impl<'rw_lock, T> Future for ReadLockWait<'rw_lock, T> {
 }
 
 /// `WriteLockWait` is a future that will be resolved when the write lock is acquired.
-pub struct WriteLockWait<'rw_lock, T> {
+pub struct WriteLockWait<'rw_lock, T: ?Sized> {
     was_called: bool,
     local_rw_lock: &'rw_lock LocalRWLock<T>,
+    // impl !Send
+    no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
-impl<'rw_lock, T> WriteLockWait<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> WriteLockWait<'rw_lock, T> {
     /// Creates a new `WriteLockWait`.
     #[inline(always)]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             was_called: false,
             local_rw_lock,
+            no_send_marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
+impl<'rw_lock, T: ?Sized> Future for WriteLockWait<'rw_lock, T> {
     type Output = LocalWriteLockGuard<'rw_lock, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -232,14 +224,14 @@ impl<'rw_lock, T> Future for WriteLockWait<'rw_lock, T> {
 // endregion
 
 /// Inner structure of [`LocalRWLock`] for internal use via [`UnsafeCell`].
-struct Inner<T> {
+struct Inner<T: ?Sized> {
     wait_queue_read: Vec<Task>,
     wait_queue_write: Vec<Task>,
     number_of_readers: isize,
     value: T,
 }
 
-/// A reader-writer lock.
+/// An asynchronous version of a [`reader-writer lock`](std::sync::RwLock)
 ///
 /// This type of lock allows a number of readers or at most one writer at any
 /// point in time. The write portion of this lock typically allows modification
@@ -249,7 +241,7 @@ struct Inner<T> {
 /// In comparison, a [`LocalMutex`](crate::sync::LocalMutex)
 /// does not distinguish between readers or writers
 /// that acquire the lock, therefore blocking any tasks waiting for the lock to
-/// become available. An `RwLock` will allow any number of readers to acquire the
+/// become available. An `RWLock` will allow any number of readers to acquire the
 /// lock as long as a writer is not holding the lock.
 ///
 /// The type parameter `T` represents the data that this lock protects. It is
@@ -267,7 +259,7 @@ struct Inner<T> {
 /// # Incorrect usage
 ///
 /// ```rust
-/// use orengine::sync::LocalRWLock;
+/// use orengine::sync::{AsyncRWLock, LocalRWLock};
 ///
 /// // Incorrect usage, because in local runtime all tasks are executed sequentially.
 /// async fn inc_counter(counter: &LocalRWLock<u32>) {
@@ -292,7 +284,7 @@ struct Inner<T> {
 /// ```rust
 /// use std::collections::HashMap;
 /// use orengine::Local;
-/// use orengine::sync::LocalRWLock;
+/// use orengine::sync::{AsyncRWLock, LocalRWLock};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
@@ -308,17 +300,20 @@ struct Inner<T> {
 ///     // read lock is released when `guard` goes out of scope
 /// }
 /// ```
-pub struct LocalRWLock<T> {
-    inner: UnsafeCell<Inner<T>>,
+pub struct LocalRWLock<T: ?Sized> {
     // impl !Send
     no_send_marker: std::marker::PhantomData<*const ()>,
+    inner: UnsafeCell<Inner<T>>,
 }
 
-impl<T> LocalRWLock<T> {
+impl<T: ?Sized> LocalRWLock<T> {
     /// Creates a new `LocalRWLock`.
     #[inline(always)]
-    pub fn new(value: T) -> LocalRWLock<T> {
-        LocalRWLock {
+    pub const fn new(value: T) -> Self
+    where
+        T: Sized,
+    {
+        Self {
             inner: UnsafeCell::new(Inner {
                 wait_queue_read: Vec::new(),
                 wait_queue_write: Vec::new(),
@@ -331,15 +326,36 @@ impl<T> LocalRWLock<T> {
 
     /// Returns a mutable reference to the inner value.
     #[inline(always)]
+    #[allow(clippy::mut_from_ref, reason = "It is Sync and `local`")]
     fn get_inner(&self) -> &mut Inner<T> {
         unsafe { &mut *self.inner.get() }
     }
+}
 
-    /// Returns [`LocalWriteLockGuard`] that allows mutable access to the inner value.
-    ///
-    /// It will block the current task if the lock is already acquired for writing or reading.
+impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
+    type ReadLockGuard<'rw_lock> = LocalReadLockGuard<'rw_lock, T>
+    where
+        T: 'rw_lock,
+        Self: 'rw_lock;
+    type WriteLockGuard<'rw_lock> = LocalWriteLockGuard<'rw_lock, T>
+    where
+        T: 'rw_lock,
+        Self: 'rw_lock;
+
     #[inline(always)]
-    pub async fn write(&self) -> LocalWriteLockGuard<T> {
+    fn get_lock_status(&self) -> LockStatus {
+        match self.get_inner().number_of_readers {
+            0 => LockStatus::Unlocked,
+            n if n > 0 => LockStatus::ReadLocked(n as usize),
+            _ => LockStatus::WriteLocked,
+        }
+    }
+
+    #[inline(always)]
+    async fn write<'rw_lock>(&'rw_lock self) -> Self::WriteLockGuard<'rw_lock>
+    where
+        T: 'rw_lock,
+    {
         let inner = self.get_inner();
 
         if inner.number_of_readers == 0 {
@@ -352,11 +368,11 @@ impl<T> LocalRWLock<T> {
         WriteLockWait::new(self).await
     }
 
-    /// Returns [`LocalReadLockGuard`] that allows shared access to the inner value.
-    ///
-    /// It will block the current task if the lock is already acquired for writing.
     #[inline(always)]
-    pub async fn read(&self) -> LocalReadLockGuard<T> {
+    async fn read<'rw_lock>(&'rw_lock self) -> Self::ReadLockGuard<'rw_lock>
+    where
+        T: 'rw_lock,
+    {
         let inner = self.get_inner();
 
         if inner.number_of_readers > -1 {
@@ -367,10 +383,8 @@ impl<T> LocalRWLock<T> {
         ReadLockWait::new(self).await
     }
 
-    /// If the lock is not acquired for writing or reading, returns [`LocalWriteLockGuard`] that
-    /// allows mutable access to the inner value, otherwise returns [`None`].
     #[inline(always)]
-    pub fn try_write(&self) -> Option<LocalWriteLockGuard<T>> {
+    fn try_write(&self) -> Option<Self::WriteLockGuard<'_>> {
         let inner = self.get_inner();
 
         if inner.number_of_readers == 0 {
@@ -383,10 +397,8 @@ impl<T> LocalRWLock<T> {
         }
     }
 
-    /// If the lock is not acquired for writing, returns [`LocalReadLockGuard`] that
-    /// allows shared access to the inner value, otherwise returns [`None`].
     #[inline(always)]
-    pub fn try_read(&self) -> Option<LocalReadLockGuard<T>> {
+    fn try_read(&self) -> Option<Self::ReadLockGuard<'_>> {
         let inner = self.get_inner();
         if inner.number_of_readers > -1 {
             inner.number_of_readers += 1;
@@ -396,19 +408,13 @@ impl<T> LocalRWLock<T> {
         }
     }
 
-    /// Returns a mutable reference to the inner value. It is safe because it uses `&mut self`.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
+    fn get_mut(&mut self) -> &mut T {
         &mut self.inner.get_mut().value
     }
 
-    /// Releases the read portion lock.
-    ///
-    /// # Safety
-    ///
-    /// - The rw_lock must be read-locked.
     #[inline(always)]
-    pub unsafe fn read_unlock(&self) {
+    unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
             if self.get_inner().number_of_readers == -1 {
                 panic!("LocalRWLock is locked for write");
@@ -432,13 +438,8 @@ impl<T> LocalRWLock<T> {
         }
     }
 
-    /// Releases the write portion lock.
-    ///
-    /// # Safety
-    ///
-    /// - The rw_lock must be write-locked.
     #[inline(always)]
-    pub unsafe fn write_unlock(&self) {
+    unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
             if self.get_inner().number_of_readers == 0 {
                 panic!("LocalRWLock is already unlocked");
@@ -465,13 +466,8 @@ impl<T> LocalRWLock<T> {
         }
     }
 
-    /// Returns a reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - The mutex must be read-locked.
     #[inline(always)]
-    pub unsafe fn get_read_locked(&self) -> &T {
+    unsafe fn get_read_locked(&self) -> Self::ReadLockGuard<'_> {
         if cfg!(debug_assertions) {
             if self.get_inner().number_of_readers == -1 {
                 panic!("LocalRWLock is locked for write");
@@ -482,16 +478,11 @@ impl<T> LocalRWLock<T> {
             }
         }
 
-        &self.get_inner().value
+        LocalReadLockGuard::new(self)
     }
 
-    /// Returns a mutable reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - The mutex must be write-locked.
     #[inline(always)]
-    pub unsafe fn get_write_locked(&self) -> &mut T {
+    unsafe fn get_write_locked(&self) -> Self::WriteLockGuard<'_> {
         if cfg!(debug_assertions) {
             if self.get_inner().number_of_readers == 0 {
                 panic!("LocalRWLock is unlocked, but get_write_locked is called");
@@ -502,11 +493,45 @@ impl<T> LocalRWLock<T> {
             }
         }
 
-        &mut self.get_inner().value
+        LocalWriteLockGuard::new(self)
     }
 }
 
-unsafe impl<T: Sync> Sync for LocalRWLock<T> {}
+unsafe impl<T: ?Sized + Sync> Sync for LocalRWLock<T> {}
+
+/// ```compile_fail
+/// use orengine::sync::{LocalRWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let mutex = LocalRWLock::new(0);
+///
+///     let guard = check_send(mutex.read()).await;
+///     yield_now().await;
+///     assert_eq!(*guard, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use orengine::sync::{LocalRWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// async fn test() {
+///     let mutex = LocalRWLock::new(0);
+///
+///     let guard = check_send(mutex.write()).await;
+///     yield_now().await;
+///     assert_eq!(*guard, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local_rw_lock() {}
 
 #[cfg(test)]
 mod tests {
@@ -582,7 +607,7 @@ mod tests {
                 let lock = mutex.try_read().expect("Failed to get read lock!");
                 assert_eq!(mutex.get_inner().number_of_readers, i);
                 yield_now().await;
-                lock.unlock();
+                drop(lock);
             });
         }
 

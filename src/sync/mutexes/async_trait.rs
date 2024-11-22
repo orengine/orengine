@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 ///
 /// This structure is created by the [`lock`](AsyncMutex::lock)
 /// and [`try_lock`](AsyncMutex::try_lock).
-pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target=T> + DerefMut {
+pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target = T> + DerefMut {
     /// The type of the `mutex` associated with this `guard`.
     ///
     /// It implements [`AsyncMutex`].
@@ -60,14 +60,15 @@ pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target=T> + DerefMu
 /// }
 /// ```
 pub trait AsyncMutex<T: ?Sized> {
-    /// The type of the `guard` that is returned from the [`lock`](AsyncMutex::lock) method.
+    /// The type of the `guard` that is returned from the [`lock`](Self::lock),
+    /// [`try_lock`](Self::try_lock), and [`get_locked`](Self::get_locked) methods.
     ///
     /// An RAII implementation of a "scoped lock" of a `mutex`. When this structure is
     /// dropped (falls out of scope), the `mutex` will be unlocked.
     ///
     /// The data protected by the `mutex` can be accessed through this guard via its
     /// [`Deref`](Deref) and [`DerefMut`] implementations.
-    type Guard<'mutex>: AsyncMutexGuard<'mutex, T, Mutex=Self>
+    type Guard<'mutex>: AsyncMutexGuard<'mutex, T, Mutex = Self>
     where
         Self: 'mutex,
         T: 'mutex;
@@ -79,7 +80,7 @@ pub trait AsyncMutex<T: ?Sized> {
     /// that allows access to the inner value.
     ///
     /// It blocks the current task if the `mutex` is locked.
-    fn lock<'mutex>(&'mutex self) -> impl Future<Output=Self::Guard<'mutex>>
+    fn lock<'mutex>(&'mutex self) -> impl Future<Output = Self::Guard<'mutex>>
     where
         T: 'mutex;
 
@@ -99,16 +100,16 @@ pub trait AsyncMutex<T: ?Sized> {
     /// - No other tasks has an ownership of this `lock`.
     unsafe fn unlock(&self);
 
-    /// Returns [`guard`](AsyncMutex::Guard) associated with the `mutex` without locking.
+    /// Returns [`guard`](Self::Guard) associated with the `mutex` without locking.
     ///
     /// It is used to transfer `lock` without additional locking/unlocking.
     ///
     /// # Safety
     ///
-    /// - The `mutex` must be locked.
+    /// - The `mutex` must be locked for at least the duration of the returned associated
+    ///   [`guard`](Self::Guard).
     ///
     /// - Only current task has an ownership of this `lock`.
-    #[allow(clippy::mut_from_ref, reason = "The caller guarantees this safety")]
     unsafe fn get_locked(&self) -> Self::Guard<'_>;
 }
 

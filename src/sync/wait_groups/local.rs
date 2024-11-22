@@ -150,7 +150,7 @@ impl Default for LocalWaitGroup {
 unsafe impl Sync for LocalWaitGroup {}
 
 /// ```compile_fail
-/// use orengine::sync::{LocalWaitGroup, shared_scope};
+/// use orengine::sync::{LocalWaitGroup, AsyncWaitGroup, shared_scope};
 /// use orengine::yield_now;
 ///
 /// fn check_send<T: Send>(value: T) -> T { value }

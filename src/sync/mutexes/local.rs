@@ -286,44 +286,12 @@ unsafe impl<T> Sync for LocalMutex<T> {}
 ///
 /// fn check_send<T: Send>(value: T) -> T { value }
 ///
-/// struct NonSend {
-///     value: i32,
-///     // impl !Send
-///     no_send_marker: std::marker::PhantomData<*const ()>,
-/// }
-///
 /// async fn test() {
-///     let mutex = LocalMutex::new(NonSend {
-///         value: 0,
-///         no_send_marker: std::marker::PhantomData,
-///     });
+///     let mutex = LocalMutex::new(0);
 ///
 ///     let guard = check_send(mutex.lock()).await;
 ///     yield_now().await;
-///     assert_eq!(guard.value, 0);
-///     drop(guard);
-/// }
-/// ```
-///
-/// ```no_compile
-/// use orengine::sync::{LocalMutex, AsyncMutex};
-/// use orengine::yield_now;
-///
-/// fn check_send<T: Send>(value: T) -> T { value }
-///
-/// // impl Send
-/// struct CanSend {
-///     value: i32,
-/// }
-///
-/// async fn test() {
-///     let mutex = LocalMutex::new(CanSend {
-///         value: 0,
-///     });
-///
-///     let guard = check_send(mutex.lock()).await;
-///     yield_now().await;
-///     assert_eq!(guard.value, 0);
+///     assert_eq!(guard, 0);
 ///     drop(guard);
 /// }
 /// ```

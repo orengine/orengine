@@ -8,9 +8,9 @@ use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use crossbeam::utils::CachePadded;
-
+use crate::sync::{AsyncRWLock, AsyncReadLockGuard, AsyncWriteLockGuard, LockStatus};
 use crate::yield_now;
+use crossbeam::utils::CachePadded;
 
 // region guards
 
@@ -29,34 +29,21 @@ impl<'rw_lock, T: ?Sized> ReadLockGuard<'rw_lock, T> {
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
         Self { rw_lock }
     }
+}
 
-    /// Returns a reference to the original [`RWLock`].
-    #[inline(always)]
-    pub fn rw_lock(&self) -> &RWLock<T> {
+impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for ReadLockGuard<'rw_lock, T> {
+    type RWLock = RWLock<T>;
+
+    fn rw_lock(&self) -> &'rw_lock Self::RWLock {
         self.rw_lock
     }
 
-    /// Release the shared read access of a lock.
-    /// Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
     #[inline(always)]
-    pub fn unlock(self) {}
-
-    /// Returns a reference to the original [`RWLock`].
-    ///
-    /// The read portion of this lock will not be released.
-    ///
-    /// # Safety
-    ///
-    /// The [`RWLock`] is read unlocked by calling [`RWLock::read_unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'rw_lock T {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+    unsafe fn leak(self) -> &'rw_lock Self::RWLock {
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         #[allow(
             clippy::transmute_ptr_to_ptr,
             reason = "It is not possible to write it any other way"
@@ -102,34 +89,21 @@ impl<'rw_lock, T: ?Sized> WriteLockGuard<'rw_lock, T> {
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
         Self { rw_lock }
     }
+}
 
-    /// Returns a reference to the original [`RWLock`].
-    #[inline(always)]
-    pub fn rw_lock(&self) -> &RWLock<T> {
+impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for WriteLockGuard<'rw_lock, T> {
+    type RWLock = RWLock<T>;
+
+    fn rw_lock(&self) -> &'rw_lock Self::RWLock {
         self.rw_lock
     }
 
-    /// Release the exclusive write access of a lock.
-    /// Calling `guard.unlock()` is equivalent to calling `drop(guard)`.
-    /// This was done to improve readability.
-    ///
-    /// # Attention
-    ///
-    /// Even if you doesn't call `guard.unlock()`,
-    /// the mutex will be unlocked after the `guard` is dropped.
     #[inline(always)]
-    pub fn unlock(self) {}
-
-    /// Returns a reference to the original [`RWLock`].
-    ///
-    /// The write portion of this lock will not be released.
-    ///
-    /// # Safety
-    ///
-    /// The [`RWLock`] is write-unlocked by calling [`RWLock::write_unlock`] later.
-    #[inline(always)]
-    pub unsafe fn leak(self) -> &'rw_lock T {
-        #[allow(clippy::missing_transmute_annotations, reason = "It is not possible to write Dst")]
+    unsafe fn leak(self) -> &'rw_lock Self::RWLock {
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         #[allow(
             clippy::transmute_ptr_to_ptr,
             reason = "It is not possible to write it any other way"
@@ -168,7 +142,7 @@ unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 
 // endregion
 
-/// A reader-writer lock.
+/// An asynchronous version of a [`reader-writer lock`](std::sync::RwLock).
 ///
 /// This type of lock allows a number of readers or at most one writer at any
 /// point in time. The write portion of this lock typically allows modification
@@ -178,7 +152,7 @@ unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 /// In comparison, a [`Mutex`](crate::sync::Mutex)
 /// does not distinguish between readers or writers
 /// that acquire the lock, therefore blocking any tasks waiting for the lock to
-/// become available. An `RwLock` will allow any number of readers to acquire the
+/// become available. An `RWLock` will allow any number of readers to acquire the
 /// lock as long as a writer is not holding the lock.
 ///
 /// The type parameter `T` represents the data that this lock protects. It is
@@ -197,7 +171,7 @@ unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 /// ```rust
 /// use std::collections::HashMap;
 /// use orengine::Local;
-/// use orengine::sync::RWLock;
+/// use orengine::sync::{AsyncRWLock, RWLock};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
@@ -216,12 +190,6 @@ pub struct RWLock<T: ?Sized> {
     value: UnsafeCell<T>,
 }
 
-pub enum LockStatus {
-    Unlocked,
-    WriteLocked,
-    ReadLocked(usize),
-}
-
 impl<T: ?Sized> RWLock<T> {
     /// Creates a new `RWLock` with the given value.
     pub const fn new(value: T) -> Self
@@ -233,16 +201,31 @@ impl<T: ?Sized> RWLock<T> {
             value: UnsafeCell::new(value),
         }
     }
+}
 
-    /// Returns
-
-    /// Returns [`WriteLockGuard`] that allows mutable access to the inner value.
-    ///
-    /// It will block the current task if the lock is already acquired for writing or reading.
-    #[inline(always)]
-    pub async fn write(&self) -> WriteLockGuard<T>
+impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
+    type ReadLockGuard<'rw_lock> = ReadLockGuard<'rw_lock, T>
     where
-        T: Send,
+        T: 'rw_lock,
+        Self: 'rw_lock;
+    type WriteLockGuard<'rw_lock> = WriteLockGuard<'rw_lock, T>
+    where
+        T: 'rw_lock,
+        Self: 'rw_lock;
+
+    #[inline(always)]
+    fn get_lock_status(&self) -> LockStatus {
+        match self.number_of_readers.load(Acquire) {
+            0 => LockStatus::Unlocked,
+            n if n > 0 => LockStatus::ReadLocked(n as usize),
+            _ => LockStatus::WriteLocked,
+        }
+    }
+
+    #[inline(always)]
+    async fn write<'rw_lock>(&'rw_lock self) -> Self::WriteLockGuard<'rw_lock>
+    where
+        T: 'rw_lock,
     {
         loop {
             match self.try_write() {
@@ -252,13 +235,10 @@ impl<T: ?Sized> RWLock<T> {
         }
     }
 
-    /// Returns [`ReadLockGuard`] that allows shared access to the inner value.
-    ///
-    /// It will block the current task if the lock is already acquired for writing.
     #[inline(always)]
-    pub async fn read(&self) -> ReadLockGuard<T>
+    async fn read<'rw_lock>(&'rw_lock self) -> Self::ReadLockGuard<'rw_lock>
     where
-        T: Send,
+        T: 'rw_lock,
     {
         loop {
             match self.try_read() {
@@ -268,10 +248,8 @@ impl<T: ?Sized> RWLock<T> {
         }
     }
 
-    /// If the lock is not acquired for writing or reading, returns [`WriteLockGuard`] that
-    /// allows mutable access to the inner value, otherwise returns [`None`].
     #[inline(always)]
-    pub fn try_write(&self) -> Option<WriteLockGuard<T>> {
+    fn try_write(&self) -> Option<Self::WriteLockGuard<'_>> {
         let was_swapped = self
             .number_of_readers
             .compare_exchange(0, -1, Acquire, Relaxed)
@@ -283,10 +261,8 @@ impl<T: ?Sized> RWLock<T> {
         }
     }
 
-    /// If the lock is not acquired for writing, returns [`ReadLockGuard`] that
-    /// allows shared access to the inner value, otherwise returns [`None`].
     #[inline(always)]
-    pub fn try_read(&self) -> Option<ReadLockGuard<T>> {
+    fn try_read(&self) -> Option<Self::ReadLockGuard<'_>> {
         loop {
             let number_of_readers = self.number_of_readers.load(Acquire);
             if number_of_readers >= 0 {
@@ -303,20 +279,13 @@ impl<T: ?Sized> RWLock<T> {
         }
     }
 
-    /// Returns a mutable reference to the inner value. It is safe because it uses `&mut self`.
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut T {
+    fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    /// Releases the read portion lock.
-    ///
-    /// # Safety
-    ///
-    /// [`RWLock`] is read-locked and leaked via [`ReadLockGuard::leak`].
     #[inline(always)]
-    #[allow(clippy::missing_panics_doc, reason = "False positive")]
-    pub unsafe fn read_unlock(&self) {
+    unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
             assert_ne!(current, 0, "RWLock is already unlocked");
@@ -326,16 +295,8 @@ impl<T: ?Sized> RWLock<T> {
         self.number_of_readers.fetch_sub(1, Release);
     }
 
-    /// Releases the write portion lock.
-    ///
-    /// # Safety
-    ///
-    /// - [`RWLock`] is write-locked and leaked via [`WriteLockGuard::leak`].
-    ///
-    /// - No other tasks has an ownership of this [`RWLock`].
     #[inline(always)]
-    #[allow(clippy::missing_panics_doc, reason = "False positive")]
-    pub unsafe fn write_unlock(&self) {
+    unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
             assert_ne!(current, 0, "RWLock is already unlocked");
@@ -345,46 +306,129 @@ impl<T: ?Sized> RWLock<T> {
         self.number_of_readers.store(0, Release);
     }
 
-    /// Returns a reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - [`RWLock`] must be read-locked.
     #[inline(always)]
-    #[allow(clippy::missing_panics_doc, reason = "False positive")]
-    pub unsafe fn get_read_locked(&self) -> &T {
+    unsafe fn get_read_locked(&self) -> Self::ReadLockGuard<'_> {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
             assert_ne!(current, 0, "RWLock is already unlocked");
             assert!(current > 0, "RWLock is locked for write");
         }
 
-        unsafe { &*self.value.get() }
+        ReadLockGuard::new(self)
     }
 
-    /// Returns a mutable reference to the inner value.
-    ///
-    /// # Safety
-    ///
-    /// - [`RWLock`] must be write-locked
-    ///
-    /// - No tasks has an ownership of this [`RWLock`].
     #[inline(always)]
-    #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
-    #[allow(clippy::missing_panics_doc, reason = "False positive")]
-    pub unsafe fn get_write_locked(&self) -> &mut T {
+    unsafe fn get_write_locked(&self) -> Self::WriteLockGuard<'_> {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
             assert_ne!(current, 0, "RWLock is already unlocked");
             assert!(current < 0, "RWLock is locked for read");
         }
 
-        unsafe { &mut *self.value.get() }
+        WriteLockGuard::new(self)
     }
 }
 
 unsafe impl<T: ?Sized + Send> Sync for RWLock<T> {}
 unsafe impl<T: ?Sized + Send> Send for RWLock<T> {}
+
+/// ```compile_fail
+/// use orengine::sync::{RWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = RWLock::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = check_send(mutex.read()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```rust
+/// use orengine::sync::{RWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = RWLock::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = check_send(mutex.read()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use orengine::sync::{RWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// struct NonSend {
+///     value: i32,
+///     // impl !Send
+///     no_send_marker: std::marker::PhantomData<*const ()>,
+/// }
+///
+/// async fn test() {
+///     let mutex = RWLock::new(NonSend {
+///         value: 0,
+///         no_send_marker: std::marker::PhantomData,
+///     });
+///
+///     let guard = check_send(mutex.write()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+///
+/// ```rust
+/// use orengine::sync::{RWLock, AsyncRWLock};
+/// use orengine::yield_now;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// // impl Send
+/// struct CanSend {
+///     value: i32,
+/// }
+///
+/// async fn test() {
+///     let mutex = RWLock::new(CanSend {
+///         value: 0,
+///     });
+///
+///     let guard = check_send(mutex.write()).await;
+///     yield_now().await;
+///     assert_eq!(guard.value, 0);
+///     drop(guard);
+/// }
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_shared_rw_lock() {}
 
 #[cfg(test)]
 mod tests {
@@ -404,7 +448,7 @@ mod tests {
                     let lock = rw_lock.read().await;
                     assert_eq!(rw_lock.number_of_readers.load(SeqCst), i);
                     yield_now().await;
-                    lock.unlock();
+                    drop(lock);
                 });
             }
 
@@ -416,7 +460,7 @@ mod tests {
             assert_eq!(*write_lock, 1);
             assert_eq!(rw_lock.number_of_readers.load(SeqCst), -1);
         })
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_shared]
@@ -430,7 +474,7 @@ mod tests {
                     let lock = rw_lock.try_read().expect("Failed to get read lock!");
                     assert_eq!(rw_lock.number_of_readers.load(SeqCst), i);
                     yield_now().await;
-                    lock.unlock();
+                    drop(lock);
                 });
             }
 
@@ -457,6 +501,6 @@ mod tests {
                 "Successful attempt to acquire write lock when rw_lock locked for write"
             );
         })
-            .await;
+        .await;
     }
 }
