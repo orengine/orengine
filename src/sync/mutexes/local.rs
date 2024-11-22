@@ -213,6 +213,7 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
     }
 
     #[inline(always)]
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn lock<'mutex>(&'mutex self) -> Self::Guard<'mutex>
     where
         T: 'mutex,

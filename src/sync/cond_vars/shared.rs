@@ -150,6 +150,10 @@ impl AsyncCondVar for CondVar {
         T: ?Sized;
 
     #[inline(always)]
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,

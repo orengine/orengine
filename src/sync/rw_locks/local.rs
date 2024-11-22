@@ -1,4 +1,5 @@
-//! This module provides an asynchronous rw_lock (e.g. [`std::sync::RwLock`]) type [`LocalRWLock`].
+//! This module provides an asynchronous `read-write lock` (e.g. [`std::sync::RwLock`])
+//! type [`LocalRWLock`].
 //!
 //! It allows for asynchronous read or write locking and unlocking, and provides
 //! ownership-based locking through [`LocalReadLockGuard`] and [`LocalWriteLockGuard`].
@@ -344,6 +345,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
 
     #[inline(always)]
     fn get_lock_status(&self) -> LockStatus {
+        #[allow(clippy::cast_sign_loss, reason = "false positive")]
         match self.get_inner().number_of_readers {
             0 => LockStatus::Unlocked,
             n if n > 0 => LockStatus::ReadLocked(n as usize),
@@ -352,6 +354,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     }
 
     #[inline(always)]
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn write<'rw_lock>(&'rw_lock self) -> Self::WriteLockGuard<'rw_lock>
     where
         T: 'rw_lock,
@@ -369,6 +372,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     }
 
     #[inline(always)]
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn read<'rw_lock>(&'rw_lock self) -> Self::ReadLockGuard<'rw_lock>
     where
         T: 'rw_lock,
@@ -416,13 +420,17 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     #[inline(always)]
     unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
-            if self.get_inner().number_of_readers == -1 {
-                panic!("LocalRWLock is locked for write");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                -1,
+                "LocalRWLock is locked for write"
+            );
 
-            if self.get_inner().number_of_readers == 0 {
-                panic!("LocalRWLock is already unlocked");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                0,
+                "LocalRWLock is already unlocked"
+            );
         }
 
         let inner = self.get_inner();
@@ -441,13 +449,16 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     #[inline(always)]
     unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
-            if self.get_inner().number_of_readers == 0 {
-                panic!("LocalRWLock is already unlocked");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                0,
+                "LocalRWLock is already unlocked"
+            );
 
-            if self.get_inner().number_of_readers > 0 {
-                panic!("LocalRWLock is locked for read");
-            }
+            assert!(
+                self.get_inner().number_of_readers <= 0,
+                "LocalRWLock is locked for read"
+            );
         }
 
         let inner = self.get_inner();
@@ -455,7 +466,12 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         let task = inner.wait_queue_write.pop();
         if task.is_none() {
             let mut readers_count = inner.wait_queue_read.len();
-            inner.number_of_readers = readers_count as isize;
+
+            #[allow(clippy::cast_possible_wrap, reason = "false positive")]
+            {
+                inner.number_of_readers = readers_count as isize;
+            }
+
             while readers_count > 0 {
                 let task = inner.wait_queue_read.pop();
                 local_executor().exec_task(unsafe { task.unwrap_unchecked() });
@@ -469,13 +485,17 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     #[inline(always)]
     unsafe fn get_read_locked(&self) -> Self::ReadLockGuard<'_> {
         if cfg!(debug_assertions) {
-            if self.get_inner().number_of_readers == -1 {
-                panic!("LocalRWLock is locked for write");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                -1,
+                "LocalRWLock is locked for write"
+            );
 
-            if self.get_inner().number_of_readers == 0 {
-                panic!("LocalRWLock is unlocked, but get_read_locked is called");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                0,
+                "LocalRWLock is unlocked"
+            );
         }
 
         LocalReadLockGuard::new(self)
@@ -484,13 +504,16 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
     #[inline(always)]
     unsafe fn get_write_locked(&self) -> Self::WriteLockGuard<'_> {
         if cfg!(debug_assertions) {
-            if self.get_inner().number_of_readers == 0 {
-                panic!("LocalRWLock is unlocked, but get_write_locked is called");
-            }
+            assert_ne!(
+                self.get_inner().number_of_readers,
+                0,
+                "LocalRWLock is unlocked, but get_write_locked is called"
+            );
 
-            if self.get_inner().number_of_readers > 0 {
-                panic!("LocalRWLock is locked for read");
-            }
+            assert!(
+                self.get_inner().number_of_readers <= 0,
+                "LocalRWLock is locked for read"
+            );
         }
 
         LocalWriteLockGuard::new(self)

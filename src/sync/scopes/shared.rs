@@ -194,6 +194,10 @@ unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 /// # }
 /// ```
 #[inline(always)]
+#[allow(
+    clippy::future_not_send,
+    reason = "It is not `Send` only when F is not `Send`, it is fine"
+)]
 pub async fn shared_scope<'scope, Fut, F>(f: F)
 where
     Fut: Future<Output = ()> + Send,

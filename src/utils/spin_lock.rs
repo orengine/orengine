@@ -74,6 +74,10 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
     #[inline(always)]
     pub unsafe fn leak_to_atomic(self) -> &'spin_lock CachePadded<AtomicBool> {
+        #[allow(
+            clippy::missing_transmute_annotations,
+            reason = "It is not possible to write Dst"
+        )]
         let static_spin_lock = unsafe { mem::transmute(&self.spin_lock.is_locked) };
         mem::forget(self);
 
@@ -187,7 +191,10 @@ impl<T: ?Sized> SpinLock<T> {
     ///
     /// - And only current task has an ownership of this `SpinLock`.
     #[inline(always)]
-    #[allow(clippy::mut_from_ref, reason = "The caller guarantees safety using this code")]
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "The caller guarantees safety using this code"
+    )]
     pub unsafe fn get_locked(&self) -> &mut T {
         debug_assert!(self.is_locked.load(Acquire));
         unsafe { &mut *self.value.get() }
@@ -224,7 +231,7 @@ mod tests {
             let mut value = mutex_clone.lock();
             println!("1");
             lock_wg_clone.done();
-            let _ = unlock_wg_clone.wait().await;
+            unlock_wg_clone.wait().await;
             println!("4");
             *value = true;
             drop(value);
@@ -232,7 +239,7 @@ mod tests {
             println!("5");
         });
 
-        let _ = lock_wg.wait().await;
+        lock_wg.wait().await;
         println!("2");
         let value = mutex.try_lock();
         println!("3");
@@ -240,7 +247,7 @@ mod tests {
         second_lock.inc();
         unlock_wg.done();
 
-        let _ = second_lock.wait().await;
+        second_lock.wait().await;
         let value = mutex.try_lock();
         println!("6");
         match value {
@@ -255,7 +262,7 @@ mod tests {
         const TRIES: usize = 100;
 
         // TODO check for SIGSEGV
-        async fn work_with_lock(mutex: Arc<SpinLock<usize>>, wg: Arc<WaitGroup>) {
+        fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;
             if *lock % 500 == 0 {
@@ -274,16 +281,16 @@ mod tests {
             let mutex = mutex.clone();
             sched_future_to_another_thread(async move {
                 for _ in 0..TRIES {
-                    work_with_lock(mutex.clone(), wg.clone()).await;
+                    work_with_lock(&mutex, &wg);
                 }
             });
         }
 
         for _ in 0..TRIES {
-            work_with_lock(mutex.clone(), wg.clone()).await;
+            work_with_lock(&mutex, &wg);
         }
 
-        let _ = wg.wait().await;
+        wg.wait().await;
 
         assert_eq!(*mutex.lock(), TRIES * PAR);
     }

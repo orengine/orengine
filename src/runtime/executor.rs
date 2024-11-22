@@ -117,13 +117,13 @@ pub fn local_executor() -> &'static mut Executor {
 /// # The difference between `local` and `shared` task and futures
 ///
 /// - `local` tasks and futures are executed only in the current thread.
-/// It means that the tasks and futures can't be moved between threads.
-/// It allows to use `Shared-nothing architecture` that means that in these futures and tasks
-/// you can use [`Local`](crate::Local) and `local primitives of synchronization`.
-/// Using `local` types can improve performance.
+///    It means that the tasks and futures can't be moved between threads.
+///    It allows to use `Shared-nothing architecture` that means that in these futures and tasks
+///    you can use [`Local`](crate::Local) and `local primitives of synchronization`.
+///    Using `local` types can improve performance.
 ///
 /// - `shared` tasks and futures can be moved between threads.
-/// It allows to use `shared primitives of synchronization` and to `share work`.
+///   It allows to use `shared primitives of synchronization` and to `share work`.
 ///
 /// # Share work
 ///
@@ -192,13 +192,10 @@ impl Executor {
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
         TaskPool::init();
-        let (
-            shared_tasks,
-            shared_tasks_list_cap
-        ) = if valid_config.is_work_sharing_enabled() {
+        let (shared_tasks, shared_tasks_list_cap) = if valid_config.is_work_sharing_enabled() {
             (
                 Some(Arc::new(ExecutorSharedTaskList::new(executor_id))),
-                MAX_NUMBER_OF_TASKS_TAKEN
+                MAX_NUMBER_OF_TASKS_TAKEN,
             )
         } else {
             (None, 0)
@@ -399,11 +396,8 @@ impl Executor {
         order: Ordering,
     ) {
         debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-            send_to,
-            counter,
-            order,
-        );
+        self.current_call =
+            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
     }
 
     /// Invokes [`Call::ReleaseAtomicBool`]. Use it only if you know what you are doing.
@@ -451,11 +445,7 @@ impl Executor {
                 self.shared_tasks.push_front(task);
             }
             Call::PushCurrentTaskTo(task_list) => unsafe { (*task_list).push(task) },
-            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-                task_list,
-                counter,
-                order,
-            ) => {
+            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(task_list, counter, order) => {
                 unsafe {
                     let list = &*task_list;
                     list.push(task);
@@ -556,7 +546,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_local_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.exec_task(task);
@@ -571,7 +561,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_shared_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send,
+        F: Future<Output = ()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.exec_task(task);
@@ -589,7 +579,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.spawn_local_task(task);
@@ -621,7 +611,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_shared<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send,
+        F: Future<Output = ()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.spawn_shared_task(task);
@@ -730,7 +720,8 @@ impl Executor {
     /// was called or [`end`](crate::runtime::end::end)).
     #[inline(always)]
     fn background_task(&mut self) -> bool {
-        self.subscribed_state.check_version_and_update_if_needed(self.executor_id);
+        self.subscribed_state
+            .check_version_and_update_if_needed(self.executor_id);
         if self.subscribed_state.is_stopped() {
             return true;
         }
@@ -738,11 +729,7 @@ impl Executor {
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        let has_io_work = self.local_worker
-            .as_mut()
-            .map_or(true, |io_worker| {
-                io_worker.must_poll()
-            });
+        let has_io_work = self.local_worker.as_mut().map_or(true, IoWorker::must_poll);
 
         if !self.local_sleeping_tasks.is_empty() {
             let instant = Instant::now();
@@ -879,7 +866,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_local_future<Fut: Future<Output=()>>(&mut self, future: Fut) {
+    pub fn run_with_local_future<Fut: Future<Output = ()>>(&mut self, future: Fut) {
         self.spawn_local(future);
         self.run();
     }
@@ -907,7 +894,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_shared_future<Fut: Future<Output=()> + Send>(&mut self, future: Fut) {
+    pub fn run_with_shared_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
         self.spawn_shared(future);
         self.run();
     }
@@ -943,7 +930,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_local<T, Fut: Future<Output=T>>(
+    pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
@@ -979,7 +966,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_shared<T, Fut: Future<Output=T> + Send>(
+    pub fn run_and_block_on_shared<T, Fut: Future<Output = T> + Send>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {

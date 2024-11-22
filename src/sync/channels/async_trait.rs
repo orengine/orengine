@@ -96,7 +96,7 @@ impl RecvInResult {
     ///
     /// If the channel is [`closed`](RecvInResult::Closed).
     pub fn unwrap(self) {
-        if matches!(self, RecvInResult::Closed) {
+        if matches!(self, Self::Closed) {
             panic!("Unwrap on RecvInResult::Closed.");
         }
     }
@@ -167,8 +167,8 @@ impl<T> RecvResult<T> {
     /// If the channel is [`closed`](RecvResult::Closed).
     pub fn unwrap(self) -> T {
         match self {
-            RecvResult::Ok(v) => v,
-            RecvResult::Closed => panic!("Unwrap on RecvResult::Closed."),
+            Self::Ok(v) => v,
+            Self::Closed => panic!("Unwrap on RecvResult::Closed."),
         }
     }
 }
@@ -206,10 +206,10 @@ impl<T> TryRecvResult<T> {
     /// or [`locked`](TryRecvResult::Locked).
     pub fn unwrap(self) -> T {
         match self {
-            TryRecvResult::Ok(v) => v,
-            TryRecvResult::Empty => panic!("Unwrap on TryRecvResult::Empty."),
-            TryRecvResult::Locked => panic!("Unwrap on TryRecvResult::Locked."),
-            TryRecvResult::Closed => panic!("Unwrap on TryRecvResult::Closed."),
+            Self::Ok(v) => v,
+            Self::Empty => panic!("Unwrap on TryRecvResult::Empty."),
+            Self::Locked => panic!("Unwrap on TryRecvResult::Locked."),
+            Self::Closed => panic!("Unwrap on TryRecvResult::Closed."),
         }
     }
 }
@@ -264,7 +264,7 @@ pub trait AsyncSender<T> {
     ///     }).await;
     /// }
     /// ```
-    fn send(&self, value: T) -> impl Future<Output=SendResult<T>>;
+    fn send(&self, value: T) -> impl Future<Output = SendResult<T>>;
 
     /// Tries to send a value into the [`channel`](AsyncChannel).
     ///
@@ -296,7 +296,7 @@ pub trait AsyncSender<T> {
     fn try_send(&self, value: T) -> TrySendResult<T>;
 
     /// Closes the [`channel`](AsyncChannel) associated with this sender.
-    fn sender_close(&self) -> impl Future<Output=()>;
+    fn sender_close(&self) -> impl Future<Output = ()>;
 }
 
 /// The `AsyncReceiver` allows receiving values from the [`channel`](AsyncChannel).
@@ -369,7 +369,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult>;
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult>;
 
     /// Tries to receive a value from the [`channel`](AsyncChannel) to the provided `slot`.
     ///
@@ -478,7 +478,7 @@ pub trait AsyncReceiver<T> {
     /// }
     /// ```
     #[inline(always)]
-    fn recv_in(&self, slot: &mut T) -> impl Future<Output=RecvInResult> {
+    fn recv_in(&self, slot: &mut T) -> impl Future<Output = RecvInResult> {
         unsafe {
             drop_in_place(slot);
 
@@ -591,13 +591,13 @@ pub trait AsyncReceiver<T> {
     /// }
     /// ```
     #[inline(always)]
-    fn recv(&self) -> impl Future<Output=RecvResult<T>> {
+    fn recv(&self) -> impl Future<Output = RecvResult<T>> {
         async {
             let mut slot = MaybeUninit::uninit();
             unsafe {
                 match self.recv_in_ptr(slot.as_mut_ptr()).await {
                     RecvInResult::Ok => RecvResult::Ok(slot.assume_init()),
-                    RecvInResult::Closed => RecvResult::Closed
+                    RecvInResult::Closed => RecvResult::Closed,
                 }
             }
         }
@@ -644,13 +644,13 @@ pub trait AsyncReceiver<T> {
                 TryRecvInResult::Ok => TryRecvResult::Ok(slot.assume_init()),
                 TryRecvInResult::Empty => TryRecvResult::Empty,
                 TryRecvInResult::Locked => TryRecvResult::Locked,
-                TryRecvInResult::Closed => TryRecvResult::Closed
+                TryRecvInResult::Closed => TryRecvResult::Closed,
             }
         }
     }
 
     /// Closes the [`channel`](AsyncChannel) associated with this receiver.
-    fn receiver_close(&self) -> impl Future<Output=()>;
+    fn receiver_close(&self) -> impl Future<Output = ()>;
 }
 
 /// The `Channel` provides an asynchronous communication channel between tasks.
@@ -786,5 +786,5 @@ pub trait AsyncChannel<T>: AsyncSender<T> + AsyncReceiver<T> {
     fn split(&self) -> (Self::Sender<'_>, Self::Receiver<'_>);
 
     /// Closes the [`channel`](AsyncChannel).
-    fn close(&self) -> impl Future<Output=()>;
+    fn close(&self) -> impl Future<Output = ()>;
 }

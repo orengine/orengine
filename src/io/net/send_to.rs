@@ -108,21 +108,21 @@ unsafe impl Send for SendToWithDeadline<'_> {}
 #[inline(always)]
 /// Returns first resolved address from `ToSocketAddrs`.
 fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAddr> {
-    loop {
-        match to_addr.to_socket_addrs()?.next() {
-            Some(addr) => return Ok(SockAddr::from(addr)),
-            None => {}
-        }
-
-        return Err(io::Error::new(
-            ErrorKind::InvalidInput,
-            "no addresses to send data to",
-        ));
+    let mut addrs = to_addr.to_socket_addrs()?;
+    if let Some(addr) = addrs.next() {
+        return Ok(SockAddr::from(addr));
     }
+
+    Err(io::Error::new(
+        ErrorKind::InvalidInput,
+        "no addresses to send data to",
+    ))
 }
 
 /// The `AsyncSendTo` trait provides asynchronous methods for sending data to a specified address
-/// over a socket. It supports sending to a single address and can be done with or without deadlines
+/// over a socket.
+///
+/// It supports sending to a single address and can be done with or without deadlines
 /// or timeouts. The trait can be implemented for datagram-oriented sockets
 /// that implement the `AsRawFd` trait.
 ///
@@ -202,7 +202,7 @@ pub trait AsyncSendTo: AsRawFd {
             &sock_addr_from_to_socket_addr(addr)?,
             deadline,
         )
-            .await
+        .await
     }
 
     /// Asynchronously sends data to the specified address with a timeout.
@@ -241,7 +241,7 @@ pub trait AsyncSendTo: AsRawFd {
             &sock_addr_from_to_socket_addr(addr)?,
             Instant::now() + timeout,
         )
-            .await
+        .await
     }
 
     /// Asynchronously sends all the data in the buffer to the specified address. The method

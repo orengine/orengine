@@ -57,17 +57,16 @@ impl TestRunner {
     }
 
     /// Upgrades provided future to release all previous tasks.
-    pub(crate) fn upgrade_future<Fut>(future: Fut) -> impl Future<Output=()> + 'static
+    #[allow(clippy::future_not_send, reason = "This can be non-Send")]
+    pub(crate) async fn upgrade_future<Fut>(future: Fut)
     where
-        Fut: Future<Output=()> + 'static,
+        Fut: Future<Output = ()> + 'static,
     {
-        async {
-            while local_executor().number_of_spawned_tasks() > 0 {
-                yield_now().await
-            }
-
-            future.await;
+        while local_executor().number_of_spawned_tasks() > 0 {
+            yield_now().await;
         }
+
+        future.await;
     }
 
     /// Initializes the local executor (if it is not initialized) and blocks the current
@@ -80,10 +79,12 @@ impl TestRunner {
     /// Read more about `local` and `shared` tasks in [`Executor`].
     pub(crate) fn block_on_local<Fut>(future: Fut)
     where
-        Fut: Future<Output=()> + 'static,
+        Fut: Future<Output = ()> + 'static,
     {
         let executor = Self::get_local_executor();
-        executor.run_and_block_on_local(Self::upgrade_future(future)).expect(BUG_MESSAGE);
+        executor
+            .run_and_block_on_local(Self::upgrade_future(future))
+            .expect(BUG_MESSAGE);
     }
 
     /// Initializes the local executor (if it is not initialized) and blocks the current
@@ -96,10 +97,12 @@ impl TestRunner {
     /// Read more about `local` and `shared` tasks in [`Executor`].
     pub(crate) fn block_on_shared<Fut>(future: Fut)
     where
-        Fut: Future<Output=()> + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
     {
         let executor = Self::get_local_executor();
-        executor.run_and_block_on_shared(Self::upgrade_future(future)).expect(BUG_MESSAGE);
+        executor
+            .run_and_block_on_shared(Self::upgrade_future(future))
+            .expect(BUG_MESSAGE);
     }
 }
 
@@ -147,7 +150,7 @@ impl TestRunner {
 /// ```
 pub fn run_test_and_block_on_local<Fut>(future: Fut)
 where
-    Fut: Future<Output=()> + 'static,
+    Fut: Future<Output = ()> + 'static,
 {
     TestRunner::block_on_local(future);
 }
@@ -207,7 +210,7 @@ where
 /// ```
 pub fn run_test_and_block_on_shared<Fut>(future: Fut)
 where
-    Fut: Future<Output=()> + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
 {
     TestRunner::block_on_shared(future);
 }

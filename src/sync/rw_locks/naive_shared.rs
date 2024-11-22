@@ -215,6 +215,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
 
     #[inline(always)]
     fn get_lock_status(&self) -> LockStatus {
+        #[allow(clippy::cast_sign_loss, reason = "false positive")]
         match self.number_of_readers.load(Acquire) {
             0 => LockStatus::Unlocked,
             n if n > 0 => LockStatus::ReadLocked(n as usize),
@@ -223,6 +224,10 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
     }
 
     #[inline(always)]
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     async fn write<'rw_lock>(&'rw_lock self) -> Self::WriteLockGuard<'rw_lock>
     where
         T: 'rw_lock,
@@ -236,6 +241,10 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
     }
 
     #[inline(always)]
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     async fn read<'rw_lock>(&'rw_lock self) -> Self::ReadLockGuard<'rw_lock>
     where
         T: 'rw_lock,

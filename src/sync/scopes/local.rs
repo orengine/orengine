@@ -195,6 +195,7 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 /// # }
 /// ```
 #[inline(always)]
+#[allow(clippy::future_not_send, reason = "Because it is `local`")]
 pub async fn local_scope<'scope, Fut, F>(f: F)
 where
     Fut: Future<Output = ()>,
@@ -209,9 +210,9 @@ where
 
     f(static_scope).await;
 
-    let _ = static_scope.wg.wait().await;
+    static_scope.wg.wait().await;
 
-    yield_now().await // TODO FIXME: you can't call 2 local_scopes in the same task if you don't yield
+    yield_now().await; // TODO FIXME: you can't call 2 local_scopes in the same task if you don't yield
 }
 
 /// ```compile_fail
@@ -233,7 +234,6 @@ mod tests {
     use crate as orengine;
     use crate::local::Local;
     use crate::yield_now;
-    use std::ops::Deref;
 
     #[orengine_macros::test_local]
     fn test_local_scope_exec() {
@@ -241,18 +241,18 @@ mod tests {
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a.deref(), 0);
+                assert_eq!(*local_a, 0);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 2);
+                assert_eq!(*local_a, 2);
                 *local_a.get_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a.deref(), 1);
+                assert_eq!(*local_a, 1);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 3);
+                assert_eq!(*local_a, 3);
                 *local_a.get_mut() += 1;
             });
         })
@@ -260,7 +260,7 @@ mod tests {
 
         yield_now().await;
 
-        assert_eq!(*local_a.deref(), 4);
+        assert_eq!(*local_a, 4);
     }
 
     #[orengine_macros::test_local]
@@ -269,29 +269,29 @@ mod tests {
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a.deref(), 0);
+                assert_eq!(*local_a, 0);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 3);
+                assert_eq!(*local_a, 3);
                 *local_a.get_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a.deref(), 1);
+                assert_eq!(*local_a, 1);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 4);
+                assert_eq!(*local_a, 4);
                 *local_a.get_mut() += 1;
             });
 
-            assert_eq!(*local_a.deref(), 2);
+            assert_eq!(*local_a, 2);
             *local_a.get_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a.deref(), 5);
+        assert_eq!(*local_a, 5);
     }
 
     #[orengine_macros::test_local]
@@ -302,19 +302,19 @@ mod tests {
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a.deref(), 1);
+                assert_eq!(*local_a, 1);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 2);
+                assert_eq!(*local_a, 2);
                 *local_a.get_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a.deref(), 0);
+                assert_eq!(*local_a, 0);
                 *local_a.get_mut() += 1;
                 wg.wait().await;
-                assert_eq!(*local_a.deref(), 3);
+                assert_eq!(*local_a, 3);
                 *local_a.get_mut() += 1;
             });
         })
@@ -322,7 +322,7 @@ mod tests {
 
         yield_now().await;
 
-        assert_eq!(*local_a.deref(), 4);
+        assert_eq!(*local_a, 4);
     }
 
     #[orengine_macros::test_local]
@@ -332,30 +332,30 @@ mod tests {
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a.deref(), 2);
+                assert_eq!(*local_a, 2);
                 *local_a.get_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a.deref(), 3);
+                assert_eq!(*local_a, 3);
                 *local_a.get_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a.deref(), 1);
+                assert_eq!(*local_a, 1);
                 *local_a.get_mut() += 1;
                 wg.inc();
                 wg.wait().await;
-                assert_eq!(*local_a.deref(), 4);
+                assert_eq!(*local_a, 4);
                 *local_a.get_mut() += 1;
             });
 
-            assert_eq!(*local_a.deref(), 0);
+            assert_eq!(*local_a, 0);
             *local_a.get_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a.deref(), 5);
+        assert_eq!(*local_a, 5);
     }
 }

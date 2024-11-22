@@ -105,7 +105,7 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
     #[allow(unused)] // because #[cfg(debug_assertions)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        panic_if_local_in_future!(cx, "Mutex");
+        unsafe { panic_if_local_in_future!(cx, "Mutex") };
 
         if !this.was_called {
             if let Some(guard) = this.mutex.try_lock_with_spinning() {
@@ -237,6 +237,10 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
     }
 
     #[inline(always)]
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn lock<'mutex>(&'mutex self) -> impl Future<Output = Self::Guard<'mutex>>
     where
         T: 'mutex,

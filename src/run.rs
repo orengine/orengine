@@ -46,9 +46,10 @@ use std::future::Future;
 ///     }, Config::default().set_numbers_of_thread_workers(0).disable_work_sharing());
 /// }
 /// ```
+#[allow(clippy::missing_panics_doc, reason = "Only std::thread can panic here")]
 pub fn run_on_all_cores_with_config<Fut, F>(creator: F, cfg: Config)
 where
-    Fut: Future<Output=()> + 'static,
+    Fut: Future<Output = ()> + 'static,
     F: 'static + Clone + Send + Fn() -> Fut,
 {
     let mut cores = utils::core::get_core_ids().unwrap();
@@ -60,7 +61,8 @@ where
                 Executor::init_on_core_with_config(core, cfg);
                 local_executor().spawn_local(creator());
                 local_executor().run();
-            }).expect("failed to create worker thread");
+            })
+            .expect("failed to create worker thread");
     }
 
     Executor::init_on_core(cores[0]);
@@ -72,7 +74,7 @@ where
 ///
 /// 1 - Initializes the [`Executor`];
 ///
-/// 2 - Spawns local_future using `creator`;
+/// 2 - Spawns `local` future using `creator`;
 ///
 /// 3 - Runs the [`Executor`].
 ///
@@ -113,8 +115,8 @@ where
 /// ```
 pub fn run_on_all_cores<Fut, F>(creator: F)
 where
-    Fut: Future<Output=()> + 'static,
+    Fut: Future<Output = ()> + 'static,
     F: 'static + Clone + Send + Fn() -> Fut,
 {
-    run_on_all_cores_with_config(creator, Config::default())
+    run_on_all_cores_with_config(creator, Config::default());
 }

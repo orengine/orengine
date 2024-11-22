@@ -314,6 +314,7 @@ impl<'channel, T> LocalSender<'channel, T> {
 }
 
 impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
     }
@@ -422,6 +423,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
 }
 
 impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
     }
@@ -556,6 +558,7 @@ impl<T> AsyncChannel<T> for LocalChannel<T> {
 }
 
 impl<T> AsyncReceiver<T> for LocalChannel<T> {
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
     }
@@ -569,6 +572,7 @@ impl<T> AsyncReceiver<T> for LocalChannel<T> {
 }
 
 impl<T> AsyncSender<T> for LocalChannel<T> {
+    #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
     }
@@ -687,7 +691,7 @@ mod tests {
 
             match ch.send(2).await {
                 SendResult::Closed(value) => assert_eq!(value, 2),
-                _ => panic!("should be closed"),
+                SendResult::Ok => panic!("should be closed"),
             };
         })
         .await;
@@ -749,7 +753,7 @@ mod tests {
                 panic!("should be full")
             }
             TrySendResult::Full(value) => {
-                assert_eq!(value, 3)
+                assert_eq!(value, 3);
             }
             TrySendResult::Locked(_) => {
                 panic!("unreachable")
@@ -776,7 +780,7 @@ mod tests {
                 panic!("unreachable")
             }
             TrySendResult::Closed(value) => {
-                assert_eq!(value, 4)
+                assert_eq!(value, 4);
             }
         }
     }
@@ -938,7 +942,7 @@ mod tests {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
             }
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         }
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
@@ -969,11 +973,12 @@ mod tests {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
             }
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         }
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
 
+    #[allow(clippy::future_not_send, reason = "Because it is test")]
     async fn stress_test_local_channel_try(channel: LocalChannel<usize>) {
         const PAR: usize = 10;
         const COUNT: usize = 100;
@@ -989,11 +994,10 @@ mod tests {
                                 loop {
                                     match channel.try_send(j) {
                                         TrySendResult::Ok => break,
-                                        TrySendResult::Full(_) => {
+                                        TrySendResult::Full(_) | TrySendResult::Locked(_) => {
                                             yield_now().await;
                                         }
                                         TrySendResult::Closed(_) => panic!("send failed"),
-                                        _ => {}
                                     }
                                 }
                             }
@@ -1013,11 +1017,10 @@ mod tests {
                                             *res.get_mut() += v;
                                             break;
                                         }
-                                        TryRecvResult::Empty => {
+                                        TryRecvResult::Empty | TryRecvResult::Locked => {
                                             yield_now().await;
                                         }
                                         TryRecvResult::Closed => panic!("recv failed"),
-                                        _ => {}
                                     }
                                 }
                             }

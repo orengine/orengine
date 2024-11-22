@@ -43,8 +43,8 @@ pub struct Once {
 
 impl Once {
     /// Creates a new `Once`.
-    pub const fn new() -> Once {
-        Once {
+    pub const fn new() -> Self {
+        Self {
             state: CachePadded::new(AtomicIsize::new(OnceState::not_called())),
         }
     }
@@ -52,6 +52,10 @@ impl Once {
 
 impl AsyncOnce for Once {
     #[inline(always)]
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when Fut is not `Send`, it is fine"
+    )]
     async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> CallOnceResult {
         if self
             .state

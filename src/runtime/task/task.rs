@@ -18,7 +18,7 @@ pub struct Task {
 impl Task {
     /// Returns a [`Task`] with the given future.
     #[inline(always)]
-    pub fn from_future<F: Future<Output=()>>(future: F, locality: Locality) -> Self {
+    pub fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
         task_pool().acquire(future, locality)
     }
 
@@ -31,7 +31,7 @@ impl Task {
     /// Deref it only if you know what you are doing and remember that [`Task`] can be executed
     /// only by [`Executor::exec_task`](crate::Executor::exec_task) and it can't be cloned, only moved.
     #[inline(always)]
-    pub fn future_ptr(&self) -> *mut dyn Future<Output=()> {
+    pub fn future_ptr(&self) -> *mut dyn Future<Output = ()> {
         self.data.future_ptr()
     }
 
@@ -46,7 +46,7 @@ impl Task {
     ///
     /// # Safety
     ///
-    /// Provieded [`Task`] is no longer used.
+    /// Provided [`Task`] is no longer used.
     #[inline(always)]
     pub unsafe fn release(self) {
         task_pool().put(self);
@@ -63,9 +63,11 @@ impl Task {
                 .as_ref()
                 .load(std::sync::atomic::Ordering::SeqCst)
         } {
-            panic!("Attempt to execute an already executing task! It is not allowed! \
+            panic!(
+                "Attempt to execute an already executing task! It is not allowed! \
             Try to rewrite the code to follow the concept of task ownership: \
-            only one thread can own a task at the same time and only one task instance can exist.");
+            only one thread can own a task at the same time and only one task instance can exist."
+            );
         }
 
         if self.is_local() && self.executor_id != crate::local_executor().id() {
@@ -106,13 +108,17 @@ macro_rules! check_task_local_safety {
     };
 }
 
-// TODO docs
+// TODO docs + say about unsafe
 #[macro_export]
 macro_rules! panic_if_local_in_future {
     ($cx:expr, $name_of_future:expr) => {
         #[cfg(debug_assertions)]
-        {
-            let task = unsafe { $crate::get_task_from_context!($cx) };
+        #[allow(
+            clippy::macro_metavars_in_unsafe,
+            reason = "else we need to allow unused `unsafe` for `release`"
+        )]
+        unsafe {
+            let task = $crate::get_task_from_context!($cx);
             if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \

@@ -53,7 +53,7 @@ impl TaskPool {
 
     /// Returns a [`Task`] with the given future.
     #[inline(always)]
-    pub fn acquire<F: Future<Output=()>>(&mut self, future: F, locality: Locality) -> Task {
+    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
         let size = size_of::<F>();
         #[cfg(debug_assertions)]
         let executor_id = if cfg!(test) {
@@ -77,6 +77,7 @@ impl TaskPool {
                 #[cfg(debug_assertions)]
                 executor_id,
                 #[cfg(debug_assertions)]
+                // TODO think about memory leak, if users don't use the pool
                 is_executing: crate::utils::Ptr::new(std::sync::atomic::AtomicBool::new(false)),
             }
         }

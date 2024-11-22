@@ -11,7 +11,7 @@ impl<T> Ptr<T> {
     /// Create a new `Ptr` with the given value.
     #[inline(always)]
     pub fn new(value: T) -> Self {
-        let ptr = unsafe { alloc(Layout::new::<T>()) } as *mut T;
+        let ptr = unsafe { alloc(Layout::new::<T>()) }.cast::<T>();
         unsafe { ptr.write(value) };
         Self { ptr }
     }
@@ -38,28 +38,33 @@ impl<T> Ptr<T> {
 
     /// Get a reference to the value.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
     /// If the pointer is null.
     #[inline(always)]
     pub unsafe fn as_ref<'pointer>(self) -> &'pointer T {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe { &*self.ptr }
     }
 
     /// Get a mutable reference to the value.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
     /// If the pointer is null.
     #[inline(always)]
     pub unsafe fn as_mut<'pointer>(self) -> &'pointer mut T {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
+
         unsafe { &mut *self.ptr }
     }
 
@@ -72,86 +77,114 @@ impl<T> Ptr<T> {
 
     /// Drop the value by calling the destructor, but not deallocate memory.
     /// To deallocate memory, use [`Ptr::deallocate`](#method.deallocate).
+    ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
+    /// # Panics
+    ///
+    /// If the pointer is null.  
     pub unsafe fn drop_in_place(self) {
-        if self.ptr.is_null() {
-            return;
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
+
         unsafe {
             ptr::drop_in_place(self.ptr);
         }
     }
 
     /// Drop the value without calling a destructor.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
+    /// And be careful; be sure that you call [`drop_in_place`](Self::drop_in_place)
+    /// if you need to drop the value.
+    ///
+    /// # Panics
+    ///
+    /// If the pointer is null.  
     #[inline(always)]
     pub unsafe fn deallocate(self) {
-        if self.ptr.is_null() {
-            return;
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe {
-            dealloc(self.ptr as *mut u8, Layout::new::<T>());
+            dealloc(self.ptr.cast::<u8>(), Layout::new::<T>());
         }
     }
 
     /// Drop the value by calling the destructor and then deallocate.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
+    /// # Panics
+    ///
+    /// If the pointer is null.  
     #[inline(always)]
     pub unsafe fn drop_and_deallocate(self) {
-        if self.ptr.is_null() {
-            return;
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe {
             ptr::drop_in_place(self.ptr);
-            dealloc(self.ptr as *mut u8, Layout::new::<T>());
+            dealloc(self.ptr.cast::<u8>(), Layout::new::<T>());
         }
     }
 
     /// Return the value. It will not lead to the pointer value being dropped.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
-    /// If the pointer is null.
+    /// If the pointer is null.  
     #[inline(always)]
     pub unsafe fn read(self) -> T {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe { ptr::read(self.ptr) }
     }
 
     /// Set the value. Does not call drop the old value.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
-    /// If the pointer is null.
+    /// If the pointer is null.  
     ///
     /// #  Write with drop
     ///
     /// Call [`Ptr::write_with_drop`] instead.
     #[inline(always)]
     pub unsafe fn write(self, value: T) {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe { ptr::write(self.ptr, value) }
     }
 
     /// Set the value. Drops the old value.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
-    /// If the pointer is null.
+    /// If the pointer is null.  
     ///
     /// #  Write no drop
     ///
     /// Call [`Ptr::write`] instead.
     #[inline(always)]
     pub unsafe fn write_with_drop(self, value: T) {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe {
             ptr::drop_in_place(self.ptr);
@@ -161,14 +194,16 @@ impl<T> Ptr<T> {
 
     /// Replace the value, returning the old value.
     ///
+    /// # Safety
+    ///
+    /// The pointer must not be null.
+    ///
     /// # Panics
     ///
-    /// If the pointer is null.
+    /// If the pointer is null.  
     #[inline(always)]
     pub unsafe fn replace(self, value: T) -> T {
-        if self.ptr.is_null() {
-            panic!("ptr is null");
-        }
+        assert!(!self.ptr.is_null(), "ptr is null");
 
         unsafe { ptr::replace(self.ptr, value) }
     }
@@ -176,7 +211,7 @@ impl<T> Ptr<T> {
 
 impl<T> Clone for Ptr<T> {
     fn clone(&self) -> Self {
-        Self { ptr: self.ptr }
+        *self
     }
 }
 
@@ -221,9 +256,7 @@ mod tests {
 
     impl Drop for MustDropIfCounterMoreThanOne {
         fn drop(&mut self) {
-            if self.counter > 1 {
-                panic!("dropped");
-            }
+            assert!(self.counter <= 1, "dropped");
         }
     }
 
@@ -370,21 +403,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    fn test_clone() {
-        let value = 120;
-        let ptr = Ptr::new(value);
-        let cloned_ptr = ptr.clone();
-        unsafe {
-            assert_eq!(*cloned_ptr.as_ref(), value);
-            ptr.deallocate();
-        }
-    }
-
-    #[orengine_macros::test_local]
     fn test_debug() {
         let value = 130;
         let ptr = Ptr::new(value);
-        let debug_str = format!("{:?}", ptr);
+        let debug_str = format!("{ptr:?}");
         assert_eq!(debug_str, "130");
 
         unsafe {

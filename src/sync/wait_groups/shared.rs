@@ -32,7 +32,7 @@ impl<'wait_group> Future for WaitSharedWaitGroup<'wait_group> {
     #[allow(unused)] // because #[cfg(debug_assertions)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        panic_if_local_in_future!(cx, "WaitGroup");
+        unsafe { panic_if_local_in_future!(cx, "WaitGroup") };
 
         if !this.was_called {
             this.was_called = true;

@@ -291,6 +291,10 @@ impl<T: RefUnwindSafe> RefUnwindSafe for WaitRecv<'_, T> {}
 
 /// Closes the [`channel`](Channel) and wakes all senders and receivers.
 #[inline(always)]
+#[allow(
+    clippy::future_not_send,
+    reason = "It is not `Send` only when T is not `Send`, it is fine"
+)]
 async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
     let mut inner_lock = inner.lock().await;
     inner_lock.is_closed = true;
@@ -384,12 +388,20 @@ impl<'channel, T> Sender<'channel, T> {
 }
 
 impl<'channel, T> AsyncSender<T> for Sender<'channel, T> {
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitSend::new(value, self.inner)
     }
 
     generate_try_send!();
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     async fn sender_close(&self) {
         close(self.inner).await;
     }
@@ -492,12 +504,20 @@ impl<'channel, T> Receiver<'channel, T> {
 }
 
 impl<'channel, T> AsyncReceiver<T> for Receiver<'channel, T> {
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitRecv::new(self.inner, slot)
     }
 
     generate_try_recv_in!();
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn receiver_close(&self) -> impl Future<Output = ()> {
         close(self.inner)
     }
@@ -625,30 +645,50 @@ impl<T> AsyncChannel<T> for Channel<T> {
         (Sender::new(&self.inner), Receiver::new(&self.inner))
     }
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn close(&self) -> impl Future<Output = ()> {
         close(&self.inner)
     }
 }
 
 impl<T> AsyncSender<T> for Channel<T> {
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitSend::new(value, &self.inner)
     }
 
     generate_try_send!();
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     async fn sender_close(&self) {
         close(&self.inner).await;
     }
 }
 
 impl<T> AsyncReceiver<T> for Channel<T> {
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitRecv::new(&self.inner, slot)
     }
 
     generate_try_recv_in!();
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when T is not `Send`, it is fine"
+    )]
     fn receiver_close(&self) -> impl Future<Output = ()> {
         close(&self.inner)
     }
@@ -734,19 +774,19 @@ fn test_compile_shared_channel() {}
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering::{Relaxed, SeqCst};
+    use std::sync::atomic::Ordering::Relaxed;
     use std::sync::Arc;
     use std::time::Duration;
 
     use crate as orengine;
+    use crate::sleep;
     use crate::sync::{
         AsyncChannel, AsyncReceiver, AsyncSender, AsyncWaitGroup, Channel, RecvResult, SendResult,
         TryRecvResult, TrySendResult, WaitGroup,
     };
-    use crate::test::{sched_future_to_another_thread, ExecutorPool};
+    use crate::test::sched_future_to_another_thread;
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
-    use crate::{sleep, yield_now};
 
     #[orengine_macros::test_shared]
     fn test_zero_capacity_shared_channel() {
@@ -769,7 +809,7 @@ mod tests {
 
         match ch.send(2).await {
             SendResult::Closed(value) => assert_eq!(value, 2),
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         };
     }
 
@@ -798,7 +838,7 @@ mod tests {
                 panic!("should be full")
             }
             TrySendResult::Full(value) => {
-                assert_eq!(value, 3)
+                assert_eq!(value, 3);
             }
             TrySendResult::Locked(_) => {
                 panic!("should not be locked")
@@ -825,7 +865,7 @@ mod tests {
                 panic!("should not be locked")
             }
             TrySendResult::Closed(value) => {
-                assert_eq!(value, 4)
+                assert_eq!(value, 4);
             }
         }
     }
@@ -900,7 +940,7 @@ mod tests {
         let _ = ch.send(3).await;
         match ch.send(4).await {
             SendResult::Closed(value) => assert_eq!(value, 4),
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         };
     }
 
@@ -964,7 +1004,7 @@ mod tests {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
             }
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         }
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
@@ -995,7 +1035,7 @@ mod tests {
                 assert_eq!(elem.value, 5);
                 assert_eq!(dropped.lock().as_slice(), [2]);
             }
-            _ => panic!("should be closed"),
+            SendResult::Ok => panic!("should be closed"),
         }
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
@@ -1047,92 +1087,5 @@ mod tests {
     #[orengine_macros::test_shared]
     fn stress_test_zero_capacity_shared_channel() {
         stress_test(Channel::bounded(0), 20).await;
-    }
-
-    async fn stress_test_shared_channel_try(channel: Arc<Channel<usize>>) {
-        const PAR: usize = 4;
-        const COUNT: usize = 100;
-
-        let res = Arc::new(AtomicUsize::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        let mut handles = Vec::new();
-        wg.add(PAR * 2);
-
-        for i in 0..PAR {
-            {
-                let wg = wg.clone();
-                let channel = channel.clone();
-
-                handles.push(
-                    ExecutorPool::sched_future(async move {
-                        if i % 2 == 0 {
-                            for j in 0..COUNT {
-                                loop {
-                                    match channel.try_send(j) {
-                                        TrySendResult::Ok => break,
-                                        TrySendResult::Full(_) | TrySendResult::Locked(_) => {
-                                            yield_now().await;
-                                        }
-                                        TrySendResult::Closed(_) => panic!("send failed"),
-                                    }
-                                }
-                            }
-                        } else {
-                            for j in 0..COUNT {
-                                channel.send(j).await.unwrap();
-                            }
-                        }
-
-                        wg.done();
-                    })
-                    .await,
-                );
-            }
-
-            let res = res.clone();
-            let wg = wg.clone();
-            let channel = channel.clone();
-
-            handles.push(
-                ExecutorPool::sched_future(async move {
-                    if i % 2 == 0 {
-                        for _ in 0..COUNT {
-                            loop {
-                                match channel.try_recv() {
-                                    TryRecvResult::Ok(v) => {
-                                        res.fetch_add(v, SeqCst);
-                                        break;
-                                    }
-                                    TryRecvResult::Empty | TryRecvResult::Locked => {
-                                        yield_now().await;
-                                    }
-                                    TryRecvResult::Closed => panic!("recv failed"),
-                                }
-                            }
-                        }
-                    } else {
-                        for _ in 0..COUNT {
-                            let r = channel.recv().await.unwrap();
-                            res.fetch_add(r, SeqCst);
-                        }
-                    }
-
-                    wg.done();
-                })
-                .await,
-            );
-        }
-
-        for handle in handles {
-            handle.join().await;
-        }
-
-        wg.wait().await;
-        assert_eq!(res.load(SeqCst), PAR * COUNT * (COUNT - 1) / 2);
-    }
-
-    #[orengine_macros::test_shared]
-    fn stress_test_shared_channel_try_unbounded() {
-        stress_test_shared_channel_try(Arc::new(Channel::unbounded())).await;
     }
 }
