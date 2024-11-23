@@ -45,3 +45,33 @@ jobs:
         run: cargo build --release --verbose
       - name: Run Tests Release
         run: cargo test --release --verbose -- --nocapture
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: clippy
+        run: cargo clippy
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: docs
+        run: cargo doc
