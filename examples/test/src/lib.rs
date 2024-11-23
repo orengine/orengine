@@ -1,5 +1,5 @@
 use orengine::sleep;
-use orengine::sync::Mutex;
+use orengine::sync::{AsyncMutex, Mutex};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -26,7 +26,7 @@ async fn awesome_async_fn_to_parallel_test(mutex: Arc<Mutex<usize>>) {
 #[cfg(test)]
 mod tests {
     use super::{awesome_async_fn_to_parallel_test, awesome_async_local_fn};
-    use orengine::sync::{Mutex, WaitGroup};
+    use orengine::sync::{AsyncMutex, AsyncWaitGroup, Mutex, WaitGroup};
     use orengine::test::{
         run_test_and_block_on_local, run_test_and_block_on_shared, sched_future_to_another_thread,
         ExecutorPool,
@@ -100,7 +100,7 @@ mod tests {
             let join_handle = ExecutorPool::sched_future(async move {
                 awesome_async_fn_to_parallel_test(mutex).await;
             })
-                .await;
+            .await;
 
             handles.push(join_handle);
         }

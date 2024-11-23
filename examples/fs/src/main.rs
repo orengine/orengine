@@ -2,7 +2,6 @@ use orengine::buf::buffer;
 use orengine::fs::{DirBuilder, File, OpenOptions};
 use orengine::io::{AsyncRead, AsyncWrite};
 use orengine::{asyncify, Executor};
-use std::os::unix::fs::DirBuilderExt;
 
 fn main() {
     Executor::init()
