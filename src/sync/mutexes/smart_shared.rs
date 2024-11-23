@@ -484,25 +484,27 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(Mutex::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
-            sched_future_to_another_thread(async move {
-                for _ in 0..TRIES {
-                    work_with_lock(&mutex, &wg).await;
-                }
-            });
+        for _ in 0..20 {
+            let mutex = Arc::new(Mutex::new(0));
+            let wg = Arc::new(WaitGroup::new());
+            wg.add(PAR * TRIES);
+            for _ in 1..PAR {
+                let wg = wg.clone();
+                let mutex = mutex.clone();
+                sched_future_to_another_thread(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg).await;
+                    }
+                });
+            }
+
+            for _ in 0..TRIES {
+                work_with_lock(&mutex, &wg).await;
+            }
+
+            wg.wait().await;
+
+            assert_eq!(*mutex.lock().await, TRIES * PAR);
         }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg).await;
-        }
-
-        wg.wait().await;
-
-        assert_eq!(*mutex.lock().await, TRIES * PAR);
     }
 }

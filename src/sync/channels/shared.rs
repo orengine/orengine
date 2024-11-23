@@ -1042,36 +1042,38 @@ mod tests {
 
     async fn stress_test(channel: Channel<usize>, count: usize) {
         let channel = Arc::new(channel);
-        let wg = Arc::new(WaitGroup::new());
-        let sent = Arc::new(AtomicUsize::new(0));
-        let received = Arc::new(AtomicUsize::new(0));
+        for _ in 0..20 {
+            let wg = Arc::new(WaitGroup::new());
+            let sent = Arc::new(AtomicUsize::new(0));
+            let received = Arc::new(AtomicUsize::new(0));
 
-        for i in 0..get_core_ids().unwrap().len() * 2 {
-            let channel = channel.clone();
-            let wg = wg.clone();
-            let sent = sent.clone();
-            let received = received.clone();
-            wg.add(1);
+            for i in 0..get_core_ids().unwrap().len() * 2 {
+                let channel = channel.clone();
+                let wg = wg.clone();
+                let sent = sent.clone();
+                let received = received.clone();
+                wg.add(1);
 
-            sched_future_to_another_thread(async move {
-                if i % 2 == 0 {
-                    for j in 0..count {
-                        channel.send(j).await.unwrap();
-                        sent.fetch_add(j, Relaxed);
+                sched_future_to_another_thread(async move {
+                    if i % 2 == 0 {
+                        for j in 0..count {
+                            channel.send(j).await.unwrap();
+                            sent.fetch_add(j, Relaxed);
+                        }
+                    } else {
+                        for _ in 0..count {
+                            let res = channel.recv().await.unwrap();
+                            received.fetch_add(res, Relaxed);
+                        }
                     }
-                } else {
-                    for _ in 0..count {
-                        let res = channel.recv().await.unwrap();
-                        received.fetch_add(res, Relaxed);
-                    }
-                }
 
-                wg.done();
-            });
+                    wg.done();
+                });
+            }
+
+            wg.wait().await;
+            assert_eq!(sent.load(Relaxed), received.load(Relaxed));
         }
-
-        wg.wait().await;
-        assert_eq!(sent.load(Relaxed), received.load(Relaxed));
     }
 
     #[orengine::test::test_shared]

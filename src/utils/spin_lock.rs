@@ -258,10 +258,9 @@ mod tests {
 
     #[orengine::test::test_shared]
     fn stress_test_mutex() {
-        const PAR: usize = 50;
-        const TRIES: usize = 100;
+        const PAR: usize = 4;
+        const TRIES: usize = 1000;
 
-        // TODO check for SIGSEGV
         fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;
@@ -273,25 +272,27 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(SpinLock::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
-            sched_future_to_another_thread(async move {
-                for _ in 0..TRIES {
-                    work_with_lock(&mutex, &wg);
-                }
-            });
+        for _ in 0..20 {
+            let mutex = Arc::new(SpinLock::new(0));
+            let wg = Arc::new(WaitGroup::new());
+            wg.add(PAR * TRIES);
+            for _ in 1..PAR {
+                let wg = wg.clone();
+                let mutex = mutex.clone();
+                sched_future_to_another_thread(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg);
+                    }
+                });
+            }
+
+            for _ in 0..TRIES {
+                work_with_lock(&mutex, &wg);
+            }
+
+            wg.wait().await;
+
+            assert_eq!(*mutex.lock(), TRIES * PAR);
         }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg);
-        }
-
-        wg.wait().await;
-
-        assert_eq!(*mutex.lock(), TRIES * PAR);
     }
 }
