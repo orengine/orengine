@@ -43,7 +43,7 @@ impl Future for Yield {
 /// use orengine::{yield_now, Local};
 ///
 ///  async fn wait(is_ready: Local<bool>) {
-///     while !is_ready.deref() {
+///     while !*is_ready.borrow() {
 ///         yield_now().await;
 ///     }
 /// }
@@ -65,10 +65,10 @@ mod tests {
         let i = Local::new(false);
         let i_clone = i.clone();
         local_executor().spawn_local(async move {
-            assert!(!*i);
-            *i.get_mut() = true;
+            assert!(!*i.borrow());
+            *i.borrow_mut() = true;
         });
         yield_now().await;
-        assert!(*i_clone);
+        assert!(*i_clone.borrow());
     }
 }

@@ -205,7 +205,7 @@ mod tests {
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
     use crate::sync::{AsyncCondVar, AsyncMutex, LocalCondVar, LocalMutex};
-    use crate::{yield_now, Local};
+    use crate::yield_now;
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -277,7 +277,7 @@ mod tests {
         client_addr_str: String,
         config: BindConfig,
     ) {
-        let is_server_ready = Local::new((LocalMutex::new(false), LocalCondVar::new()));
+        let is_server_ready = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
         let is_server_ready_clone = is_server_ready.clone();
         let addr_clone = server_addr_str.clone();
 

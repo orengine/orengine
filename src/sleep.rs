@@ -78,7 +78,7 @@ mod tests {
         #[allow(clippy::future_not_send)] // because it is `local`
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
-            arr.get_mut().push(number);
+            arr.borrow_mut().push(number);
         }
 
         let arr = Local::new(Vec::new());
@@ -92,7 +92,7 @@ mod tests {
         ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr);
+        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
 
         let arr = Local::new(Vec::new());
 
@@ -102,6 +102,6 @@ mod tests {
         ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr);
+        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
     }
 }

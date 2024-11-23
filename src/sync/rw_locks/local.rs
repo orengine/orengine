@@ -276,7 +276,7 @@ struct Inner<T: ?Sized> {
 ///
 /// // Correct usage, because in local runtime all tasks are executed sequentially.
 /// async fn inc_counter(counter: Local<u32>) {
-///     *counter.get_mut() += 1;
+///     *counter.borrow_mut() += 1;
 /// }
 /// ```
 ///
@@ -284,14 +284,14 @@ struct Inner<T: ?Sized> {
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use orengine::Local;
+/// use std::rc::Rc;
 /// use orengine::sync::{AsyncRWLock, LocalRWLock};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
 /// // Correct usage, because after `write_to_log_file(*key, *value).await` and before the future is resolved
 /// // another task can modify the storage. So, we need to lock the storage.
-/// async fn dump_storage(storage: Local<LocalRWLock<HashMap<usize, usize>>>) {
+/// async fn dump_storage(storage: Rc<LocalRWLock<HashMap<usize, usize>>>) {
 ///     let mut read_guard = storage.read().await;
 ///     
 ///     for (key, value) in read_guard.iter() {

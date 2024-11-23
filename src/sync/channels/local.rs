@@ -1014,7 +1014,7 @@ mod tests {
                                 loop {
                                     match channel.try_recv() {
                                         TryRecvResult::Ok(v) => {
-                                            *res.get_mut() += v;
+                                            *res.borrow_mut() += v;
                                             break;
                                         }
                                         TryRecvResult::Empty | TryRecvResult::Locked => {
@@ -1027,7 +1027,7 @@ mod tests {
                         } else {
                             for _ in 0..COUNT {
                                 let r = channel.recv().await.unwrap();
-                                *res.get_mut() += r;
+                                *res.borrow_mut() += r;
                             }
                         }
                     });
@@ -1035,7 +1035,7 @@ mod tests {
             })
             .await;
 
-            assert_eq!(*res, PAR * COUNT * (COUNT - 1) / 2);
+            assert_eq!(*res.borrow(), PAR * COUNT * (COUNT - 1) / 2);
         }
     }
 

@@ -72,13 +72,13 @@ struct Inner {
 ///         wait_group.inc();
 ///         scope.spawn(async {
 ///             sleep(Duration::from_millis(i)).await;
-///             *number_executed_tasks.get_mut() += 1;
+///             *number_executed_tasks.borrow_mut() += 1;
 ///             wait_group.done();
 ///         });
 ///     }
 ///
 ///     wait_group.wait().await; // wait until all tasks are completed
-///     assert_eq!(*number_executed_tasks, 10);
+///     assert_eq!(*number_executed_tasks.borrow(), 10);
 /// }).await;
 /// # }
 /// ```
@@ -183,13 +183,13 @@ mod tests {
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
                 wait_group.wait().await;
-                assert!(*check_value, "not waited");
+                assert!(*check_value.borrow(), "not waited");
             });
         }
 
         yield_now().await;
 
-        *check_value.get_mut() = true;
+        *check_value.borrow_mut() = true;
         wait_group.done();
     }
 
@@ -204,12 +204,12 @@ mod tests {
             let wait_group = wait_group.clone();
             local_executor().spawn_local(async move {
                 yield_now().await;
-                *check_value.get_mut() -= 1;
+                *check_value.borrow_mut() -= 1;
                 wait_group.done();
             });
         }
 
         wait_group.wait().await;
-        assert_eq!(*check_value, 0, "not waited");
+        assert_eq!(*check_value.borrow(), 0, "not waited");
     }
 }

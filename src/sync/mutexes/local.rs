@@ -157,7 +157,7 @@ impl<'mutex, T: ?Sized> Future for LocalMutexWait<'mutex, T> {
 ///
 /// // Correct usage, because in local runtime all tasks are executed sequentially.
 /// async fn inc_counter(counter: Local<u32>) {
-///     *counter.get_mut() += 1;
+///     *counter.borrow_mut() += 1;
 /// }
 /// ```
 ///

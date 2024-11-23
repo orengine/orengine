@@ -989,7 +989,7 @@ mod tests {
         #[allow(clippy::unused_async)] // because it is a test
         #[allow(clippy::future_not_send)] // because it is a local
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
-            arr.get_mut().push(number);
+            arr.borrow_mut().push(number);
         }
 
         let executor = local_executor();
@@ -1001,7 +1001,7 @@ mod tests {
 
         yield_now().await;
 
-        assert_eq!(&vec![10, 30, 20], &*arr); // 30, 20 because of LIFO
+        assert_eq!(&vec![10, 30, 20], &*arr.borrow()); // 30, 20 because of LIFO
 
         let arr = Local::new(Vec::new());
 
@@ -1009,7 +1009,7 @@ mod tests {
         local_executor().exec_local_future(insert(20, arr.clone()));
         local_executor().exec_local_future(insert(30, arr.clone()));
 
-        assert_eq!(&vec![10, 20, 30], &*arr); // 20, 30 because we don't use the list here
+        assert_eq!(&vec![10, 20, 30], &*arr.borrow()); // 20, 30 because we don't use the list here
     }
 
     #[test]

@@ -46,18 +46,18 @@ impl<'scope> LocalScope<'scope> {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.exec(async {
-    ///             assert_eq!(*a.deref(), i);
-    ///             *a.get_mut() += 1;
+    ///             assert_eq!(*a.borrow(), i);
+    ///             *a.borrow_mut() += 1;
     ///             sleep(Duration::from_millis(i)).await;
     ///             wg.done();
     ///         });
     ///     }
     ///
     ///     wg.wait().await;
-    ///     assert_eq!(*a.deref(), 10);
+    ///     assert_eq!(*a.borrow(), 10);
     /// }).await;
     ///
-    /// assert_eq!(*a.deref(), 10);
+    /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
     #[inline(always)]
@@ -96,17 +96,17 @@ impl<'scope> LocalScope<'scope> {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.spawn(async {
-    ///             *a.get_mut() += 1;
+    ///             *a.borrow_mut() += 1;
     ///             wg.done();
     ///         });
     ///     }
     ///
-    ///     assert_eq!(*a.deref(), 0);
+    ///     assert_eq!(*a.borrow(), 0);
     ///     wg.wait().await;
-    ///     assert_eq!(*a.deref(), 10);
+    ///     assert_eq!(*a.borrow(), 10);
     /// }).await;
     ///
-    /// assert_eq!(*a.deref(), 10);
+    /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
     #[inline(always)]
@@ -180,18 +180,18 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 ///     for i in 0..10 {
 ///         wg.inc();
 ///         scope.exec(async {
-///             assert_eq!(*a.deref(), i);
-///             *a.get_mut() += 1;
+///             assert_eq!(*a.borrow(), i);
+///             *a.borrow_mut() += 1;
 ///             sleep(Duration::from_millis(i)).await;
 ///             wg.done();
 ///         });
 ///     }
 ///
 ///     wg.wait().await;
-///     assert_eq!(*a.deref(), 10);
+///     assert_eq!(*a.borrow(), 10);
 /// }).await;
 ///
-/// assert_eq!(*a.deref(), 10);
+/// assert_eq!(*a.borrow(), 10);
 /// # }
 /// ```
 #[inline(always)]
@@ -241,26 +241,26 @@ mod tests {
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 4);
+        assert_eq!(*local_a.borrow(), 4);
     }
 
     #[orengine_macros::test_local]
@@ -269,29 +269,29 @@ mod tests {
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 4);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 4);
+                *local_a.borrow_mut() += 1;
             });
 
-            assert_eq!(*local_a, 2);
-            *local_a.get_mut() += 1;
+            assert_eq!(*local_a.borrow(), 2);
+            *local_a.borrow_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 5);
+        assert_eq!(*local_a.borrow(), 5);
     }
 
     #[orengine_macros::test_local]
@@ -302,27 +302,27 @@ mod tests {
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 wg.wait().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 4);
+        assert_eq!(*local_a.borrow(), 4);
     }
 
     #[orengine_macros::test_local]
@@ -332,30 +332,30 @@ mod tests {
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 wg.inc();
                 wg.wait().await;
-                assert_eq!(*local_a, 4);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 4);
+                *local_a.borrow_mut() += 1;
             });
 
-            assert_eq!(*local_a, 0);
-            *local_a.get_mut() += 1;
+            assert_eq!(*local_a.borrow(), 0);
+            *local_a.borrow_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 5);
+        assert_eq!(*local_a.borrow(), 5);
     }
 }

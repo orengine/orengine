@@ -148,9 +148,8 @@ fn orengine() {
         });
     }
 
-    let cores = get_core_ids().unwrap();
-    for i in 1..cores.len() {
-        let core = cores[i];
+    let mut cores = get_core_ids().unwrap();
+    for core in cores.drain(1..cores.len()) {
         thread::spawn(move || {
             run_server(core);
         });

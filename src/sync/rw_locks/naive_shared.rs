@@ -170,12 +170,12 @@ unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use orengine::Local;
+/// use std::rc::Rc;
 /// use orengine::sync::{AsyncRWLock, RWLock};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
-/// async fn dump_storage(storage: Local<RWLock<HashMap<usize, usize>>>) {
+/// async fn dump_storage(storage: Rc<RWLock<HashMap<usize, usize>>>) {
 ///     let mut read_guard = storage.read().await;
 ///     
 ///     for (key, value) in read_guard.iter() {
