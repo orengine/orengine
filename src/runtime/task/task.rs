@@ -41,15 +41,19 @@ impl Task {
         self.data.is_local()
     }
 
-    /// Puts it back to the [`TaskPool`]. It is unsafe because you have to think about making
-    /// sure it is no longer used.
+    /// Puts it back to the [`TaskPool`](crate::runtime::TaskPool). It is unsafe because you
+    /// have to think about making sure it is no longer used.
+    ///
+    /// # Safety
+    ///
+    /// Provided [`Task`] is no longer used.
     #[inline(always)]
     pub unsafe fn release(self) {
         task_pool().put(self);
     }
 
     /// Checks if the task is safe to be executed.
-    /// It checks ref_count and executor_id with locality.
+    /// It checks `ref_count` and `executor_id` with locality.
     ///
     /// It is zero cost because it can be called only in debug mode.
     #[cfg(debug_assertions)]
@@ -59,9 +63,11 @@ impl Task {
                 .as_ref()
                 .load(std::sync::atomic::Ordering::SeqCst)
         } {
-            panic!("Attempt to execute an already executing task! It is not allowed! \
+            panic!(
+                "Attempt to execute an already executing task! It is not allowed! \
             Try to rewrite the code to follow the concept of task ownership: \
-            only one thread can own a task at the same time and only one task instance can exist.");
+            only one thread can own a task at the same time and only one task instance can exist."
+            );
         }
 
         if self.is_local() && self.executor_id != crate::local_executor().id() {
@@ -79,15 +85,16 @@ unsafe impl Send for Task {}
 impl UnwindSafe for Task {}
 impl RefUnwindSafe for Task {}
 
+// TODO docs
 #[macro_export]
 macro_rules! check_task_local_safety {
     ($task:expr) => {
         #[cfg(debug_assertions)]
         {
-            if $task.is_local() && crate::local_executor().id() != $task.executor_id {
+            if $task.is_local() && $crate::local_executor().id() != $task.executor_id {
                 if cfg!(test) && $task.executor_id == usize::MAX {
                     // All is ok
-                    $task.executor_id = crate::local_executor().id();
+                    $task.executor_id = $crate::local_executor().id();
                 } else {
                     panic!(
                         "[BUG] Local task has been moved to another executor.\
@@ -101,12 +108,17 @@ macro_rules! check_task_local_safety {
     };
 }
 
+// TODO docs + say about unsafe
 #[macro_export]
 macro_rules! panic_if_local_in_future {
     ($cx:expr, $name_of_future:expr) => {
         #[cfg(debug_assertions)]
-        {
-            let task = crate::get_task_from_context!($cx);
+        #[allow(
+            clippy::macro_metavars_in_unsafe,
+            reason = "else we need to allow unused `unsafe` for `release`"
+        )]
+        unsafe {
+            let task = $crate::get_task_from_context!($cx);
             if task.is_local() {
                 panic!(
                     "You cannot call a local task in {}, because it can be moved! \

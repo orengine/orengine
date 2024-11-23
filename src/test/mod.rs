@@ -1,14 +1,14 @@
 //! This module contains utilities for testing such as
 //!
 //! - [`test_shared`] and [`test_local`] macros reexports from `orengine-macros` to create tests
-//! with concise code;
+//!   with concise code;
 //!
 //! - [`executor_pool`] that contains utilities for parallel testing via
-//! [`sched_future_to_another_thread`] or [`sched_future`](ExecutorPool::sched_future);
+//!   [`sched_future_to_another_thread`] or [`sched_future`](ExecutorPool::sched_future);
 //!
 //! - [`runner`] that provides a way to run tests with reusing
-//! the same [`Executor`](crate::Executor) via [`run_test_and_block_on_local`]
-//! and [`run_test_and_block_on_shared`].
+//!   the same [`Executor`](crate::Executor) via [`run_test_and_block_on_local`]
+//!   and [`run_test_and_block_on_shared`].
 //!
 //! # Examples
 //!
@@ -24,5 +24,5 @@ pub mod executor_pool;
 pub mod runner;
 
 pub use executor_pool::*;
-pub use orengine_macros::{test_shared, test_local};
+pub use orengine_macros::{test_local, test_shared};
 pub use runner::*;

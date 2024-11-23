@@ -3,7 +3,9 @@
 mod tools;
 
 use orengine::runtime::{local_executor, stop_all_executors};
-use orengine::sync::{local_scope, LocalChannel};
+use orengine::sync::{
+    local_scope, AsyncChannel, AsyncMutex, AsyncReceiver, AsyncSender, LocalChannel,
+};
 use orengine::Executor;
 use smol::future;
 use std::hint::black_box;
@@ -374,7 +376,7 @@ fn bench_mutex() {
             local_executor()
                 .run_and_block_on_local(async move {
                     b.iter_async(|| async {
-                        let mutex = orengine::sync::mutex::Mutex::new(0);
+                        let mutex = orengine::sync::Mutex::new(0);
                         for _ in 0..N {
                             let mut guard = mutex.lock().await;
                             *guard += 1;

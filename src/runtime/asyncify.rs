@@ -27,8 +27,12 @@ impl<'future> Future for Asyncify<'future> {
         let this = unsafe { self.get_unchecked_mut() };
         if !this.was_called {
             this.was_called = true;
+            let ptr = unsafe {
+                #[allow(clippy::transmute_ptr_to_ptr)] // 'future is equal to 'static in this code
+                mem::transmute::<*mut dyn Fn(), *mut dyn Fn()>(this.f)
+            };
             unsafe {
-                local_executor().push_fn_to_thread_pool(mem::transmute(this.f as *mut dyn Fn()));
+                local_executor().push_fn_to_thread_pool(ptr);
             };
 
             return Poll::Pending;
@@ -44,7 +48,7 @@ impl<'future> Future for Asyncify<'future> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::asyncify;
 ///
 /// # fn blocking_code() {}
@@ -94,5 +98,6 @@ mod tests {
 
         assert!(*guard); // this executor was blocked, and
                          // if assertion passes, other thread (from the thread pool) processed the list.
+        drop(guard);
     }
 }

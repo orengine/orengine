@@ -6,9 +6,11 @@ use std::mem::ManuallyDrop;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.
-    pub(crate) static BUF_POOL: UnsafeCell<ManuallyDrop<BufPool>> = UnsafeCell::new(
-        ManuallyDrop::new(BufPool::new())
-    );
+    pub(crate) static BUF_POOL: UnsafeCell<ManuallyDrop<BufPool>> = const {
+        UnsafeCell::new(
+            ManuallyDrop::new(BufPool::new())
+        )
+    };
 }
 
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
@@ -33,7 +35,7 @@ pub fn buffer() -> Buffer {
 /// Use [`full_buffer`] if you need to read into the buffer,
 /// because [`buffer`] returns empty buffer.
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::buf_pool::full_buffer;
 /// use orengine::io::{AsyncPollFd, AsyncRecv};
 /// use orengine::net::TcpStream;
@@ -60,32 +62,32 @@ pub fn full_buffer() -> Buffer {
 }
 
 /// Pool of [`Buffer`]s. It is used for reusing memory. If you need to change default buffer size,
-/// use [`BufPool::tune_buffer_len`].
+/// use [`BufPool::tune_buffer_cap`].
 pub struct BufPool {
     pool: Vec<Buffer>,
-    buffer_len: usize,
+    default_buffer_cap: usize,
 }
 
 impl BufPool {
     const fn new() -> Self {
         Self {
             pool: Vec::new(),
-            buffer_len: DEFAULT_BUF_CAP,
+            default_buffer_cap: DEFAULT_BUF_CAP,
         }
     }
 
-    /// Get default buffer size.
-    pub fn buffer_len(&self) -> usize {
-        self.buffer_len
+    /// Get default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
+    pub fn default_buffer_cap(&self) -> usize {
+        self.default_buffer_cap
     }
 
     /// Change default buffer capacity.
     pub fn tune_buffer_cap(&mut self, buffer_cap: usize) {
-        if self.buffer_len == buffer_cap {
+        if self.default_buffer_cap == buffer_cap {
             return;
         }
-        local_executor().set_config_buffer_cap(self.buffer_len);
-        self.buffer_len = buffer_cap;
+        local_executor().set_config_buffer_cap(self.default_buffer_cap);
+        self.default_buffer_cap = buffer_cap;
         self.pool = Vec::new();
     }
 
@@ -93,13 +95,13 @@ impl BufPool {
     pub fn get(&mut self) -> Buffer {
         match self.pool.pop() {
             Some(buf) => buf,
-            None => Buffer::new_from_pool(self.buffer_len),
+            None => Buffer::new_from_pool(self.default_buffer_cap),
         }
     }
 
     /// Put [`Buffer`] to [`BufPool`].
     pub fn put(&mut self, buf: Buffer) {
-        if buf.cap() == self.buffer_len {
+        if buf.cap() == self.default_buffer_cap {
             unsafe {
                 self.put_unchecked(buf);
             }
@@ -110,7 +112,7 @@ impl BufPool {
     ///
     /// # Safety
     ///
-    /// - buf.cap() == self.buffer_len
+    /// - `buf.cap()` == `self.buffer_len`
     #[inline(always)]
     pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
         buf.clear();

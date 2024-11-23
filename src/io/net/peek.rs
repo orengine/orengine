@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -86,14 +87,16 @@ impl<'buf> Future for PeekWithDeadline<'buf> {
 }
 
 /// The `AsyncPeek` trait provides asynchronous methods for peeking at the incoming data
-/// without consuming it. It offers options to peek with deadlines, timeouts, and to ensure
+/// without consuming it.
+///
+/// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
 /// This trait can be implemented for any socket that supports the `AsRawFd` and can be connected.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::net::TcpStream;
 /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
@@ -114,7 +117,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
@@ -140,7 +143,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
@@ -169,7 +172,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
@@ -195,7 +198,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
@@ -227,7 +230,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     /// use orengine::buf::full_buffer;
@@ -263,7 +266,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     /// use orengine::buf::full_buffer;

@@ -10,7 +10,9 @@ use std::time::Instant;
 
 thread_local! {
     /// Thread-local worker for async io operations.
-    pub(crate) static LOCAL_WORKER: UnsafeCell<Option<WorkerSys>> = UnsafeCell::new(None);
+    pub(crate) static LOCAL_WORKER: UnsafeCell<Option<WorkerSys>> = const {
+        UnsafeCell::new(None)
+    };
 }
 
 /// Returns the thread-local worker wrapped in an [`Option`].
@@ -20,9 +22,7 @@ pub(crate) fn get_local_worker_ref() -> &'static mut Option<WorkerSys> {
 
 /// Initializes the thread-local worker.
 pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
-    if get_local_worker_ref().is_some() {
-        panic!("{BUG_MESSAGE}");
-    }
+    assert!(!get_local_worker_ref().is_some(), "{BUG_MESSAGE}");
 
     *get_local_worker_ref() = Some(WorkerSys::new(config));
 }
@@ -171,17 +171,17 @@ pub(crate) trait IoWorker {
         self.recv(fd, buf_ptr, len, request_ptr);
     }
     /// Registers a new `recv_from` io operation.
-    fn recv_from<'receiving>(
+    fn recv_from(
         &mut self,
         fd: RawFd,
-        msg_header: &mut MessageRecvHeader<'receiving>,
+        msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `recv_from` io operation with deadline.
-    fn recv_from_with_deadline<'receiving>(
+    fn recv_from_with_deadline(
         &mut self,
         fd: RawFd,
-        msg_header: &mut MessageRecvHeader<'receiving>,
+        msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
@@ -235,17 +235,17 @@ pub(crate) trait IoWorker {
         self.peek(fd, buf_ptr, len, request_ptr);
     }
     /// Registers a new `peek_from` io operation.
-    fn peek_from<'peeking>(
+    fn peek_from(
         &mut self,
         fd: RawFd,
-        msg: &mut MessageRecvHeader<'peeking>, 
-        request_ptr: *mut IoRequestData
+        msg: &mut MessageRecvHeader,
+        request_ptr: *mut IoRequestData,
     );
     /// Registers a new `peek_from` io operation with deadline.
-    fn peek_from_with_deadline<'peeking>(
+    fn peek_from_with_deadline(
         &mut self,
         fd: RawFd,
-        msg: &mut MessageRecvHeader<'peeking>,
+        msg: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {

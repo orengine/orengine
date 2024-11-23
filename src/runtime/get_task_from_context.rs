@@ -19,22 +19,21 @@ impl WakerWithPubData {
     /// [`Wakers`](std::task::Waker) contains `*const Task` in `data` field.
     #[inline(always)]
     pub unsafe fn data(&self) -> Task {
-        unsafe { std::ptr::read(self.data as *const Task) }
+        unsafe { std::ptr::read(self.data.cast::<Task>()) }
     }
 }
 
 /// Returns a [`Task`] from a [`Context`](std::task::Context).
 ///
-/// # Undefined behavior
+/// # Safety
 ///
-/// If called on not a [`Context`](std::task::Context) with an `orengine` waker.
+/// If called with [`Context`](std::task::Context) with an `orengine` waker.
 #[macro_export]
 macro_rules! get_task_from_context {
-    ($ctx:expr) => {
-        unsafe {
-            let waker_ref = &*($ctx.waker() as *const _
-                as *const crate::runtime::get_task_from_context::WakerWithPubData);
-            waker_ref.data()
-        }
-    };
+    ($ctx:expr) => {{
+        let waker_ref = &*(std::ptr::from_ref($ctx.waker())
+            .cast::<$crate::runtime::get_task_from_context::WakerWithPubData>());
+
+        waker_ref.data()
+    }};
 }

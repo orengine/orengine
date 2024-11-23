@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -39,11 +40,9 @@ impl<'fut> Future for PeekFrom<'fut> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().peek_from(
-                this.fd,
-                &mut this.msg_header,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
-            ),
+            local_worker().peek_from(this.fd, &mut this.msg_header, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ret
         ));
     }
@@ -96,15 +95,15 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
 
 /// The `AsyncPeekFrom` trait provides asynchronous methods for peeking at the incoming data
 /// without consuming it from the socket (datagram).
-/// It returns [`SocketAddr`](SocketAddr) of the sender.
-/// It offers options to peek with deadlines, timeouts, and to ensure
-/// reading an exact number of bytes.
+///
+/// It returns [`SocketAddr`] of the sender and offers options to peek with deadlines,
+/// timeouts, and to ensure reading an exact number of bytes.
 ///
 /// This trait can be implemented for datagram-oriented sockets that supports the `AsRawFd`.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
 /// use orengine::net::UdpSocket;
@@ -125,7 +124,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;
@@ -145,9 +144,10 @@ pub trait AsyncPeekFrom: AsRawFd {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFrom::new(
             self.as_raw_fd(),
-            &mut (buf as *mut [u8]),
-            &mut sock_addr
-        ).await?;
+            &mut std::ptr::from_mut::<[u8]>(buf),
+            &mut sock_addr,
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -161,7 +161,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;
@@ -187,10 +187,11 @@ pub trait AsyncPeekFrom: AsRawFd {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFromWithDeadline::new(
             self.as_raw_fd(),
-            &mut (buf as *mut [u8]),
+            &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
-            deadline
-        ).await?;
+            deadline,
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -204,7 +205,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;

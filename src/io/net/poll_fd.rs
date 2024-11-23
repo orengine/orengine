@@ -1,3 +1,4 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -95,12 +96,14 @@ generate_poll!(
     poll_fd_write_with_deadline
 );
 
-/// The AsyncPollFd trait provides non-blocking polling methods for readiness in receiving
-/// and sending data on file descriptors. It enables polling with deadlines, timeouts,
+/// The `AsyncPollFd` trait provides non-blocking polling methods for readiness in receiving
+/// and sending data on file descriptors.
+///
+/// It enables polling with deadlines, timeouts,
 /// and simple polling for both read and write readiness.
 ///
 /// This trait can be implemented for any writable and readable structs
-/// that supports the AsRawFd trait.
+/// that supports the [`AsRawFd`] trait.
 pub trait AsyncPollFd: AsRawFd {
     /// Returns future that will be resolved when the file descriptor
     /// becomes readable or an error occurs.
@@ -115,7 +118,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -152,7 +155,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -192,7 +195,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};

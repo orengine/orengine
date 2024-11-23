@@ -1,11 +1,13 @@
+use crate::io::{AsyncPeek, AsyncRecv, AsyncSend};
+use crate::net::Socket;
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
-use crate::io::{AsyncPeek, AsyncRecv, AsyncSend};
-use crate::net::Socket;
 
 /// The `ConnectedDatagram` trait represents a datagram socket that has been connected to a specific
-/// remote address. Unlike regular datagram sockets, a connected datagram socket can send and receive
+/// remote address.
+///
+/// Unlike regular datagram sockets, a connected datagram socket can send and receive
 /// packets without specifying the destination address on each send.
 ///
 /// # Implemented Traits
@@ -23,7 +25,7 @@ use crate::net::Socket;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::net::ConnectedDatagram;
 ///
@@ -45,7 +47,7 @@ pub trait ConnectedDatagram: Socket + AsyncRecv + AsyncPeek + AsyncSend {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::io::{AsyncBind, AsyncConnectDatagram};
     /// use orengine::net::{UdpSocket, ConnectedDatagram};
     ///
@@ -61,9 +63,9 @@ pub trait ConnectedDatagram: Socket + AsyncRecv + AsyncPeek + AsyncSend {
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or(Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
+        socket_ref
+            .peer_addr()?
+            .as_socket()
+            .ok_or_else(|| Error::new(io::ErrorKind::Other, "failed to get local address"))
     }
 }

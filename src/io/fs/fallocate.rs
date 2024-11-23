@@ -4,6 +4,7 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};

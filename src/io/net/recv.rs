@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -86,7 +87,9 @@ impl<'buf> Future for RecvWithDeadline<'buf> {
 }
 
 /// The `AsyncRecv` trait provides asynchronous methods for receiving at the incoming data
-/// with consuming it. It offers options to recv with deadlines, timeouts, and to ensure
+/// with consuming it.
+///
+/// It offers options to recv with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
 /// This trait can be implemented for any socket that supports the `AsRawFd`
@@ -94,7 +97,7 @@ impl<'buf> Future for RecvWithDeadline<'buf> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::net::TcpStream;
 /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -115,7 +118,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -141,7 +144,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -170,7 +173,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -196,7 +199,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
@@ -228,7 +231,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use orengine::buf::full_buffer;
@@ -264,7 +267,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use orengine::buf::full_buffer;

@@ -9,6 +9,7 @@ use crate::each_addr;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -91,7 +92,9 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
 }
 
 /// The `AsyncConnectStream` trait provides asynchronous methods for creating and connecting
-/// stream-oriented sockets (like TCP) to a remote address. It supports both IPv4 and IPv6, as well
+/// stream-oriented sockets (like TCP) to a remote address.
+///
+/// It supports both IPv4 and IPv6, as well
 /// as connection timeouts and deadlines.
 ///
 /// This trait can be implemented for stream-oriented socket types that need
@@ -99,7 +102,7 @@ impl<'fut> Future for ConnectWithDeadline<'fut> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::TcpStream;
 /// use orengine::io::AsyncConnectStream;
 ///
@@ -121,7 +124,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
     ///
@@ -139,7 +142,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
     ///
@@ -159,7 +162,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::net::SocketAddr;
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
@@ -182,7 +185,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
     ///
@@ -208,7 +211,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
     /// use std::time::{Instant, Duration};
@@ -236,7 +239,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::AsyncConnectStream;
     /// use std::time::Duration;
@@ -257,9 +260,9 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 ///
 /// Although datagram-oriented protocols are connectionless,
 /// this implementation provides an interface to set an address where data should
-/// be sent and received from. After setting a remote address with [`connect`],
-/// data can be sent to and received from that address with
-/// [`send`](crate::io::AsyncSend) and [`recv`](crate::io::AsyncRecv).
+/// be sent and received from. After setting a remote address with
+/// [`connect`](AsyncConnectDatagram::connect), data can be sent to and received from that
+///  address with [`send`](crate::io::AsyncSend) and [`recv`](crate::io::AsyncRecv).
 ///
 /// It also supports connection timeouts and deadlines.
 ///
@@ -267,7 +270,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::UdpSocket;
 /// use orengine::io::{AsyncBind, AsyncConnectDatagram};
 ///
@@ -282,7 +285,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::buf::full_buffer;
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
@@ -321,7 +324,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
     /// use std::time::{Instant, Duration};    ///
@@ -367,7 +370,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
     /// use std::time::Duration;    ///

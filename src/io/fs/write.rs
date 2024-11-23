@@ -4,6 +4,7 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -89,7 +90,7 @@ impl<'buf> Future for PositionedWrite<'buf> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::fs::File;
 /// use orengine::fs::OpenOptions;
 /// use orengine::io::AsyncWrite;
@@ -111,7 +112,7 @@ pub trait AsyncWrite: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::File;
     /// use orengine::fs::OpenOptions;
     /// use orengine::io::AsyncWrite;
@@ -135,7 +136,7 @@ pub trait AsyncWrite: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::File;
     /// use orengine::fs::OpenOptions;
     /// use orengine::buf::full_buffer;
@@ -160,7 +161,7 @@ pub trait AsyncWrite: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::File;
     /// use orengine::fs::OpenOptions;
     /// use orengine::io::AsyncWrite;
@@ -189,7 +190,7 @@ pub trait AsyncWrite: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::fs::File;
     /// use orengine::fs::OpenOptions;
     /// use orengine::io::AsyncWrite;

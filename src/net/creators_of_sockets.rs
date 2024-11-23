@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
-use socket2::{Domain, Protocol, Type};
-use crate::io::Socket;
 use crate::io::sys::RawFd;
+use crate::io::Socket;
+use socket2::{Domain, Protocol, Type};
+use std::net::SocketAddr;
 
 /// Creates a new socket based on the given `SocketAddr` and `Type` (either stream or datagram).
 /// This function determines the appropriate domain (IPv4 or IPv6) based on the provided address,
@@ -12,16 +12,12 @@ use crate::io::sys::RawFd;
 pub(crate) async fn new_socket(
     addr: &SocketAddr,
     socket_type: Type,
-    protocol: Protocol
+    protocol: Protocol,
 ) -> std::io::Result<RawFd> {
     match addr {
-        SocketAddr::V4(_) => {
-            Socket::new(Domain::IPV4, socket_type, protocol).await
-        }
+        SocketAddr::V4(_) => Socket::new(Domain::IPV4, socket_type, protocol).await,
 
-        SocketAddr::V6(_) => {
-            Socket::new(Domain::IPV6, socket_type, protocol).await
-        }
+        SocketAddr::V6(_) => Socket::new(Domain::IPV6, socket_type, protocol).await,
     }
 }
 

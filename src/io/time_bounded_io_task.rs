@@ -16,7 +16,7 @@ impl TimeBoundedIoTask {
     pub(crate) fn new(io_request_data: &IoRequestData, deadline: Instant) -> Self {
         Self {
             deadline,
-            user_data: io_request_data as *const _ as u64,
+            user_data: std::ptr::from_ref(io_request_data) as u64,
         }
     }
 
@@ -43,7 +43,7 @@ impl PartialEq for TimeBoundedIoTask {
 impl PartialOrd for TimeBoundedIoTask {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.deadline.partial_cmp(&other.deadline)
+        Some(self.cmp(other))
     }
 }
 

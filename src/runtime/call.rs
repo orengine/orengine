@@ -6,6 +6,7 @@ use crossbeam::utils::CachePadded;
 use crate::sync_task_queue::SyncTaskList;
 
 /// Represents a call from a `Future::poll` to the [`Executor`](crate::runtime::Executor).
+///
 /// The `Call` enum encapsulates different actions that an executor can take
 /// after a future yields [`Poll::Pending`](std::task::Poll::Pending).
 /// These actions may involve scheduling
@@ -18,8 +19,10 @@ use crate::sync_task_queue::SyncTaskList;
 /// that it is safe to perform state transitions or task scheduling without directly affecting
 /// the current state of the future. Use this mechanism only if you fully understand the
 /// implications and safety concerns of moving a future between different states or threads.
-pub(crate) enum Call {
+#[derive(Default)]
+pub enum Call {
     /// Does nothing
+    #[default]
     None,
     /// Moves current `shared` task at the start of a shared `LIFO`
     /// task queue of the current executor.
@@ -28,27 +31,19 @@ pub(crate) enum Call {
     PushCurrentTaskTo(*const SyncTaskList),
     /// Pushes current task to the given `AtomicTaskList` and removes it if the given `AtomicUsize`
     /// is `0` with given `Ordering` after removing executes it.
-    PushCurrentTaskToAndRemoveItIfCounterIsZero(
-        *const SyncTaskList,
-        *const AtomicUsize,
-        Ordering,
-    ),
-    /// Stores `false` for the given `AtomicBool` with [`Release`] ordering.
+    PushCurrentTaskToAndRemoveItIfCounterIsZero(*const SyncTaskList, *const AtomicUsize, Ordering),
+    /// Stores `false` for the given `AtomicBool` with [`Release`](Ordering::Release) ordering.
     ReleaseAtomicBool(*const CachePadded<AtomicBool>),
     /// Pushes `f` to the blocking pool.
-    PushFnToThreadPool(&'static mut dyn Fn()),
+    ///
+    /// Provided `Fn()` must have `'static` lifetime
+    PushFnToThreadPool(*mut dyn Fn()),
 }
 
 impl Call {
     #[inline(always)]
-    pub(crate) fn is_none(&self) -> bool {
-        matches!(self, Call::None)
-    }
-}
-
-impl Default for Call {
-    fn default() -> Self {
-        Call::None
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::None)
     }
 }
 
@@ -63,16 +58,16 @@ impl PartialEq for Call {
 impl Debug for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Call::None => write!(f, "Call::None"),
-            Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
+            Self::None => write!(f, "Call::None"),
+            Self::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
                 write!(f, "Call::YieldCurrentSharedTask")
             }
-            Call::PushCurrentTaskTo(_) => write!(f, "Call::PushCurrentTaskTo"),
-            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(_, _, _) => {
+            Self::PushCurrentTaskTo(_) => write!(f, "Call::PushCurrentTaskTo"),
+            Self::PushCurrentTaskToAndRemoveItIfCounterIsZero(_, _, _) => {
                 write!(f, "Call::PushCurrentTaskToAndRemoveItIfCounterIsZero")
             }
-            Call::ReleaseAtomicBool(_) => write!(f, "Call::ReleaseAtomicBool"),
-            Call::PushFnToThreadPool(_) => write!(f, "Call::PushFnToThreadPool"),
+            Self::ReleaseAtomicBool(_) => write!(f, "Call::ReleaseAtomicBool"),
+            Self::PushFnToThreadPool(_) => write!(f, "Call::PushFnToThreadPool"),
         }
     }
 }

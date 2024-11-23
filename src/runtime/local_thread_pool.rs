@@ -1,45 +1,38 @@
+use crate::runtime::Task;
+use crate::sync_task_queue::SyncTaskList;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::thread;
-use crate::sync_task_queue::SyncTaskList;
-use crate::runtime::Task;
 
 pub(crate) struct ThreadWorkerTask {
     task: Task,
-    job: *mut dyn Fn()
+    job: *mut dyn Fn(),
 }
 
 unsafe impl Send for ThreadWorkerTask {}
 
 impl ThreadWorkerTask {
-    pub(crate) fn new(task: Task, job: &'static mut dyn Fn()) -> Self {
-        Self {
-            task,
-            job
-        }
+    pub(crate) fn new(task: Task, job: *mut dyn Fn()) -> Self {
+        Self { task, job }
     }
 }
 
 struct ThreadWorker {
     task_list: crossbeam::channel::Receiver<ThreadWorkerTask>,
-    result_list: Arc<SyncTaskList>
+    result_list: Arc<SyncTaskList>,
 }
 
 impl ThreadWorker {
-    pub(crate) fn new(result_list: Arc<SyncTaskList>) -> (
-        Self,
-        crossbeam::channel::Sender<ThreadWorkerTask>
-    ) {
-        let (
-            sender,
-            receiver
-        ) = crossbeam::channel::unbounded();
+    pub(crate) fn new(
+        result_list: Arc<SyncTaskList>,
+    ) -> (Self, crossbeam::channel::Sender<ThreadWorkerTask>) {
+        let (sender, receiver) = crossbeam::channel::unbounded();
         (
             Self {
                 task_list: receiver,
-                result_list
+                result_list,
             },
-            sender
+            sender,
         )
     }
 
@@ -49,11 +42,11 @@ impl ThreadWorker {
             match self.task_list.recv() {
                 Ok(worker_task) => {
                     unsafe {
-                        (&*worker_task.job)();
+                        (*worker_task.job)();
                         self.result_list.push(worker_task.task);
                     };
-                },
-                Err(_) => return
+                }
+                Err(_) => return,
             }
         }
     }
@@ -62,7 +55,7 @@ impl ThreadWorker {
 pub(crate) struct LocalThreadWorkerPool {
     wait: usize,
     workers: Vec<crossbeam::channel::Sender<ThreadWorkerTask>>,
-    result_list: Arc<SyncTaskList>
+    result_list: Arc<SyncTaskList>,
 }
 
 impl LocalThreadWorkerPool {
@@ -70,10 +63,7 @@ impl LocalThreadWorkerPool {
         let mut workers = Vec::with_capacity(number_of_workers);
         let result_list = Arc::new(SyncTaskList::new());
         for _ in 0..number_of_workers {
-            let (
-                mut worker,
-                sender
-            ) = ThreadWorker::new(result_list.clone());
+            let (mut worker, sender) = ThreadWorker::new(result_list.clone());
 
             thread::spawn(move || {
                 worker.run();
@@ -85,20 +75,19 @@ impl LocalThreadWorkerPool {
         Self {
             wait: 0,
             workers,
-            result_list
+            result_list,
         }
     }
 
     #[inline(always)]
-    pub(crate) fn push(&mut self, task: Task, job: &'static mut dyn Fn()) {
+    pub(crate) fn push(&mut self, task: Task, job: *mut dyn Fn()) {
         let worker = self.workers[self.wait % self.workers.len()].clone();
-        let send_res = worker.send(
-            ThreadWorkerTask::new(task, job)
-        );
+        let send_res = worker.send(ThreadWorkerTask::new(task, job));
 
-        if send_res.is_err() {
-            panic!("ThreadWorker is disconnected. It is only possible if the thread has panicked.");
-        }
+        assert!(
+            send_res.is_ok(),
+            "ThreadWorker is disconnected. It is only possible if the thread has panicked."
+        );
 
         self.wait += 1;
     }

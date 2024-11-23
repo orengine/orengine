@@ -21,7 +21,7 @@ impl Future for Yield {
             Poll::Ready(())
         } else {
             this.was_yielded = true;
-            let task = get_task_from_context!(cx);
+            let task = unsafe { get_task_from_context!(cx) };
             if task.is_local() {
                 local_executor().add_task_at_the_start_of_lifo_local_queue(task);
                 return Poll::Pending;
@@ -38,7 +38,7 @@ impl Future for Yield {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::ops::Deref;
 /// use orengine::{yield_now, Local};
 ///
@@ -56,7 +56,6 @@ pub fn yield_now() -> Yield {
 mod tests {
     use crate::local::Local;
     use crate::runtime::local_executor;
-    use std::ops::Deref;
 
     use super::*;
     use crate as orengine;
@@ -66,10 +65,10 @@ mod tests {
         let i = Local::new(false);
         let i_clone = i.clone();
         local_executor().spawn_local(async move {
-            assert_eq!(*i.deref(), false);
+            assert!(!*i);
             *i.get_mut() = true;
         });
         yield_now().await;
-        assert_eq!(*i_clone.deref(), true);
+        assert!(*i_clone);
     }
 }

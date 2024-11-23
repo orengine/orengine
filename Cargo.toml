@@ -1,6 +1,6 @@
 [package]
 name = "orengine"
-version = "0.5.0"
+version = "0.6.0"
 license = "MIT"
 description = """
 Optimized ring engine for Rust.
@@ -16,14 +16,13 @@ keywords = ["io", "async", "non-blocking", "shared-nothing", "high-performance"]
 edition = "2021"
 
 [dependencies]
+orengine-macros = { version = "4.0.0", path = "./orengine-macros" }
 core_affinity = "0.8.1"
 socket2 = { version = "0.5.7", features = ["all"] }
 smallvec = "2.0.0-alpha.7"
 ahash = "0.8.11"
 fastrand = "2.1.1"
-orengine-macros = "3.0.0"
 crossbeam = "0.8.4"
-flume = "0.11.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7.0"

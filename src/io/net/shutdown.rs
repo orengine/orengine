@@ -1,3 +1,4 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -44,13 +45,15 @@ impl Future for Shutdown {
 }
 
 /// The `AsyncShutdown` trait provides a method for asynchronously shutting down part or all of a
-/// connection. It can be implemented for sockets or connections that implement the `AsRawFd` trait.
+/// connection.
+///
+/// It can be implemented for sockets or connections that implement the `AsRawFd` trait.
 /// The trait leverages different shutdown options [`Shutdown`](std::net::Shutdown)
 /// to control which aspects of the connection to shut down, such as reading, writing, or both.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use std::net::Shutdown;
 /// use orengine::net::TcpStream;
 /// use orengine::io::{AsyncConnectStream, AsyncShutdown};
@@ -73,7 +76,7 @@ pub trait AsyncShutdown: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use std::net::Shutdown;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncShutdown};

@@ -1,14 +1,16 @@
 use orengine::sleep;
-use orengine::sync::Mutex;
+use orengine::sync::{AsyncMutex, Mutex};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[allow(dead_code)]
 async fn awesome_async_local_fn() -> usize {
     sleep(Duration::from_millis(100)).await;
 
     42
 }
 
+#[allow(dead_code)]
 async fn awesome_async_fn_to_parallel_test(mutex: Arc<Mutex<usize>>) {
     for _ in 0..100 {
         let sleep_for = SystemTime::now()
@@ -24,9 +26,9 @@ async fn awesome_async_fn_to_parallel_test(mutex: Arc<Mutex<usize>>) {
 #[cfg(test)]
 mod tests {
     use super::{awesome_async_fn_to_parallel_test, awesome_async_local_fn};
-    use orengine::sync::{Mutex, WaitGroup};
+    use orengine::sync::{AsyncMutex, AsyncWaitGroup, Mutex, WaitGroup};
     use orengine::test::{
-        run_test_and_block_on_shared, run_test_and_block_on_local, sched_future_to_another_thread,
+        run_test_and_block_on_local, run_test_and_block_on_shared, sched_future_to_another_thread,
         ExecutorPool,
     };
     use std::sync::Arc;
