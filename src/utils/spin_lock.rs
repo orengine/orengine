@@ -18,7 +18,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// [`Deref`](Deref) and [`DerefMut`] implementations.
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This structure is created by the [`lock`](SpinLock::lock)
 /// and [`try_lock`](SpinLock::try_lock) methods on [`SpinLock`].

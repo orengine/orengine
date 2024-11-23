@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 /// dropped (falls out of scope), the `mutex` will be unlocked.
 ///
 /// The data protected by the `mutex` can be accessed through this guard via its
-/// [`Deref`](Deref) and [`DerefMut`] implementations.
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This structure is created by the [`lock`](AsyncMutex::lock)
 /// and [`try_lock`](AsyncMutex::try_lock).
@@ -15,10 +15,10 @@ pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target = T> + Deref
     /// It implements [`AsyncMutex`].
     type Mutex: AsyncMutex<T> + ?Sized;
 
-    /// Returns a reference to the original [`Mutex`].
+    /// Returns a reference to the associated [`AsyncMutex`].
     fn mutex(&self) -> &'mutex Self::Mutex;
 
-    /// Returns a reference to the original [`Mutex`](Self::Mutex).
+    /// Returns a reference to the associated [`AsyncMutex`].
     ///
     /// The `mutex` will never be unlocked.
     ///
@@ -39,7 +39,8 @@ pub trait AsyncMutexGuard<'mutex, T: ?Sized + 'mutex>: Deref<Target = T> + Deref
 /// Each mutex has a type parameter which represents the data that it is protecting.
 /// The data can be accessed through the RAII guards returned from [`lock`](AsyncMutex::lock)
 /// and [`try_lock`](AsyncMutex::try_lock), which guarantees that the data is only ever
-/// accessed when the `mutex` is locked, or with an unsafe method [`get_locked`](Mutex::get_locked).
+/// accessed when the `mutex` is locked, or with an unsafe method
+/// [`get_locked`](AsyncMutex::get_locked).
 ///
 /// # Example
 ///
@@ -67,7 +68,7 @@ pub trait AsyncMutex<T: ?Sized> {
     /// dropped (falls out of scope), the `mutex` will be unlocked.
     ///
     /// The data protected by the `mutex` can be accessed through this guard via its
-    /// [`Deref`](Deref) and [`DerefMut`] implementations.
+    /// [`Deref`] and [`DerefMut`] implementations.
     type Guard<'mutex>: AsyncMutexGuard<'mutex, T, Mutex = Self>
     where
         Self: 'mutex,

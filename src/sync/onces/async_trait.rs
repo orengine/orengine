@@ -10,8 +10,8 @@ pub enum CallOnceResult {
     /// The [`future`](Future) or the function has been called.
     Called,
     /// The [`future`](Future) or the function has not been called because
-    /// [`AsyncOnce::call_once`](AsyncOnce::call_once)
-    /// or [`AsyncOnce::call_once_sync`](AsyncOnce::call_once_sync) has been already called.
+    /// [`AsyncOnce::call_once`]
+    /// or [`AsyncOnce::call_once_sync`] has been already called.
     WasAlreadyCompleted,
 }
 

@@ -103,7 +103,7 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 /// The `AsyncRecvFrom` trait provides asynchronous methods for receiving at the incoming data
 /// with consuming it from the socket (datagram).
 ///
-/// It returns [`SocketAddr`](SocketAddr) of the sender.
+/// It returns [`SocketAddr`] of the sender.
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///

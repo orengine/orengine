@@ -6,6 +6,7 @@ use crossbeam::utils::CachePadded;
 use crate::sync_task_queue::SyncTaskList;
 
 /// Represents a call from a `Future::poll` to the [`Executor`](crate::runtime::Executor).
+///
 /// The `Call` enum encapsulates different actions that an executor can take
 /// after a future yields [`Poll::Pending`](std::task::Poll::Pending).
 /// These actions may involve scheduling
@@ -19,7 +20,7 @@ use crate::sync_task_queue::SyncTaskList;
 /// the current state of the future. Use this mechanism only if you fully understand the
 /// implications and safety concerns of moving a future between different states or threads.
 #[derive(Default)]
-pub(crate) enum Call {
+pub enum Call {
     /// Does nothing
     #[default]
     None,
@@ -31,7 +32,7 @@ pub(crate) enum Call {
     /// Pushes current task to the given `AtomicTaskList` and removes it if the given `AtomicUsize`
     /// is `0` with given `Ordering` after removing executes it.
     PushCurrentTaskToAndRemoveItIfCounterIsZero(*const SyncTaskList, *const AtomicUsize, Ordering),
-    /// Stores `false` for the given `AtomicBool` with [`Release`] ordering.
+    /// Stores `false` for the given `AtomicBool` with [`Release`](Ordering::Release) ordering.
     ReleaseAtomicBool(*const CachePadded<AtomicBool>),
     /// Pushes `f` to the blocking pool.
     ///
@@ -41,7 +42,7 @@ pub(crate) enum Call {
 
 impl Call {
     #[inline(always)]
-    pub(crate) fn is_none(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 }

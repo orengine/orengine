@@ -7,7 +7,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// A [`Future`] to wait for all tasks in the [`WaitGroup`] to complete.
+/// A [`Future`] to wait for all tasks in the [`LocalWaitGroup`] to complete.
 pub struct WaitLocalWaitGroup<'wait_group> {
     wait_group: &'wait_group LocalWaitGroup,
     no_send_marker: std::marker::PhantomData<*const ()>,

@@ -15,10 +15,6 @@ pub(crate) enum EachAddrRes<R> {
 
 /// `each_addr` is a macro that will iterate over the addresses in `addrs` and call `f` for each one
 /// before first successful connection or the last address.
-///
-/// # The difference with [`each_addr_sync`]
-///
-/// `$f` will be called in an async context.
 #[macro_export]
 macro_rules! each_addr {
     ($addrs: expr, $f: expr) => {{
@@ -55,10 +51,6 @@ macro_rules! each_addr {
 
 /// `each_addr_sync` is a macro that will iterate over the addresses in `addrs` and call
 /// `f` for each one before first successful connection or the last address.
-///
-/// # The difference with [`each_addr`]
-///
-/// `$f` will be called in a sync context.
 #[macro_export]
 macro_rules! each_addr_sync {
     ($addrs: expr, $f: expr) => {{

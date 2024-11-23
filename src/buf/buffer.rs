@@ -18,11 +18,11 @@ use crate::buf::buffer;
 ///
 /// # About pool
 ///
-/// For get from [`BufPool`](crate::buf::BufPool), call [`buffer`](crate::buf::buffer)
-/// or [`full_buffer`](crate::buf::full_buffer).
-/// If you can use [`BufPool`], use it, to have better performance.
+/// For get from [`BufPool`](crate::buf::BufPool), call [`buffer()`]
+/// or [`full_buffer()`](crate::buf::full_buffer).
+/// If you can use [`BufPool`](crate::buf::BufPool), use it, to have better performance.
 ///
-/// If it was gotten from [`BufPool`] it will come back after drop.
+/// If it was gotten from [`BufPool`](crate::buf::BufPool), it will come back after drop.
 ///
 /// # Buffer representation
 ///
@@ -152,7 +152,7 @@ impl Buffer {
             self.len = new_size;
         }
 
-        let mut new_buf = if buf_pool().buffer_len() == new_size {
+        let mut new_buf = if buf_pool().default_buffer_cap() == new_size {
             buffer()
         } else {
             Self::new(new_size)
@@ -208,7 +208,9 @@ impl Buffer {
     /// Puts the buffer to the pool without checking for a size.
     ///
     /// # Safety
-    /// - [`buf.real_cap`](#method.real_cap)() == [`config_buf_len`](config_buf_len)()
+    ///
+    /// - [`buf.real_cap`](#method.real_cap) is equal to
+    ///   [`default cap`](crate::buf::BufPool::default_buffer_cap)
     #[inline(always)]
     pub unsafe fn release_unchecked(self) {
         unsafe { buf_pool().put_unchecked(self) };
@@ -304,7 +306,7 @@ impl From<Vec<u8>> for Buffer {
 impl Drop for Buffer {
     fn drop(&mut self) {
         let pool = buf_pool();
-        if self.cap() == pool.buffer_len() {
+        if self.cap() == pool.default_buffer_cap() {
             let buf = Self {
                 slice: self.slice,
                 len: self.len,

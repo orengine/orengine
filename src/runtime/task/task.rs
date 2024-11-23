@@ -41,8 +41,8 @@ impl Task {
         self.data.is_local()
     }
 
-    /// Puts it back to the [`TaskPool`]. It is unsafe because you have to think about making
-    /// sure it is no longer used.
+    /// Puts it back to the [`TaskPool`](crate::runtime::TaskPool). It is unsafe because you
+    /// have to think about making sure it is no longer used.
     ///
     /// # Safety
     ///

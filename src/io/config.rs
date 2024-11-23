@@ -1,6 +1,6 @@
 use crate::io::sys::unix::IOUringConfig;
 
-/// Config for [`IoWorker`](crate::io::worker::IoWorker).
+/// Config for `io worker`.
 #[derive(Clone, Copy)]
 pub struct IoWorkerConfig {
     /// Config for [`IOUringWorker`](crate::io::sys::unix::IOUringWorker).

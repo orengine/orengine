@@ -14,7 +14,7 @@ use crossbeam::utils::CachePadded;
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// [`Deref`](Deref) and [`DerefMut`] implementations.
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This structure is created by the [`lock`](NaiveMutex::lock)
 /// and [`try_lock`](NaiveMutex::try_lock) methods on [`NaiveMutex`].
@@ -111,7 +111,7 @@ unsafe impl<T: ?Sized + Send> Send for NaiveMutexGuard<'_, T> {}
 ///
 /// # The differences between `NaiveMutex` and [`Mutex`](crate::sync::Mutex)
 ///
-/// The [`NaiveMutex`](NaiveMutex) yields the current task if it is unable
+/// The [`NaiveMutex`] yields the current task if it is unable
 /// to acquire the lock.
 ///
 /// The `Mutex` uses a queue of tasks waiting for the lock to become available.
@@ -121,7 +121,7 @@ unsafe impl<T: ?Sized + Send> Send for NaiveMutexGuard<'_, T> {}
 /// is acquired for a __short__ time try to share the `Mutex`.
 ///
 /// If the lock is mostly acquired the first time, it is better to
-/// use [`NaiveMutex`](NaiveMutex), as it spends less time on successful operations.
+/// use [`NaiveMutex`], as it spends less time on successful operations.
 ///
 /// # Example
 ///

@@ -121,7 +121,6 @@ impl OpenOptions {
     ///
     /// If a file exists at the target location, creating a new file will fail
     /// with [`AlreadyExists`](io::ErrorKind::AlreadyExists) or another error based on the situation.
-    /// See [`OpenOptions::open`](OpenOptions::open) for a non-exhaustive list of likely errors.
     ///
     /// This option is useful because it is atomic.
     /// Otherwise, between checking whether a file exists and creating a new one,

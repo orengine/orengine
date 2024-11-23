@@ -24,7 +24,7 @@ use crate::runtime::local_executor;
 /// Although UDP is a connectionless protocol, this implementation provides an interface
 /// to set an address where data should be sent and received from.
 /// [`UdpSocket::connect`](AsyncConnectDatagram)
-/// returns [`UdpConnectedSocket`](UdpConnectedSocket) which implements
+/// returns [`UdpConnectedSocket`] which implements
 /// [`ConnectedDatagram`](crate::net::connected_datagram::ConnectedDatagram),
 /// [`AsyncRecv`](crate::io::AsyncRecv), [`AsyncPeek`](crate::io::AsyncPeek),
 /// [`AsyncSend`](crate::io::AsyncSend).

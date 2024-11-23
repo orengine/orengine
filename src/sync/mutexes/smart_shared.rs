@@ -24,7 +24,7 @@ use crate::{get_task_from_context, panic_if_local_in_future};
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// [`Deref`](Deref) and [`DerefMut`] implementations.
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This structure is created by the [`lock`](Mutex::lock)
 /// and [`try_lock`](Mutex::try_lock) methods on [`Mutex`].

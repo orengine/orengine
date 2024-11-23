@@ -94,8 +94,8 @@ where
 ///
 /// # Attention
 ///
-/// Drop a lock before call [`notify_one`](LocalCondVar::notify_one)
-/// or [`notify_all`](LocalCondVar::notify_all) to improve performance.
+/// Drop a lock before call [`notify_one`](CondVar::notify_one)
+/// or [`notify_all`](CondVar::notify_all) to improve performance.
 ///
 /// # The difference between `CondVar` and [`LocalCondVar`](crate::sync::LocalCondVar)
 ///

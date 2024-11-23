@@ -96,7 +96,7 @@ impl<'fut> Future for PeekFromWithDeadline<'fut> {
 /// The `AsyncPeekFrom` trait provides asynchronous methods for peeking at the incoming data
 /// without consuming it from the socket (datagram).
 ///
-/// It returns [`SocketAddr`](SocketAddr) of the sender and offers options to peek with deadlines,
+/// It returns [`SocketAddr`] of the sender and offers options to peek with deadlines,
 /// timeouts, and to ensure reading an exact number of bytes.
 ///
 /// This trait can be implemented for datagram-oriented sockets that supports the `AsRawFd`.

@@ -41,7 +41,7 @@ impl Future for SyncAll {
     }
 }
 
-/// The [`AsyncSyncAll`](AsyncSyncAll) trait provides a [`sync_all`](AsyncSyncAll::sync_all) method
+/// The [`AsyncSyncAll`] trait provides a [`sync_all`](AsyncSyncAll::sync_all) method
 /// to synchronize the data and metadata of a file with the underlying storage device.
 ///
 /// For more details, see [`sync_all`](AsyncSyncAll::sync_all).

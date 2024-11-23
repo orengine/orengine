@@ -13,20 +13,22 @@ pub struct TaskPool {
 
 thread_local! {
     /// A thread-local task pool. So it is lockless.
-    pub(crate) static TASK_POOL: UnsafeCell<Option<TaskPool>> = const { UnsafeCell::new(None) };
+    pub static THREAD_LOCAL_TASK_POOL: UnsafeCell<Option<TaskPool>> = const {
+        UnsafeCell::new(None)
+    };
 }
 
 /// Returns the thread-local task pool wrapped in an [`Option`].
 #[inline(always)]
 pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
-    TASK_POOL.with(|task_pool| unsafe { &mut *task_pool.get() })
+    THREAD_LOCAL_TASK_POOL.with(|task_pool| unsafe { &mut *task_pool.get() })
 }
 
 /// Returns `&'static mut TaskPool` of the current thread.
 ///
 /// # Panics or Undefined Behavior
 ///
-/// If [`TASK_POOL`](TASK_POOL) is not initialized.
+/// If [`THREAD_LOCAL_TASK_POOL`] is not initialized.
 #[inline(always)]
 #[allow(clippy::missing_panics_doc, reason = "false positive")]
 pub fn task_pool() -> &'static mut TaskPool {

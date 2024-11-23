@@ -11,7 +11,7 @@ env:
 
 jobs:
   build-debug:
-    name: Build Debug
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
         run: cargo build --verbose
 
   test-debug:
-    name: Test Debug
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
         run: cargo test --verbose -- --nocapture
 
   build-release:
-    name: Build Release
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +37,8 @@ jobs:
         run: cargo build --release --verbose
 
   test-release:
-    name: Test Release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Build Release

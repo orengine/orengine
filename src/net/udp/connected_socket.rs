@@ -8,9 +8,9 @@ use crate::runtime::local_executor;
 
 /// A UDP socket.
 ///
-/// After creating a `UdpConnectedSocket` by [`connect`](crate::net::UdpSocket::connect)ing
-/// it to a socket address, data can be [sent](AsyncSend) and [received](AsyncRecv)
-/// any other socket address.
+/// After creating a `UdpConnectedSocket` by
+/// [`connecting`](crate::io::AsyncConnectDatagram::connect) it to a socket address,
+/// data can be [sent](AsyncSend) and [received](AsyncRecv) from other socket address.
 ///
 /// Although UDP is a connectionless protocol, this implementation provides an interface
 /// to set an address where data should be sent and received from.

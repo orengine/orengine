@@ -49,7 +49,7 @@ pub(crate) fn get_local_executor_ref() -> &'static mut Option<Executor> {
 /// Message that prints out when local executor is not initialized
 /// but [`local_executor()`](local_executor) is called.
 #[cfg(debug_assertions)]
-pub(crate) const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
+pub const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 ------------------------------------------------------------------------------------------
 |    Local executor is not initialized.                                                  |
 |    Please initialize it first.                                                         |
@@ -346,7 +346,7 @@ impl Executor {
     ///
     /// * the reference must live at least as long as this state of the task
     ///
-    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    /// * task must return [`Poll::Pending`] immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
@@ -363,7 +363,7 @@ impl Executor {
     ///
     /// * the reference must live at least as long as this state of the task
     ///
-    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    /// * task must return [`Poll::Pending`] immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
@@ -381,9 +381,9 @@ impl Executor {
     ///
     /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
-    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    /// * task must return [`Poll::Pending`] immediately after calling this function
     ///
-    /// * counter must be a valid pointer to [`AtomicUsize`](AtomicUsize)
+    /// * counter must be a valid pointer to [`AtomicUsize`]
     ///
     /// * the references must live at least as long as this state of the task
     ///
@@ -406,11 +406,11 @@ impl Executor {
     ///
     /// # Safety
     ///
-    /// * `atomic_bool` must be a valid pointer to [`AtomicBool`](AtomicBool)
+    /// * `atomic_bool` must be a valid pointer to [`AtomicBool`]
     ///
     /// * the [`AtomicBool`] must live at least as long as this state of the task
     ///
-    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    /// * task must return [`Poll::Pending`] immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
@@ -427,7 +427,7 @@ impl Executor {
     ///
     /// * the [`Fn`] must live at least as long as this state of the task.
     ///
-    /// * task must return [`Poll::Pending`](Poll::Pending) immediately after calling this function
+    /// * task must return [`Poll::Pending`] immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     #[inline(always)]
@@ -485,7 +485,7 @@ impl Executor {
     ///
     /// Execute [`tasks`](Task) only by this method or [`exec_task`](Executor::exec_task)!
     #[inline(always)]
-    pub(crate) fn exec_task_now(&mut self, mut task: Task) {
+    pub fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
 
         let future = unsafe { &mut *task.future_ptr() };

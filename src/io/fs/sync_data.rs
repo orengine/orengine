@@ -40,7 +40,7 @@ impl Future for SyncData {
     }
 }
 
-/// The [`AsyncSyncData`](AsyncSyncData) trait provides
+/// The [`AsyncSyncData`] trait provides
 /// a [`sync_data`](AsyncSyncData::sync_data) method to synchronize the data of a
 /// file with the underlying storage device.
 ///

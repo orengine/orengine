@@ -33,7 +33,7 @@ pub async fn open_file<P: AsRef<Path> + Send>(path: P, open_options: &OpenOption
 /// Creates a new directory at the specified path.
 ///
 /// This function asynchronously creates a single directory at `path`
-/// unlike [`create_dir_all`](create_dir_all) which creates a full directory tree.
+/// unlike [`create_dir_all`] which creates a full directory tree.
 ///
 /// If the directory already exists, the function does nothing.
 ///
@@ -62,7 +62,7 @@ pub async fn create_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
 /// Recursively creates all directories in the given path.
 ///
 /// This function creates the entire directory tree if it doesn't exist,
-/// unlike [`create_dir`](create_dir) which only creates a single directory.
+/// unlike [`create_dir`] which only creates a single directory.
 ///
 /// # Example
 ///

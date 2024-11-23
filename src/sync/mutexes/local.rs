@@ -18,7 +18,7 @@ use std::task::{Context, Poll};
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// [`Deref`](Deref) and [`DerefMut`] implementations.
+/// [`Deref`] and [`DerefMut`] implementations.
 ///
 /// This structure is created by the [`lock`](LocalMutex::lock)
 /// and [`try_lock`](LocalMutex::try_lock) methods on [`LocalMutex`].

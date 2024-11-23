@@ -19,7 +19,7 @@ use syn::parse_macro_input;
 /// * `this` with `io_request_data` (`Option<IoRequestData>`) fields;
 ///
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
-///   `*const orengine::runtime::Task` in [`data`](std::task::Waker::data);
+///   `*const orengine::runtime::Task` in `data` field;
 ///
 /// * declared variable `ret` (`usize`) which can be used in `ret_statement`.
 ///
@@ -72,7 +72,7 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
 ///   ([`Instant`](std::time::Instant)) fields;
 ///
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
-///   `*const orengine::runtime::Task` in [`data`](std::task::Waker::data);
+///   `*const orengine::runtime::Task` in `data` field;
 ///
 /// * declared variable `ret` (`usize`) which can be used in `ret_statement`;
 ///
@@ -156,10 +156,11 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_local` and [`test_shared`]
+/// # The difference between `test_local` and [`test_shared()`]
 ///
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
-/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
+/// [`test_shared()`] generates a test function that runs an
+/// `Executor` with `shared` task.
 ///
 /// # Example
 ///
@@ -195,9 +196,9 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_shared` and [`test_local`]
+/// # The difference between `test_shared` and [`test_local()`]
 ///
-/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
+/// [`test_shared()`] generates a test function that runs an `Executor` with `shared` task.
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
 ///
 /// # Example

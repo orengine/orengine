@@ -170,7 +170,7 @@ pub trait AsyncSendTo: AsRawFd {
     /// address is used. Returns the number of bytes sent.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
@@ -209,7 +209,7 @@ pub trait AsyncSendTo: AsRawFd {
     /// Only the first resolved address is used. Returns the number of bytes sent.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
@@ -280,7 +280,7 @@ pub trait AsyncSendTo: AsRawFd {
     /// calling `send_to_with_deadline`. Only the first resolved address is used.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
@@ -321,7 +321,7 @@ pub trait AsyncSendTo: AsRawFd {
     /// calling `send_to_with_timeout`. Only the first resolved address is used.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///

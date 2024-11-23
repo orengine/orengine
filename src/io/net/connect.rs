@@ -260,9 +260,9 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 ///
 /// Although datagram-oriented protocols are connectionless,
 /// this implementation provides an interface to set an address where data should
-/// be sent and received from. After setting a remote address with [`connect`],
-/// data can be sent to and received from that address with
-/// [`send`](crate::io::AsyncSend) and [`recv`](crate::io::AsyncRecv).
+/// be sent and received from. After setting a remote address with
+/// [`connect`](AsyncConnectDatagram::connect), data can be sent to and received from that
+///  address with [`send`](crate::io::AsyncSend) and [`recv`](crate::io::AsyncRecv).
 ///
 /// It also supports connection timeouts and deadlines.
 ///

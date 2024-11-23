@@ -17,7 +17,6 @@ use std::future::Future;
 ///
 /// Read the documentation of [`LocalCondVar`](crate::sync::LocalCondVar)
 /// and [`CondVar`](crate::sync::CondVar) for examples.
-/// ```
 pub trait AsyncCondVar {
     type SubscribableMutex<T>: ?Sized + AsyncSubscribableMutex<T>
     where

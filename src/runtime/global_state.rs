@@ -243,7 +243,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// # Do not use it in tests!
 ///
-/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
+/// Reuse [`Executor`](crate::Executor). Read about it in [`test module`](crate::test).
 ///
 /// # Examples
 ///
@@ -292,7 +292,7 @@ pub fn stop_executor(executor_id: usize) {
 ///
 /// # Do not use it in tests!
 ///
-/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
+/// Reuse [`Executor`](crate::Executor). Read about it in [`test module`](crate::test).
 pub fn stop_all_executors() {
     shared_state().stop_all_executors();
 }

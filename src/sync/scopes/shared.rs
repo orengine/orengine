@@ -148,7 +148,7 @@ impl<'scope, Fut: Future<Output = ()> + Send> Future for ScopedHandle<'scope, Fu
 unsafe impl<F: Future<Output = ()> + Send> Send for ScopedHandle<'_, F> {}
 unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 
-/// Creates a [`shared scope`](SharedScope) for spawning scoped shared tasks.
+/// Creates a [`shared scope`] for spawning scoped shared tasks.
 ///
 /// The function passed to `scope` will be provided a [`Scope`] object,
 /// through which scoped shared tasks can be [spawned][`Scope::spawn`]
