@@ -212,7 +212,7 @@ where
 
     static_scope.wg.wait().await;
 
-    yield_now().await; // TODO FIXME: you can't call 2 local_scopes in the same task if you don't yield
+    yield_now().await; // You can't call 2 local_scopes in the same task if you don't yield
 }
 
 /// ```compile_fail
@@ -234,6 +234,8 @@ mod tests {
     use crate as orengine;
     use crate::local::Local;
     use crate::yield_now;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering::Relaxed;
 
     #[orengine::test::test_local]
     fn test_local_scope_exec() {
@@ -357,5 +359,63 @@ mod tests {
         yield_now().await;
 
         assert_eq!(*local_a.borrow(), 5);
+    }
+
+    #[orengine::test::test_local]
+    fn test_many_local_scope_in_the_same_task() {
+        static ROUND: AtomicUsize = AtomicUsize::new(0);
+
+        #[allow(clippy::future_not_send, reason = "It is local test")]
+        async fn work_with_scope<'scope>(counter: Local<usize>, scope: &LocalScope<'scope>) {
+            scope.spawn(async {
+                assert_eq!(*counter.borrow(), 2 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+                yield_now().await;
+                assert_eq!(*counter.borrow(), 5 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+            });
+
+            scope.exec(async {
+                assert_eq!(*counter.borrow(), 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+                yield_now().await;
+                assert_eq!(*counter.borrow(), 3 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+            });
+
+            assert_eq!(*counter.borrow(), 1 + 6 * ROUND.load(Relaxed));
+            *counter.borrow_mut() += 1;
+            yield_now().await;
+            assert_eq!(*counter.borrow(), 4 + 6 * ROUND.load(Relaxed));
+            *counter.borrow_mut() += 1;
+        }
+
+        let counter = Local::new(0);
+
+        local_scope(|scope| async {
+            work_with_scope(counter.clone(), scope).await;
+        })
+        .await;
+
+        assert_eq!(*counter.borrow(), 6);
+        ROUND.store(1, Relaxed);
+
+        local_scope(|scope| async {
+            work_with_scope(counter.clone(), scope).await;
+        })
+        .await;
+
+        assert_eq!(*counter.borrow(), 12);
+        ROUND.store(2, Relaxed);
+
+        for i in 3..10 {
+            local_scope(|scope| async {
+                work_with_scope(counter.clone(), scope).await;
+            })
+            .await;
+
+            assert_eq!(*counter.borrow(), i * 6);
+            ROUND.store(i, Relaxed);
+        }
     }
 }
