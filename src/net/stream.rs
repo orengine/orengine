@@ -48,7 +48,8 @@ use std::time::Duration;
 /// }
 /// ```
 pub trait Stream:
-Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown {
+    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown
+{
     /// Sets the socket linger option, which controls the behavior when the stream is closed.
     /// If `Some(duration)` is provided, the system will try to send any unsent data before
     /// closing the connection for up to the specified duration. If `None` is provided, the
@@ -163,9 +164,9 @@ Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown 
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.peer_addr()?.as_socket().ok_or_else(|| Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
+        socket_ref
+            .peer_addr()?
+            .as_socket()
+            .ok_or_else(|| Error::new(io::ErrorKind::Other, "failed to get local address"))
     }
 }

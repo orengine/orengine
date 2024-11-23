@@ -62,15 +62,19 @@ impl Drop for ValidConfig {
             let mut guard = Some(GLOBAL_CONFIG_STATS.lock());
             let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
             if self.io_worker_config.is_some() {
-                shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -= 1;
+                shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -=
+                    1;
             } else {
-                shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -= 1;
+                shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -=
+                    1;
             }
 
             if self.is_thread_pool_enabled() {
-                shared_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
+                shared_config_stats
+                    .number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
             } else {
-                shared_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
+                shared_config_stats
+                    .number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
             }
         }
     }
@@ -258,30 +262,29 @@ impl Config {
             let mut shared_config_stats = GLOBAL_CONFIG_STATS.lock();
 
             if self.io_worker_config.is_some() {
-                if shared_config_stats
-                    .number_of_executors_with_work_sharing_and_without_io_worker
+                if shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker
                     != 0
                 {
                     panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_IO_WORKER}");
                 }
 
-                shared_config_stats
-                    .number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
+                shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing +=
+                    1;
             } else {
-                if shared_config_stats
-                    .number_of_executors_with_enabled_io_worker_and_work_sharing
+                if shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing
                     != 0
                 {
-                    panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_IO_WORKER}");
+                    panic!(
+                        "{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_IO_WORKER}"
+                    );
                 }
 
-                shared_config_stats
-                    .number_of_executors_with_work_sharing_and_without_io_worker += 1;
+                shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker +=
+                    1;
             }
 
             if self.is_thread_pool_enabled() {
-                if shared_config_stats
-                    .number_of_executors_with_work_sharing_and_without_thread_pool
+                if shared_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool
                     != 0
                 {
                     panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_THREAD_POOL}");
@@ -290,11 +293,12 @@ impl Config {
                 shared_config_stats
                     .number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
             } else {
-                if shared_config_stats
-                    .number_of_executors_with_enabled_thread_pool_and_work_sharing
+                if shared_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing
                     != 0
                 {
-                    panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_THREAD_POOL}");
+                    panic!(
+                        "{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_THREAD_POOL}"
+                    );
                 }
 
                 shared_config_stats
@@ -384,7 +388,10 @@ mod tests {
     // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
     // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
     #[orengine_macros::test_local]
-    #[allow(clippy::should_panic_without_expect, reason = "panic message is too long")]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_first_case_panic() {
         let lock = get_lock();
@@ -400,7 +407,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    #[allow(clippy::should_panic_without_expect, reason = "panic message is too long")]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_second_case_panic() {
         let lock = get_lock();
@@ -416,7 +426,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    #[allow(clippy::should_panic_without_expect, reason = "panic message is too long")]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_third_case_panic() {
         let lock = get_lock();
@@ -431,7 +444,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
-    #[allow(clippy::should_panic_without_expect, reason = "panic message is too long")]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_fourth_case_panic() {
         let lock = get_lock();

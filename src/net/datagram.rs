@@ -48,12 +48,16 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// }
 /// ```
 pub trait Datagram:
-Socket + AsyncConnectDatagram<Self::ConnectedDatagram> + AsyncRecvFrom +
-AsyncPeekFrom + AsyncSendTo + AsyncBind {
+    Socket
+    + AsyncConnectDatagram<Self::ConnectedDatagram>
+    + AsyncRecvFrom
+    + AsyncPeekFrom
+    + AsyncSendTo
+    + AsyncBind
+{
     /// Type of the connected datagram, which allows sending data without specifying the address
     /// for each operation.
     type ConnectedDatagram: ConnectedDatagram;
-
 
     /// Enables or disables broadcasting on the socket. When broadcasting is enabled (`true`),
     /// the socket can send packets to the broadcast address.
@@ -157,7 +161,11 @@ AsyncPeekFrom + AsyncSendTo + AsyncBind {
 
     /// Leaves the IPv4 multicast group that the socket had joined.
     #[inline(always)]
-    fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> std::io::Result<()> {
+    fn leave_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> std::io::Result<()> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
         socket_ref.leave_multicast_v4(multiaddr, interface)

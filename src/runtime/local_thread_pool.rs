@@ -13,10 +13,7 @@ unsafe impl Send for ThreadWorkerTask {}
 
 impl ThreadWorkerTask {
     pub(crate) fn new(task: Task, job: *mut dyn Fn()) -> Self {
-        Self {
-            task,
-            job,
-        }
+        Self { task, job }
     }
 }
 
@@ -26,20 +23,16 @@ struct ThreadWorker {
 }
 
 impl ThreadWorker {
-    pub(crate) fn new(result_list: Arc<SyncTaskList>) -> (
-        Self,
-        crossbeam::channel::Sender<ThreadWorkerTask>
-    ) {
-        let (
-            sender,
-            receiver
-        ) = crossbeam::channel::unbounded();
+    pub(crate) fn new(
+        result_list: Arc<SyncTaskList>,
+    ) -> (Self, crossbeam::channel::Sender<ThreadWorkerTask>) {
+        let (sender, receiver) = crossbeam::channel::unbounded();
         (
             Self {
                 task_list: receiver,
                 result_list,
             },
-            sender
+            sender,
         )
     }
 
@@ -53,7 +46,7 @@ impl ThreadWorker {
                         self.result_list.push(worker_task.task);
                     };
                 }
-                Err(_) => return
+                Err(_) => return,
             }
         }
     }
@@ -70,10 +63,7 @@ impl LocalThreadWorkerPool {
         let mut workers = Vec::with_capacity(number_of_workers);
         let result_list = Arc::new(SyncTaskList::new());
         for _ in 0..number_of_workers {
-            let (
-                mut worker,
-                sender
-            ) = ThreadWorker::new(result_list.clone());
+            let (mut worker, sender) = ThreadWorker::new(result_list.clone());
 
             thread::spawn(move || {
                 worker.run();
@@ -92,9 +82,7 @@ impl LocalThreadWorkerPool {
     #[inline(always)]
     pub(crate) fn push(&mut self, task: Task, job: *mut dyn Fn()) {
         let worker = self.workers[self.wait % self.workers.len()].clone();
-        let send_res = worker.send(
-            ThreadWorkerTask::new(task, job)
-        );
+        let send_res = worker.send(ThreadWorkerTask::new(task, job));
 
         assert!(
             send_res.is_ok(),

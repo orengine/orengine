@@ -119,9 +119,7 @@ impl SubscribedState {
         F: FnOnce(&Vec<Arc<ExecutorSharedTaskList>>),
     {
         self.with_inner(|inner| {
-            f(unsafe {
-                inner.tasks_lists.as_ref().unwrap_unchecked()
-            });
+            f(unsafe { inner.tasks_lists.as_ref().unwrap_unchecked() });
         });
     }
 }
@@ -174,7 +172,8 @@ impl SharedState {
         executor.subscribed_state().with_inner(|inner| {
             inner.processed_version = self.version;
         });
-        self.states_of_alive_executors.push((executor.id(), executor.subscribed_state()));
+        self.states_of_alive_executors
+            .push((executor.id(), executor.subscribed_state()));
 
         // It is necessary to reset the flag to false on re-initialization.
         executor.subscribed_state().with_inner(|inner| {

@@ -27,7 +27,7 @@ use std::net::SocketAddr;
 /// - [`AsFd`]
 /// - [`AsRawFd`]
 pub trait Listener:
-AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
+    AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
 {
     type Stream: Stream;
 
@@ -52,10 +52,10 @@ AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd 
     fn local_addr(&self) -> io::Result<SocketAddr> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
-        socket_ref.local_addr()?.as_socket().ok_or_else(|| Error::new(
-            io::ErrorKind::Other,
-            "failed to get local address",
-        ))
+        socket_ref
+            .local_addr()?
+            .as_socket()
+            .ok_or_else(|| Error::new(io::ErrorKind::Other, "failed to get local address"))
     }
 
     /// Sets the TTL (Time-To-Live) value for outgoing packets on the listener socket.

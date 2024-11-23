@@ -90,14 +90,14 @@ mod tests {
                 *was_changed_clone.lock().unwrap() = true;
                 cond_var_clone.notify_one();
             })
-                .await;
+            .await;
         });
 
         let mut guard = was_changed.lock().unwrap();
         guard = cond_var.wait(guard).unwrap();
 
         assert!(*guard); // this executor was blocked, and
-        // if assertion passes, other thread (from the thread pool) processed the list.
+                         // if assertion passes, other thread (from the thread pool) processed the list.
         drop(guard);
     }
 }

@@ -30,14 +30,10 @@ impl WakerWithPubData {
 /// If called with [`Context`](std::task::Context) with an `orengine` waker.
 #[macro_export]
 macro_rules! get_task_from_context {
-    ($ctx:expr) => {
-        {
-            let waker_ref = &*(
-                std::ptr::from_ref($ctx.waker())
-                .cast::<$crate::runtime::get_task_from_context::WakerWithPubData>()
-            );
+    ($ctx:expr) => {{
+        let waker_ref = &*(std::ptr::from_ref($ctx.waker())
+            .cast::<$crate::runtime::get_task_from_context::WakerWithPubData>());
 
-            waker_ref.data()
-        }
-    };
+        waker_ref.data()
+    }};
 }

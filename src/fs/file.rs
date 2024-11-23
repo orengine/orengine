@@ -82,7 +82,10 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn open<P: AsRef<Path> + Send>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path> + Send>(
+        as_path: P,
+        open_options: &OpenOptions,
+    ) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
@@ -278,7 +281,8 @@ mod tests {
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-            .await.expect("Can't rename file");
+        .await
+        .expect("Can't rename file");
         assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
         File::remove(test_file_dir_path.to_string() + "/test2.txt")

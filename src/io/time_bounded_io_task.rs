@@ -42,7 +42,9 @@ impl PartialEq for TimeBoundedIoTask {
 
 impl PartialOrd for TimeBoundedIoTask {
     #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Eq for TimeBoundedIoTask {}

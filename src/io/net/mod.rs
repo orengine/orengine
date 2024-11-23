@@ -4,17 +4,17 @@
 //! These abstractions facilitate the creation and management
 //! of TCP and UDP connections, along with supporting operations like connecting, accepting,
 //! sending, receiving, binding, and shutting down sockets.
-pub mod connect;
 pub mod accept;
-pub mod send;
-pub mod recv;
-pub mod recv_from;
-pub mod poll_fd;
 pub mod bind;
-pub mod shutdown;
+pub mod connect;
 pub mod peek;
 pub mod peek_from;
+pub mod poll_fd;
+pub mod recv;
+pub mod recv_from;
+pub mod send;
 pub mod send_to;
+pub mod shutdown;
 pub mod socket;
 
 pub use accept::*;

@@ -128,7 +128,10 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
     let name = &signature.ident;
     let name_str = name.to_string();
 
-    assert!(signature.inputs.is_empty(), "Test function must have zero arguments!");
+    assert!(
+        signature.inputs.is_empty(),
+        "Test function must have zero arguments!"
+    );
 
     let spawn_fn = if is_local {
         quote! { orengine::test::run_test_and_block_on_local }

@@ -30,11 +30,7 @@ pub(crate) enum Call {
     PushCurrentTaskTo(*const SyncTaskList),
     /// Pushes current task to the given `AtomicTaskList` and removes it if the given `AtomicUsize`
     /// is `0` with given `Ordering` after removing executes it.
-    PushCurrentTaskToAndRemoveItIfCounterIsZero(
-        *const SyncTaskList,
-        *const AtomicUsize,
-        Ordering,
-    ),
+    PushCurrentTaskToAndRemoveItIfCounterIsZero(*const SyncTaskList, *const AtomicUsize, Ordering),
     /// Stores `false` for the given `AtomicBool` with [`Release`] ordering.
     ReleaseAtomicBool(*const CachePadded<AtomicBool>),
     /// Pushes `f` to the blocking pool.

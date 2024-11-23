@@ -52,7 +52,7 @@ pub trait AsyncCondVar {
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
-    ) -> impl Future<Output=<Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
+    ) -> impl Future<Output = <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
     where
         T: ?Sized + 'mutex;
 

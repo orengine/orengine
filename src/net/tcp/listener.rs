@@ -166,7 +166,10 @@ mod tests {
         listener.set_ttl(122).expect("set_ttl call failed");
         assert_eq!(listener.ttl().expect("ttl call failed"), 122);
 
-        assert!(listener.take_error().expect("take_error call failed").is_none());
+        assert!(listener
+            .take_error()
+            .expect("take_error call failed")
+            .is_none());
     }
 
     async fn test_listener_accept_with_config(config: &BindConfig, port: u16) {

@@ -41,11 +41,9 @@ impl<'fut> Future for RecvFrom<'fut> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv_from(
-                this.fd,
-                &mut this.msg_header,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
-            ),
+            local_worker().recv_from(this.fd, &mut this.msg_header, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ret
         ));
     }
@@ -152,7 +150,12 @@ pub trait AsyncRecvFrom: AsRawFd {
     #[inline(always)]
     async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFrom::new(self.as_raw_fd(), &mut std::ptr::from_mut::<[u8]>(buf), &mut sock_addr).await?;
+        let n = RecvFrom::new(
+            self.as_raw_fd(),
+            &mut std::ptr::from_mut::<[u8]>(buf),
+            &mut sock_addr,
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -195,7 +198,8 @@ pub trait AsyncRecvFrom: AsRawFd {
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
             deadline,
-        ).await?;
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }

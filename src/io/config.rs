@@ -6,13 +6,15 @@ pub struct IoWorkerConfig {
     /// Config for [`IOUringWorker`](crate::io::sys::unix::IOUringWorker).
     ///
     /// Read [`IOUringConfig`](IOUringConfig) for more details.
-    pub(crate) io_uring: IOUringConfig
+    pub(crate) io_uring: IOUringConfig,
 }
 
 impl IoWorkerConfig {
     /// Returns default [`IoWorkerConfig`]
     pub const fn default() -> Self {
-        Self { io_uring: IOUringConfig::default() }
+        Self {
+            io_uring: IOUringConfig::default(),
+        }
     }
 
     /// Returns current [`IOUringConfig`] of this [`IoWorkerConfig`].

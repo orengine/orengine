@@ -3,8 +3,8 @@ pub mod core;
 pub(crate) mod droppable_element;
 pub(crate) mod each_addr;
 pub mod ptr;
-pub(crate) mod write_result;
 pub mod spin_lock;
+pub(crate) mod write_result;
 
 pub use core::*;
 pub use ptr::*;

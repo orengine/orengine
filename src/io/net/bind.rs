@@ -155,8 +155,8 @@ pub trait AsyncBind: Sized + FromRawFd {
                         //     {BPF_LD | BPF_W | BPF_ABS, 0, 0, SKF_AD_OFF + SKF_AD_CPU},
                         //     {BPF_RET | BPF_A, 0, 0, 0}
                         // ]
-                        #[allow(clippy::cast_possible_truncation)] // because they are flags
-                        #[allow(clippy::cast_sign_loss)] // because they are flags
+                        #[allow(clippy::cast_possible_truncation, reason = "They are flags")]
+                        #[allow(clippy::cast_sign_loss, reason = "They are flags")]
                         let mut code = [
                             libc::sock_filter {
                                 code: (BPF_LD | BPF_W | BPF_ABS) as _,

@@ -117,7 +117,11 @@ impl IOUringWorker {
     /// Cancels a request with the given `user_data`.
     #[inline(always)]
     fn cancel_entry(&mut self, data: u64) {
-        self.add_sqe(opcode::AsyncCancel::new(data).build().user_data(ASYNC_CLOSE_DATA));
+        self.add_sqe(
+            opcode::AsyncCancel::new(data)
+                .build()
+                .user_data(ASYNC_CLOSE_DATA),
+        );
     }
 
     /// Cancels requests that have expired.
@@ -133,8 +137,7 @@ impl IOUringWorker {
             if time_bounded_io_task.deadline() <= now {
                 self.cancel_entry(time_bounded_io_task.user_data());
             } else {
-                self.time_bounded_io_task_queue
-                    .insert(time_bounded_io_task);
+                self.time_bounded_io_task_queue.insert(time_bounded_io_task);
                 break;
             }
         }
@@ -280,7 +283,8 @@ impl IoWorker for IOUringWorker {
                     c_int::from(domain),
                     c_int::from(sock_type),
                     c_int::from(protocol),
-                ).build(),
+                )
+                .build(),
                 request_ptr,
             );
 
@@ -289,7 +293,10 @@ impl IoWorker for IOUringWorker {
 
         let request = unsafe { &mut *request_ptr };
         let socket_ = socket2::Socket::new(domain, sock_type, Some(protocol));
-        #[allow(clippy::cast_sign_loss, reason = "the sing was checked by map() method")]
+        #[allow(
+            clippy::cast_sign_loss,
+            reason = "the sing was checked by map() method"
+        )]
         request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
 
         local_executor().spawn_local_task(unsafe { request.task() });
@@ -566,7 +573,7 @@ impl IoWorker for IOUringWorker {
                 types::Fd(libc::AT_FDCWD),
                 new_path,
             )
-                .build(),
+            .build(),
             request_ptr,
         );
     }

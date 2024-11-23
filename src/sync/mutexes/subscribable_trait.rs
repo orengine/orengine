@@ -25,7 +25,11 @@ where
 {
     /// Creates a new `WaitLockOfSubscribableMutex`.
     pub fn new(mutex: &'mutex Mutex) -> Self {
-        WaitLockOfSubscribableMutex { mutex, was_called: false, phantom_data: PhantomData }
+        WaitLockOfSubscribableMutex {
+            mutex,
+            was_called: false,
+            phantom_data: PhantomData,
+        }
     }
 }
 
@@ -100,7 +104,7 @@ pub trait AsyncSubscribableMutex<T: ?Sized>: AsyncMutex<T> {
     ///
     /// [`subscribe`](Self::subscribe) is a bit more expensive than
     /// [`low_level_subscribe`](Self::low_level_subscribe).
-    fn subscribe<'mutex>(&'mutex self) -> impl Future<Output=Self::Guard<'mutex>>
+    fn subscribe<'mutex>(&'mutex self) -> impl Future<Output = Self::Guard<'mutex>>
     where
         Self: 'mutex,
         T: 'mutex,

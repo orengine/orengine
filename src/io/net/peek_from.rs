@@ -40,11 +40,9 @@ impl<'fut> Future for PeekFrom<'fut> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().peek_from(
-                this.fd,
-                &mut this.msg_header,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
-            ),
+            local_worker().peek_from(this.fd, &mut this.msg_header, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ret
         ));
     }
@@ -148,7 +146,8 @@ pub trait AsyncPeekFrom: AsRawFd {
             self.as_raw_fd(),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
-        ).await?;
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
@@ -191,7 +190,8 @@ pub trait AsyncPeekFrom: AsRawFd {
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
             deadline,
-        ).await?;
+        )
+        .await?;
 
         Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }

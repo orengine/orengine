@@ -1,7 +1,7 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{local_worker, IoWorker};
-use crate as orengine;
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;

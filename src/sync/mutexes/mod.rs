@@ -1,7 +1,7 @@
 pub mod async_trait;
+pub mod local;
 pub mod naive_shared;
 pub mod smart_shared;
-pub mod local;
 pub mod subscribable_trait;
 
 pub use async_trait::*;
