@@ -7,6 +7,11 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 ///
 /// If `debug_assertions` is enabled, it keeps additional information to check
 /// if the task is safe to be executed.
+///
+/// # Be careful
+///
+/// `Task` __must__ be executed via [`Executor::exec_task`](crate::Executor::exec_task) or
+/// [`Executor::exec_local_task`](crate::Executor::exec_local_task).
 pub struct Task {
     pub(crate) data: TaskData,
     #[cfg(debug_assertions)]
@@ -48,7 +53,7 @@ impl Task {
     ///
     /// Provided [`Task`] is no longer used.
     #[inline(always)]
-    pub unsafe fn release(self) {
+    pub(crate) unsafe fn release(self) {
         task_pool().put(self);
     }
 
