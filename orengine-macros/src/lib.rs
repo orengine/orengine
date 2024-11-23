@@ -165,7 +165,7 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
 /// # Example
 ///
 /// ```ignore
-/// #[orengine_macros::test_local]
+/// #[orengine::test::test_local]
 /// fn test_sleep() {
 ///     let start = std::time::Instant::now();
 ///     orengine::sleep(std::time::Duration::from_secs(1)).await;
@@ -204,7 +204,7 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```ignore
-/// #[orengine_macros::test_shared]
+/// #[orengine::test::test_shared]
 /// fn test_sleep() {
 ///     let start = std::time::Instant::now();
 ///     orengine::sleep(std::time::Duration::from_secs(1)).await;

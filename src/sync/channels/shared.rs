@@ -788,7 +788,7 @@ mod tests {
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_zero_capacity_shared_channel() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
@@ -813,7 +813,7 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_try() {
         let ch = Channel::bounded(1);
 
@@ -872,7 +872,7 @@ mod tests {
 
     const N: usize = 10_025;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let wg = Arc::new(WaitGroup::new());
@@ -902,7 +902,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -916,7 +916,7 @@ mod tests {
         assert_eq!(res, 1);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -944,7 +944,7 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_unbounded_shared_channel() {
         let ch = Arc::new(Channel::unbounded());
         let wg = Arc::new(WaitGroup::new());
@@ -975,7 +975,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_drop_shared_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = Channel::bounded(1);
@@ -1009,7 +1009,7 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_drop_shared_channel_split() {
         let channel = Channel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
@@ -1074,17 +1074,17 @@ mod tests {
         assert_eq!(sent.load(Relaxed), received.load(Relaxed));
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_bounded_shared_channel() {
         stress_test(Channel::bounded(1024), 100).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_unbounded_shared_channel() {
         stress_test(Channel::unbounded(), 100).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_zero_capacity_shared_channel() {
         stress_test(Channel::bounded(0), 20).await;
     }

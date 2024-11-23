@@ -235,7 +235,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_exec() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_exec_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 5);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_spawn() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_spawn_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();

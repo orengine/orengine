@@ -153,7 +153,7 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::time::Duration;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_listener() {
         let listener = TcpListener::bind("127.0.0.1:8080")
             .await
@@ -197,7 +197,7 @@ mod tests {
         yield_now().await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_accept() {
         let config = BindConfig::default();
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled), 4063).await;

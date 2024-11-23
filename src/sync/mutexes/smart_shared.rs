@@ -386,7 +386,7 @@ mod tests {
     use crate as orengine;
     use crate::test::sched_future_to_another_thread;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -459,17 +459,17 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_without_spinning_shared_mutex() {
         test_try_mutex(Mutex::try_lock).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_with_spinning_shared_mutex() {
         test_try_mutex(Mutex::try_lock_with_spinning).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_shared_mutex() {
         const PAR: usize = 5;
         const TRIES: usize = 400;

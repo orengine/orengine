@@ -211,7 +211,7 @@ mod tests {
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_udp_client() {
         const SERVER_ADDR: &str = "127.0.0.1:10086";
 
@@ -337,7 +337,7 @@ mod tests {
         thread::yield_now();
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_server_without_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
@@ -348,7 +348,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_server_with_default_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
@@ -359,7 +359,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_server_with_cpu_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
@@ -370,7 +370,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_socket() {
         const SERVER_ADDR: &str = "127.0.0.1:10090";
         const CLIENT_ADDR: &str = "127.0.0.1:10091";
@@ -497,7 +497,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_timeout() {
         const ADDR: &str = "127.0.0.1:10141";
         const TIMEOUT: Duration = Duration::from_micros(1);

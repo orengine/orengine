@@ -214,7 +214,7 @@ mod tests {
     use crate::utils::SpinLock;
     use std::sync::Arc;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_mutex() {
         let mutex = Arc::new(SpinLock::new(false));
         let mutex_clone = mutex.clone();
@@ -256,7 +256,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_mutex() {
         const PAR: usize = 50;
         const TRIES: usize = 100;

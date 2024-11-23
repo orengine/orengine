@@ -185,7 +185,7 @@ mod tests {
 
     const PAR: usize = 10;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_wg_many_wait_one() {
         let check_value = Arc::new(std::sync::Mutex::new(false));
         let wait_group = Arc::new(WaitGroup::new());
@@ -207,7 +207,7 @@ mod tests {
         wait_group.done();
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_wg_one_wait_many_task_finished_after_wait() {
         let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(*check_value.lock().unwrap(), 0, "not waited");
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_wg_one_wait_many_task_finished_before_wait() {
         let check_value = Arc::new(std::sync::Mutex::new(PAR));
         let wait_group = Arc::new(WaitGroup::new());

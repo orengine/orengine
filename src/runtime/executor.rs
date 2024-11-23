@@ -984,7 +984,7 @@ mod tests {
 
     use super::*;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
         #[allow(clippy::unused_async)] // because it is a test
         #[allow(clippy::future_not_send)] // because it is a local

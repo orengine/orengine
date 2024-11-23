@@ -60,7 +60,7 @@ mod tests {
     use super::*;
     use crate as orengine;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_yield_now() {
         let i = Local::new(false);
         let i_clone = i.clone();

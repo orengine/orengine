@@ -306,7 +306,7 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_stop_executor() {
         thread::spawn(move || {
             let ex = Executor::init_with_config(

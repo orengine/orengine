@@ -235,7 +235,7 @@ mod tests {
     use crate::local::Local;
     use crate::yield_now;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_exec() {
         let local_a = Local::new(0);
 
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(*local_a.borrow(), 4);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_exec_with_main_future() {
         let local_a = Local::new(0);
 
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(*local_a.borrow(), 5);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_spawn() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(*local_a.borrow(), 4);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_spawn_with_main_future() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();

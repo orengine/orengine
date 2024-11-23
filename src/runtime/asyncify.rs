@@ -75,7 +75,7 @@ mod tests {
     use std::time::Duration;
     use std::{thread, time};
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_asyncify() {
         let start = time::Instant::now();
         let was_changed = Arc::new(std::sync::Mutex::new(false));

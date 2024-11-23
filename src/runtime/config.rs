@@ -351,7 +351,7 @@ mod tests {
         })
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_default_config() {
         let lock = get_lock();
         let config = Config::default().validate();
@@ -362,7 +362,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_config() {
         let lock = get_lock();
         let config = Config::default()
@@ -387,7 +387,7 @@ mod tests {
     // 2 - first config with work sharing and without io worker, next with io worker and work sharing
     // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
     // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -406,7 +406,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -425,7 +425,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -443,7 +443,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"

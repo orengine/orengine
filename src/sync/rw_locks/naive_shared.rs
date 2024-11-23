@@ -446,7 +446,7 @@ mod tests {
     use crate::sync::shared_scope;
     use std::sync::atomic::Ordering::SeqCst;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_naive_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = RWLock::new(0);
@@ -472,7 +472,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_naive_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = RWLock::new(0);

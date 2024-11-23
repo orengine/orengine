@@ -125,7 +125,7 @@ mod tests {
     use super::*;
     use crate as orengine;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_buf_pool() {
         let pool = buf_pool();
         assert!(pool.pool.is_empty());

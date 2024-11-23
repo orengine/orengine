@@ -224,7 +224,7 @@ mod tests {
     use std::fs::create_dir;
     use std::path::PathBuf;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_file_create_write_read_pread_pwrite_remove_close() {
         const MSG: &[u8] = b"Hello, world!";
 

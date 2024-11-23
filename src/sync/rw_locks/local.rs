@@ -564,7 +564,7 @@ mod tests {
     use crate::yield_now;
     use std::rc::Rc;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_rw_lock() {
         let rw_lock = Rc::new(LocalRWLock::new(0));
         let wg = Rc::new(LocalWaitGroup::new());
@@ -619,7 +619,7 @@ mod tests {
         assert_ne!(rw_lock.get_inner().number_of_readers, 0);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_try_local_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = Rc::new(LocalRWLock::new(0));

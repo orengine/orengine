@@ -328,22 +328,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_one_with_drop_guard() {
         test_notify_one(true).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_all_with_drop_guard() {
         test_notify_all(true).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_one_without_drop_guard() {
         test_notify_one(false).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_all_without_drop_guard() {
         test_notify_all(false).await;
     }

@@ -187,7 +187,7 @@ mod tests {
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_tcp_client() {
         const ADDR: &str = "127.0.0.1:6086";
 
@@ -246,7 +246,7 @@ mod tests {
         server_thread.join().expect("server thread join failed");
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_tcp_server() {
         const ADDR: &str = "127.0.0.1:6081";
 
@@ -300,7 +300,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_tcp_stream() {
         const ADDR: &str = "127.0.0.1:6082";
 
@@ -381,7 +381,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_tcp_timeout() {
         const ADDR: &str = "127.0.0.1:6083";
         const BACKLOG_SIZE: isize = 256;

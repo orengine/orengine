@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use crate as orengine;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_once() {
         let once = LocalOnce::new();
         assert_eq!(once.state(), OnceState::NotCalled);
@@ -136,7 +136,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_once_async() {
         let async_once = LocalOnce::new();
         assert_eq!(async_once.state(), OnceState::NotCalled);

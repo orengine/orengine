@@ -73,7 +73,7 @@ mod tests {
     use crate::yield_now;
     use std::time::Duration;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_sleep() {
         #[allow(clippy::future_not_send)] // because it is `local`
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
