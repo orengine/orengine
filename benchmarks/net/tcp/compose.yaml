@@ -15,7 +15,7 @@ services:
       dockerfile: Dockerfile
       target: final
     environment:
-      - CLIENT=std
+      - CLIENT=orengine
     ports:
       - "8081:8081"
     depends_on:

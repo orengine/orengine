@@ -1,6 +1,6 @@
 use std::{io, thread};
 
-use orengine::buf::buffer;
+use orengine::buf::full_buffer;
 use orengine::runtime::Config;
 use orengine::utils::{get_core_ids, CoreId};
 use orengine::Executor;
@@ -126,18 +126,20 @@ fn orengine() {
     async fn handle_client<S: orengine::net::Stream>(mut stream: S) {
         loop {
             stream.poll_recv().await.unwrap();
-            let mut buf = buffer();
-            buf.set_len_to_cap();
+            let mut buf = full_buffer();
+
             let n = stream.recv(&mut buf).await.unwrap();
             if n == 0 {
                 break;
             }
+
             stream.send_all(&buf[..n]).await.unwrap();
         }
     }
 
     fn run_server(core_id: CoreId) {
-        let ex = Executor::init_on_core_with_config(core_id, Config::default().disable_work_sharing());
+        let ex =
+            Executor::init_on_core_with_config(core_id, Config::default().disable_work_sharing());
         let _ = ex.run_and_block_on_local(async {
             let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
             while let Ok((stream, _)) = listener.accept().await {

@@ -6,15 +6,15 @@ use orengine::buf::buffer;
 use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
 use orengine::local::Local;
 use orengine::runtime::local_executor;
-use orengine::sync::LocalWaitGroup;
+use orengine::sync::{AsyncWaitGroup, LocalWaitGroup};
 use orengine::utils::get_core_ids;
 use orengine::Executor;
 use smol::future;
 
 const SERVER_ADDR: &str = "server:8083";
 
-const PAR: usize = 512;
-const N: usize = 5_200_000;
+const PAR: usize = 2048;
+const N: usize = 5_200_000 * 2;
 const COUNT: usize = N / PAR;
 const TRIES: usize = 15;
 
@@ -52,14 +52,14 @@ fn bench_throughput() {
                     handles.push(thread::spawn(move || {
                         let mut conn = std::net::TcpStream::connect(SERVER_ADDR).unwrap();
                         let mut buf = [0u8; 1024];
-        
+
                         for _ in 0..COUNT {
                             conn.write_all(b"ping").unwrap();
                             let _ = conn.read(&mut buf).unwrap();
                         }
                     }));
                 }
-        
+
                 for handle in handles {
                     handle.join().unwrap();
                 }
@@ -264,7 +264,10 @@ fn bench_throughput() {
             }
 
             let rps = (N * 1000) / start.elapsed().as_millis() as usize;
-            println!("Benchmark orengine took: {}ms, RPS: {rps}", start.elapsed().as_millis());
+            println!(
+                "Benchmark orengine took: {}ms, RPS: {rps}",
+                start.elapsed().as_millis()
+            );
 
             res += rps;
             thread::sleep(Duration::from_secs(1));
@@ -282,7 +285,10 @@ fn bench_throughput() {
         "smol" => bench_smol(),
         "orengine" => bench_orengine(),
         _ => {
-            println!("Unknown client: {}, use one of: std, smol, tokio, async_std, orengine", client);
+            println!(
+                "Unknown client: {}, use one of: std, smol, tokio, async_std, orengine",
+                client
+            );
             std::process::exit(1);
         }
     }
