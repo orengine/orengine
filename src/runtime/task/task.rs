@@ -85,7 +85,10 @@ unsafe impl Send for Task {}
 impl UnwindSafe for Task {}
 impl RefUnwindSafe for Task {}
 
-// TODO docs
+/// In `debug` mode checks if the [`Task`] is safe to be executed.
+///
+/// It compares an id of the [`Executor`] of the current thread with an id of the executor of
+/// the [`Task`], if the [`Task`] is `local`.
 #[macro_export]
 macro_rules! check_task_local_safety {
     ($task:expr) => {
@@ -108,7 +111,16 @@ macro_rules! check_task_local_safety {
     };
 }
 
-// TODO docs + say about unsafe
+/// Gets the [`Task`] from the context and panics if it is `local`.
+///
+/// # Panics
+///
+/// If the [`Task`] associated with the context is `local`.
+///
+/// # Safety
+///
+/// Provided context contains a valid [`Task`] in `data` field (always true if you call it in
+/// orengine runtime).
 #[macro_export]
 macro_rules! panic_if_local_in_future {
     ($cx:expr, $name_of_future:expr) => {
