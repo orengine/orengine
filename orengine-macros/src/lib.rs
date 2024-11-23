@@ -1,3 +1,11 @@
+//! This crate provides tools to generate code with using `orengine` crate.
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![deny(clippy::blanket_clippy_restriction_lints)]
+#![warn(clippy::nursery)]
+#![allow(clippy::implicit_return)]
+#![allow(clippy::indexing_slicing)]
+#![allow(clippy::panic)]
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
@@ -11,7 +19,7 @@ use syn::parse_macro_input;
 /// * `this` with `io_request_data` (`Option<IoRequestData>`) fields;
 ///
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
-/// `*const crate::runtime::Task` in [`data`](std::task::Waker::data);
+///   `*const orengine::runtime::Task` in `data` field;
 ///
 /// * declared variable `ret` (`usize`) which can be used in `ret_statement`.
 ///
@@ -41,7 +49,7 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        let task = crate::get_task_from_context!(cx);
+        let task = unsafe { orengine::get_task_from_context!(cx) };
         this.io_request_data = Some(IoRequestData::new(task));
 
         #do_request;
@@ -61,10 +69,10 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
 /// # Must have above
 ///
 /// * `this` with `io_request_data` (`Option<IoRequestData>`) and `deadline`
-/// ([`Instant`](std::time::Instant)) fields;
+///   ([`Instant`](std::time::Instant)) fields;
 ///
 /// * `cx` with `waker` method that returns ([`Waker`](std::task::Waker)) which contains
-/// `*const crate::runtime::Task` in [`data`](std::task::Waker::data);
+///   `*const orengine::runtime::Task` in `data` field;
 ///
 /// * declared variable `ret` (`usize`) which can be used in `ret_statement`;
 ///
@@ -100,7 +108,7 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
             }
         }
 
-        let task = crate::get_task_from_context!(cx);
+        let task = unsafe { orengine::get_task_from_context!(cx) };
         this.io_request_data = Some(IoRequestData::new(task));
 
         #do_request;
@@ -113,15 +121,18 @@ pub fn poll_for_time_bounded_io_request(input: TokenStream) -> TokenStream {
 
 /// Generates a test function with provided locality.
 fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
-    let input = parse_macro_input!(input as syn::ItemFn);
-    let body = &input.block;
-    let attrs = &input.attrs;
-    let signature = &input.sig;
+    let fn_item = parse_macro_input!(input as syn::ItemFn);
+    let body = &fn_item.block;
+    let attrs = &fn_item.attrs;
+    let signature = &fn_item.sig;
     let name = &signature.ident;
     let name_str = name.to_string();
-    if signature.inputs.len() > 0 {
-        panic!("Test function must have zero arguments!");
-    }
+
+    assert!(
+        signature.inputs.is_empty(),
+        "Test function must have zero arguments!"
+    );
+
     let spawn_fn = if is_local {
         quote! { orengine::test::run_test_and_block_on_local }
     } else {
@@ -145,10 +156,11 @@ fn generate_test(input: TokenStream, is_local: bool) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_local` and [`test_shared`]
+/// # The difference between `test_local` and [`test_shared()`]
 ///
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
-/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
+/// [`test_shared()`] generates a test function that runs an
+/// `Executor` with `shared` task.
 ///
 /// # Example
 ///
@@ -184,9 +196,9 @@ pub fn test_local(_: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Generates a test function with running an `Executor` with `local` task.
 ///
-/// # The difference between `test_shared` and [`test_local`]
+/// # The difference between `test_shared` and [`test_local()`]
 ///
-/// [`test_shared`] generates a test function that runs an `Executor` with `shared` task.
+/// [`test_shared()`] generates a test function that runs an `Executor` with `shared` task.
 /// `test_local` generates a test function that runs an `Executor` with `local` task.
 ///
 /// # Example

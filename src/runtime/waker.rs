@@ -5,16 +5,16 @@ use std::task::{RawWaker, RawWakerVTable, Waker};
 /// This is really unsafe.
 ///
 /// - [`Task`] has no some ref counters, so, task can be dropped
-/// before it is woken up.
+///   before it is woken up.
 ///
 /// - [`Task`] can be executed only when it is not running. So you need to control that
-/// [`Task`] never be woken up while it is running. Read [`Call`](crate::runtime::call::Call)
-/// for more details.
+///   [`Task`] never be woken up while it is running. Read [`Call`](crate::runtime::call::Call)
+///   for more details.
 ///
 /// # Safety
 ///
 /// - [`Task`] never be executed after
-/// it was dropped (after it returned [`Poll::Ready`](std::task::Poll::Ready)).
+///   it was dropped (after it returned [`Poll::Ready`](std::task::Poll::Ready)).
 ///
 /// - [`Task`] never executed while it is running.
 unsafe fn clone(data_ptr: *const ()) -> RawWaker {

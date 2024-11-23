@@ -1,11 +1,12 @@
+use io_uring::types::OpenHow;
+use nix::libc::{self, c_int};
 use std::fmt::Debug;
 use std::io;
 use std::io::Error;
-use io_uring::types::OpenHow;
-use nix::libc::{self, c_int};
 
 /// Options and flags which can be used to configure how a file is opened.
 #[derive(Copy, Clone)]
+#[allow(clippy::struct_excessive_bools)] // false positive
 pub struct OpenOptions {
     /// This option, when true, will indicate that the file should be read-able if opened.
     read: bool,
@@ -42,7 +43,7 @@ pub struct OpenOptions {
     /// For more information, see [`OpenOptions::custom_flags`](OpenOptions::custom_flags).
     custom_flags: i32,
     /// The permissions to apply to the new file.
-    mode: u32
+    mode: u32,
 }
 
 impl OpenOptions {
@@ -58,13 +59,14 @@ impl OpenOptions {
             create: false,
             create_new: false,
             custom_flags: 0,
-            mode: 0o666
+            mode: 0o666,
         }
     }
 
     /// Sets the option for read access.
     ///
     /// This option, when true, will indicate that the file should be read-able if opened.
+    #[must_use]
     pub fn read(mut self, read: bool) -> Self {
         self.read = read;
         self
@@ -76,6 +78,7 @@ impl OpenOptions {
     ///
     /// If the file already exists, any write calls on it will overwrite its contents,
     /// without truncating it.
+    #[must_use]
     pub fn write(mut self, write: bool) -> Self {
         self.write = write;
         self
@@ -87,6 +90,7 @@ impl OpenOptions {
     /// instead of overwriting previous contents.
     /// Note that setting [`write(true)`](OpenOptions::write)[`append(true)`](OpenOptions::append)
     /// has the same effect as setting only [`append(true)`](OpenOptions::append).
+    #[must_use]
     pub fn append(mut self, append: bool) -> Self {
         self.append = append;
         self
@@ -98,6 +102,7 @@ impl OpenOptions {
     /// the file to 0 length if it already exists.
     ///
     /// The file must be opened with write access for truncate to work.
+    #[must_use]
     pub fn truncate(mut self, truncate: bool) -> Self {
         self.truncate = truncate;
         self
@@ -106,6 +111,7 @@ impl OpenOptions {
     /// Sets the option to create a new file, or open it if it already exists.
     /// In order for the file to be created,
     /// [`OpenOptions::write`] or [`OpenOptions::append`] access must be used.
+    #[must_use]
     pub fn create(mut self, create: bool) -> Self {
         self.create = create;
         self
@@ -115,7 +121,6 @@ impl OpenOptions {
     ///
     /// If a file exists at the target location, creating a new file will fail
     /// with [`AlreadyExists`](io::ErrorKind::AlreadyExists) or another error based on the situation.
-    /// See [`OpenOptions::open`](OpenOptions::open) for a non-exhaustive list of likely errors.
     ///
     /// This option is useful because it is atomic.
     /// Otherwise, between checking whether a file exists and creating a new one,
@@ -125,6 +130,7 @@ impl OpenOptions {
     /// and [`truncate()`](OpenOptions::truncate) are ignored.
     ///
     /// The file must be opened with write or append access in order to create a new file.
+    #[must_use]
     pub fn create_new(mut self, create_new: bool) -> Self {
         self.create_new = create_new;
         self
@@ -132,22 +138,24 @@ impl OpenOptions {
 
     /// Pass custom flags to the flags argument of open.
     ///
-    /// The bits that define the access mode are masked out with O_ACCMODE,
+    /// The bits that define the access mode are masked out with `O_ACCMODE`,
     /// to ensure they do not interfere with the access mode set by Rusts options.
     ///
     /// Custom flags can only set flags, not remove flags set by Rusts options.
     /// This options overwrites any previously set custom flags.
+    #[must_use]
     pub fn custom_flags(mut self, flags: i32) -> Self {
         self.custom_flags = flags;
         self
     }
-    
+
     /// Sets the permissions to apply to the new file.
+    #[must_use]
     pub fn mode(mut self, mode: u32) -> Self {
         self.mode = mode;
         self
     }
-    
+
     #[cfg(unix)]
     /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
     pub(crate) fn into_os_options(self) -> io::Result<OpenHow> {
@@ -185,12 +193,13 @@ impl OpenOptions {
                 (_, _, true) => libc::O_CREAT | libc::O_EXCL,
             })
         }
-        
+
         let flags = libc::O_CLOEXEC
             | get_access_mode(&self)?
             | get_creation_mode(&self)?
             | (self.custom_flags & !libc::O_ACCMODE);
-        Ok(OpenHow::new().flags(flags as _).mode(self.mode as _))
+        #[allow(clippy::cast_sign_loss)] // flags has no sign
+        Ok(OpenHow::new().flags(flags as _).mode(self.mode.into()))
     }
 }
 
@@ -206,6 +215,7 @@ impl Debug for OpenOptions {
             .field("read", &self.read)
             .field("write", &self.write)
             .field("append", &self.append)
+            .field("truncate", &self.truncate)
             .field("create", &self.create)
             .field("create_new", &self.create_new)
             .field("custom_flags", &self.custom_flags)

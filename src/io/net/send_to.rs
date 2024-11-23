@@ -1,14 +1,15 @@
 use std::future::Future;
-use std::io;
 use std::io::{ErrorKind, Result};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use std::{io, ptr};
 
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, MessageSendHeader, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -45,7 +46,7 @@ impl<'fut> Future for SendTo<'fut> {
             local_worker().send_to(
                 this.fd,
                 this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
             ret
@@ -53,6 +54,7 @@ impl<'fut> Future for SendTo<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendTo` is `Send`
 unsafe impl Send for SendTo<'_> {}
 
 /// `send_to` io operation with deadline.
@@ -91,7 +93,7 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
             worker.send_to_with_deadline(
                 this.fd,
                 this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut (this.buf as *const _)),
+                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
@@ -100,26 +102,27 @@ impl<'fut> Future for SendToWithDeadline<'fut> {
     }
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendToWithDeadline` is `Send`
 unsafe impl Send for SendToWithDeadline<'_> {}
 
 #[inline(always)]
 /// Returns first resolved address from `ToSocketAddrs`.
 fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAddr> {
-    loop {
-        match to_addr.to_socket_addrs()?.next() {
-            Some(addr) => return Ok(SockAddr::from(addr)),
-            None => {}
-        }
-
-        return Err(io::Error::new(
-            ErrorKind::InvalidInput,
-            "no addresses to send data to",
-        ));
+    let mut addrs = to_addr.to_socket_addrs()?;
+    if let Some(addr) = addrs.next() {
+        return Ok(SockAddr::from(addr));
     }
+
+    Err(io::Error::new(
+        ErrorKind::InvalidInput,
+        "no addresses to send data to",
+    ))
 }
 
 /// The `AsyncSendTo` trait provides asynchronous methods for sending data to a specified address
-/// over a socket. It supports sending to a single address and can be done with or without deadlines
+/// over a socket.
+///
+/// It supports sending to a single address and can be done with or without deadlines
 /// or timeouts. The trait can be implemented for datagram-oriented sockets
 /// that implement the `AsRawFd` trait.
 ///
@@ -128,7 +131,7 @@ fn sock_addr_from_to_socket_addr<A: ToSocketAddrs>(to_addr: A) -> Result<SockAdd
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::UdpSocket;
 /// use orengine::io::{AsyncBind, AsyncSendTo};
 /// use std::net::SocketAddr;
@@ -147,7 +150,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -167,11 +170,11 @@ pub trait AsyncSendTo: AsRawFd {
     /// address is used. Returns the number of bytes sent.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -206,11 +209,11 @@ pub trait AsyncSendTo: AsRawFd {
     /// Only the first resolved address is used. Returns the number of bytes sent.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -247,7 +250,7 @@ pub trait AsyncSendTo: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -277,11 +280,11 @@ pub trait AsyncSendTo: AsRawFd {
     /// calling `send_to_with_deadline`. Only the first resolved address is used.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;
@@ -318,11 +321,11 @@ pub trait AsyncSendTo: AsRawFd {
     /// calling `send_to_with_timeout`. Only the first resolved address is used.
     ///
     /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](ErrorKind::TimedOut).
+    /// kind [`ErrorKind::TimedOut`].
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::UdpSocket;
     /// use orengine::io::{AsyncBind, AsyncSendTo};
     /// use std::net::SocketAddr;

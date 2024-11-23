@@ -1,5 +1,5 @@
 //! This module provides a way to run tests with reusing
-//! the same [`Executor`](Executor) via [`run_test_and_block_on_local`]
+//! the same [`Executor`] via [`run_test_and_block_on_local`]
 //! and [`run_test_and_block_on_shared`].
 //!
 //! # Example
@@ -31,86 +31,34 @@ use crate::runtime::Config;
 use crate::{local_executor, yield_now, Executor};
 use std::future::Future;
 
-/// `TestRunner` provides a way to run tests with reusing the same [`Executor`].
-/// It creates only one [`Executor`] per thread and allows working with it via
-/// [`block_on_local`](TestRunner::block_on_local)
-/// and [`block_on_shared`](TestRunner::block_on_shared).
-///
-/// Please use it in tests, because it is efficient.
-///
-/// # Thread safety
-///
-/// `TestRunner` is thread-safe because it is stored in `thread_local`.
-pub struct TestRunner {}
-
-impl TestRunner {
-    /// Initializes the local executor only if it is not initialized
-    /// and returns `&'static mut Executor`.
-    pub(crate) fn get_local_executor(&self) -> &'static mut Executor {
-        if get_local_executor_ref().is_none() {
-            let cfg = Config::default().disable_work_sharing();
-            Executor::init_with_config(cfg);
-        }
-
-        local_executor()
+/// Initializes the local executor only if it is not initialized
+/// and returns `&'static mut Executor`.
+pub(crate) fn get_local_executor() -> &'static mut Executor {
+    if get_local_executor_ref().is_none() {
+        let cfg = Config::default().disable_work_sharing();
+        Executor::init_with_config(cfg);
     }
 
-    /// Upgrades provided future to release all previous tasks.
-    pub(crate) fn upgrade_future<Fut>(future: Fut) -> impl Future<Output = ()> + 'static
-    where
-        Fut: Future<Output = ()> + 'static,
-    {
-        async {
-            while local_executor().number_of_spawned_tasks() > 0 {
-                yield_now().await
-            }
-            
-            future.await;
-        }
-    }
-
-    /// Initializes the local executor (if it is not initialized) and blocks the current
-    /// thread until the `local` future is completed.
-    ///
-    /// # The difference between `block_on_local` and [`block_on_shared`](TestRunner::block_on_shared)
-    ///
-    /// `block_on_local` creates a `local` task, while `block_on_shared` creates a `shared` task.
-    ///
-    /// Read more about `local` and `shared` tasks in [`Executor`].
-    pub(crate) fn block_on_local<Fut>(&self, future: Fut)
-    where
-        Fut: Future<Output = ()> + 'static,
-    {
-        let executor = self.get_local_executor();
-        executor.run_and_block_on_local(Self::upgrade_future(future)).expect(BUG_MESSAGE);
-    }
-
-    /// Initializes the local executor (if it is not initialized) and blocks the current
-    /// thread until the `shared` future is completed.
-    ///
-    /// # The difference between `block_on_shared` and [`block_on_local`](TestRunner::block_on_local)
-    ///
-    /// `block_on_shared` creates a `shared` task, while `block_on_local` creates a `local` task.
-    ///
-    /// Read more about `local` and `shared` tasks in [`Executor`].
-    pub(crate) fn block_on_shared<Fut>(&self, future: Fut)
-    where
-        Fut: Future<Output = ()> + Send + 'static,
-    {
-        let executor = self.get_local_executor();
-        executor.run_and_block_on_shared(Self::upgrade_future(future)).expect(BUG_MESSAGE);
-    }
+    local_executor()
 }
 
-thread_local! {
-    /// Thread-local [`TestRunner`].
-    static LOCAL_TEST_RUNNER: TestRunner = TestRunner {};
+/// Upgrades provided future to release all previous tasks.
+#[allow(clippy::future_not_send, reason = "This can be non-Send")]
+pub(crate) async fn upgrade_future<Fut>(future: Fut)
+where
+    Fut: Future<Output = ()> + 'static,
+{
+    while local_executor().number_of_spawned_tasks() > 0 {
+        yield_now().await;
+    }
+
+    future.await;
 }
 
 /// Initializes the local executor (if it is not initialized) and blocks the current
 /// thread until the `local` future is completed.
 ///
-/// # The difference between `run_test_and_block_on_local` and [`run_test_and_block_on_shared`](run_test_and_block_on_shared)
+/// # The difference between `run_test_and_block_on_local` and [`run_test_and_block_on_shared`]
 ///
 /// `run_test_and_block_on_local` creates a `local` task, while `run_test_and_block_on_shared`
 /// creates a `shared` task.
@@ -149,17 +97,24 @@ thread_local! {
 ///     assert_eq!(awesome_async_function().await, 42);
 /// }
 /// ```
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "Panics on when a bug is occurred"
+)]
 pub fn run_test_and_block_on_local<Fut>(future: Fut)
 where
     Fut: Future<Output = ()> + 'static,
 {
-    LOCAL_TEST_RUNNER.with(|runner| runner.block_on_local(future));
+    let executor = get_local_executor();
+    executor
+        .run_and_block_on_local(upgrade_future(future))
+        .expect(BUG_MESSAGE);
 }
 
 /// Initializes the local executor (if it is not initialized) and blocks the current
 /// thread until the `shared` future is completed.
 ///
-/// # The difference between `run_test_and_block_on_shared` and [`run_test_and_block_on_local`](run_test_and_block_on_local)
+/// # The difference between `run_test_and_block_on_shared` and [`run_test_and_block_on_local`]
 ///
 /// `run_test_and_block_on_shared` creates a `shared` task, while `run_test_and_block_on_local`
 /// creates a `local` task.
@@ -209,9 +164,16 @@ where
 ///     assert_eq!(awesome_async_shared_function().await, 3);
 /// }
 /// ```
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "Panics on when a bug is occurred"
+)]
 pub fn run_test_and_block_on_shared<Fut>(future: Fut)
 where
     Fut: Future<Output = ()> + Send + 'static,
 {
-    LOCAL_TEST_RUNNER.with(|runner| runner.block_on_shared(future));
+    let executor = get_local_executor();
+    executor
+        .run_and_block_on_shared(upgrade_future(future))
+        .expect(BUG_MESSAGE);
 }

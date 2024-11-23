@@ -20,7 +20,7 @@ use crate::runtime::local_executor;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncAccept, AsyncBind};
 /// use orengine::local_executor;
@@ -66,12 +66,12 @@ impl AsFd for TcpStream {
     }
 }
 
-impl Into<std::net::TcpStream> for TcpStream {
-    fn into(self) -> std::net::TcpStream {
-        let fd = self.fd;
-        mem::forget(self);
+impl From<TcpStream> for std::net::TcpStream {
+    fn from(stream: TcpStream) -> Self {
+        let fd = stream.fd;
+        mem::forget(stream);
 
-        unsafe { std::net::TcpStream::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(fd) }
     }
 }
 
@@ -105,9 +105,9 @@ impl From<OwnedFd> for TcpStream {
     }
 }
 
-impl Into<OwnedFd> for TcpStream {
-    fn into(self) -> OwnedFd {
-        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
+impl From<TcpStream> for OwnedFd {
+    fn from(stream: TcpStream) -> Self {
+        unsafe { Self::from_raw_fd(stream.into_raw_fd()) }
     }
 }
 
@@ -175,7 +175,9 @@ mod tests {
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
-    use crate::sync::{LocalCondVar, LocalMutex, LocalWaitGroup};
+    use crate::sync::{
+        AsyncCondVar, AsyncMutex, AsyncWaitGroup, LocalCondVar, LocalMutex, LocalWaitGroup,
+    };
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -195,13 +197,13 @@ mod tests {
         let server_thread = thread::spawn(move || {
             use std::io::{Read, Write};
 
-            let listener = std::net::TcpListener::bind(ADDR)
-                .expect("std bind failed");
+            let listener = std::net::TcpListener::bind(ADDR).expect("std bind failed");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
                 let mut is_ready = is_ready_mu.lock().expect("lock failed");
                 *is_ready = true;
+                drop(is_ready);
                 condvar.notify_one();
             }
 
@@ -218,9 +220,15 @@ mod tests {
 
         {
             let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-            let mut is_server_ready = is_server_ready_mu.lock().expect("lock failed");
-            while *is_server_ready == false {
-                is_server_ready = condvar.wait(is_server_ready).expect("wait failed");
+
+            loop {
+                let is_server_ready = is_server_ready_mu.lock().expect("lock failed");
+                if *is_server_ready {
+                    drop(is_server_ready);
+                    break;
+                }
+
+                let _unused = condvar.wait(is_server_ready).expect("wait failed");
             }
         }
 
@@ -248,9 +256,20 @@ mod tests {
         thread::spawn(move || {
             use std::io::{Read, Write};
 
-            let mut guard = is_server_ready_server_clone.0.lock().unwrap();
-            while !*guard {
-                guard = is_server_ready_server_clone.1.wait(guard).unwrap();
+            {
+                loop {
+                    let is_server_ready =
+                        is_server_ready_server_clone.0.lock().expect("lock failed");
+                    if *is_server_ready {
+                        drop(is_server_ready);
+                        break;
+                    }
+
+                    let _unused = is_server_ready_server_clone
+                        .1
+                        .wait(is_server_ready)
+                        .expect("wait failed");
+                }
             }
 
             let mut stream = std::net::TcpStream::connect(ADDR).expect("connect failed");
@@ -322,9 +341,9 @@ mod tests {
         assert_eq!(stream.ttl().expect("get_ttl failed"), 133);
 
         stream.set_nodelay(true).expect("set_nodelay failed");
-        assert_eq!(stream.nodelay().expect("get_nodelay failed"), true);
+        assert!(stream.nodelay().expect("get_nodelay failed"));
         stream.set_nodelay(false).expect("set_nodelay failed");
-        assert_eq!(stream.nodelay().expect("get_nodelay failed"), false);
+        assert!(!stream.nodelay().expect("get_nodelay failed"));
 
         stream
             .set_linger(Some(Duration::from_secs(23)))
@@ -398,10 +417,7 @@ mod tests {
                 }
                 match *state {
                     CONNECT => {}
-                    SEND => {
-                        let _ = listener.accept().await.expect("accept failed").0;
-                    }
-                    POLL | PEEK | RECV => {
+                    SEND | POLL | PEEK | RECV => {
                         let _ = listener.accept().await.expect("accept failed").0;
                     }
                     _ => break,
@@ -416,7 +432,7 @@ mod tests {
             let mut state = state.lock().await;
             match *state {
                 CONNECT => {
-                    for _ in 0..BACKLOG_SIZE + 1 {
+                    for _ in 0..=BACKLOG_SIZE {
                         let _ = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                             .await
                             .expect("connect with timeout failed");
@@ -426,8 +442,7 @@ mod tests {
                         Ok(_) => panic!("connect with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
                             panic!(
-                                "connect with timeout should failed with TimedOut, but got {:?}",
-                                err
+                                "connect with timeout should failed with TimedOut, but got {err:?}"
                             )
                         }
                         Err(_) => {}
@@ -445,12 +460,9 @@ mod tests {
                         .send_all_with_deadline(&buf, Instant::now() + Duration::from_micros(1))
                         .await;
                     match res {
-                        Ok(_) => panic!("send with timeout should failed"),
+                        Ok(()) => panic!("send with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "send with timeout should failed with TimedOut, but got {:?}",
-                                err
-                            )
+                            panic!("send with timeout should failed with TimedOut, but got {err:?}")
                         }
                         Err(_) => {}
                     }
@@ -463,12 +475,9 @@ mod tests {
 
                     let res = stream.poll_recv_with_timeout(TIMEOUT).await;
                     match res {
-                        Ok(_) => panic!("poll with timeout should failed"),
+                        Ok(()) => panic!("poll with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "poll with timeout should failed with TimedOut, but got {:?}",
-                                err
-                            )
+                            panic!("poll with timeout should failed with TimedOut, but got {err:?}")
                         }
                         Err(_) => {}
                     }
@@ -484,10 +493,7 @@ mod tests {
                     match res {
                         Ok(_) => panic!("recv with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "recv with timeout should failed with TimedOut, but got {:?}",
-                                err
-                            )
+                            panic!("recv with timeout should failed with TimedOut, but got {err:?}")
                         }
                         Err(_) => {}
                     }
@@ -503,10 +509,7 @@ mod tests {
                     match res {
                         Ok(_) => panic!("peek with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "peek with timeout should failed with TimedOut, but got {:?}",
-                                err
-                            )
+                            panic!("peek with timeout should failed with TimedOut, but got {err:?}")
                         }
                         Err(_) => {}
                     }

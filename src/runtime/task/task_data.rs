@@ -28,13 +28,15 @@ impl TaskData {
             is_local: locality.value,
         };
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
+        #[allow(clippy::transmute_undefined_repr, reason = "dark magic")]
         {
             let mut tagged_ptr =
                 unsafe { std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(future) };
 
             tagged_ptr |= locality.value;
 
+            #[allow(clippy::useless_transmute, reason = "false positive")]
             Self {
                 future_tagged_ptr: unsafe {
                     std::mem::transmute::<i128, *mut dyn Future<Output = ()>>(tagged_ptr)
@@ -49,12 +51,14 @@ impl TaskData {
         #[cfg(not(target_pointer_width = "64"))]
         return self.future_ptr;
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
+        #[allow(clippy::transmute_undefined_repr, reason = "dark magic")]
         {
             let future_tagged_ptr = unsafe {
                 std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(self.future_tagged_ptr)
             };
 
+            #[allow(clippy::useless_transmute, reason = "false positive")]
             unsafe {
                 std::mem::transmute::<i128, *mut dyn Future<Output = ()>>(
                     future_tagged_ptr & TASK_MASK,
@@ -69,7 +73,8 @@ impl TaskData {
         #[cfg(not(target_pointer_width = "64"))]
         return self.is_local;
 
-        #[cfg(any(target_pointer_width = "64"))]
+        #[cfg(target_pointer_width = "64")]
+        #[allow(clippy::transmute_undefined_repr, reason = "dark magic")]
         {
             let future_tagged_ptr = unsafe {
                 std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(self.future_tagged_ptr)

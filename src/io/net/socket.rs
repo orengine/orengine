@@ -1,3 +1,4 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::RawFd;
 use crate::io::worker::{local_worker, IoWorker};
@@ -35,12 +36,9 @@ impl Future for Socket {
         let ret;
 
         poll_for_io_request!((
-            local_worker().socket(
-                this.domain,
-                this.socket_type,
-                this.protocol,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
-            ),
+            local_worker().socket(this.domain, this.socket_type, this.protocol, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
             ret as RawFd
         ));
     }

@@ -24,7 +24,7 @@ use crate::runtime::local_executor;
 /// Although UDP is a connectionless protocol, this implementation provides an interface
 /// to set an address where data should be sent and received from.
 /// [`UdpSocket::connect`](AsyncConnectDatagram)
-/// returns [`UdpConnectedSocket`](UdpConnectedSocket) which implements
+/// returns [`UdpConnectedSocket`] which implements
 /// [`ConnectedDatagram`](crate::net::connected_datagram::ConnectedDatagram),
 /// [`AsyncRecv`](crate::io::AsyncRecv), [`AsyncPeek`](crate::io::AsyncPeek),
 /// [`AsyncSend`](crate::io::AsyncSend).
@@ -33,7 +33,7 @@ use crate::runtime::local_executor;
 ///
 /// ## Usage without [`connect`](AsyncConnectDatagram)
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::UdpSocket;
 /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
 /// use orengine::buf::full_buffer;
@@ -55,7 +55,7 @@ use crate::runtime::local_executor;
 ///
 /// ## Usage with [`connect`](AsyncConnectDatagram)
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
@@ -79,12 +79,12 @@ pub struct UdpSocket {
     fd: RawFd,
 }
 
-impl Into<std::net::UdpSocket> for UdpSocket {
-    fn into(self) -> std::net::UdpSocket {
-        let fd = self.fd;
-        mem::forget(self);
+impl From<UdpSocket> for std::net::UdpSocket {
+    fn from(socket: UdpSocket) -> Self {
+        let fd = socket.fd;
+        mem::forget(socket);
 
-        unsafe { std::net::UdpSocket::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(fd) }
     }
 }
 
@@ -130,15 +130,15 @@ impl From<OwnedFd> for UdpSocket {
     }
 }
 
-impl Into<OwnedFd> for UdpSocket {
-    fn into(self) -> OwnedFd {
-        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
+impl From<UdpSocket> for OwnedFd {
+    fn from(socket: UdpSocket) -> Self {
+        unsafe { Self::from_raw_fd(socket.into_raw_fd()) }
     }
 }
 
 impl AsyncBind for UdpSocket {
     async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
-        new_udp_socket(&addr).await
+        new_udp_socket(addr).await
     }
 
     fn bind_and_listen_if_needed(
@@ -193,7 +193,6 @@ impl Drop for UdpSocket {
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
-    use std::ops::Deref;
     use std::rc::Rc;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
@@ -203,10 +202,10 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::io::{AsyncBind, AsyncRecv, AsyncSend};
-    use crate::{yield_now, Local};
     use crate::net::ReusePort;
     use crate::runtime::local_executor;
-    use crate::sync::{LocalCondVar, LocalMutex};
+    use crate::sync::{AsyncCondVar, AsyncMutex, LocalCondVar, LocalMutex};
+    use crate::{yield_now, Local};
 
     const REQUEST: &[u8] = b"GET / HTTP/1.1\r\n\r\n";
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
@@ -220,13 +219,13 @@ mod tests {
         let is_server_ready_server_clone = is_server_ready.clone();
 
         let server_thread = thread::spawn(move || {
-            let socket = std::net::UdpSocket::bind(SERVER_ADDR)
-                .expect("std bind failed");
+            let socket = std::net::UdpSocket::bind(SERVER_ADDR).expect("std bind failed");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
                 let mut is_ready = is_ready_mu.lock().unwrap();
                 *is_ready = true;
+                drop(is_ready);
                 condvar.notify_one();
             }
 
@@ -236,14 +235,22 @@ mod tests {
                 let (n, src) = socket.recv_from(&mut buf).expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
-                socket.send_to(RESPONSE, &src).expect("std write failed");
+                socket.send_to(RESPONSE, src).expect("std write failed");
             }
         });
 
-        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-        let mut is_server_ready = is_server_ready_mu.lock().unwrap();
-        while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).unwrap();
+        {
+            let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+
+            loop {
+                let is_server_ready = is_server_ready_mu.lock().expect("lock failed");
+                if *is_server_ready {
+                    drop(is_server_ready);
+                    break;
+                }
+
+                let _unused = condvar.wait(is_server_ready).expect("wait failed");
+            }
         }
 
         let mut stream = UdpSocket::bind("127.0.0.1:9081")
@@ -263,15 +270,14 @@ mod tests {
 
         server_thread.join().expect("server thread join failed");
     }
-    
+
+    #[allow(clippy::future_not_send, reason = "It is a test")]
     async fn test_server_with_config(
         server_addr_str: String,
         client_addr_str: String,
-        config: BindConfig
+        config: BindConfig,
     ) {
-        let is_server_ready = Local::new(
-            (LocalMutex::new(false), LocalCondVar::new())
-        );
+        let is_server_ready = Local::new((LocalMutex::new(false), LocalCondVar::new()));
         let is_server_ready_clone = is_server_ready.clone();
         let addr_clone = server_addr_str.clone();
 
@@ -284,19 +290,19 @@ mod tests {
             is_server_ready_clone.1.notify_one();
 
             for _ in 0..TIMES {
-                server.poll_recv_with_timeout(Duration::from_secs(10))
+                server
+                    .poll_recv_with_timeout(Duration::from_secs(10))
                     .await
                     .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
-                let (n, src) = server.recv_from_with_timeout(
-                    &mut buf,
-                    Duration::from_secs(10)
-                )
+                let (n, src) = server
+                    .recv_from_with_timeout(&mut buf, Duration::from_secs(10))
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
-                server.send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
+                server
+                    .send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
                     .await
                     .expect("send failed");
             }
@@ -326,42 +332,42 @@ mod tests {
                 .await
                 .expect("recv failed");
         }
-        
+
         yield_now().await;
         thread::yield_now();
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_without_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10037".to_string(),
             "127.0.0.1:9082".to_string(),
-            config.reuse_port(ReusePort::Disabled)
+            config.reuse_port(ReusePort::Disabled),
         )
         .await;
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_with_default_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10038".to_string(),
             "127.0.0.1:9083".to_string(),
-            config.reuse_port(ReusePort::Default)
+            config.reuse_port(ReusePort::Default),
         )
         .await;
     }
-    
+
     #[orengine_macros::test_local]
     fn test_server_with_cpu_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
             "127.0.0.1:10039".to_string(),
             "127.0.0.1:9084".to_string(),
-            config.reuse_port(ReusePort::CPU)
+            config.reuse_port(ReusePort::CPU),
         )
-            .await;
+        .await;
     }
 
     #[orengine_macros::test_local]
@@ -377,7 +383,7 @@ mod tests {
             let mut server = UdpSocket::bind(SERVER_ADDR).await.expect("bind failed");
 
             {
-                let (is_ready_mu, condvar) = is_server_ready.deref();
+                let (is_ready_mu, condvar) = &*is_server_ready;
                 let mut is_ready = is_ready_mu.lock().await;
                 *is_ready = true;
                 condvar.notify_one();
@@ -402,10 +408,12 @@ mod tests {
             }
         });
 
-        let (is_server_ready_mu, condvar) = is_server_ready_server_clone.deref();
-        let mut is_server_ready = is_server_ready_mu.lock().await;
-        while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).await;
+        {
+            let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+            let mut is_server_ready = is_server_ready_mu.lock().await;
+            while !(*is_server_ready) {
+                is_server_ready = condvar.wait(is_server_ready).await;
+            }
         }
 
         let mut stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
@@ -418,28 +426,22 @@ mod tests {
         stream
             .set_broadcast(false)
             .expect("Failed to set broadcast");
-        assert_eq!(stream.broadcast().expect("Failed to get broadcast"), false);
+        assert!(!stream.broadcast().expect("Failed to get broadcast"));
         stream.set_broadcast(true).expect("Failed to set broadcast");
-        assert_eq!(stream.broadcast().expect("Failed to get broadcast"), true);
+        assert!(stream.broadcast().expect("Failed to get broadcast"));
 
         stream
             .set_multicast_loop_v4(false)
             .expect("Failed to set multicast_loop_v4");
-        assert_eq!(
-            stream
-                .multicast_loop_v4()
-                .expect("Failed to get multicast_loop_v4"),
-            false
-        );
+        assert!(!stream
+            .multicast_loop_v4()
+            .expect("Failed to get multicast_loop_v4"));
         stream
             .set_multicast_loop_v4(true)
             .expect("Failed to set multicast_loop_v4");
-        assert_eq!(
-            stream
-                .multicast_loop_v4()
-                .expect("Failed to get multicast_loop_v4"),
-            true
-        );
+        assert!(stream
+            .multicast_loop_v4()
+            .expect("Failed to get multicast_loop_v4"));
 
         stream
             .set_multicast_ttl_v4(124)
@@ -455,11 +457,12 @@ mod tests {
         assert_eq!(stream.ttl().expect("Failed to get ttl"), 144);
 
         match stream.take_error() {
-            Ok(err_) => match err_ {
-                Some(err) => panic!("Take error returned with an error: {:?}", err),
-                None => {}
-            },
-            Err(err) => panic!("Take error failed: {:?}", err),
+            Ok(err_) => {
+                if let Some(err) = err_ {
+                    panic!("Take error returned with an error: {err:?}")
+                }
+            }
+            Err(err) => panic!("Take error failed: {err:?}"),
         }
 
         for _ in 0..TIMES {
@@ -502,24 +505,18 @@ mod tests {
         let mut socket = UdpSocket::bind(ADDR).await.expect("bind failed");
 
         match socket.poll_recv_with_timeout(TIMEOUT).await {
-            Ok(_) => panic!("poll_recv should timeout"),
+            Ok(()) => panic!("poll_recv should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
         }
 
-        match socket
-            .recv_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-            .await
-        {
+        match socket.recv_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
             Ok(_) => panic!("recv_from should timeout"),
-            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{}", err),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }
 
-        match socket
-            .peek_from_with_timeout(&mut vec![0u8; 10], TIMEOUT)
-            .await
-        {
+        match socket.peek_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
             Ok(_) => panic!("peek_from should timeout"),
-            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{}", err),
+            Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }
     }
 }

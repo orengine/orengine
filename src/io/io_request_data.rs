@@ -3,7 +3,7 @@ use std::io::Result;
 use std::{mem, ptr};
 
 /// Default value of [`IoRequestData::ret`].
-pub(crate) const UNINIT_RESULT: Result<usize> = Ok(1 << 32 - 1);
+pub(crate) const UNINIT_RESULT: Result<usize> = Ok((1 << 32) - 1);
 
 /// Data of io request. It contains a result and a task.
 /// After the task is done, the result will be set and the task will be executed.
@@ -31,10 +31,8 @@ impl IoRequestData {
     fn check_if_executed_in_debug(&mut self) {
         #[cfg(debug_assertions)]
         {
-            if self.was_executed {
-                panic!("{}", crate::bug_message::BUG_MESSAGE);
-            }
-            
+            assert!(!self.was_executed, "{}", crate::bug_message::BUG_MESSAGE);
+
             self.was_executed = true;
         }
     }

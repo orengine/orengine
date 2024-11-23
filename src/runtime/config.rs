@@ -8,6 +8,7 @@ use std::mem::discriminant;
 ///
 /// For example, when the task that uses an IO worker is
 /// shared with the [`Executor`](crate::runtime::executor::Executor), that has no IO worker.
+#[allow(clippy::struct_excessive_bools)] // false positive
 struct ConfigStats {
     number_of_executors_with_enabled_io_worker_and_work_sharing: usize,
     number_of_executors_with_enabled_thread_pool_and_work_sharing: usize,
@@ -58,35 +59,20 @@ impl ValidConfig {
 impl Drop for ValidConfig {
     fn drop(&mut self) {
         if self.work_sharing_level != usize::MAX {
-            let mut guard;
+            let mut guard = Some(GLOBAL_CONFIG_STATS.lock());
+            let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
             if self.io_worker_config.is_some() {
-                guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-
                 shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing -=
                     1;
             } else {
-                guard = Some(GLOBAL_CONFIG_STATS.lock());
-                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
-
                 shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker -=
                     1;
             }
 
             if self.is_thread_pool_enabled() {
-                if guard.is_none() {
-                    guard = Some(GLOBAL_CONFIG_STATS.lock());
-                }
-
-                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
                 shared_config_stats
                     .number_of_executors_with_enabled_thread_pool_and_work_sharing -= 1;
             } else {
-                if guard.is_none() {
-                    guard = Some(GLOBAL_CONFIG_STATS.lock());
-                }
-
-                let shared_config_stats = guard.as_mut().expect(BUG_MESSAGE);
                 shared_config_stats
                     .number_of_executors_with_work_sharing_and_without_thread_pool -= 1;
             }
@@ -101,15 +87,15 @@ impl Drop for ValidConfig {
 /// - `buffer_cap`: The size of the [`buffers`](crate::buf::Buffer).
 ///
 /// - `io_worker_config`: An optional configuration for I/O workers. If none is provided,
-/// the IO worker will be disabled.
+///   the IO worker will be disabled.
 ///
 /// - `number_of_thread_workers`: The number of thread workers to spawn. If zero is provided,
-/// the thread pool will be disabled.
+///   the thread pool will be disabled.
 ///
 /// - `work_sharing_level`: The level of work sharing between threads. It is responsible for
-/// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
-/// them to the shared queue.
-/// If [`usize::MAX`] is provided, work sharing will be disabled.
+///   how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
+///   them to the shared queue.
+///   If [`usize::MAX`] is provided, work sharing will be disabled.
 #[derive(Clone, Copy)]
 pub struct Config {
     /// The size of the [`buffers`](crate::buf::Buffer).
@@ -126,6 +112,34 @@ pub struct Config {
     /// If [`usize::MAX`] is provided, work sharing will be disabled.
     work_sharing_level: usize,
 }
+
+const AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_IO_WORKER: &str = "\
+    An attempt to create an Executor with work sharing and with an \
+    IO worker has failed because another Executor was created with \
+    work sharing enabled and without an IO worker enabled. \
+    This is unacceptable because an Executor who does not have an \
+    IO worker cannot take on a task that requires an IO worker.";
+
+const AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_IO_WORKER: &str = "\
+    An attempt to create an Executor with work sharing and without an \
+    IO worker has failed because another Executor was created with \
+    an IO worker and work sharing enabled. \
+    This is unacceptable because an Executor who does not have an \
+    IO worker cannot take on a task that requires an IO worker.";
+
+const AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_THREAD_POOL: &str = "\
+    An attempt to create an Executor with work sharing and with a \
+    thread pool enabled has failed because another Executor was created with \
+    work sharing enabled and without a thread pool enabled. \
+    This is unacceptable because an Executor who does not have a \
+    thread pool cannot take on a task that requires a thread pool.";
+
+const AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_THREAD_POOL: &str = "\
+    An attempt to create an Executor with work sharing and without a \
+    thread pool enabled has failed because another Executor was created with \
+    both a thread pool and work sharing enabled. \
+    This is unacceptable because an Executor who does not have a \
+    thread pool cannot take on a task that requires a thread pool.";
 
 impl Config {
     /// Returns a default [`Config`].
@@ -144,6 +158,7 @@ impl Config {
     }
 
     /// Sets the capacity of the [`buffers`](crate::buf::Buffer).
+    #[must_use]
     pub const fn set_buffer_cap(mut self, buf_cap: usize) -> Self {
         self.buffer_cap = buf_cap;
 
@@ -179,6 +194,7 @@ impl Config {
     }
 
     /// Disables the IO worker.
+    #[must_use]
     pub const fn disable_io_worker(mut self) -> Self {
         self.io_worker_config = None;
 
@@ -198,6 +214,7 @@ impl Config {
 
     /// Sets the number of thread workers to spawn. If zero is provided,
     /// the thread pool will be disabled.
+    #[must_use]
     pub const fn set_numbers_of_thread_workers(mut self, number_of_thread_workers: usize) -> Self {
         self.number_of_thread_workers = number_of_thread_workers;
 
@@ -210,6 +227,7 @@ impl Config {
     }
 
     /// Enables the work sharing.
+    #[must_use]
     pub const fn enable_work_sharing(mut self) -> Self {
         if self.work_sharing_level == usize::MAX {
             self.work_sharing_level = 7;
@@ -219,6 +237,7 @@ impl Config {
     }
 
     /// Disables the work sharing.
+    #[must_use]
     pub const fn disable_work_sharing(mut self) -> Self {
         self.work_sharing_level = usize::MAX;
 
@@ -229,6 +248,7 @@ impl Config {
     /// how many tasks the [`Executor`](crate::runtime::executor::Executor) can hold before assigning
     /// them to the shared queue.
     /// If [`usize::MAX`] is provided, work sharing will be disabled.
+    #[must_use]
     pub const fn set_work_sharing_level(mut self, work_sharing_level: usize) -> Self {
         self.work_sharing_level = work_sharing_level;
 
@@ -236,82 +256,53 @@ impl Config {
     }
 
     /// Validates the configuration.
+    #[must_use]
     pub(crate) fn validate(self) -> ValidConfig {
         if self.work_sharing_level != usize::MAX {
             let mut shared_config_stats = GLOBAL_CONFIG_STATS.lock();
 
-            match self.io_worker_config.is_some() {
-                true => {
-                    if shared_config_stats
-                        .number_of_executors_with_work_sharing_and_without_io_worker
-                        != 0
-                    {
-                        panic!(
-                            "An attempt to create an Executor with work sharing and with an \
-                            IO worker has failed because another Executor was created with \
-                            work sharing enabled and without an IO worker enabled. \
-                            This is unacceptable because an Executor who does not have an \
-                            IO worker cannot take on a task that requires an IO worker."
-                        );
-                    }
-
-                    shared_config_stats
-                        .number_of_executors_with_enabled_io_worker_and_work_sharing += 1;
+            if self.io_worker_config.is_some() {
+                if shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker
+                    != 0
+                {
+                    panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_IO_WORKER}");
                 }
-                false => {
-                    if shared_config_stats
-                        .number_of_executors_with_enabled_io_worker_and_work_sharing
-                        != 0
-                    {
-                        panic!(
-                            "An attempt to create an Executor with work sharing and without an \
-                            IO worker has failed because another Executor was created with \
-                            an IO worker and work sharing enabled. \
-                            This is unacceptable because an Executor who does not have an \
-                            IO worker cannot take on a task that requires an IO worker."
-                        );
-                    }
 
-                    shared_config_stats
-                        .number_of_executors_with_work_sharing_and_without_io_worker += 1;
+                shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing +=
+                    1;
+            } else {
+                if shared_config_stats.number_of_executors_with_enabled_io_worker_and_work_sharing
+                    != 0
+                {
+                    panic!(
+                        "{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_IO_WORKER}"
+                    );
                 }
+
+                shared_config_stats.number_of_executors_with_work_sharing_and_without_io_worker +=
+                    1;
             }
 
-            match self.is_thread_pool_enabled() {
-                true => {
-                    if shared_config_stats
-                        .number_of_executors_with_work_sharing_and_without_thread_pool
-                        != 0
-                    {
-                        panic!(
-                            "An attempt to create an Executor with work sharing and with a \
-                            thread pool enabled has failed because another Executor was created with \
-                            work sharing enabled and without a thread pool enabled. \
-                            This is unacceptable because an Executor who does not have a \
-                            thread pool cannot take on a task that requires a thread pool."
-                        );
-                    }
-
-                    shared_config_stats
-                        .number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
+            if self.is_thread_pool_enabled() {
+                if shared_config_stats.number_of_executors_with_work_sharing_and_without_thread_pool
+                    != 0
+                {
+                    panic!("{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_THREAD_POOL}");
                 }
-                false => {
-                    if shared_config_stats
-                        .number_of_executors_with_enabled_thread_pool_and_work_sharing
-                        != 0
-                    {
-                        panic!(
-                            "An attempt to create an Executor with work sharing and without a \
-                            thread pool enabled has failed because another Executor was created with \
-                            both a thread pool and work sharing enabled. \
-                            This is unacceptable because an Executor who does not have a \
-                            thread pool cannot take on a task that requires a thread pool."
-                        );
-                    }
 
-                    shared_config_stats
-                        .number_of_executors_with_work_sharing_and_without_thread_pool += 1;
+                shared_config_stats
+                    .number_of_executors_with_enabled_thread_pool_and_work_sharing += 1;
+            } else {
+                if shared_config_stats.number_of_executors_with_enabled_thread_pool_and_work_sharing
+                    != 0
+                {
+                    panic!(
+                        "{AN_ATTEMPT_TO_CREATE_EXECUTOR_WITH_WORK_SHARING_AND_WITHOUT_THREAD_POOL}"
+                    );
                 }
+
+                shared_config_stats
+                    .number_of_executors_with_work_sharing_and_without_thread_pool += 1;
             }
         }
 
@@ -326,7 +317,7 @@ impl Config {
 
 impl From<&ValidConfig> for Config {
     fn from(config: &ValidConfig) -> Self {
-        Config {
+        Self {
             buffer_cap: config.buffer_cap,
             io_worker_config: config.io_worker_config,
             number_of_thread_workers: config.number_of_thread_workers,
@@ -397,6 +388,10 @@ mod tests {
     // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
     // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
     #[orengine_macros::test_local]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_first_case_panic() {
         let lock = get_lock();
@@ -412,6 +407,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_second_case_panic() {
         let lock = get_lock();
@@ -427,6 +426,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_third_case_panic() {
         let lock = get_lock();
@@ -441,6 +444,10 @@ mod tests {
     }
 
     #[orengine_macros::test_local]
+    #[allow(
+        clippy::should_panic_without_expect,
+        reason = "panic message is too long"
+    )]
     #[should_panic]
     fn test_config_fourth_case_panic() {
         let lock = get_lock();

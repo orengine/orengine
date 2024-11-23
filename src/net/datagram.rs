@@ -1,10 +1,12 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-use crate::io::{AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo, AsyncBind};
+use crate::io::{AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo};
 use crate::net::connected_datagram::ConnectedDatagram;
 use crate::net::Socket;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// The `Datagram` trait defines common operations for connectionless datagram-based sockets,
-/// such as UDP. It extends the `Socket` trait and provides methods for sending and receiving
+/// such as UDP.
+///
+/// It extends the [`Socket`] trait and provides methods for sending and receiving
 /// datagrams, as well as configuring settings like broadcast and multicast.
 ///
 /// # Associated Types
@@ -28,7 +30,7 @@ use crate::net::Socket;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::net::Datagram;
 ///
@@ -46,12 +48,16 @@ use crate::net::Socket;
 /// }
 /// ```
 pub trait Datagram:
-    Socket + AsyncConnectDatagram<Self::ConnectedDatagram> + AsyncRecvFrom +
-    AsyncPeekFrom + AsyncSendTo + AsyncBind {
+    Socket
+    + AsyncConnectDatagram<Self::ConnectedDatagram>
+    + AsyncRecvFrom
+    + AsyncPeekFrom
+    + AsyncSendTo
+    + AsyncBind
+{
     /// Type of the connected datagram, which allows sending data without specifying the address
     /// for each operation.
     type ConnectedDatagram: ConnectedDatagram;
-
 
     /// Enables or disables broadcasting on the socket. When broadcasting is enabled (`true`),
     /// the socket can send packets to the broadcast address.
@@ -125,7 +131,7 @@ pub trait Datagram:
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::{UdpSocket, Datagram};
     /// use std::net::Ipv4Addr;    ///
     /// #
@@ -155,7 +161,11 @@ pub trait Datagram:
 
     /// Leaves the IPv4 multicast group that the socket had joined.
     #[inline(always)]
-    fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> std::io::Result<()> {
+    fn leave_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> std::io::Result<()> {
         let borrow_fd = self.as_fd();
         let socket_ref = socket2::SockRef::from(&borrow_fd);
         socket_ref.leave_multicast_v4(multiaddr, interface)

@@ -1,3 +1,4 @@
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::OsPath::OsPath;
 use crate::io::worker::{local_worker, IoWorker};
@@ -14,7 +15,7 @@ pub struct RemoveDir {
 }
 
 impl RemoveDir {
-    /// Creates a new 'remove_dir' io operation from a given path.
+    /// Creates a new `remove_dir` io operation from a given path.
     pub fn new(path: OsPath) -> Self {
         Self {
             path,

@@ -8,16 +8,16 @@ use crate::runtime::local_executor;
 
 /// A UDP socket.
 ///
-/// After creating a `UdpConnectedSocket` by [`connect`](crate::net::UdpSocket::connect)ing
-/// it to a socket address, data can be [sent](AsyncSend) and [received](AsyncRecv)
-/// any other socket address.
+/// After creating a `UdpConnectedSocket` by
+/// [`connecting`](crate::io::AsyncConnectDatagram::connect) it to a socket address,
+/// data can be [sent](AsyncSend) and [received](AsyncRecv) from other socket address.
 ///
 /// Although UDP is a connectionless protocol, this implementation provides an interface
 /// to set an address where data should be sent and received from.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
@@ -41,12 +41,12 @@ pub struct UdpConnectedSocket {
     fd: RawFd,
 }
 
-impl Into<std::net::UdpSocket> for UdpConnectedSocket {
-    fn into(self) -> std::net::UdpSocket {
-        let fd = self.fd;
-        mem::forget(self);
+impl From<UdpConnectedSocket> for std::net::UdpSocket {
+    fn from(connected_socket: UdpConnectedSocket) -> Self {
+        let fd = connected_socket.fd;
+        mem::forget(connected_socket);
 
-        unsafe { std::net::UdpSocket::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(fd) }
     }
 }
 
@@ -92,9 +92,9 @@ impl From<OwnedFd> for UdpConnectedSocket {
     }
 }
 
-impl Into<OwnedFd> for UdpConnectedSocket {
-    fn into(self) -> OwnedFd {
-        unsafe { OwnedFd::from_raw_fd(self.into_raw_fd()) }
+impl From<UdpConnectedSocket> for OwnedFd {
+    fn from(connected_socket: UdpConnectedSocket) -> Self {
+        unsafe { Self::from_raw_fd(connected_socket.into_raw_fd()) }
     }
 }
 
@@ -159,6 +159,9 @@ mod tests {
     const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\r\n";
     const TIMES: usize = 20;
 
+    //noinspection ALL
+    //noinspection RsExternalLinter
+    //noinspection ALL
     #[orengine_macros::test_local]
     fn test_connected_udp_client() {
         const SERVER_ADDR: &str = "127.0.0.1:11086";
@@ -174,6 +177,7 @@ mod tests {
                 let (is_ready_mu, condvar) = &*is_server_ready;
                 let mut is_ready = is_ready_mu.lock().unwrap();
                 *is_ready = true;
+                drop(is_ready);
                 condvar.notify_one();
             }
 
@@ -183,14 +187,17 @@ mod tests {
                 let (n, src) = socket.recv_from(&mut buf).expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
-                socket.send_to(RESPONSE, &src).expect("std write failed");
+                socket.send_to(RESPONSE, src).expect("std write failed");
             }
         });
 
-        let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
-        let mut is_server_ready = is_server_ready_mu.lock().unwrap();
-        while *is_server_ready == false {
-            is_server_ready = condvar.wait(is_server_ready).unwrap();
+        {
+            let (is_server_ready_mu, condvar) = &*is_server_ready_server_clone;
+            let mut is_server_ready = is_server_ready_mu.lock().unwrap();
+            while !*is_server_ready {
+                is_server_ready = condvar.wait(is_server_ready).unwrap();
+            }
+            drop(is_server_ready);
         }
 
         let stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
@@ -231,12 +238,12 @@ mod tests {
             .expect("bind failed");
 
         match connected_socket.poll_recv_with_timeout(TIMEOUT).await {
-            Ok(_) => panic!("poll_recv should timeout"),
+            Ok(()) => panic!("poll_recv should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
         }
 
         match connected_socket
-            .recv_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .recv_with_timeout(&mut [0u8; 10], TIMEOUT)
             .await
         {
             Ok(_) => panic!("recv_from should timeout"),
@@ -244,7 +251,7 @@ mod tests {
         }
 
         match connected_socket
-            .peek_with_timeout(&mut vec![0u8; 10], TIMEOUT)
+            .peek_with_timeout(&mut [0u8; 10], TIMEOUT)
             .await
         {
             Ok(_) => panic!("peek_from should timeout"),

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
+use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -85,6 +86,7 @@ impl<'buf> Future for SendWithDeadline<'buf> {
 }
 
 /// The `AsyncSend` trait provides asynchronous methods for sending data over a stream or socket.
+///
 /// It allows for sending data with or without deadlines, and ensures the complete transmission
 /// of data when required.
 ///
@@ -93,7 +95,7 @@ impl<'buf> Future for SendWithDeadline<'buf> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use orengine::net::TcpStream;
 /// use orengine::io::{AsyncConnectStream, AsyncSend};
 ///
@@ -111,7 +113,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     ///
@@ -135,7 +137,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     /// use std::time::{Duration, Instant};
@@ -160,7 +162,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     /// use std::time::Duration;
@@ -183,7 +185,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     ///
@@ -210,7 +212,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     /// use std::time::{Duration, Instant};
@@ -239,7 +241,7 @@ pub trait AsyncSend: AsRawFd {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncSend};
     /// use std::time::Duration;
