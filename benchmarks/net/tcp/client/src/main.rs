@@ -13,8 +13,8 @@ use smol::future;
 
 const SERVER_ADDR: &str = "server:8083";
 
-const PAR: usize = 2048;
-const N: usize = 5_200_000 * 2;
+const PAR: usize = 512;
+const N: usize = 5_200_000;
 const COUNT: usize = N / PAR;
 const TRIES: usize = 15;
 

@@ -13,7 +13,6 @@ use crate::utils::CoreId;
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
 use std::cell::UnsafeCell;
-use std::cmp::min;
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
@@ -546,7 +545,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_local_future<F>(&mut self, future: F)
     where
-        F: Future<Output = ()>,
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.exec_task(task);
@@ -561,7 +560,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_shared_future<F>(&mut self, future: F)
     where
-        F: Future<Output = ()> + Send,
+        F: Future<Output=()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.exec_task(task);
@@ -579,7 +578,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
     where
-        F: Future<Output = ()>,
+        F: Future<Output=()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.spawn_local_task(task);
@@ -611,7 +610,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_shared<F>(&mut self, future: F)
     where
-        F: Future<Output = ()> + Send,
+        F: Future<Output=()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.spawn_shared_task(task);
@@ -699,11 +698,11 @@ impl Executor {
     /// It is used only when no work is available.
     #[inline(always)]
     #[allow(clippy::unused_self)] // because in the future it will use it
-    fn sleep(&self) {
+    fn sleep_at_most(&self, max_duration: Duration) {
         // Wait for more work
 
         // TODO bench it
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(max_duration);
     }
 
     /// Does background work like:
@@ -748,33 +747,60 @@ impl Executor {
             }
         }
 
-        if self.number_of_spawned_tasks() != 0 {
-            if let Some(worker) = self.local_worker.as_mut() {
-                let _ = worker.must_poll(None);
-            }
-        } else if let Some(worker) = self.local_worker.as_mut() {
-            let max_timeout = if self.config.is_work_sharing_enabled() {
-                Duration::from_micros(500)
+        // We need to consider 8 cases from 3 variables:
+        // has cpu work (self.number_of_spawned_tasks() != 0 or self.config.is_work_sharing_enabled()),
+        // has io work and has sleeping tasks
+        let has_cpu_work = self.number_of_spawned_tasks() > 0;
+        if self.local_worker.is_some() {
+            let worker = unsafe { self.local_worker.as_mut().unwrap_unchecked() };
+            if worker.has_work() {
+                if !has_cpu_work {
+                    if let Some(nearest_timeout) = nearest_timeout_option {
+                        // case 1: we haven't cpu work, but we have sleeping tasks and io work
+                        worker.must_poll(Some(nearest_timeout.min(Duration::from_millis(500))));
+                    } else {
+                        // case 2: we haven't cpu work or sleeping tasks, but we have tasks and io work
+                        worker.must_poll(Some(Duration::from_millis(500)));
+                    }
+                } else {
+                    // It proceeds 2 cases:
+                    // case 3: we have cpu work, sleeping tasks and io work
+                    // case 4: we have cpu work, io work and no sleeping tasks
+                    worker.must_poll(None);
+                }
+            } else if !has_cpu_work {
+                if let Some(nearest_timeout) = nearest_timeout_option {
+                    // case 5: we haven't io work and cpu work, but we have sleeping tasks
+                    self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                } else {
+                    // case 6: we haven't work
+                    self.sleep_at_most(Duration::from_millis(100));
+                }
             } else {
-                Duration::from_millis(500)
-            };
+                // It proceeds 2 cases:
+                // case 7: we have cpu work, sleeping tasks, but no io work
+                // case 8: we have cpu work, but no io work or no sleeping tasks
 
-            let timeout = nearest_timeout_option.map_or(max_timeout, |nearest_timeout| {
-                min(nearest_timeout, max_timeout)
-            });
-
-            let has_io_work = worker.must_poll(Some(timeout));
-            if !has_io_work {
-                self.sleep();
-            } else if self.number_of_spawned_tasks() == 0 {
-                let worker = unsafe {
-                    // we need to drop previous worker to call self.number_of_spawned_tasks
-                    self.local_worker.as_mut().unwrap_unchecked()
-                };
-                let _ = worker.must_poll(Some(Duration::from_millis(500)));
+                // Continue processing cpu tasks
             }
         } else {
-            self.sleep();
+            // Here we haven't worker, therefore we need to consider only 4 cases
+
+            if let Some(nearest_timeout) = nearest_timeout_option {
+                if has_cpu_work {
+                    // case 1: we have cpu work and sleeping tasks
+                    // Continue processing cpu tasks
+                } else {
+                    // case 2: we have cpu work, but we haven't sleeping tasks
+                    self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                }
+            } else if has_cpu_work {
+                // case 3: we have cpu work, but we haven't sleeping tasks
+                // Continue processing cpu tasks
+            } else {
+                // case 4: we haven't cpu work or sleeping tasks
+                self.sleep_at_most(Duration::from_millis(100));
+            }
         }
 
         shrink!(self.local_tasks);
@@ -892,7 +918,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_local_future<Fut: Future<Output = ()>>(&mut self, future: Fut) {
+    pub fn run_with_local_future<Fut: Future<Output=()>>(&mut self, future: Fut) {
         self.spawn_local(future);
         self.run();
     }
@@ -920,7 +946,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_shared_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
+    pub fn run_with_shared_future<Fut: Future<Output=()> + Send>(&mut self, future: Fut) {
         self.spawn_shared(future);
         self.run();
     }
@@ -956,7 +982,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
+    pub fn run_and_block_on_local<T, Fut: Future<Output=T>>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
@@ -992,7 +1018,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_shared<T, Fut: Future<Output = T> + Send>(
+    pub fn run_and_block_on_shared<T, Fut: Future<Output=T> + Send>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {

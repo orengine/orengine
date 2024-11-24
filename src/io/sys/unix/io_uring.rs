@@ -15,7 +15,6 @@ use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
-use std::thread;
 use std::time::{Duration, Instant};
 
 /// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
@@ -105,17 +104,8 @@ impl IOUringWorker {
     }
 
     /// Submits all accumulated requests and waits for completions or a timeout.
-    ///
-    /// Returns Ok(false) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
-    fn submit_and_poll(&mut self, timeout_option: Option<Duration>) -> Result<bool, Error> {
-        if self.number_of_active_tasks == 0 {
-            if let Some(timeout) = timeout_option {
-                thread::sleep(timeout);
-            }
-            return Ok(false);
-        }
-
+    fn submit_and_poll(&mut self, timeout_option: Option<Duration>) -> Result<(), Error> {
         let ring = unsafe { &mut *self.ring.get() };
         let mut sq = unsafe { ring.submission_shared() };
         let submitter = ring.submitter();
@@ -138,13 +128,15 @@ impl IOUringWorker {
             }
         }
 
-        let res = if let Some(timeout) = timeout_option {
-            let timespec = Timespec::new().nsec(timeout.as_nanos() as u32);
-            let args = SubmitArgs::new().timespec(&timespec);
-            submitter.submit_with_args(1, &args)
-        } else {
-            submitter.submit()
-        };
+        let res = timeout_option.map_or_else(
+            || submitter.submit(),
+            |timeout| {
+                #[allow(clippy::cast_possible_truncation, reason = "u32 is enough for 4 secs")]
+                let timespec = Timespec::new().nsec(timeout.as_nanos() as u32);
+                let args = SubmitArgs::new().timespec(&timespec);
+                submitter.submit_with_args(1, &args)
+            },
+        );
 
         match res {
             Ok(_) => (),
@@ -153,7 +145,7 @@ impl IOUringWorker {
             Err(err) => return Err(err),
         }
 
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -194,15 +186,15 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    #[must_use]
-    fn must_poll(&mut self, timeout_option: Option<Duration>) -> bool {
+    fn has_work(&self) -> bool {
+        self.number_of_active_tasks > 0
+    }
+
+    #[inline(always)]
+    fn must_poll(&mut self, timeout_option: Option<Duration>) {
         self.check_deadlines();
-        if !self
-            .submit_and_poll(timeout_option)
-            .expect("IOUringWorker::submit() failed")
-        {
-            return false;
-        }
+        self.submit_and_poll(timeout_option)
+            .expect("IOUringWorker::submit() failed");
 
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
@@ -237,8 +229,6 @@ impl IoWorker for IOUringWorker {
                 executor.spawn_shared_task(task);
             }
         }
-
-        true
     }
 
     #[inline(always)]
