@@ -15,14 +15,11 @@ use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
+use std::thread;
 use std::time::{Duration, Instant};
-
-/// Timeout in microseconds for `io_uring`.
-const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
 
 /// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
 pub(crate) struct IOUringWorker {
-    timeout: SubmitArgs<'static, 'static>,
     /// # Why we need some cell?
     ///
     /// We can't rewrite engine ([`Selector`] trait) to use separately `ring` field and other fields in different methods.
@@ -111,8 +108,11 @@ impl IOUringWorker {
     ///
     /// Returns Ok(false) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
-    fn submit(&mut self) -> Result<bool, Error> {
+    fn submit_and_poll(&mut self, timeout_option: Option<Duration>) -> Result<bool, Error> {
         if self.number_of_active_tasks == 0 {
+            if let Some(timeout) = timeout_option {
+                thread::sleep(timeout);
+            }
             return Ok(false);
         }
 
@@ -138,7 +138,13 @@ impl IOUringWorker {
             }
         }
 
-        let res = submitter.submit_with_args(1, &self.timeout);
+        let res = if let Some(timeout) = timeout_option {
+            let timespec = Timespec::new().nsec(timeout.as_nanos() as u32);
+            let args = SubmitArgs::new().timespec(&timespec);
+            submitter.submit_with_args(1, &args)
+        } else {
+            submitter.submit()
+        };
 
         match res {
             Ok(_) => (),
@@ -156,7 +162,6 @@ impl IOUringWorker {
 impl IoWorker for IOUringWorker {
     fn new(config: IoWorkerConfig) -> Self {
         let mut s = Self {
-            timeout: SubmitArgs::new().timespec(&TIMEOUT),
             ring: UnsafeCell::new(IoUring::new(config.io_uring.number_of_entries).unwrap()),
             backlog: VecDeque::new(),
             probe: Probe::new(),
@@ -190,9 +195,12 @@ impl IoWorker for IOUringWorker {
 
     #[inline(always)]
     #[must_use]
-    fn must_poll(&mut self) -> bool {
+    fn must_poll(&mut self, timeout_option: Option<Duration>) -> bool {
         self.check_deadlines();
-        if !self.submit().expect("IOUringWorker::submit() failed") {
+        if !self
+            .submit_and_poll(timeout_option)
+            .expect("IOUringWorker::submit() failed")
+        {
             return false;
         }
 

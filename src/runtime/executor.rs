@@ -1,13 +1,3 @@
-use std::cell::UnsafeCell;
-use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
-use std::{mem, thread};
-
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
@@ -22,6 +12,16 @@ use crate::sync_task_queue::SyncTaskList;
 use crate::utils::CoreId;
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
+use std::cell::UnsafeCell;
+use std::cmp::min;
+use std::collections::{BTreeMap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
+use std::{mem, thread};
 
 macro_rules! shrink {
     ($list:expr) => {
@@ -729,7 +729,7 @@ impl Executor {
         self.exec_series = 0;
         self.take_work_if_needed();
         self.thread_pool.poll(&mut self.local_tasks);
-        let has_io_work = self.local_worker.as_mut().map_or(true, IoWorker::must_poll);
+        let mut nearest_timeout_option = None;
 
         if !self.local_sleeping_tasks.is_empty() {
             let instant = Instant::now();
@@ -742,12 +742,38 @@ impl Executor {
                     }
                 } else {
                     self.local_sleeping_tasks.insert(time_to_wake, task);
+                    nearest_timeout_option = Some(instant - time_to_wake);
                     break;
                 }
             }
         }
 
-        if self.number_of_spawned_tasks() == 0 && !has_io_work {
+        if self.number_of_spawned_tasks() != 0 {
+            if let Some(worker) = self.local_worker.as_mut() {
+                let _ = worker.must_poll(None);
+            }
+        } else if let Some(worker) = self.local_worker.as_mut() {
+            let max_timeout = if self.config.is_work_sharing_enabled() {
+                Duration::from_micros(500)
+            } else {
+                Duration::from_millis(500)
+            };
+
+            let timeout = nearest_timeout_option.map_or(max_timeout, |nearest_timeout| {
+                min(nearest_timeout, max_timeout)
+            });
+
+            let has_io_work = worker.must_poll(Some(timeout));
+            if !has_io_work {
+                self.sleep();
+            } else if self.number_of_spawned_tasks() == 0 {
+                let worker = unsafe {
+                    // we need to drop previous worker to call self.number_of_spawned_tasks
+                    self.local_worker.as_mut().unwrap_unchecked()
+                };
+                let _ = worker.must_poll(Some(Duration::from_millis(500)));
+            }
+        } else {
             self.sleep();
         }
 

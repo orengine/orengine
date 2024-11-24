@@ -6,7 +6,7 @@ use nix::libc;
 use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::net::Shutdown;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 thread_local! {
     /// Thread-local worker for async io operations.
@@ -80,10 +80,12 @@ pub(crate) trait IoWorker {
     fn deregister_time_bounded_io_task(&mut self, deadline: &Instant);
     /// Submits an accumulated tasks to the kernel and polls it for completion if needed.
     ///
+    /// It also gets `timeout` for polling. If it is `None`, it will not wait (__busy polling__).
+    ///
     /// Returns `true` if the worker has polled.
     /// The worker doesn't poll only if it has no work to do.
     #[must_use]
-    fn must_poll(&mut self) -> bool;
+    fn must_poll(&mut self, timeout_option: Option<Duration>) -> bool;
     /// Registers a new `socket` io operation.
     fn socket(
         &mut self,
