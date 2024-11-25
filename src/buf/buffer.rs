@@ -303,6 +303,8 @@ impl From<Vec<u8>> for Buffer {
     }
 }
 
+unsafe impl Send for Buffer {}
+
 impl Drop for Buffer {
     fn drop(&mut self) {
         let pool = buf_pool();
