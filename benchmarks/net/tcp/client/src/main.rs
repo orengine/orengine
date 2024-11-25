@@ -13,7 +13,7 @@ use smol::future;
 
 const SERVER_ADDR: &str = "server:8083";
 
-const PAR: usize = 512;
+const PAR: usize = 512 * 2;
 const N: usize = 5_200_000;
 const COUNT: usize = N / PAR;
 const TRIES: usize = 15;
@@ -207,7 +207,7 @@ fn bench_throughput() {
                 let wg = Local::new(LocalWaitGroup::new());
 
                 for _ in 0..par {
-                    wg.get_mut().add(1);
+                    wg.borrow_mut().add(1);
                     let wg = wg.clone();
                     local_executor().spawn_local(async move {
                         let mut stream = orengine::net::TcpStream::connect(SERVER_ADDR)
@@ -222,11 +222,11 @@ fn bench_throughput() {
                             stream.recv(&mut buf).await.unwrap();
                         }
 
-                        wg.get_mut().done();
+                        wg.borrow_mut().done();
                     });
                 }
 
-                wg.get_mut().wait().await;
+                wg.borrow_mut().wait().await;
 
                 let mut guard = end_wg.0.lock().unwrap();
                 *guard += 1;
