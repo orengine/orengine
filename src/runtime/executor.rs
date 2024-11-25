@@ -1,3 +1,4 @@
+use crate::bug_message::BUG_MESSAGE;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
@@ -663,10 +664,18 @@ impl Executor {
         if self.shared_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
             return;
         }
+
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
             if let Some(mut shared_task_list) = shared_task_list.as_vec() {
                 shrink!(shared_task_list);
                 if !shared_task_list.is_empty() {
+                    let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
+                    for _ in 0..limit {
+                        if let Some(task) = shared_task_list.pop() {
+                            self.shared_tasks.push_back(task);
+                        }
+                    }
+
                     return;
                 }
             }
@@ -680,7 +689,7 @@ impl Executor {
                     let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
 
                     for i in 0..max_number_of_tries {
-                        let list = lists.get_unchecked(i);
+                        let list = lists.get(i).expect(BUG_MESSAGE);
                         let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
                         if limit == 0 {
                             return;

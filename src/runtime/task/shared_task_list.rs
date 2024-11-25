@@ -35,8 +35,8 @@ impl ExecutorSharedTaskList {
     pub(crate) fn take_batch(&self, other_list: &mut VecDeque<Task>, limit: usize) {
         if let Some(mut guard) = self.list.try_lock() {
             let number_of_elems = guard.len().min(limit);
-            for elem in guard.drain(..number_of_elems) {
-                other_list.push_back(elem);
+            for _ in 0..number_of_elems {
+                other_list.push_back(unsafe { guard.pop().unwrap_unchecked() });
             }
         }
     }
