@@ -545,7 +545,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_local_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.exec_task(task);
@@ -560,7 +560,7 @@ impl Executor {
     #[inline(always)]
     pub fn exec_shared_future<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send,
+        F: Future<Output = ()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.exec_task(task);
@@ -578,7 +578,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_local<F>(&mut self, future: F)
     where
-        F: Future<Output=()>,
+        F: Future<Output = ()>,
     {
         let task = Task::from_future(future, Locality::local());
         self.spawn_local_task(task);
@@ -610,7 +610,7 @@ impl Executor {
     #[inline(always)]
     pub fn spawn_shared<F>(&mut self, future: F)
     where
-        F: Future<Output=()> + Send,
+        F: Future<Output = ()> + Send,
     {
         let task = Task::from_future(future, Locality::shared());
         self.spawn_shared_task(task);
@@ -756,49 +756,49 @@ impl Executor {
             if worker.has_work() {
                 if !has_cpu_work {
                     if let Some(nearest_timeout) = nearest_timeout_option {
-                        // case 1: we haven't cpu work, but we have sleeping tasks and io work
+                        // case 1: we don't have cpu work, but we have sleeping tasks and io work
                         worker.must_poll(Some(nearest_timeout.min(Duration::from_millis(500))));
                     } else {
-                        // case 2: we haven't cpu work or sleeping tasks, but we have tasks and io work
+                        // case 2: we don't have cpu work nor sleeping tasks, but we io work
                         worker.must_poll(Some(Duration::from_millis(500)));
                     }
                 } else {
                     // It proceeds 2 cases:
                     // case 3: we have cpu work, sleeping tasks and io work
-                    // case 4: we have cpu work, io work and no sleeping tasks
+                    // case 4: we have cpu work, io work, but we don't have sleeping tasks
                     worker.must_poll(None);
                 }
             } else if !has_cpu_work {
                 if let Some(nearest_timeout) = nearest_timeout_option {
-                    // case 5: we haven't io work and cpu work, but we have sleeping tasks
+                    // case 5: we don't have io work nor cpu work, but we have sleeping tasks
                     self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
                 } else {
-                    // case 6: we haven't work
+                    // case 6: we don't have any work
                     self.sleep_at_most(Duration::from_millis(100));
                 }
             } else {
                 // It proceeds 2 cases:
-                // case 7: we have cpu work, sleeping tasks, but no io work
-                // case 8: we have cpu work, but no io work or no sleeping tasks
+                // case 7: we have cpu work, sleeping tasks, but don't have io work
+                // case 8: we have cpu work, but don't have io work nor sleeping tasks
 
                 // Continue processing cpu tasks
             }
         } else {
-            // Here we haven't worker, therefore we need to consider only 4 cases
+            // Here we don't have worker, therefore we need to consider only 4 cases
 
             if let Some(nearest_timeout) = nearest_timeout_option {
                 if has_cpu_work {
                     // case 1: we have cpu work and sleeping tasks
                     // Continue processing cpu tasks
                 } else {
-                    // case 2: we have cpu work, but we haven't sleeping tasks
+                    // case 2: we have cpu work, but we don't have sleeping tasks
                     self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
                 }
             } else if has_cpu_work {
-                // case 3: we have cpu work, but we haven't sleeping tasks
+                // case 3: we have cpu work, but we don't have sleeping tasks
                 // Continue processing cpu tasks
             } else {
-                // case 4: we haven't cpu work or sleeping tasks
+                // case 4: we don't have cpu work nor sleeping tasks
                 self.sleep_at_most(Duration::from_millis(100));
             }
         }
@@ -918,7 +918,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_local_future<Fut: Future<Output=()>>(&mut self, future: Fut) {
+    pub fn run_with_local_future<Fut: Future<Output = ()>>(&mut self, future: Fut) {
         self.spawn_local(future);
         self.run();
     }
@@ -946,7 +946,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds");
     /// ```
-    pub fn run_with_shared_future<Fut: Future<Output=()> + Send>(&mut self, future: Fut) {
+    pub fn run_with_shared_future<Fut: Future<Output = ()> + Send>(&mut self, future: Fut) {
         self.spawn_shared(future);
         self.run();
     }
@@ -982,7 +982,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_local<T, Fut: Future<Output=T>>(
+    pub fn run_and_block_on_local<T, Fut: Future<Output = T>>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
@@ -1018,7 +1018,7 @@ impl Executor {
     ///
     /// println!("Hello from a sync runtime after at least 3 seconds with result: {}", res);
     /// ```
-    pub fn run_and_block_on_shared<T, Fut: Future<Output=T> + Send>(
+    pub fn run_and_block_on_shared<T, Fut: Future<Output = T> + Send>(
         &'static mut self,
         future: Fut,
     ) -> Result<T, &'static str> {
