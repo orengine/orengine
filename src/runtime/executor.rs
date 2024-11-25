@@ -666,7 +666,7 @@ impl Executor {
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
             if let Some(mut shared_task_list) = shared_task_list.as_vec() {
                 shrink!(shared_task_list);
-                if shared_task_list.is_empty() {
+                if !shared_task_list.is_empty() {
                     return;
                 }
             }
