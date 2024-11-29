@@ -155,7 +155,7 @@ impl<T: ?Sized> SpinLock<T> {
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
         if self
             .is_locked
-            .compare_exchange_weak(false, true, Relaxed, Relaxed)
+            .compare_exchange_weak(false, true, Acquire, Relaxed)
             .is_ok()
         {
             Some(SpinLockGuard::new(self))
