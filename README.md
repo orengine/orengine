@@ -4,6 +4,21 @@ Orengine is a blazing fast, memory-efficient, and highly flexible asynchronous e
 age of Rust development. Whether you're building applications with a shared-nothing architecture
 or a shared-all architecture, Orengine provides you with the tools to reach maximum performance.
 
+# Stage
+
+In development. This library is not ready for
+production use and its API can be changed.
+
+Wait for `v1.0.0` and media posts.
+
+# Before release
+
+- add more docs;
+- fix bug in work-sharing;
+- test `try operations` on channels;
+- add fallback to `asyncify` for non-Linux OS;
+- think about __fixed__ buffers and files.
+
 # Why Orengine?
 
 - __Speed:__ Orengine is designed from the ground up to be the fastest async engine available in the Rust ecosystem.
