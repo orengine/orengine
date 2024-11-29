@@ -25,8 +25,9 @@ impl ExecutorSharedTaskList {
         self.executor_id
     }
 
-    /// Returns the `SpinLockGuard<Vec<Task>>` of the underlying list.
-    pub(crate) fn as_vec(&self) -> Option<SpinLockGuard<Vec<Task>>> {
+    /// Returns the `SpinLockGuard<Vec<Task>>` of the underlying list if it is not locked.
+    /// Otherwise, returns `None`.
+    pub(crate) fn try_lock_and_return_as_vec(&self) -> Option<SpinLockGuard<Vec<Task>>> {
         self.list.try_lock()
     }
 
