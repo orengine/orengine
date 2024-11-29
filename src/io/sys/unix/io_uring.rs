@@ -460,7 +460,10 @@ impl IoWorker for IOUringWorker {
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
         self.register_entry(
             #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(),
+            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+            opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(-1 as _)
+                .build(),
             request_ptr,
         );
     }
@@ -493,7 +496,10 @@ impl IoWorker for IOUringWorker {
     ) {
         self.register_entry(
             #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(),
+            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+            opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(-1 as _)
+                .build(),
             request_ptr,
         );
     }
