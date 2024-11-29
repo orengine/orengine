@@ -338,11 +338,25 @@ impl PartialEq for Config {
 impl Eq for Config {}
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate as orengine;
+    use std::sync::atomic;
 
+    const NUMBER_OF_TESTS: usize = 6;
+
+    pub(crate) static WAS_READY: atomic::AtomicBool = atomic::AtomicBool::new(false);
+    static NUMBER_OF_READY_TESTS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn handle_test_ready() {
+        let prev = NUMBER_OF_READY_TESTS.fetch_add(1, atomic::Ordering::SeqCst);
+        if prev == NUMBER_OF_TESTS - 1 {
+            WAS_READY.store(true, atomic::Ordering::SeqCst);
+        }
+
+        assert!(prev < NUMBER_OF_TESTS, "{}", BUG_MESSAGE);
+    }
 
     fn get_lock() -> std::sync::MutexGuard<'static, ()> {
         LOCK.lock().unwrap_or_else(|e| {
@@ -360,6 +374,7 @@ mod tests {
         assert!(config.is_thread_pool_enabled());
         assert_ne!(config.work_sharing_level, usize::MAX);
         drop(lock);
+        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -380,6 +395,7 @@ mod tests {
         assert!(!config.is_work_sharing_enabled());
 
         drop(lock);
+        handle_test_ready();
     }
 
     // 4 cases for panic
@@ -404,6 +420,7 @@ mod tests {
             .validate();
 
         drop(lock);
+        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -423,6 +440,7 @@ mod tests {
         let _second_config = Config::default().validate();
 
         drop(lock);
+        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -441,6 +459,7 @@ mod tests {
         let _second_config = Config::default().validate();
 
         drop(lock);
+        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -459,5 +478,6 @@ mod tests {
             .validate();
 
         drop(lock);
+        handle_test_ready();
     }
 }
