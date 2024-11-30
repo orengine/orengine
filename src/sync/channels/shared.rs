@@ -123,7 +123,7 @@ impl<'future, T> WaitSend<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitSend<'future, T> {
+impl<T> Future for WaitSend<'_, T> {
     type Output = SendResult<T>;
 
     #[inline(always)]
@@ -221,7 +221,7 @@ impl<'future, T> WaitRecv<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitRecv<'future, T> {
+impl<T> Future for WaitRecv<'_, T> {
     type Output = RecvInResult;
 
     #[inline(always)]
@@ -407,16 +407,16 @@ impl<'channel, T> AsyncSender<T> for Sender<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Sender<'channel, T> {
+impl<T> Clone for Sender<'_, T> {
     fn clone(&self) -> Self {
         Sender { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T: Send> Sync for Sender<'channel, T> {}
-unsafe impl<'channel, T: Send> Send for Sender<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Sender<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Sender<'channel, T> {}
+unsafe impl<T: Send> Sync for Sender<'_, T> {}
+unsafe impl<T: Send> Send for Sender<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for Sender<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Sender<'_, T> {}
 
 // endregion
 
@@ -523,16 +523,16 @@ impl<'channel, T> AsyncReceiver<T> for Receiver<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Receiver<'channel, T> {
+impl<T> Clone for Receiver<'_, T> {
     fn clone(&self) -> Self {
         Receiver { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T: Send> Sync for Receiver<'channel, T> {}
-unsafe impl<'channel, T: Send> Send for Receiver<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Receiver<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
+unsafe impl<T: Send> Sync for Receiver<'_, T> {}
+unsafe impl<T: Send> Send for Receiver<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for Receiver<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Receiver<'_, T> {}
 
 // endregion
 
@@ -592,10 +592,12 @@ pub struct Channel<T> {
 }
 
 impl<T> AsyncChannel<T> for Channel<T> {
-    type Sender<'channel> = Sender<'channel, T>
+    type Sender<'channel>
+        = Sender<'channel, T>
     where
         T: 'channel;
-    type Receiver<'channel> = Receiver<'channel, T>
+    type Receiver<'channel>
+        = Receiver<'channel, T>
     where
         T: 'channel;
 

@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<'mutex, 'cond_var, T, Guard> Future for WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
+impl<'mutex, T, Guard> Future for WaitLocalCondVar<'mutex, '_, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -151,7 +151,8 @@ impl LocalCondVar {
 }
 
 impl AsyncCondVar for LocalCondVar {
-    type SubscribableMutex<T> = LocalMutex<T>
+    type SubscribableMutex<T>
+        = LocalMutex<T>
     where
         T: ?Sized;
 

@@ -20,7 +20,7 @@ impl<'future> Asyncify<'future> {
     }
 }
 
-impl<'future> Future for Asyncify<'future> {
+impl Future for Asyncify<'_> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {

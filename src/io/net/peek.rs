@@ -29,7 +29,7 @@ impl<'buf> Peek<'buf> {
     }
 }
 
-impl<'buf> Future for Peek<'buf> {
+impl Future for Peek<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -65,7 +65,7 @@ impl<'buf> PeekWithDeadline<'buf> {
     }
 }
 
-impl<'buf> Future for PeekWithDeadline<'buf> {
+impl Future for PeekWithDeadline<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

@@ -75,7 +75,7 @@ impl<'future, T> WaitLocalSend<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitLocalSend<'future, T> {
+impl<T> Future for WaitLocalSend<'_, T> {
     type Output = SendResult<T>;
 
     #[inline(always)]
@@ -132,7 +132,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 }
 
 #[cfg(debug_assertions)]
-impl<'future, T> Drop for WaitLocalSend<'future, T> {
+impl<T> Drop for WaitLocalSend<'_, T> {
     fn drop(&mut self) {
         assert!(
             self.was_awaited,
@@ -164,7 +164,7 @@ impl<'future, T> WaitLocalRecv<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitLocalRecv<'future, T> {
+impl<T> Future for WaitLocalRecv<'_, T> {
     type Output = RecvInResult;
 
     #[inline(always)]
@@ -327,7 +327,7 @@ impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for LocalSender<'channel, T> {
+impl<T> Clone for LocalSender<'_, T> {
     fn clone(&self) -> Self {
         LocalSender {
             inner: self.inner,
@@ -336,7 +336,7 @@ impl<'channel, T> Clone for LocalSender<'channel, T> {
     }
 }
 
-unsafe impl<'channel, T> Sync for LocalSender<'channel, T> {}
+unsafe impl<T> Sync for LocalSender<'_, T> {}
 
 // endregion
 
@@ -436,7 +436,7 @@ impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for LocalReceiver<'channel, T> {
+impl<T> Clone for LocalReceiver<'_, T> {
     fn clone(&self) -> Self {
         LocalReceiver {
             inner: self.inner,
@@ -445,7 +445,7 @@ impl<'channel, T> Clone for LocalReceiver<'channel, T> {
     }
 }
 
-unsafe impl<'channel, T> Sync for LocalReceiver<'channel, T> {}
+unsafe impl<T> Sync for LocalReceiver<'_, T> {}
 
 // endregion
 
@@ -508,10 +508,12 @@ pub struct LocalChannel<T> {
 }
 
 impl<T> AsyncChannel<T> for LocalChannel<T> {
-    type Receiver<'channel> = LocalReceiver<'channel, T>
+    type Receiver<'channel>
+        = LocalReceiver<'channel, T>
     where
         Self: 'channel;
-    type Sender<'channel> = LocalSender<'channel, T>
+    type Sender<'channel>
+        = LocalSender<'channel, T>
     where
         Self: 'channel;
 

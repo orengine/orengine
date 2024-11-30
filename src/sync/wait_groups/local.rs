@@ -24,7 +24,7 @@ impl<'wait_group> WaitLocalWaitGroup<'wait_group> {
     }
 }
 
-impl<'wait_group> Future for WaitLocalWaitGroup<'wait_group> {
+impl Future for WaitLocalWaitGroup<'_> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

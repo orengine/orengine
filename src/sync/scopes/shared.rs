@@ -127,7 +127,7 @@ pub(crate) struct ScopedHandle<'scope, Fut: Future<Output = ()> + Send> {
     fut: Fut,
 }
 
-impl<'scope, Fut: Future<Output = ()> + Send> Future for ScopedHandle<'scope, Fut> {
+impl<Fut: Future<Output = ()> + Send> Future for ScopedHandle<'_, Fut> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {

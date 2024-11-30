@@ -85,7 +85,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     }
 }
 
-impl<'spin_lock, T: ?Sized> Deref for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> Deref for SpinLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -93,13 +93,13 @@ impl<'spin_lock, T: ?Sized> Deref for SpinLockGuard<'spin_lock, T> {
     }
 }
 
-impl<'spin_lock, T: ?Sized> DerefMut for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> DerefMut for SpinLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.spin_lock.value.get() }
     }
 }
 
-impl<'spin_lock, T: ?Sized> Drop for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.spin_lock.unlock() };
     }

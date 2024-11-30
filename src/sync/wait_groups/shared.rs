@@ -26,7 +26,7 @@ impl<'wait_group> WaitSharedWaitGroup<'wait_group> {
     }
 }
 
-impl<'wait_group> Future for WaitSharedWaitGroup<'wait_group> {
+impl Future for WaitSharedWaitGroup<'_> {
     type Output = ();
 
     #[allow(unused)] // because #[cfg(debug_assertions)]

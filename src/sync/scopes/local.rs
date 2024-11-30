@@ -131,7 +131,7 @@ pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     no_send_marker: PhantomData<*const ()>,
 }
 
-impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
+impl<Fut: Future<Output = ()>> Future for LocalScopedHandle<'_, Fut> {
     type Output = ();
 
     #[inline(always)]

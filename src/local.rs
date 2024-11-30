@@ -87,7 +87,7 @@ impl<'borrow, T> LocalRef<'borrow, T> {
     }
 }
 
-impl<'borrow, T> Deref for LocalRef<'borrow, T> {
+impl<T> Deref for LocalRef<'_, T> {
     type Target = T;
 
     #[inline(always)]
@@ -102,14 +102,14 @@ impl<'borrow, T> Deref for LocalRef<'borrow, T> {
     }
 }
 
-impl<'borrow, T: Display> Display for LocalRef<'borrow, T> {
+impl<T: Display> Display for LocalRef<'_, T> {
     #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<'borrow, T> Drop for LocalRef<'borrow, T> {
+impl<T> Drop for LocalRef<'_, T> {
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
         {
@@ -160,7 +160,7 @@ impl<'borrow, T> LocalRefMut<'borrow, T> {
     }
 }
 
-impl<'borrow, T> Deref for LocalRefMut<'borrow, T> {
+impl<T> Deref for LocalRefMut<'_, T> {
     type Target = T;
 
     #[inline(always)]
@@ -175,7 +175,7 @@ impl<'borrow, T> Deref for LocalRefMut<'borrow, T> {
     }
 }
 
-impl<'borrow, T> DerefMut for LocalRefMut<'borrow, T> {
+impl<T> DerefMut for LocalRefMut<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         #[cfg(debug_assertions)]
@@ -188,14 +188,14 @@ impl<'borrow, T> DerefMut for LocalRefMut<'borrow, T> {
     }
 }
 
-impl<'borrow, T: Display> Display for LocalRefMut<'borrow, T> {
+impl<T: Display> Display for LocalRefMut<'_, T> {
     #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<'borrow, T> Drop for LocalRefMut<'borrow, T> {
+impl<T> Drop for LocalRefMut<'_, T> {
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
         {

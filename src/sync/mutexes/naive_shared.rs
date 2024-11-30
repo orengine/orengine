@@ -70,7 +70,7 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for NaiveMutexGuard<'mutex, T
     }
 }
 
-impl<'mutex, T: ?Sized> Deref for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> Deref for NaiveMutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -78,13 +78,13 @@ impl<'mutex, T: ?Sized> Deref for NaiveMutexGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T: ?Sized> DerefMut for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> DerefMut for NaiveMutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.value.get() }
     }
 }
 
-impl<'mutex, T: ?Sized> Drop for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> Drop for NaiveMutexGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.mutex.unlock() };
     }
@@ -160,7 +160,8 @@ impl<T: ?Sized> NaiveMutex<T> {
 }
 
 impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
-    type Guard<'mutex> = NaiveMutexGuard<'mutex, T>
+    type Guard<'mutex>
+        = NaiveMutexGuard<'mutex, T>
     where
         Self: 'mutex;
 

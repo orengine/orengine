@@ -62,7 +62,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for LocalReadLockGuard
     }
 }
 
-impl<'rw_lock, T: ?Sized> Deref for LocalReadLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Deref for LocalReadLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -70,7 +70,7 @@ impl<'rw_lock, T: ?Sized> Deref for LocalReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T: ?Sized> Drop for LocalReadLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Drop for LocalReadLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.read_unlock();
@@ -124,7 +124,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for LocalWriteLockGua
     }
 }
 
-impl<'rw_lock, T: ?Sized> Deref for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Deref for LocalWriteLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -132,13 +132,13 @@ impl<'rw_lock, T: ?Sized> Deref for LocalWriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T: ?Sized> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> DerefMut for LocalWriteLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_lock, T: ?Sized> Drop for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Drop for LocalWriteLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.write_unlock();
@@ -334,11 +334,13 @@ impl<T: ?Sized> LocalRWLock<T> {
 }
 
 impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
-    type ReadLockGuard<'rw_lock> = LocalReadLockGuard<'rw_lock, T>
+    type ReadLockGuard<'rw_lock>
+        = LocalReadLockGuard<'rw_lock, T>
     where
         T: 'rw_lock,
         Self: 'rw_lock;
-    type WriteLockGuard<'rw_lock> = LocalWriteLockGuard<'rw_lock, T>
+    type WriteLockGuard<'rw_lock>
+        = LocalWriteLockGuard<'rw_lock, T>
     where
         T: 'rw_lock,
         Self: 'rw_lock;
