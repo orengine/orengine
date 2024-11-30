@@ -634,6 +634,7 @@ impl Executor {
     /// Read it in [`Executor`].
     #[inline(always)]
     pub fn spawn_shared_task(&mut self, task: Task) {
+        #[allow(clippy::branches_sharing_code, reason = "It is more readable")]
         if self.config.is_work_sharing_enabled() {
             if self.shared_tasks.len() <= self.config.work_sharing_level {
                 self.shared_tasks.push_back(task);

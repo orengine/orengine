@@ -10,8 +10,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 ///
 /// # Be careful
 ///
-/// `Task` __must__ be executed via [`Executor::exec_task`](crate::Executor::exec_task) or
-/// [`Executor::exec_local_task`](crate::Executor::exec_local_task).
+/// `Task` __must__ be executed via [`Executor::exec_task`](crate::Executor::exec_task).
 pub struct Task {
     pub(crate) data: TaskData,
     #[cfg(debug_assertions)]
@@ -92,7 +91,7 @@ impl RefUnwindSafe for Task {}
 
 /// In `debug` mode checks if the [`Task`] is safe to be executed.
 ///
-/// It compares an id of the [`Executor`] of the current thread with an id of the executor of
+/// It compares an id of the [`Executor`](crate::Executor) of the current thread with an id of the executor of
 /// the [`Task`], if the [`Task`] is `local`.
 #[macro_export]
 macro_rules! check_task_local_safety {
