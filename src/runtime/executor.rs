@@ -532,7 +532,11 @@ impl Executor {
     pub fn exec_task(&mut self, task: Task) {
         if self.exec_series >= 106 {
             self.exec_series = 0;
-            self.spawn_local_task(task);
+            if task.is_local() {
+                self.spawn_local_task(task);
+            } else {
+                self.spawn_shared_task(task);
+            }
             return;
         }
 
@@ -633,17 +637,19 @@ impl Executor {
         if self.config.is_work_sharing_enabled() {
             if self.shared_tasks.len() <= self.config.work_sharing_level {
                 self.shared_tasks.push_back(task);
-            } else if let Some(mut shared_tasks_list) = unsafe {
-                self.shared_tasks_list
-                    .as_ref()
-                    .unwrap_unchecked()
-                    .try_lock_and_return_as_vec()
-            } {
-                let number_of_shared = (self.shared_tasks.len() >> 1).max(1);
-                for task in self.shared_tasks.drain(..number_of_shared) {
-                    shared_tasks_list.push(task);
-                }
             } else {
+                if let Some(mut shared_tasks_list) = unsafe {
+                    self.shared_tasks_list
+                        .as_ref()
+                        .unwrap_unchecked()
+                        .try_lock_and_return_as_vec()
+                } {
+                    let number_of_shared = (self.shared_tasks.len() >> 1) + 1;
+                    for task in self.shared_tasks.drain(..number_of_shared) {
+                        shared_tasks_list.push(task);
+                    }
+                }
+
                 self.shared_tasks.push_back(task);
             }
         } else {
@@ -778,6 +784,46 @@ impl Executor {
             }
         }
     }
+
+    /// Stop the executor with all necessary actions.
+    ///
+    /// # Safety
+    ///
+    /// Called after [`check_version_and_update_if_needed`](SubscribedState::check_version_and_update_if_needed).
+    #[inline(never)]
+    unsafe fn graceful_stop(&mut self) {
+        if self.config.is_work_sharing_enabled() {
+            unsafe {
+                self.subscribed_state.with_tasks_lists(|lists| {
+                    if let Some(first_neighbor) = lists.first() {
+                        let mut shared_tasks_list_of_current_executor = vec![];
+                        loop {
+                            if let Some(mut tasks_list) = self
+                                .shared_tasks_list
+                                .as_ref()
+                                .unwrap()
+                                .try_lock_and_return_as_vec()
+                            {
+                                shared_tasks_list_of_current_executor.extend(tasks_list.drain(..));
+                                break;
+                            }
+                        }
+
+                        let mut tasks_list;
+                        loop {
+                            if let Some(tasks_list_) = first_neighbor.try_lock_and_return_as_vec() {
+                                tasks_list = tasks_list_;
+                                break;
+                            }
+                        }
+
+                        tasks_list.extend(self.shared_tasks.drain(..));
+                        tasks_list.extend(shared_tasks_list_of_current_executor);
+                    }
+                });
+            }
+        }
+    }
 }
 
 macro_rules! generate_run_and_block_on_function {
@@ -823,6 +869,7 @@ impl Executor {
             self.subscribed_state
                 .check_version_and_update_if_needed(self.executor_id);
             if self.subscribed_state.is_stopped() {
+                unsafe { self.graceful_stop() };
                 break;
             }
 
@@ -1032,8 +1079,15 @@ impl Executor {
 mod tests {
     use super::*;
     use crate as orengine;
+    use crate::fs::test_helper::create_test_dir_if_not_exist;
+    use crate::fs::test_helper::TEST_DIR_PATH;
+    use crate::fs::{File, OpenOptions};
+    use crate::io::AsyncWrite;
     use crate::local::Local;
+    use crate::runtime::config;
+    use crate::sync::{AsyncMutex, AsyncWaitGroup, Mutex, WaitGroup};
     use crate::yield_now::yield_now;
+    use std::sync::atomic::Ordering::SeqCst;
 
     #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
@@ -1074,84 +1128,86 @@ mod tests {
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
 
-    // fn wait_for_config_tests_ready() {
-    //     // TODO
-    //     // while !config::tests::WAS_READY.load(SeqCst) {
-    //     //     thread::sleep(Duration::from_millis(1));
-    //     // }
-    // }
-    //
-    // fn test_with_work_sharing_level(level: usize) {
-    //     wait_for_config_tests_ready();
-    //
-    //     Executor::init_with_config(Config::default().set_work_sharing_level(level))
-    //         .run_and_block_on_shared(async {
-    //             for _ in 0..10 {
-    //                 let wg = Arc::new(WaitGroup::new());
-    //                 let counter = Arc::new(AtomicUsize::new(0));
-    //                 for _ in 0..1000 {
-    //                     let wg = wg.clone();
-    //                     let counter = counter.clone();
-    //                     wg.inc();
-    //                     local_executor().spawn_shared(async move {
-    //                         counter.fetch_add(1, SeqCst);
-    //                         wg.done();
-    //                     });
-    //                 }
-    //
-    //                 create_test_dir_if_not_exist();
-    //                 let file = Arc::new(Mutex::new(
-    //                     File::open(
-    //                         format!("{TEST_DIR_PATH}/test_task_sharing_level={level}.txt"),
-    //                         &OpenOptions::new().create(true).truncate(true).write(true),
-    //                     )
-    //                     .await
-    //                     .unwrap(),
-    //                 ));
-    //
-    //                 for _ in 0..1000 {
-    //                     let wg = wg.clone();
-    //                     let counter = counter.clone();
-    //                     let file = file.clone();
-    //                     wg.inc();
-    //                     local_executor().spawn_shared(async move {
-    //                         file.lock()
-    //                             .await
-    //                             .write_all(b"test")
-    //                             .await
-    //                             .expect("Can't write to file");
-    //
-    //                         counter.fetch_add(1, SeqCst);
-    //                         wg.done();
-    //                     });
-    //                 }
-    //
-    //                 wg.wait().await;
-    //                 assert_eq!(2000, counter.load(SeqCst));
-    //             }
-    //         })
-    //         .expect("undefined behavior happened");
-    // }
+    fn wait_for_config_tests_ready() {
+        let _unused = config::tests::WAS_READY
+            .1
+            .wait_while(config::tests::WAS_READY.0.lock().unwrap(), |was_ready| {
+                !*was_ready
+            })
+            .unwrap();
+    }
 
-    // TODO
-    //
-    // #[test]
-    // fn test_work_sharing_zero_level() {
-    //     test_with_work_sharing_level(0);
-    // }
-    //
-    // #[test]
-    // fn test_work_sharing_one_level() {
-    //     test_with_work_sharing_level(1);
-    // }
-    //
-    // #[test]
-    // fn test_work_sharing_min_level() {
-    //     test_with_work_sharing_level(16);
-    // }
-    //
-    // #[test]
-    // fn test_work_sharing_large_level() {
-    //     test_with_work_sharing_level(255);
-    // }
+    fn test_with_work_sharing_level(level: usize) {
+        const N: usize = 5;
+
+        wait_for_config_tests_ready();
+
+        Executor::init_with_config(Config::default().set_work_sharing_level(level))
+            .run_and_block_on_shared(async {
+                for _ in 0..10 {
+                    let wg = Arc::new(WaitGroup::new());
+                    let counter = Arc::new(AtomicUsize::new(0));
+                    for _ in 0..N {
+                        let wg = wg.clone();
+                        let counter = counter.clone();
+                        wg.inc();
+                        local_executor().spawn_shared(async move {
+                            counter.fetch_add(1, SeqCst);
+                            wg.done();
+                        });
+                    }
+
+                    create_test_dir_if_not_exist();
+                    let file = Arc::new(Mutex::new(
+                        File::open(
+                            format!("{TEST_DIR_PATH}/test_task_sharing_level={level}.txt"),
+                            &OpenOptions::new().create(true).truncate(true).write(true),
+                        )
+                        .await
+                        .unwrap(),
+                    ));
+
+                    for _ in 0..N {
+                        let wg = wg.clone();
+                        let counter = counter.clone();
+                        let file = file.clone();
+                        wg.inc();
+                        local_executor().spawn_shared(async move {
+                            file.lock()
+                                .await
+                                .write_all(b"test")
+                                .await
+                                .expect("Can't write to file");
+
+                            counter.fetch_add(1, SeqCst);
+                            wg.done();
+                        });
+                    }
+
+                    wg.wait().await;
+                    assert_eq!(N * 2, counter.load(SeqCst));
+                }
+            })
+            .expect("undefined behavior happened");
+    }
+
+    #[test]
+    fn test_work_sharing_zero_level() {
+        test_with_work_sharing_level(0);
+    }
+
+    #[test]
+    fn test_work_sharing_one_level() {
+        test_with_work_sharing_level(1);
+    }
+
+    #[test]
+    fn test_work_sharing_min_level() {
+        test_with_work_sharing_level(16);
+    }
+
+    #[test]
+    fn test_work_sharing_large_level() {
+        test_with_work_sharing_level(255);
+    }
 }

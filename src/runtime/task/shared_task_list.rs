@@ -1,5 +1,6 @@
 use crate::runtime::Task;
-use crate::utils::{SpinLock, SpinLockGuard};
+use crate::utils::never_wait_lock::NeverWaitLock;
+use crate::utils::SpinLockGuard;
 use std::collections::VecDeque;
 
 /// `SharedExecutorTaskList` is a list of tasks that can be shared between executors.
@@ -7,7 +8,7 @@ use std::collections::VecDeque;
 /// All tasks in the list must be `shared` and their futures must implement `Send`.
 pub(crate) struct ExecutorSharedTaskList {
     executor_id: usize,
-    list: SpinLock<Vec<Task>>,
+    list: NeverWaitLock<Vec<Task>>,
 }
 
 impl ExecutorSharedTaskList {
@@ -15,7 +16,7 @@ impl ExecutorSharedTaskList {
     pub(crate) const fn new(executor_id: usize) -> Self {
         Self {
             executor_id,
-            list: SpinLock::new(Vec::new()),
+            list: NeverWaitLock::new(Vec::new()),
         }
     }
 

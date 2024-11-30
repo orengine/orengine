@@ -250,7 +250,11 @@ impl Config {
     /// If [`usize::MAX`] is provided, work sharing will be disabled.
     #[must_use]
     pub const fn set_work_sharing_level(mut self, work_sharing_level: usize) -> Self {
-        self.work_sharing_level = work_sharing_level;
+        if work_sharing_level == 0 {
+            self.work_sharing_level = 1;
+        } else {
+            self.work_sharing_level = work_sharing_level;
+        }
 
         self
     }
@@ -342,17 +346,19 @@ pub(crate) mod tests {
     use super::*;
     use crate as orengine;
     use std::sync::atomic;
+    use std::sync::{Condvar as STDCvar, Mutex as STDMutex};
 
-    const NUMBER_OF_TESTS: usize = 6;
+    const NUMBER_OF_TESTS: usize = 2;
 
-    pub(crate) static WAS_READY: atomic::AtomicBool = atomic::AtomicBool::new(false);
+    pub(crate) static WAS_READY: (STDMutex<bool>, STDCvar) = (STDMutex::new(false), STDCvar::new());
     static NUMBER_OF_READY_TESTS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn handle_test_ready() {
         let prev = NUMBER_OF_READY_TESTS.fetch_add(1, atomic::Ordering::SeqCst);
         if prev == NUMBER_OF_TESTS - 1 {
-            WAS_READY.store(true, atomic::Ordering::SeqCst);
+            *WAS_READY.0.lock().unwrap() = true;
+            WAS_READY.1.notify_all();
         }
 
         assert!(prev < NUMBER_OF_TESTS, "{}", BUG_MESSAGE);
@@ -420,7 +426,6 @@ pub(crate) mod tests {
             .validate();
 
         drop(lock);
-        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -440,7 +445,6 @@ pub(crate) mod tests {
         let _second_config = Config::default().validate();
 
         drop(lock);
-        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -459,7 +463,6 @@ pub(crate) mod tests {
         let _second_config = Config::default().validate();
 
         drop(lock);
-        handle_test_ready();
     }
 
     #[orengine::test::test_local]
@@ -478,6 +481,5 @@ pub(crate) mod tests {
             .validate();
 
         drop(lock);
-        handle_test_ready();
     }
 }

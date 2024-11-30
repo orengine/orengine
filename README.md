@@ -14,7 +14,6 @@ Wait for `v1.0.0` and media posts.
 # Before release
 
 - add more docs;
-- fix bug in work-sharing;
 - test `try operations` on channels;
 - add fallback to `asyncify` for non-Linux OS;
 - think about __fixed__ buffers and files.
