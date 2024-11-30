@@ -1,13 +1,4 @@
-use std::cell::UnsafeCell;
-use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
-use std::{mem, thread};
-
+use crate::bug_message::BUG_MESSAGE;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
 use crate::runtime::call::Call;
@@ -19,9 +10,18 @@ use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
 use crate::sync_task_queue::SyncTaskList;
-use crate::utils::CoreId;
+use crate::utils::{assert_hint, CoreId};
 use crossbeam::utils::CachePadded;
 use fastrand::Rng;
+use std::cell::UnsafeCell;
+use std::collections::{BTreeMap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
+use std::{mem, thread};
 
 macro_rules! shrink {
     ($list:expr) => {
@@ -516,7 +516,9 @@ impl Executor {
             }
 
             Poll::Pending => {
-                self.handle_call(task);
+                if !matches!(self.current_call, Call::None) {
+                    self.handle_call(task);
+                }
             }
         }
     }
@@ -530,7 +532,11 @@ impl Executor {
     pub fn exec_task(&mut self, task: Task) {
         if self.exec_series >= 106 {
             self.exec_series = 0;
-            self.spawn_local_task(task);
+            if task.is_local() {
+                self.spawn_local_task(task);
+            } else {
+                self.spawn_shared_task(task);
+            }
             return;
         }
 
@@ -628,17 +634,23 @@ impl Executor {
     /// Read it in [`Executor`].
     #[inline(always)]
     pub fn spawn_shared_task(&mut self, task: Task) {
+        #[allow(clippy::branches_sharing_code, reason = "It is more readable")]
         if self.config.is_work_sharing_enabled() {
             if self.shared_tasks.len() <= self.config.work_sharing_level {
                 self.shared_tasks.push_back(task);
-            } else if let Some(mut shared_tasks_list) =
-                unsafe { self.shared_tasks_list.as_ref().unwrap_unchecked().as_vec() }
-            {
-                let number_of_shared = (self.config.work_sharing_level >> 1).min(1);
-                for task in self.shared_tasks.drain(..number_of_shared) {
-                    shared_tasks_list.push(task);
-                }
             } else {
+                if let Some(mut shared_tasks_list) = unsafe {
+                    self.shared_tasks_list
+                        .as_ref()
+                        .unwrap_unchecked()
+                        .try_lock_and_return_as_vec()
+                } {
+                    let number_of_shared = (self.shared_tasks.len() >> 1) + 1;
+                    for task in self.shared_tasks.drain(..number_of_shared) {
+                        shared_tasks_list.push(task);
+                    }
+                }
+
                 self.shared_tasks.push_back(task);
             }
         } else {
@@ -661,13 +673,22 @@ impl Executor {
     /// Tries to take a batch of tasks from the shared tasks queue if needed.
     #[inline(always)]
     fn take_work_if_needed(&mut self) {
-        if self.shared_tasks.len() >= MAX_NUMBER_OF_TASKS_TAKEN {
+        if self.shared_tasks.len() >= self.config.work_sharing_level {
             return;
         }
+
         if let Some(shared_task_list) = self.shared_tasks_list.as_mut() {
-            if let Some(mut shared_task_list) = shared_task_list.as_vec() {
-                shrink!(shared_task_list);
-                if shared_task_list.is_empty() {
+            if let Some(mut shared_task_list) = shared_task_list.try_lock_and_return_as_vec() {
+                if !shared_task_list.is_empty() {
+                    let limit = self.config.work_sharing_level - self.shared_tasks.len(); // Always bigger than 0, because of previous checks
+                    for _ in 0..limit {
+                        if let Some(task) = shared_task_list.pop() {
+                            self.shared_tasks.push_back(task);
+                        }
+                    }
+
+                    shrink!(shared_task_list);
+
                     return;
                 }
             }
@@ -681,7 +702,7 @@ impl Executor {
                     let max_number_of_tries = self.rng.usize(0..lists.len()) + 1;
 
                     for i in 0..max_number_of_tries {
-                        let list = lists.get_unchecked(i);
+                        let list = lists.get(i).expect(BUG_MESSAGE);
                         let limit = MAX_NUMBER_OF_TASKS_TAKEN - self.shared_tasks.len();
                         if limit == 0 {
                             return;
@@ -699,38 +720,19 @@ impl Executor {
     /// It is used only when no work is available.
     #[inline(always)]
     #[allow(clippy::unused_self)] // because in the future it will use it
-    fn sleep(&self) {
+    fn sleep_at_most(&self, max_duration: Duration) {
         // Wait for more work
 
         // TODO bench it
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(max_duration);
     }
 
-    /// Does background work like:
+    /// Wakes up sleeping tasks that are ready to be executed.
     ///
-    /// - polls blocking worker
-    ///
-    /// - polls io worker
-    ///
-    /// - takes works if needed
-    ///
-    /// - checks sleeping tasks
-    ///
-    /// Returns true, if we need to stop ([`end_local_thread`](end_local_thread)
-    /// was called or [`end`](crate::runtime::end::end)).
+    /// Returns the duration for the nearest deadline of the sleeping tasks or None
+    /// if there are no sleeping tasks.
     #[inline(always)]
-    fn background_task(&mut self) -> bool {
-        self.subscribed_state
-            .check_version_and_update_if_needed(self.executor_id);
-        if self.subscribed_state.is_stopped() {
-            return true;
-        }
-
-        self.exec_series = 0;
-        self.take_work_if_needed();
-        self.thread_pool.poll(&mut self.local_tasks);
-        let has_io_work = self.local_worker.as_mut().map_or(true, IoWorker::must_poll);
-
+    fn check_sleeping_tasks(&mut self) -> Option<Duration> {
         if !self.local_sleeping_tasks.is_empty() {
             let instant = Instant::now();
             while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
@@ -742,18 +744,86 @@ impl Executor {
                     }
                 } else {
                     self.local_sleeping_tasks.insert(time_to_wake, task);
-                    break;
+                    return Some(instant - time_to_wake);
                 }
             }
         }
 
-        if self.number_of_spawned_tasks() == 0 && !has_io_work {
-            self.sleep();
+        None
+    }
+
+    /// Executes all ready CPU tasks.
+    #[inline(always)]
+    fn exec_cpu_tasks(&mut self) {
+        // A round is a number of tasks that must be completed before the next background_work call.
+        // It is needed to avoid case like:
+        //   Task with yield -> repeat this task -> repeat this task -> ...
+        //
+        // So it works like:
+        //   Round 1 -> background work -> round 2  -> ...
+
+        let mut task;
+
+        let number_of_local_tasks_in_this_round = self.local_tasks.len();
+        for _ in 0..number_of_local_tasks_in_this_round {
+            assert_hint(
+                !self.local_tasks.is_empty(),
+                "number_of_local_tasks_in_this_round is invalid",
+            );
+
+            task = unsafe { self.local_tasks.pop_back().unwrap_unchecked() };
+            self.exec_task(task);
         }
 
-        shrink!(self.local_tasks);
+        let number_of_shared_tasks_in_this_round = self.shared_tasks.len();
+        for _ in 0..number_of_shared_tasks_in_this_round {
+            if let Some(task) = self.shared_tasks.pop_back() {
+                self.exec_task(task);
+            } else {
+                // Executor shared its tasks with another one.
+                break;
+            }
+        }
+    }
 
-        false
+    /// Stop the executor with all necessary actions.
+    ///
+    /// # Safety
+    ///
+    /// Called after [`check_version_and_update_if_needed`](SubscribedState::check_version_and_update_if_needed).
+    #[inline(never)]
+    unsafe fn graceful_stop(&mut self) {
+        if self.config.is_work_sharing_enabled() {
+            unsafe {
+                self.subscribed_state.with_tasks_lists(|lists| {
+                    if let Some(first_neighbor) = lists.first() {
+                        let mut shared_tasks_list_of_current_executor = vec![];
+                        loop {
+                            if let Some(mut tasks_list) = self
+                                .shared_tasks_list
+                                .as_ref()
+                                .unwrap()
+                                .try_lock_and_return_as_vec()
+                            {
+                                shared_tasks_list_of_current_executor.extend(tasks_list.drain(..));
+                                break;
+                            }
+                        }
+
+                        let mut tasks_list;
+                        loop {
+                            if let Some(tasks_list_) = first_neighbor.try_lock_and_return_as_vec() {
+                                tasks_list = tasks_list_;
+                                break;
+                            }
+                        }
+
+                        tasks_list.extend(self.shared_tasks.drain(..));
+                        tasks_list.extend(shared_tasks_list_of_current_executor);
+                    }
+                });
+            }
+        }
     }
 }
 
@@ -796,48 +866,78 @@ impl Executor {
     pub fn run(&mut self) {
         register_local_executor();
 
-        let mut task;
-        // A round is a number of tasks that must be completed before the next background_work call.
-        // It is needed to avoid case like:
-        //   Task with yield -> repeat this task -> repeat this task -> ...
-        //
-        // So it works like:
-        //   Round 1 -> background work -> round 2  -> ...
-        let mut number_of_local_tasks_in_this_round = self.local_tasks.len();
-        let mut number_of_shared_tasks_in_this_round = self.shared_tasks.len();
-
         loop {
-            for _ in 0..number_of_local_tasks_in_this_round {
-                task = unsafe { self.local_tasks.pop_back().unwrap_unchecked() };
-                self.exec_task(task);
-            }
-
-            for _ in 0..number_of_shared_tasks_in_this_round {
-                task = unsafe { self.shared_tasks.pop_back().unwrap_unchecked() };
-                self.exec_task(task);
-            }
-
-            if let Some(shared_tasks_list) = self.shared_tasks_list.as_ref() {
-                if self.shared_tasks.len() < self.config.work_sharing_level {
-                    let prev_len = self.shared_tasks.len();
-                    let to_take =
-                        (self.config.work_sharing_level - prev_len).min(MAX_NUMBER_OF_TASKS_TAKEN);
-                    shared_tasks_list.take_batch(&mut self.shared_tasks, to_take);
-
-                    let taken = self.shared_tasks.len() - prev_len;
-                    for _ in 0..taken {
-                        let task = unsafe { self.shared_tasks.pop_back().unwrap_unchecked() };
-                        self.exec_task(task);
-                    }
-                }
-            }
-
-            if self.background_task() {
+            self.subscribed_state
+                .check_version_and_update_if_needed(self.executor_id);
+            if self.subscribed_state.is_stopped() {
+                unsafe { self.graceful_stop() };
                 break;
             }
 
-            number_of_local_tasks_in_this_round = self.local_tasks.len();
-            number_of_shared_tasks_in_this_round = self.shared_tasks.len();
+            self.exec_series = 0;
+
+            self.exec_cpu_tasks();
+            self.take_work_if_needed();
+            self.thread_pool.poll(&mut self.local_tasks);
+            let nearest_timeout_option = self.check_sleeping_tasks();
+
+            // We need to consider 8 cases from 3 variables:
+            // has cpu work (self.number_of_spawned_tasks() != 0 or self.config.is_work_sharing_enabled()),
+            // has io work and has sleeping tasks
+            let has_cpu_work = self.number_of_spawned_tasks() > 0;
+            if self.local_worker.is_some() {
+                let worker = unsafe { self.local_worker.as_mut().unwrap_unchecked() };
+                if worker.has_work() {
+                    if !has_cpu_work {
+                        if let Some(nearest_timeout) = nearest_timeout_option {
+                            // case 1: we don't have cpu work, but we have sleeping tasks and io work
+                            worker.must_poll(Some(nearest_timeout.min(Duration::from_millis(500))));
+                        } else {
+                            // case 2: we don't have cpu work nor sleeping tasks, but we io work
+                            worker.must_poll(Some(Duration::from_millis(500)));
+                        }
+                    } else {
+                        // It proceeds 2 cases:
+                        // case 3: we have cpu work, sleeping tasks and io work
+                        // case 4: we have cpu work, io work, but we don't have sleeping tasks
+                        worker.must_poll(None);
+                    }
+                } else if !has_cpu_work {
+                    if let Some(nearest_timeout) = nearest_timeout_option {
+                        // case 5: we don't have io work nor cpu work, but we have sleeping tasks
+                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                    } else {
+                        // case 6: we don't have any work
+                        self.sleep_at_most(Duration::from_millis(100));
+                    }
+                } else {
+                    // It proceeds 2 cases:
+                    // case 7: we have cpu work, sleeping tasks, but don't have io work
+                    // case 8: we have cpu work, but don't have io work nor sleeping tasks
+
+                    // Continue processing cpu tasks
+                }
+            } else {
+                // Here we don't have worker, therefore we need to consider only 4 cases
+
+                if let Some(nearest_timeout) = nearest_timeout_option {
+                    if has_cpu_work {
+                        // case 1: we have cpu work and sleeping tasks
+                        // Continue processing cpu tasks
+                    } else {
+                        // case 2: we have cpu work, but we don't have sleeping tasks
+                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                    }
+                } else if has_cpu_work {
+                    // case 3: we have cpu work, but we don't have sleeping tasks
+                    // Continue processing cpu tasks
+                } else {
+                    // case 4: we don't have cpu work nor sleeping tasks
+                    self.sleep_at_most(Duration::from_millis(100));
+                }
+            }
+
+            shrink!(self.local_tasks);
         }
     }
 
@@ -978,18 +1078,24 @@ impl Executor {
 
 #[cfg(test)]
 mod tests {
-    use crate as orengine;
-    use crate::local::Local;
-    use crate::yield_now::yield_now;
-
     use super::*;
+    use crate as orengine;
+    use crate::fs::test_helper::create_test_dir_if_not_exist;
+    use crate::fs::test_helper::TEST_DIR_PATH;
+    use crate::fs::{File, OpenOptions};
+    use crate::io::AsyncWrite;
+    use crate::local::Local;
+    use crate::runtime::config;
+    use crate::sync::{AsyncMutex, AsyncWaitGroup, Mutex, WaitGroup};
+    use crate::yield_now::yield_now;
+    use std::sync::atomic::Ordering::SeqCst;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
         #[allow(clippy::unused_async)] // because it is a test
         #[allow(clippy::future_not_send)] // because it is a local
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
-            arr.get_mut().push(number);
+            arr.borrow_mut().push(number);
         }
 
         let executor = local_executor();
@@ -1001,7 +1107,7 @@ mod tests {
 
         yield_now().await;
 
-        assert_eq!(&vec![10, 30, 20], &*arr); // 30, 20 because of LIFO
+        assert_eq!(&vec![10, 30, 20], &*arr.borrow()); // 30, 20 because of LIFO
 
         let arr = Local::new(Vec::new());
 
@@ -1009,7 +1115,7 @@ mod tests {
         local_executor().exec_local_future(insert(20, arr.clone()));
         local_executor().exec_local_future(insert(30, arr.clone()));
 
-        assert_eq!(&vec![10, 20, 30], &*arr); // 20, 30 because we don't use the list here
+        assert_eq!(&vec![10, 20, 30], &*arr.borrow()); // 20, 30 because we don't use the list here
     }
 
     #[test]
@@ -1021,5 +1127,88 @@ mod tests {
 
         Executor::init_with_config(Config::default().disable_work_sharing());
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
+    }
+
+    fn wait_for_config_tests_ready() {
+        let _unused = config::tests::WAS_READY
+            .1
+            .wait_while(config::tests::WAS_READY.0.lock().unwrap(), |was_ready| {
+                !*was_ready
+            })
+            .unwrap();
+    }
+
+    fn test_with_work_sharing_level(level: usize) {
+        const N: usize = 5;
+
+        wait_for_config_tests_ready();
+
+        Executor::init_with_config(Config::default().set_work_sharing_level(level))
+            .run_and_block_on_shared(async {
+                for _ in 0..10 {
+                    let wg = Arc::new(WaitGroup::new());
+                    let counter = Arc::new(AtomicUsize::new(0));
+                    for _ in 0..N {
+                        let wg = wg.clone();
+                        let counter = counter.clone();
+                        wg.inc();
+                        local_executor().spawn_shared(async move {
+                            counter.fetch_add(1, SeqCst);
+                            wg.done();
+                        });
+                    }
+
+                    create_test_dir_if_not_exist();
+                    let file = Arc::new(Mutex::new(
+                        File::open(
+                            format!("{TEST_DIR_PATH}/test_task_sharing_level={level}.txt"),
+                            &OpenOptions::new().create(true).truncate(true).write(true),
+                        )
+                        .await
+                        .unwrap(),
+                    ));
+
+                    for _ in 0..N {
+                        let wg = wg.clone();
+                        let counter = counter.clone();
+                        let file = file.clone();
+                        wg.inc();
+                        local_executor().spawn_shared(async move {
+                            file.lock()
+                                .await
+                                .write_all(b"test")
+                                .await
+                                .expect("Can't write to file");
+
+                            counter.fetch_add(1, SeqCst);
+                            wg.done();
+                        });
+                    }
+
+                    wg.wait().await;
+                    assert_eq!(N * 2, counter.load(SeqCst));
+                }
+            })
+            .expect("undefined behavior happened");
+    }
+
+    #[test]
+    fn test_work_sharing_zero_level() {
+        test_with_work_sharing_level(0);
+    }
+
+    #[test]
+    fn test_work_sharing_one_level() {
+        test_with_work_sharing_level(1);
+    }
+
+    #[test]
+    fn test_work_sharing_min_level() {
+        test_with_work_sharing_level(16);
+    }
+
+    #[test]
+    fn test_work_sharing_large_level() {
+        test_with_work_sharing_level(255);
     }
 }

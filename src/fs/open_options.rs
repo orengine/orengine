@@ -1,5 +1,5 @@
 use io_uring::types::OpenHow;
-use nix::libc::{self, c_int};
+use nix::libc::{self};
 use std::fmt::Debug;
 use std::io;
 use std::io::Error;
@@ -158,48 +158,39 @@ impl OpenOptions {
 
     #[cfg(unix)]
     /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
-    pub(crate) fn into_os_options(self) -> io::Result<OpenHow> {
-        fn get_access_mode(opts: &OpenOptions) -> io::Result<c_int> {
-            match (opts.read, opts.write, opts.append) {
-                (true, false, false) => Ok(libc::O_RDONLY),
-                (false, true, false) => Ok(libc::O_WRONLY),
-                (true, true, false) => Ok(libc::O_RDWR),
-                (false, _, true) => Ok(libc::O_WRONLY | libc::O_APPEND),
-                (true, _, true) => Ok(libc::O_RDWR | libc::O_APPEND),
-                (false, false, false) => Err(Error::from_raw_os_error(libc::EINVAL)),
+    pub(crate) fn into_os_options(mut self) -> io::Result<OpenHow> {
+        let access_mode = match (self.read, self.write, self.append) {
+            (true, false, false) => libc::O_RDONLY,
+            (false, true, false) => libc::O_WRONLY,
+            (true, true, false) => libc::O_RDWR,
+            (false, _, true) => libc::O_WRONLY | libc::O_APPEND,
+            (true, _, true) => libc::O_RDWR | libc::O_APPEND,
+            (false, false, false) => return Err(Error::from_raw_os_error(libc::EINVAL)),
+        };
+
+        let creation_flags = match (self.create, self.truncate, self.create_new) {
+            (false, false, false) => {
+                self.mode = 0;
+                0
             }
-        }
-
-        fn get_creation_mode(opts: &OpenOptions) -> io::Result<c_int> {
-            match (opts.write, opts.append) {
-                (true, false) => {}
-                (false, false) => {
-                    if opts.truncate || opts.create || opts.create_new {
-                        return Err(Error::from_raw_os_error(libc::EINVAL));
-                    }
-                }
-                (_, true) => {
-                    if opts.truncate && !opts.create_new {
-                        return Err(Error::from_raw_os_error(libc::EINVAL));
-                    }
-                }
+            (false, true, false) => {
+                self.mode = 0;
+                libc::O_TRUNC
             }
+            (true, false, false) => libc::O_CREAT,
+            (true, true, false) => libc::O_CREAT | libc::O_TRUNC,
+            (_, _, true) => libc::O_CREAT | libc::O_EXCL,
+        };
 
-            Ok(match (opts.create, opts.truncate, opts.create_new) {
-                (false, false, false) => 0,
-                (true, false, false) => libc::O_CREAT,
-                (false, true, false) => libc::O_TRUNC,
-                (true, true, false) => libc::O_CREAT | libc::O_TRUNC,
-                (_, _, true) => libc::O_CREAT | libc::O_EXCL,
-            })
-        }
-
-        let flags = libc::O_CLOEXEC
-            | get_access_mode(&self)?
-            | get_creation_mode(&self)?
-            | (self.custom_flags & !libc::O_ACCMODE);
         #[allow(clippy::cast_sign_loss)] // flags has no sign
-        Ok(OpenHow::new().flags(flags as _).mode(self.mode.into()))
+        Ok(OpenHow::new()
+            .flags(
+                (libc::O_CLOEXEC
+                    | access_mode
+                    | creation_flags
+                    | (self.custom_flags & !libc::O_ACCMODE)) as u64,
+            )
+            .mode(self.mode.into()))
     }
 }
 

@@ -1,4 +1,3 @@
-/* TODO local*/
 pub use channels::{
     async_trait::*,
     local::{LocalChannel, LocalReceiver, LocalSender},

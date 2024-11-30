@@ -180,7 +180,7 @@ mod tests {
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
     use std::path::PathBuf;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_remove_dir() {
         create_test_dir_if_not_exist();
 

@@ -85,7 +85,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     }
 }
 
-impl<'spin_lock, T: ?Sized> Deref for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> Deref for SpinLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -93,13 +93,13 @@ impl<'spin_lock, T: ?Sized> Deref for SpinLockGuard<'spin_lock, T> {
     }
 }
 
-impl<'spin_lock, T: ?Sized> DerefMut for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> DerefMut for SpinLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.spin_lock.value.get() }
     }
 }
 
-impl<'spin_lock, T: ?Sized> Drop for SpinLockGuard<'spin_lock, T> {
+impl<T: ?Sized> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.spin_lock.unlock() };
     }
@@ -155,7 +155,7 @@ impl<T: ?Sized> SpinLock<T> {
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
         if self
             .is_locked
-            .compare_exchange_weak(false, true, Relaxed, Relaxed)
+            .compare_exchange_weak(false, true, Acquire, Relaxed)
             .is_ok()
         {
             Some(SpinLockGuard::new(self))
@@ -214,7 +214,7 @@ mod tests {
     use crate::utils::SpinLock;
     use std::sync::Arc;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_mutex() {
         let mutex = Arc::new(SpinLock::new(false));
         let mutex_clone = mutex.clone();
@@ -256,12 +256,11 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_mutex() {
-        const PAR: usize = 50;
-        const TRIES: usize = 100;
+        const PAR: usize = 4;
+        const TRIES: usize = 1000;
 
-        // TODO check for SIGSEGV
         fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;
@@ -273,25 +272,27 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(SpinLock::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
-            sched_future_to_another_thread(async move {
-                for _ in 0..TRIES {
-                    work_with_lock(&mutex, &wg);
-                }
-            });
+        for _ in 0..20 {
+            let mutex = Arc::new(SpinLock::new(0));
+            let wg = Arc::new(WaitGroup::new());
+            wg.add(PAR * TRIES);
+            for _ in 1..PAR {
+                let wg = wg.clone();
+                let mutex = mutex.clone();
+                sched_future_to_another_thread(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg);
+                    }
+                });
+            }
+
+            for _ in 0..TRIES {
+                work_with_lock(&mutex, &wg);
+            }
+
+            wg.wait().await;
+
+            assert_eq!(*mutex.lock(), TRIES * PAR);
         }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg);
-        }
-
-        wg.wait().await;
-
-        assert_eq!(*mutex.lock(), TRIES * PAR);
     }
 }

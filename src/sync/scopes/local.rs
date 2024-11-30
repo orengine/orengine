@@ -46,18 +46,18 @@ impl<'scope> LocalScope<'scope> {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.exec(async {
-    ///             assert_eq!(*a.deref(), i);
-    ///             *a.get_mut() += 1;
+    ///             assert_eq!(*a.borrow(), i);
+    ///             *a.borrow_mut() += 1;
     ///             sleep(Duration::from_millis(i)).await;
     ///             wg.done();
     ///         });
     ///     }
     ///
     ///     wg.wait().await;
-    ///     assert_eq!(*a.deref(), 10);
+    ///     assert_eq!(*a.borrow(), 10);
     /// }).await;
     ///
-    /// assert_eq!(*a.deref(), 10);
+    /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
     #[inline(always)]
@@ -96,17 +96,17 @@ impl<'scope> LocalScope<'scope> {
     ///     for i in 0..10 {
     ///         wg.inc();
     ///         scope.spawn(async {
-    ///             *a.get_mut() += 1;
+    ///             *a.borrow_mut() += 1;
     ///             wg.done();
     ///         });
     ///     }
     ///
-    ///     assert_eq!(*a.deref(), 0);
+    ///     assert_eq!(*a.borrow(), 0);
     ///     wg.wait().await;
-    ///     assert_eq!(*a.deref(), 10);
+    ///     assert_eq!(*a.borrow(), 10);
     /// }).await;
     ///
-    /// assert_eq!(*a.deref(), 10);
+    /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
     #[inline(always)]
@@ -131,7 +131,7 @@ pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     no_send_marker: PhantomData<*const ()>,
 }
 
-impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut> {
+impl<Fut: Future<Output = ()>> Future for LocalScopedHandle<'_, Fut> {
     type Output = ();
 
     #[inline(always)]
@@ -180,18 +180,18 @@ impl<'scope, Fut: Future<Output = ()>> Future for LocalScopedHandle<'scope, Fut>
 ///     for i in 0..10 {
 ///         wg.inc();
 ///         scope.exec(async {
-///             assert_eq!(*a.deref(), i);
-///             *a.get_mut() += 1;
+///             assert_eq!(*a.borrow(), i);
+///             *a.borrow_mut() += 1;
 ///             sleep(Duration::from_millis(i)).await;
 ///             wg.done();
 ///         });
 ///     }
 ///
 ///     wg.wait().await;
-///     assert_eq!(*a.deref(), 10);
+///     assert_eq!(*a.borrow(), 10);
 /// }).await;
 ///
-/// assert_eq!(*a.deref(), 10);
+/// assert_eq!(*a.borrow(), 10);
 /// # }
 /// ```
 #[inline(always)]
@@ -212,7 +212,7 @@ where
 
     static_scope.wg.wait().await;
 
-    yield_now().await; // TODO FIXME: you can't call 2 local_scopes in the same task if you don't yield
+    yield_now().await; // You can't call 2 local_scopes in the same task if you don't yield
 }
 
 /// ```compile_fail
@@ -234,67 +234,69 @@ mod tests {
     use crate as orengine;
     use crate::local::Local;
     use crate::yield_now;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering::Relaxed;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_exec() {
         let local_a = Local::new(0);
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 4);
+        assert_eq!(*local_a.borrow(), 4);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_exec_with_main_future() {
         let local_a = Local::new(0);
 
         local_scope(|scope| async {
             scope.exec(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
 
             scope.exec(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 4);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 4);
+                *local_a.borrow_mut() += 1;
             });
 
-            assert_eq!(*local_a, 2);
-            *local_a.get_mut() += 1;
+            assert_eq!(*local_a.borrow(), 2);
+            *local_a.borrow_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 5);
+        assert_eq!(*local_a.borrow(), 5);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_spawn() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();
@@ -302,60 +304,118 @@ mod tests {
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a, 0);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 0);
+                *local_a.borrow_mut() += 1;
                 wg.wait().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
             });
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 4);
+        assert_eq!(*local_a.borrow(), 4);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_scope_spawn_with_main_future() {
         let local_a = Local::new(0);
         let wg = LocalWaitGroup::new();
 
         local_scope(|scope| async {
             scope.spawn(async {
-                assert_eq!(*local_a, 2);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 2);
+                *local_a.borrow_mut() += 1;
                 yield_now().await;
-                assert_eq!(*local_a, 3);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 3);
+                *local_a.borrow_mut() += 1;
                 wg.done();
             });
 
             scope.spawn(async {
-                assert_eq!(*local_a, 1);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 1);
+                *local_a.borrow_mut() += 1;
                 wg.inc();
                 wg.wait().await;
-                assert_eq!(*local_a, 4);
-                *local_a.get_mut() += 1;
+                assert_eq!(*local_a.borrow(), 4);
+                *local_a.borrow_mut() += 1;
             });
 
-            assert_eq!(*local_a, 0);
-            *local_a.get_mut() += 1;
+            assert_eq!(*local_a.borrow(), 0);
+            *local_a.borrow_mut() += 1;
         })
         .await;
 
         yield_now().await;
 
-        assert_eq!(*local_a, 5);
+        assert_eq!(*local_a.borrow(), 5);
+    }
+
+    #[orengine::test::test_local]
+    fn test_many_local_scope_in_the_same_task() {
+        static ROUND: AtomicUsize = AtomicUsize::new(0);
+
+        #[allow(clippy::future_not_send, reason = "It is local test")]
+        async fn work_with_scope<'scope>(counter: Local<usize>, scope: &LocalScope<'scope>) {
+            scope.spawn(async {
+                assert_eq!(*counter.borrow(), 2 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+                yield_now().await;
+                assert_eq!(*counter.borrow(), 5 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+            });
+
+            scope.exec(async {
+                assert_eq!(*counter.borrow(), 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+                yield_now().await;
+                assert_eq!(*counter.borrow(), 3 + 6 * ROUND.load(Relaxed));
+                *counter.borrow_mut() += 1;
+            });
+
+            assert_eq!(*counter.borrow(), 1 + 6 * ROUND.load(Relaxed));
+            *counter.borrow_mut() += 1;
+            yield_now().await;
+            assert_eq!(*counter.borrow(), 4 + 6 * ROUND.load(Relaxed));
+            *counter.borrow_mut() += 1;
+        }
+
+        let counter = Local::new(0);
+
+        local_scope(|scope| async {
+            work_with_scope(counter.clone(), scope).await;
+        })
+        .await;
+
+        assert_eq!(*counter.borrow(), 6);
+        ROUND.store(1, Relaxed);
+
+        local_scope(|scope| async {
+            work_with_scope(counter.clone(), scope).await;
+        })
+        .await;
+
+        assert_eq!(*counter.borrow(), 12);
+        ROUND.store(2, Relaxed);
+
+        for i in 3..10 {
+            local_scope(|scope| async {
+                work_with_scope(counter.clone(), scope).await;
+            })
+            .await;
+
+            assert_eq!(*counter.borrow(), i * 6);
+            ROUND.store(i, Relaxed);
+        }
     }
 }

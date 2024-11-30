@@ -17,12 +17,8 @@ use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
 
-/// Timeout in microseconds for `io_uring`.
-const TIMEOUT: Timespec = Timespec::new().nsec(500_000);
-
 /// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
 pub(crate) struct IOUringWorker {
-    timeout: SubmitArgs<'static, 'static>,
     /// # Why we need some cell?
     ///
     /// We can't rewrite engine ([`Selector`] trait) to use separately `ring` field and other fields in different methods.
@@ -108,14 +104,8 @@ impl IOUringWorker {
     }
 
     /// Submits all accumulated requests and waits for completions or a timeout.
-    ///
-    /// Returns Ok(false) if the submission queue is empty and no sqes were submitted at all.
     #[inline(always)]
-    fn submit(&mut self) -> Result<bool, Error> {
-        if self.number_of_active_tasks == 0 {
-            return Ok(false);
-        }
-
+    fn submit_and_poll(&mut self, timeout_option: Option<Duration>) -> Result<(), Error> {
         let ring = unsafe { &mut *self.ring.get() };
         let mut sq = unsafe { ring.submission_shared() };
         let submitter = ring.submitter();
@@ -138,7 +128,15 @@ impl IOUringWorker {
             }
         }
 
-        let res = submitter.submit_with_args(1, &self.timeout);
+        let res = timeout_option.map_or_else(
+            || submitter.submit(),
+            |timeout| {
+                #[allow(clippy::cast_possible_truncation, reason = "u32 is enough for 4 secs")]
+                let timespec = Timespec::new().nsec(timeout.as_nanos() as u32);
+                let args = SubmitArgs::new().timespec(&timespec);
+                submitter.submit_with_args(1, &args)
+            },
+        );
 
         match res {
             Ok(_) => (),
@@ -147,7 +145,7 @@ impl IOUringWorker {
             Err(err) => return Err(err),
         }
 
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -156,7 +154,6 @@ impl IOUringWorker {
 impl IoWorker for IOUringWorker {
     fn new(config: IoWorkerConfig) -> Self {
         let mut s = Self {
-            timeout: SubmitArgs::new().timespec(&TIMEOUT),
             ring: UnsafeCell::new(IoUring::new(config.io_uring.number_of_entries).unwrap()),
             backlog: VecDeque::new(),
             probe: Probe::new(),
@@ -189,12 +186,15 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    #[must_use]
-    fn must_poll(&mut self) -> bool {
+    fn has_work(&self) -> bool {
+        self.number_of_active_tasks > 0
+    }
+
+    #[inline(always)]
+    fn must_poll(&mut self, timeout_option: Option<Duration>) {
         self.check_deadlines();
-        if !self.submit().expect("IOUringWorker::submit() failed") {
-            return false;
-        }
+        self.submit_and_poll(timeout_option)
+            .expect("IOUringWorker::submit() failed");
 
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
@@ -229,8 +229,6 @@ impl IoWorker for IOUringWorker {
                 executor.spawn_shared_task(task);
             }
         }
-
-        true
     }
 
     #[inline(always)]
@@ -462,7 +460,10 @@ impl IoWorker for IOUringWorker {
     fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
         self.register_entry(
             #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Read::new(types::Fd(fd), buf_ptr, len as _).build(),
+            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+            opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(-1 as _)
+                .build(),
             request_ptr,
         );
     }
@@ -495,7 +496,10 @@ impl IoWorker for IOUringWorker {
     ) {
         self.register_entry(
             #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Write::new(types::Fd(fd), buf_ptr, len as _).build(),
+            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+            opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
+                .offset(-1 as _)
+                .build(),
             request_ptr,
         );
     }

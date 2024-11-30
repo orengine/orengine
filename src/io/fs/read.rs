@@ -26,7 +26,7 @@ impl<'buf> Read<'buf> {
     }
 }
 
-impl<'buf> Future for Read<'buf> {
+impl Future for Read<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -67,7 +67,7 @@ impl<'buf> PositionedRead<'buf> {
     }
 }
 
-impl<'buf> Future for PositionedRead<'buf> {
+impl Future for PositionedRead<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

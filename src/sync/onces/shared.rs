@@ -145,7 +145,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_async_shared_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());
@@ -178,7 +178,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_sync_shared_once() {
         let a = Arc::new(AtomicBool::new(false));
         let wg = Arc::new(WaitGroup::new());

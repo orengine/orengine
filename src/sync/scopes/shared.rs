@@ -1,6 +1,6 @@
-use crate::panic_if_local_in_future;
 use crate::runtime::{local_executor, Locality};
 use crate::sync::{AsyncWaitGroup, WaitGroup};
+use crate::{panic_if_local_in_future, yield_now};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
@@ -127,7 +127,7 @@ pub(crate) struct ScopedHandle<'scope, Fut: Future<Output = ()> + Send> {
     fut: Fut,
 }
 
-impl<'scope, Fut: Future<Output = ()> + Send> Future for ScopedHandle<'scope, Fut> {
+impl<Fut: Future<Output = ()> + Send> Future for ScopedHandle<'_, Fut> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
@@ -212,6 +212,8 @@ where
     f(static_scope).await;
 
     scope.wg.wait().await;
+
+    yield_now().await; // You can't call 2 shared_scopes in the same task if you don't yield
 }
 
 /// ```rust
@@ -233,9 +235,9 @@ mod tests {
     use crate as orengine;
     use crate::yield_now;
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering::SeqCst;
+    use std::sync::atomic::Ordering::{Relaxed, SeqCst};
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_exec() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -266,7 +268,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_exec_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -300,7 +302,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 5);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_spawn() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -331,7 +333,7 @@ mod tests {
         assert_eq!(a.load(SeqCst), 4);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_scope_spawn_with_main_future() {
         let a = AtomicUsize::new(0);
         let wg = WaitGroup::new();
@@ -363,5 +365,63 @@ mod tests {
         yield_now().await;
 
         assert_eq!(a.load(SeqCst), 5);
+    }
+
+    #[orengine::test::test_shared]
+    fn test_many_shared_scope_in_the_same_task() {
+        static ROUND: AtomicUsize = AtomicUsize::new(0);
+
+        #[allow(clippy::future_not_send, reason = "It is local test")]
+        async fn work_with_scope<'scope>(counter: &'scope AtomicUsize, scope: &Scope<'scope>) {
+            scope.spawn(async {
+                assert_eq!(counter.load(Relaxed), 2 + 6 * ROUND.load(Relaxed));
+                counter.fetch_add(1, Relaxed);
+                yield_now().await;
+                assert_eq!(counter.load(Relaxed), 5 + 6 * ROUND.load(Relaxed));
+                counter.fetch_add(1, Relaxed);
+            });
+
+            scope.exec(async {
+                assert_eq!(counter.load(Relaxed), 6 * ROUND.load(Relaxed));
+                counter.fetch_add(1, Relaxed);
+                yield_now().await;
+                assert_eq!(counter.load(Relaxed), 3 + 6 * ROUND.load(Relaxed));
+                counter.fetch_add(1, Relaxed);
+            });
+
+            assert_eq!(counter.load(Relaxed), 1 + 6 * ROUND.load(Relaxed));
+            counter.fetch_add(1, Relaxed);
+            yield_now().await;
+            assert_eq!(counter.load(Relaxed), 4 + 6 * ROUND.load(Relaxed));
+            counter.fetch_add(1, Relaxed);
+        }
+
+        let counter = AtomicUsize::new(0);
+
+        shared_scope(|scope| async {
+            work_with_scope(&counter, scope).await;
+        })
+        .await;
+
+        assert_eq!(counter.load(Relaxed), 6);
+        ROUND.store(1, Relaxed);
+
+        shared_scope(|scope| async {
+            work_with_scope(&counter, scope).await;
+        })
+        .await;
+
+        assert_eq!(counter.load(Relaxed), 12);
+        ROUND.store(2, Relaxed);
+
+        for i in 3..10 {
+            shared_scope(|scope| async {
+                work_with_scope(&counter, scope).await;
+            })
+            .await;
+
+            assert_eq!(counter.load(Relaxed), i * 6);
+            ROUND.store(i, Relaxed);
+        }
     }
 }

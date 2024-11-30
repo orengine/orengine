@@ -33,7 +33,7 @@ impl<'fut> RecvFrom<'fut> {
     }
 }
 
-impl<'fut> Future for RecvFrom<'fut> {
+impl Future for RecvFrom<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -77,7 +77,7 @@ impl<'fut> RecvFromWithDeadline<'fut> {
     }
 }
 
-impl<'fut> Future for RecvFromWithDeadline<'fut> {
+impl Future for RecvFromWithDeadline<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

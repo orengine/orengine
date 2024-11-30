@@ -70,7 +70,7 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for NaiveMutexGuard<'mutex, T
     }
 }
 
-impl<'mutex, T: ?Sized> Deref for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> Deref for NaiveMutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -78,13 +78,13 @@ impl<'mutex, T: ?Sized> Deref for NaiveMutexGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T: ?Sized> DerefMut for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> DerefMut for NaiveMutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.value.get() }
     }
 }
 
-impl<'mutex, T: ?Sized> Drop for NaiveMutexGuard<'mutex, T> {
+impl<T: ?Sized> Drop for NaiveMutexGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.mutex.unlock() };
     }
@@ -160,7 +160,8 @@ impl<T: ?Sized> NaiveMutex<T> {
 }
 
 impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
-    type Guard<'mutex> = NaiveMutexGuard<'mutex, T>
+    type Guard<'mutex>
+        = NaiveMutexGuard<'mutex, T>
     where
         Self: 'mutex;
 
@@ -300,7 +301,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_naive_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -328,7 +329,7 @@ mod tests {
         drop(value);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_try_naive_mutex() {
         let mutex = Arc::new(NaiveMutex::new(false));
         let mutex_clone = mutex.clone();
@@ -369,7 +370,7 @@ mod tests {
         }
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_naive_mutex() {
         const PAR: usize = 10;
         const TRIES: usize = 100;
@@ -384,26 +385,28 @@ mod tests {
             wg.done();
         }
 
-        let mutex = Arc::new(NaiveMutex::new(0));
-        let wg = Arc::new(WaitGroup::new());
-        wg.add(PAR * TRIES);
-        for _ in 1..PAR {
-            let wg = wg.clone();
-            let mutex = mutex.clone();
+        for _ in 0..20 {
+            let mutex = Arc::new(NaiveMutex::new(0));
+            let wg = Arc::new(WaitGroup::new());
+            wg.add(PAR * TRIES);
+            for _ in 1..PAR {
+                let wg = wg.clone();
+                let mutex = mutex.clone();
 
-            sched_future_to_another_thread(async move {
-                for _ in 0..TRIES {
-                    work_with_lock(&mutex, &wg).await;
-                }
-            });
+                sched_future_to_another_thread(async move {
+                    for _ in 0..TRIES {
+                        work_with_lock(&mutex, &wg).await;
+                    }
+                });
+            }
+
+            for _ in 0..TRIES {
+                work_with_lock(&mutex, &wg).await;
+            }
+
+            wg.wait().await;
+
+            assert_eq!(*mutex.lock().await, TRIES * PAR);
         }
-
-        for _ in 0..TRIES {
-            work_with_lock(&mutex, &wg).await;
-        }
-
-        wg.wait().await;
-
-        assert_eq!(*mutex.lock().await, TRIES * PAR);
     }
 }

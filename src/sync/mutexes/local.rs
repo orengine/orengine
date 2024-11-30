@@ -66,7 +66,7 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for LocalMutexGuard<'mutex, T
     }
 }
 
-impl<'mutex, T: ?Sized> Deref for LocalMutexGuard<'mutex, T> {
+impl<T: ?Sized> Deref for LocalMutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -74,13 +74,13 @@ impl<'mutex, T: ?Sized> Deref for LocalMutexGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T: ?Sized> DerefMut for LocalMutexGuard<'mutex, T> {
+impl<T: ?Sized> DerefMut for LocalMutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.local_mutex.value.get() }
     }
 }
 
-impl<'mutex, T: ?Sized> Drop for LocalMutexGuard<'mutex, T> {
+impl<T: ?Sized> Drop for LocalMutexGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.local_mutex.unlock() };
     }
@@ -157,7 +157,7 @@ impl<'mutex, T: ?Sized> Future for LocalMutexWait<'mutex, T> {
 ///
 /// // Correct usage, because in local runtime all tasks are executed sequentially.
 /// async fn inc_counter(counter: Local<u32>) {
-///     *counter.get_mut() += 1;
+///     *counter.borrow_mut() += 1;
 /// }
 /// ```
 ///
@@ -203,7 +203,8 @@ impl<T> LocalMutex<T> {
 }
 
 impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
-    type Guard<'mutex> = LocalMutexGuard<'mutex, T>
+    type Guard<'mutex>
+        = LocalMutexGuard<'mutex, T>
     where
         Self: 'mutex;
 
@@ -308,7 +309,7 @@ mod tests {
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 
@@ -335,7 +336,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_try_local_mutex() {
         const SLEEP_DURATION: Duration = Duration::from_millis(1);
 

@@ -14,7 +14,7 @@ pub(crate) struct MessageRecvHeader<'header> {
     phantom_data: PhantomData<&'header [u8]>,
 }
 
-impl<'header> MessageRecvHeader<'header> {
+impl MessageRecvHeader<'_> {
     /// Creates a new [`MessageRecvHeader`].
     pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut *mut [u8]) -> Self {
         let mut s: Self = unsafe { mem::zeroed() };

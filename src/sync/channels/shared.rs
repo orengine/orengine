@@ -123,7 +123,7 @@ impl<'future, T> WaitSend<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitSend<'future, T> {
+impl<T> Future for WaitSend<'_, T> {
     type Output = SendResult<T>;
 
     #[inline(always)]
@@ -221,7 +221,7 @@ impl<'future, T> WaitRecv<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitRecv<'future, T> {
+impl<T> Future for WaitRecv<'_, T> {
     type Output = RecvInResult;
 
     #[inline(always)]
@@ -407,16 +407,16 @@ impl<'channel, T> AsyncSender<T> for Sender<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Sender<'channel, T> {
+impl<T> Clone for Sender<'_, T> {
     fn clone(&self) -> Self {
         Sender { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T: Send> Sync for Sender<'channel, T> {}
-unsafe impl<'channel, T: Send> Send for Sender<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Sender<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Sender<'channel, T> {}
+unsafe impl<T: Send> Sync for Sender<'_, T> {}
+unsafe impl<T: Send> Send for Sender<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for Sender<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Sender<'_, T> {}
 
 // endregion
 
@@ -523,16 +523,16 @@ impl<'channel, T> AsyncReceiver<T> for Receiver<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for Receiver<'channel, T> {
+impl<T> Clone for Receiver<'_, T> {
     fn clone(&self) -> Self {
         Receiver { inner: self.inner }
     }
 }
 
-unsafe impl<'channel, T: Send> Sync for Receiver<'channel, T> {}
-unsafe impl<'channel, T: Send> Send for Receiver<'channel, T> {}
-impl<'channel, T: UnwindSafe> UnwindSafe for Receiver<'channel, T> {}
-impl<'channel, T: RefUnwindSafe> RefUnwindSafe for Receiver<'channel, T> {}
+unsafe impl<T: Send> Sync for Receiver<'_, T> {}
+unsafe impl<T: Send> Send for Receiver<'_, T> {}
+impl<T: UnwindSafe> UnwindSafe for Receiver<'_, T> {}
+impl<T: RefUnwindSafe> RefUnwindSafe for Receiver<'_, T> {}
 
 // endregion
 
@@ -592,10 +592,12 @@ pub struct Channel<T> {
 }
 
 impl<T> AsyncChannel<T> for Channel<T> {
-    type Sender<'channel> = Sender<'channel, T>
+    type Sender<'channel>
+        = Sender<'channel, T>
     where
         T: 'channel;
-    type Receiver<'channel> = Receiver<'channel, T>
+    type Receiver<'channel>
+        = Receiver<'channel, T>
     where
         T: 'channel;
 
@@ -788,7 +790,7 @@ mod tests {
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_zero_capacity_shared_channel() {
         let ch = Arc::new(Channel::bounded(0));
         let ch_clone = ch.clone();
@@ -813,7 +815,7 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_try() {
         let ch = Channel::bounded(1);
 
@@ -872,7 +874,7 @@ mod tests {
 
     const N: usize = 10_025;
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel() {
         let ch = Arc::new(Channel::bounded(N));
         let wg = Arc::new(WaitGroup::new());
@@ -902,7 +904,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_wait_recv() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -916,7 +918,7 @@ mod tests {
         assert_eq!(res, 1);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_channel_wait_send() {
         let ch = Arc::new(Channel::bounded(1));
         let ch_clone = ch.clone();
@@ -944,7 +946,7 @@ mod tests {
         };
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_unbounded_shared_channel() {
         let ch = Arc::new(Channel::unbounded());
         let wg = Arc::new(WaitGroup::new());
@@ -975,7 +977,7 @@ mod tests {
         );
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_drop_shared_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = Channel::bounded(1);
@@ -1009,7 +1011,7 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_drop_shared_channel_split() {
         let channel = Channel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
@@ -1042,49 +1044,51 @@ mod tests {
 
     async fn stress_test(channel: Channel<usize>, count: usize) {
         let channel = Arc::new(channel);
-        let wg = Arc::new(WaitGroup::new());
-        let sent = Arc::new(AtomicUsize::new(0));
-        let received = Arc::new(AtomicUsize::new(0));
+        for _ in 0..20 {
+            let wg = Arc::new(WaitGroup::new());
+            let sent = Arc::new(AtomicUsize::new(0));
+            let received = Arc::new(AtomicUsize::new(0));
 
-        for i in 0..get_core_ids().unwrap().len() * 2 {
-            let channel = channel.clone();
-            let wg = wg.clone();
-            let sent = sent.clone();
-            let received = received.clone();
-            wg.add(1);
+            for i in 0..get_core_ids().unwrap().len() * 2 {
+                let channel = channel.clone();
+                let wg = wg.clone();
+                let sent = sent.clone();
+                let received = received.clone();
+                wg.add(1);
 
-            sched_future_to_another_thread(async move {
-                if i % 2 == 0 {
-                    for j in 0..count {
-                        channel.send(j).await.unwrap();
-                        sent.fetch_add(j, Relaxed);
+                sched_future_to_another_thread(async move {
+                    if i % 2 == 0 {
+                        for j in 0..count {
+                            channel.send(j).await.unwrap();
+                            sent.fetch_add(j, Relaxed);
+                        }
+                    } else {
+                        for _ in 0..count {
+                            let res = channel.recv().await.unwrap();
+                            received.fetch_add(res, Relaxed);
+                        }
                     }
-                } else {
-                    for _ in 0..count {
-                        let res = channel.recv().await.unwrap();
-                        received.fetch_add(res, Relaxed);
-                    }
-                }
 
-                wg.done();
-            });
+                    wg.done();
+                });
+            }
+
+            wg.wait().await;
+            assert_eq!(sent.load(Relaxed), received.load(Relaxed));
         }
-
-        wg.wait().await;
-        assert_eq!(sent.load(Relaxed), received.load(Relaxed));
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_bounded_shared_channel() {
         stress_test(Channel::bounded(1024), 100).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_unbounded_shared_channel() {
         stress_test(Channel::unbounded(), 100).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn stress_test_zero_capacity_shared_channel() {
         stress_test(Channel::bounded(0), 20).await;
     }

@@ -49,13 +49,13 @@ pub trait AsyncWaitGroup {
     ///     for i in 0..10 {
     ///         scope.spawn(async {
     ///             sleep(Duration::from_millis(i)).await;
-    ///             *number_executed_tasks.get_mut() += 1;
+    ///             *number_executed_tasks.borrow_mut() += 1;
     ///             wait_group.done();
     ///         });
     ///     }
     ///
     ///     wait_group.wait().await; // wait until 10 tasks are completed
-    ///     assert_eq!(*number_executed_tasks, 10);
+    ///     assert_eq!(*number_executed_tasks.borrow(), 10);
     /// }).await;
     /// # }
     /// ```
@@ -79,13 +79,13 @@ pub trait AsyncWaitGroup {
     ///         wait_group.inc();
     ///         scope.spawn(async {
     ///             sleep(Duration::from_millis(i)).await;
-    ///             *number_executed_tasks.get_mut() += 1;
+    ///             *number_executed_tasks.borrow_mut() += 1;
     ///             wait_group.done();
     ///         });
     ///     }
     ///
     ///     wait_group.wait().await; // wait until all tasks are completed
-    ///     assert_eq!(*number_executed_tasks, 10);
+    ///     assert_eq!(*number_executed_tasks.borrow(), 10);
     /// }).await;
     /// # }
     /// ```
@@ -157,13 +157,13 @@ pub trait AsyncWaitGroup {
     ///         wait_group.inc();
     ///         scope.spawn(async {
     ///             sleep(Duration::from_millis(i)).await;
-    ///             *number_executed_tasks.get_mut() += 1;
+    ///             *number_executed_tasks.borrow_mut() += 1;
     ///             wait_group.done();
     ///         });
     ///     }
     ///
     ///     wait_group.wait().await; // wait until all tasks are completed
-    ///     assert_eq!(*number_executed_tasks, 10);
+    ///     assert_eq!(*number_executed_tasks.borrow(), 10);
     /// }).await;
     /// # }
     /// ```

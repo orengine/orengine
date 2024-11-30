@@ -75,7 +75,7 @@ impl<'future, T> WaitLocalSend<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitLocalSend<'future, T> {
+impl<T> Future for WaitLocalSend<'_, T> {
     type Output = SendResult<T>;
 
     #[inline(always)]
@@ -132,7 +132,7 @@ impl<'future, T> Future for WaitLocalSend<'future, T> {
 }
 
 #[cfg(debug_assertions)]
-impl<'future, T> Drop for WaitLocalSend<'future, T> {
+impl<T> Drop for WaitLocalSend<'_, T> {
     fn drop(&mut self) {
         assert!(
             self.was_awaited,
@@ -164,7 +164,7 @@ impl<'future, T> WaitLocalRecv<'future, T> {
     }
 }
 
-impl<'future, T> Future for WaitLocalRecv<'future, T> {
+impl<T> Future for WaitLocalRecv<'_, T> {
     type Output = RecvInResult;
 
     #[inline(always)]
@@ -327,7 +327,7 @@ impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for LocalSender<'channel, T> {
+impl<T> Clone for LocalSender<'_, T> {
     fn clone(&self) -> Self {
         LocalSender {
             inner: self.inner,
@@ -336,7 +336,7 @@ impl<'channel, T> Clone for LocalSender<'channel, T> {
     }
 }
 
-unsafe impl<'channel, T> Sync for LocalSender<'channel, T> {}
+unsafe impl<T> Sync for LocalSender<'_, T> {}
 
 // endregion
 
@@ -436,7 +436,7 @@ impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
     }
 }
 
-impl<'channel, T> Clone for LocalReceiver<'channel, T> {
+impl<T> Clone for LocalReceiver<'_, T> {
     fn clone(&self) -> Self {
         LocalReceiver {
             inner: self.inner,
@@ -445,7 +445,7 @@ impl<'channel, T> Clone for LocalReceiver<'channel, T> {
     }
 }
 
-unsafe impl<'channel, T> Sync for LocalReceiver<'channel, T> {}
+unsafe impl<T> Sync for LocalReceiver<'_, T> {}
 
 // endregion
 
@@ -508,10 +508,12 @@ pub struct LocalChannel<T> {
 }
 
 impl<T> AsyncChannel<T> for LocalChannel<T> {
-    type Receiver<'channel> = LocalReceiver<'channel, T>
+    type Receiver<'channel>
+        = LocalReceiver<'channel, T>
     where
         Self: 'channel;
-    type Sender<'channel> = LocalSender<'channel, T>
+    type Sender<'channel>
+        = LocalSender<'channel, T>
     where
         Self: 'channel;
 
@@ -669,7 +671,7 @@ mod tests {
     use crate::{yield_now, Local};
     use std::sync::Arc;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_zero_capacity() {
         let ch = LocalChannel::bounded(0);
         let ch_ref = &ch;
@@ -697,7 +699,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_unbounded() {
         let ch = LocalChannel::unbounded();
         let ch_ref = &ch;
@@ -728,7 +730,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_try() {
         let ch = LocalChannel::bounded(1);
 
@@ -792,7 +794,7 @@ mod tests {
     // case 3 - send (N + 1) and recv N. Wait for send
     // case 4 - send (N + 1) and recv (N + 1). Wait for send and wait for recv
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_case1() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -821,7 +823,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_case2() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -847,7 +849,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_case3() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -872,7 +874,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_case4() {
         let ch = LocalChannel::bounded(N);
         let ch_ref = &ch;
@@ -892,7 +894,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_channel_split() {
         let ch = LocalChannel::bounded(N);
         let (tx, rx) = ch.split();
@@ -912,7 +914,7 @@ mod tests {
         .await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_drop_local_channel() {
         let dropped = Arc::new(SpinLock::new(Vec::new()));
         let channel = LocalChannel::bounded(1);
@@ -947,7 +949,7 @@ mod tests {
         assert_eq!(dropped.lock().as_slice(), [2, 5]);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_drop_local_channel_split() {
         let channel = LocalChannel::bounded(1);
         let dropped = Arc::new(SpinLock::new(Vec::new()));
@@ -1014,7 +1016,7 @@ mod tests {
                                 loop {
                                     match channel.try_recv() {
                                         TryRecvResult::Ok(v) => {
-                                            *res.get_mut() += v;
+                                            *res.borrow_mut() += v;
                                             break;
                                         }
                                         TryRecvResult::Empty | TryRecvResult::Locked => {
@@ -1027,7 +1029,7 @@ mod tests {
                         } else {
                             for _ in 0..COUNT {
                                 let r = channel.recv().await.unwrap();
-                                *res.get_mut() += r;
+                                *res.borrow_mut() += r;
                             }
                         }
                     });
@@ -1035,16 +1037,16 @@ mod tests {
             })
             .await;
 
-            assert_eq!(*res, PAR * COUNT * (COUNT - 1) / 2);
+            assert_eq!(*res.borrow(), PAR * COUNT * (COUNT - 1) / 2);
         }
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn stress_test_local_channel_try_unbounded() {
         stress_test_local_channel_try(LocalChannel::unbounded()).await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn stress_test_local_channel_try_bounded() {
         stress_test_local_channel_try(LocalChannel::bounded(1024)).await;
     }

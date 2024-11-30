@@ -79,7 +79,6 @@ impl TaskPool {
                 #[cfg(debug_assertions)]
                 executor_id,
                 #[cfg(debug_assertions)]
-                // TODO think about memory leak, if users don't use the pool
                 is_executing: crate::utils::Ptr::new(std::sync::atomic::AtomicBool::new(false)),
             }
         }

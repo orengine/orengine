@@ -62,7 +62,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for LocalReadLockGuard
     }
 }
 
-impl<'rw_lock, T: ?Sized> Deref for LocalReadLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Deref for LocalReadLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -70,7 +70,7 @@ impl<'rw_lock, T: ?Sized> Deref for LocalReadLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T: ?Sized> Drop for LocalReadLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Drop for LocalReadLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.read_unlock();
@@ -124,7 +124,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for LocalWriteLockGua
     }
 }
 
-impl<'rw_lock, T: ?Sized> Deref for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Deref for LocalWriteLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -132,13 +132,13 @@ impl<'rw_lock, T: ?Sized> Deref for LocalWriteLockGuard<'rw_lock, T> {
     }
 }
 
-impl<'rw_lock, T: ?Sized> DerefMut for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> DerefMut for LocalWriteLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.local_rw_lock.get_inner().value
     }
 }
 
-impl<'rw_lock, T: ?Sized> Drop for LocalWriteLockGuard<'rw_lock, T> {
+impl<T: ?Sized> Drop for LocalWriteLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe {
             self.local_rw_lock.write_unlock();
@@ -276,7 +276,7 @@ struct Inner<T: ?Sized> {
 ///
 /// // Correct usage, because in local runtime all tasks are executed sequentially.
 /// async fn inc_counter(counter: Local<u32>) {
-///     *counter.get_mut() += 1;
+///     *counter.borrow_mut() += 1;
 /// }
 /// ```
 ///
@@ -284,14 +284,14 @@ struct Inner<T: ?Sized> {
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use orengine::Local;
+/// use std::rc::Rc;
 /// use orengine::sync::{AsyncRWLock, LocalRWLock};
 ///
 /// # async fn write_to_the_dump_file(key: usize, value: usize) {}
 ///
 /// // Correct usage, because after `write_to_log_file(*key, *value).await` and before the future is resolved
 /// // another task can modify the storage. So, we need to lock the storage.
-/// async fn dump_storage(storage: Local<LocalRWLock<HashMap<usize, usize>>>) {
+/// async fn dump_storage(storage: Rc<LocalRWLock<HashMap<usize, usize>>>) {
 ///     let mut read_guard = storage.read().await;
 ///     
 ///     for (key, value) in read_guard.iter() {
@@ -334,11 +334,13 @@ impl<T: ?Sized> LocalRWLock<T> {
 }
 
 impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
-    type ReadLockGuard<'rw_lock> = LocalReadLockGuard<'rw_lock, T>
+    type ReadLockGuard<'rw_lock>
+        = LocalReadLockGuard<'rw_lock, T>
     where
         T: 'rw_lock,
         Self: 'rw_lock;
-    type WriteLockGuard<'rw_lock> = LocalWriteLockGuard<'rw_lock, T>
+    type WriteLockGuard<'rw_lock>
+        = LocalWriteLockGuard<'rw_lock, T>
     where
         T: 'rw_lock,
         Self: 'rw_lock;
@@ -564,7 +566,7 @@ mod tests {
     use crate::yield_now;
     use std::rc::Rc;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_rw_lock() {
         let rw_lock = Rc::new(LocalRWLock::new(0));
         let wg = Rc::new(LocalWaitGroup::new());
@@ -619,7 +621,7 @@ mod tests {
         assert_ne!(rw_lock.get_inner().number_of_readers, 0);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_try_local_rw_lock() {
         const NUMBER_OF_READERS: isize = 5;
         let rw_lock = Rc::new(LocalRWLock::new(0));

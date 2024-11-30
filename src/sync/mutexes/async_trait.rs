@@ -118,7 +118,6 @@ pub trait AsyncMutex<T: ?Sized> {
 mod tests {
     use super::*;
     use crate as orengine;
-    // TODO rewrite all `orengine_macros::test_shared` and `orengine_macros::test_local` to crate::test::test_local
     use crate::test::{test_local, test_shared};
 
     struct NonSend {

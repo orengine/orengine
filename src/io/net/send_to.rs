@@ -36,7 +36,7 @@ impl<'fut> SendTo<'fut> {
     }
 }
 
-impl<'fut> Future for SendTo<'fut> {
+impl Future for SendTo<'_> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -81,7 +81,7 @@ impl<'fut> SendToWithDeadline<'fut> {
     }
 }
 
-impl<'fut> Future for SendToWithDeadline<'fut> {
+impl Future for SendToWithDeadline<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

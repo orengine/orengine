@@ -46,7 +46,7 @@ where
     }
 }
 
-impl<'mutex, 'cond_var, T, Guard> Future for WaitCondVar<'mutex, 'cond_var, T, Guard>
+impl<'mutex, T, Guard> Future for WaitCondVar<'mutex, '_, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -78,7 +78,7 @@ where
     }
 }
 
-unsafe impl<'mutex, 'cond_var, T, Guard> Send for WaitCondVar<'mutex, 'cond_var, T, Guard>
+unsafe impl<'mutex, T, Guard> Send for WaitCondVar<'mutex, '_, T, Guard>
 where
     T: 'mutex + ?Sized + Send,
     Guard: AsyncMutexGuard<'mutex, T> + Send,
@@ -145,7 +145,8 @@ impl CondVar {
 }
 
 impl AsyncCondVar for CondVar {
-    type SubscribableMutex<T> = Mutex<T>
+    type SubscribableMutex<T>
+        = Mutex<T>
     where
         T: ?Sized;
 
@@ -328,22 +329,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_one_with_drop_guard() {
         test_notify_one(true).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_all_with_drop_guard() {
         test_notify_all(true).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_one_without_drop_guard() {
         test_notify_one(false).await;
     }
 
-    #[orengine_macros::test_shared]
+    #[orengine::test::test_shared]
     fn test_shared_cond_var_notify_all_without_drop_guard() {
         test_notify_all(false).await;
     }

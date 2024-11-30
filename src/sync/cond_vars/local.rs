@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<'mutex, 'cond_var, T, Guard> Future for WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
+impl<'mutex, T, Guard> Future for WaitLocalCondVar<'mutex, '_, T, Guard>
 where
     T: 'mutex + ?Sized,
     Guard: AsyncMutexGuard<'mutex, T>,
@@ -151,7 +151,8 @@ impl LocalCondVar {
 }
 
 impl AsyncCondVar for LocalCondVar {
-    type SubscribableMutex<T> = LocalMutex<T>
+    type SubscribableMutex<T>
+        = LocalMutex<T>
     where
         T: ?Sized;
 
@@ -332,22 +333,22 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_cond_var_notify_one_with_drop_guard() {
         test_notify_one(true).await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_cond_var_notify_all_with_drop_guard() {
         test_notify_all(true).await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_cond_var_notify_one_without_drop_guard() {
         test_notify_one(false).await;
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_local_cond_var_notify_all_without_drop_guard() {
         test_notify_all(false).await;
     }

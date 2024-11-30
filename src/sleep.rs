@@ -19,7 +19,7 @@ impl Future for Sleep {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         if this.was_yielded {
-            // [`Executor::background`] will wake this future up when it should be woken up.
+            // [`Executor`](crate::Executor) will wake this future up when it should be woken up.
             Poll::Ready(())
         } else {
             this.was_yielded = true;
@@ -73,12 +73,12 @@ mod tests {
     use crate::yield_now;
     use std::time::Duration;
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_sleep() {
         #[allow(clippy::future_not_send)] // because it is `local`
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
-            arr.get_mut().push(number);
+            arr.borrow_mut().push(number);
         }
 
         let arr = Local::new(Vec::new());
@@ -92,7 +92,7 @@ mod tests {
         ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr);
+        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
 
         let arr = Local::new(Vec::new());
 
@@ -102,6 +102,6 @@ mod tests {
         ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr);
+        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
     }
 }

@@ -250,7 +250,11 @@ impl Config {
     /// If [`usize::MAX`] is provided, work sharing will be disabled.
     #[must_use]
     pub const fn set_work_sharing_level(mut self, work_sharing_level: usize) -> Self {
-        self.work_sharing_level = work_sharing_level;
+        if work_sharing_level == 0 {
+            self.work_sharing_level = 1;
+        } else {
+            self.work_sharing_level = work_sharing_level;
+        }
 
         self
     }
@@ -338,11 +342,27 @@ impl PartialEq for Config {
 impl Eq for Config {}
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate as orengine;
+    use std::sync::atomic;
+    use std::sync::{Condvar as STDCvar, Mutex as STDMutex};
 
+    const NUMBER_OF_TESTS: usize = 2;
+
+    pub(crate) static WAS_READY: (STDMutex<bool>, STDCvar) = (STDMutex::new(false), STDCvar::new());
+    static NUMBER_OF_READY_TESTS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn handle_test_ready() {
+        let prev = NUMBER_OF_READY_TESTS.fetch_add(1, atomic::Ordering::SeqCst);
+        if prev == NUMBER_OF_TESTS - 1 {
+            *WAS_READY.0.lock().unwrap() = true;
+            WAS_READY.1.notify_all();
+        }
+
+        assert!(prev < NUMBER_OF_TESTS, "{}", BUG_MESSAGE);
+    }
 
     fn get_lock() -> std::sync::MutexGuard<'static, ()> {
         LOCK.lock().unwrap_or_else(|e| {
@@ -351,7 +371,7 @@ mod tests {
         })
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_default_config() {
         let lock = get_lock();
         let config = Config::default().validate();
@@ -360,9 +380,10 @@ mod tests {
         assert!(config.is_thread_pool_enabled());
         assert_ne!(config.work_sharing_level, usize::MAX);
         drop(lock);
+        handle_test_ready();
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_config() {
         let lock = get_lock();
         let config = Config::default()
@@ -380,6 +401,7 @@ mod tests {
         assert!(!config.is_work_sharing_enabled());
 
         drop(lock);
+        handle_test_ready();
     }
 
     // 4 cases for panic
@@ -387,7 +409,7 @@ mod tests {
     // 2 - first config with work sharing and without io worker, next with io worker and work sharing
     // 3 - first config with work sharing and without thread pool, next with thread pool and work sharing
     // 4 - first config with thread pool and work sharing, next with work sharing and without thread pool
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -406,7 +428,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -425,7 +447,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"
@@ -443,7 +465,7 @@ mod tests {
         drop(lock);
     }
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     #[allow(
         clippy::should_panic_without_expect,
         reason = "panic message is too long"

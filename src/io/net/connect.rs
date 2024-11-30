@@ -32,7 +32,7 @@ impl<'fut> Connect<'fut> {
     }
 }
 
-impl<'fut> Future for Connect<'fut> {
+impl Future for Connect<'_> {
     type Output = Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -69,7 +69,7 @@ impl<'fut> ConnectWithDeadline<'fut> {
     }
 }
 
-impl<'fut> Future for ConnectWithDeadline<'fut> {
+impl Future for ConnectWithDeadline<'_> {
     type Output = Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

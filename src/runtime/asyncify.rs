@@ -20,7 +20,7 @@ impl<'future> Asyncify<'future> {
     }
 }
 
-impl<'future> Future for Asyncify<'future> {
+impl Future for Asyncify<'_> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
@@ -75,7 +75,7 @@ mod tests {
     use std::time::Duration;
     use std::{thread, time};
 
-    #[orengine_macros::test_local]
+    #[orengine::test::test_local]
     fn test_asyncify() {
         let start = time::Instant::now();
         let was_changed = Arc::new(std::sync::Mutex::new(false));

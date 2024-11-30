@@ -4,9 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-orengine = "0.6.0"
-socket2 = { version = "0.5.7", features = ["all"] }
-may = "0.3.46"
+orengine = "0.6.1-alpha.6"
+may = "0.3.47"
 tokio = { version = "1", features = ["full"] }
-smol = "2.0.0"
 async-std = "1.12.0"
