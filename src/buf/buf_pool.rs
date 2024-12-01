@@ -92,14 +92,15 @@ impl BufPool {
     }
 
     /// Get [`Buffer`] from [`BufPool`].
+    #[inline(always)]
     pub fn get(&mut self) -> Buffer {
-        match self.pool.pop() {
-            Some(buf) => buf,
-            None => Buffer::new_from_pool(self.default_buffer_cap),
-        }
+        self.pool
+            .pop()
+            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf)
     }
 
     /// Put [`Buffer`] to [`BufPool`].
+    #[inline(always)]
     pub fn put(&mut self, buf: Buffer) {
         if buf.cap() == self.default_buffer_cap {
             unsafe {
