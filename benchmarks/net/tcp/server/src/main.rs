@@ -153,16 +153,14 @@ fn orengine() {
     }
 
     fn run_server(core_id: CoreId) {
-        let ex = Executor::init_on_core_with_config(
-            core_id,
-            Config::default().set_work_sharing_level(20),
-        );
+        let ex =
+            Executor::init_on_core_with_config(core_id, Config::default().disable_work_sharing());
         let _ = ex.run_and_block_on_local(async {
             let mut listener = orengine::net::TcpListener::bind::<&str>(ADDR.as_ref())
                 .await
                 .unwrap();
             while let Ok((stream, _)) = listener.accept().await {
-                orengine::local_executor().spawn_shared(handle_client(stream));
+                orengine::local_executor().spawn_local(handle_client(stream));
             }
         });
     }
