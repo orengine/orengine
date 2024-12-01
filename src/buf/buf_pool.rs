@@ -56,9 +56,7 @@ pub fn buffer() -> Buffer {
 /// After drop, it will be returned to the pool.
 #[inline(always)]
 pub fn full_buffer() -> Buffer {
-    let mut buf = buf_pool().get();
-    buf.set_len_to_cap();
-    buf
+    buf_pool().get_full()
 }
 
 /// Pool of [`Buffer`]s. It is used for reusing memory. If you need to change default buffer size,
@@ -92,12 +90,28 @@ impl BufPool {
         self.pool = Vec::new();
     }
 
+    /// Get [`Buffer`] from [`BufPool`] with full length.
+    #[inline(always)]
+    pub fn get_full(&mut self) -> Buffer {
+        let mut pool = self
+            .pool
+            .pop()
+            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf);
+        pool.set_len_to_cap();
+
+        pool
+    }
+
     /// Get [`Buffer`] from [`BufPool`].
     #[inline(always)]
     pub fn get(&mut self) -> Buffer {
-        self.pool
+        let mut pool = self
+            .pool
             .pop()
-            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf)
+            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf);
+        pool.clear();
+
+        pool
     }
 
     /// Put [`Buffer`] to [`BufPool`].
@@ -115,20 +129,8 @@ impl BufPool {
     /// # Safety
     ///
     /// - `buf.cap()` == `self.buffer_len`
-    // TODO always
-    #[inline(never)]
-    pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
-        buf.clear();
-        if self.pool.capacity() == self.pool.len() {
-            if self.pool.capacity() == 0 {
-                self.pool.reserve(4);
-            } else if self.pool.capacity() < 512 {
-                self.pool.reserve(self.pool.capacity() * 2);
-            } else {
-                self.pool.reserve(self.pool.capacity() * 12 / 10);
-            }
-        }
-
+    #[inline(always)]
+    pub unsafe fn put_unchecked(&mut self, buf: Buffer) {
         self.pool.push(buf);
     }
 }
