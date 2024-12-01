@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::str::FromStr;
+use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,12 +12,56 @@ use orengine::utils::get_core_ids;
 use orengine::Executor;
 use smol::future;
 
-const SERVER_ADDR: &str = "server:8083";
-
-const PAR: usize = 512 * 2;
-const N: usize = 5_200_000;
-const COUNT: usize = N / PAR;
 const TRIES: usize = 15;
+
+static ADDR: LazyLock<String> = LazyLock::new(|| {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 2 {
+        println!("Server address is {} (given as second argument)", args[2]);
+
+        args[2].clone()
+    } else {
+        println!("Server address is not specified, defaulting to localhost:8083");
+
+        "localhost:8083".to_string()
+    }
+});
+
+static N: LazyLock<usize> = LazyLock::new(|| {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 3 {
+        println!(
+            "Number of messages is {} (given as third argument)",
+            args[3]
+        );
+
+        usize::from_str(args[3].as_str())
+            .expect("Number of messages should be an integer (second argument)")
+    } else {
+        println!("Number of messages is not specified, defaulting to 5,200,000");
+
+        5_200_000
+    }
+});
+
+static PAR: LazyLock<usize> = LazyLock::new(|| {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 4 {
+        println!(
+            "Number of connections is {} (given as fourth argument)",
+            args[4]
+        );
+
+        usize::from_str(args[4].as_str())
+            .expect("Number of connections should be an integer (second argument)")
+    } else {
+        println!("Number of connections is not specified, defaulting to 512");
+
+        512
+    }
+});
+
+static COUNT: LazyLock<usize> = LazyLock::new(|| *N / *PAR);
 
 fn bench_throughput() {
     macro_rules! bench_throughput_client {
@@ -28,7 +73,7 @@ fn bench_throughput() {
 
                 $code_of_test
 
-                let rps = (N * 1000) / start.elapsed().as_millis() as usize;
+                let rps = (*N * 1000) / start.elapsed().as_millis() as usize;
                 println!("Benchmark {} took: {}ms, RPS: {rps}", $name, start.elapsed().as_millis());
 
                 res += rps;
@@ -47,13 +92,13 @@ fn bench_throughput() {
             {
                 use std::io::{Read, Write};
 
-                let mut handles = Vec::with_capacity(PAR);
-                for _ in 0..PAR {
+                let mut handles = Vec::with_capacity(*PAR);
+                for _ in 0..*PAR {
                     handles.push(thread::spawn(move || {
-                        let mut conn = std::net::TcpStream::connect(SERVER_ADDR).unwrap();
-                        let mut buf = [0u8; 1024];
+                        let mut conn = std::net::TcpStream::connect::<&str>(ADDR.as_ref()).unwrap();
+                        let mut buf = [0u8; 4096];
 
-                        for _ in 0..COUNT {
+                        for _ in 0..*COUNT {
                             conn.write_all(b"ping").unwrap();
                             let _ = conn.read(&mut buf).unwrap();
                         }
@@ -78,16 +123,17 @@ fn bench_throughput() {
                 {
                     use smol::io::{AsyncReadExt, AsyncWriteExt};
 
-                    let (tx, rx) = flume::bounded(PAR);
+                    let (tx, rx) = flume::bounded(*PAR);
 
-                    for _i in 0..PAR {
+                    for _i in 0..*PAR {
                         let tx = tx.clone();
                         ex.spawn(async move {
-                            let mut conn =
-                                smol::net::TcpStream::connect(SERVER_ADDR).await.unwrap();
-                            let mut buf = [0u8; 1024];
+                            let mut conn = smol::net::TcpStream::connect::<&str>(ADDR.as_ref())
+                                .await
+                                .unwrap();
+                            let mut buf = [0u8; 4096];
 
-                            for _ in 0..COUNT {
+                            for _ in 0..*COUNT {
                                 conn.write_all(b"ping").await.unwrap();
                                 conn.read(&mut buf).await.unwrap();
                             }
@@ -97,7 +143,7 @@ fn bench_throughput() {
                         .detach();
                     }
 
-                    for _ in 0..PAR {
+                    for _ in 0..*PAR {
                         rx.recv_async().await.unwrap();
                     }
                 }
@@ -119,16 +165,18 @@ fn bench_throughput() {
                     {
                         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-                        let (tx, rx) = flume::bounded(PAR);
+                        let (tx, rx) = flume::bounded(*PAR);
 
-                        for _i in 0..PAR {
+                        for _i in 0..*PAR {
                             let tx = tx.clone();
                             tokio::spawn(async move {
                                 let mut conn =
-                                    tokio::net::TcpStream::connect(SERVER_ADDR).await.unwrap();
-                                let mut buf = [0u8; 1024];
+                                    tokio::net::TcpStream::connect::<&str>(ADDR.as_ref())
+                                        .await
+                                        .unwrap();
+                                let mut buf = [0u8; 4096];
 
-                                for _ in 0..COUNT {
+                                for _ in 0..*COUNT {
                                     conn.write_all(b"ping").await.unwrap();
                                     let _ = conn.read(&mut buf).await.unwrap();
                                 }
@@ -137,7 +185,7 @@ fn bench_throughput() {
                             });
                         }
 
-                        for _ in 0..PAR {
+                        for _ in 0..*PAR {
                             rx.recv_async().await.unwrap();
                         }
                     }
@@ -155,17 +203,18 @@ fn bench_throughput() {
                 {
                     use async_std::io::{ReadExt, WriteExt};
 
-                    let (tx, rx) = flume::bounded(PAR);
+                    let (tx, rx) = flume::bounded(*PAR);
 
-                    for _i in 0..PAR {
+                    for _i in 0..*PAR {
                         let tx = tx.clone();
                         async_std::task::spawn(async move {
-                            let mut conn = async_std::net::TcpStream::connect(SERVER_ADDR)
-                                .await
-                                .unwrap();
-                            let mut buf = [0u8; 1024];
+                            let mut conn =
+                                async_std::net::TcpStream::connect::<&str>(ADDR.as_ref())
+                                    .await
+                                    .unwrap();
+                            let mut buf = [0u8; 4096];
 
-                            for _ in 0..COUNT {
+                            for _ in 0..*COUNT {
                                 conn.write_all(b"ping").await.unwrap();
                                 conn.read(&mut buf).await.unwrap();
                             }
@@ -174,7 +223,7 @@ fn bench_throughput() {
                         });
                     }
 
-                    for _ in 0..PAR {
+                    for _ in 0..*PAR {
                         rx.recv_async().await.unwrap();
                     }
                 }
@@ -194,7 +243,7 @@ fn bench_throughput() {
             start_wg: Arc<(Mutex<isize>, Condvar)>,
             end_wg: Arc<(Mutex<usize>, Condvar)>,
         ) {
-            let par = PAR / number_of_cores;
+            let par = *PAR / number_of_cores;
 
             for i in 0..TRIES as isize {
                 {
@@ -210,10 +259,10 @@ fn bench_throughput() {
                     wg.borrow_mut().add(1);
                     let wg = wg.clone();
                     local_executor().spawn_local(async move {
-                        let mut stream = orengine::net::TcpStream::connect(SERVER_ADDR)
+                        let mut stream = orengine::net::TcpStream::connect::<&str>(ADDR.as_ref())
                             .await
                             .unwrap();
-                        for _ in 0..COUNT {
+                        for _ in 0..*COUNT {
                             stream.send_all(b"ping").await.unwrap();
 
                             stream.poll_recv().await.unwrap();
@@ -263,7 +312,7 @@ fn bench_throughput() {
                 end_guard = end_wg.1.wait(end_guard).unwrap();
             }
 
-            let rps = (N * 1000) / start.elapsed().as_millis() as usize;
+            let rps = (*N * 1000) / start.elapsed().as_millis() as usize;
             println!(
                 "Benchmark orengine took: {}ms, RPS: {rps}",
                 start.elapsed().as_millis()
@@ -276,7 +325,7 @@ fn bench_throughput() {
         println!("Average orengine RPS: {}", res / TRIES);
     }
 
-    let client = std::env::var("CLIENT").expect("Environment variable 'CLIENT' not set");
+    let client = std::env::args().nth(1).expect("First argument (name of client) is required. It must be one of: std, tokio, async_std, smol, orengine");
 
     match client.as_str() {
         "std" => bench_std(),
