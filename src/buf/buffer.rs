@@ -1,4 +1,4 @@
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{alloc, Layout};
 use std::cmp::max;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
@@ -317,22 +317,18 @@ unsafe impl Send for Buffer {}
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        if self.cap() == self.buf_pool.default_buffer_cap() {
-            let buf = Self {
-                slice: self.slice,
-                len: self.len,
-                buf_pool: unsafe { &mut *ptr::from_mut::<BufPool>(self.buf_pool) },
-            };
-
-            unsafe { self.buf_pool.put_unchecked(buf) };
-        } else {
-            unsafe {
-                dealloc(
-                    self.slice.as_ptr().cast(),
-                    Layout::array::<u8>(self.cap()).unwrap_unchecked(),
-                );
-            }
-        }
+        unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
+        // TODO
+        // if self.cap() == self.buf_pool.default_buffer_cap() {
+        //     unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
+        // } else {
+        //     unsafe {
+        //         dealloc(
+        //             self.slice.as_ptr().cast(),
+        //             Layout::array::<u8>(self.cap()).unwrap_unchecked(),
+        //         );
+        //     }
+        // }
     }
 }
 
