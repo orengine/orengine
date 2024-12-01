@@ -56,9 +56,7 @@ pub fn buffer() -> Buffer {
 /// After drop, it will be returned to the pool.
 #[inline(always)]
 pub fn full_buffer() -> Buffer {
-    let mut buf = buf_pool().get();
-    buf.set_len_to_cap();
-    buf
+    buf_pool().get_full()
 }
 
 /// Pool of [`Buffer`]s. It is used for reusing memory. If you need to change default buffer size,
@@ -77,6 +75,7 @@ impl BufPool {
     }
 
     /// Get default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
+    #[inline(always)]
     pub fn default_buffer_cap(&self) -> usize {
         self.default_buffer_cap
     }
@@ -91,15 +90,32 @@ impl BufPool {
         self.pool = Vec::new();
     }
 
+    /// Get [`Buffer`] from [`BufPool`] with full length.
+    #[inline(always)]
+    pub fn get_full(&mut self) -> Buffer {
+        let mut pool = self
+            .pool
+            .pop()
+            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf);
+        pool.set_len_to_cap();
+
+        pool
+    }
+
     /// Get [`Buffer`] from [`BufPool`].
+    #[inline(always)]
     pub fn get(&mut self) -> Buffer {
-        match self.pool.pop() {
-            Some(buf) => buf,
-            None => Buffer::new_from_pool(self.default_buffer_cap),
-        }
+        let mut pool = self
+            .pool
+            .pop()
+            .map_or_else(|| Buffer::new_from_pool(self), |buf| buf);
+        pool.clear();
+
+        pool
     }
 
     /// Put [`Buffer`] to [`BufPool`].
+    #[inline(always)]
     pub fn put(&mut self, buf: Buffer) {
         if buf.cap() == self.default_buffer_cap {
             unsafe {
@@ -114,8 +130,7 @@ impl BufPool {
     ///
     /// - `buf.cap()` == `self.buffer_len`
     #[inline(always)]
-    pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
-        buf.clear();
+    pub unsafe fn put_unchecked(&mut self, buf: Buffer) {
         self.pool.push(buf);
     }
 }

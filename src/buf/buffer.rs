@@ -7,7 +7,7 @@ use std::ptr::{slice_from_raw_parts_mut, NonNull};
 use std::slice::SliceIndex;
 
 use crate::buf::buf_pool::buf_pool;
-use crate::buf::buffer;
+use crate::buf::{buffer, BufPool};
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
@@ -18,11 +18,11 @@ use crate::buf::buffer;
 ///
 /// # About pool
 ///
-/// For get from [`BufPool`](crate::buf::BufPool), call [`buffer()`]
+/// For get from [`BufPool`], call [`buffer()`]
 /// or [`full_buffer()`](crate::buf::full_buffer).
-/// If you can use [`BufPool`](crate::buf::BufPool), use it, to have better performance.
+/// If you can use [`BufPool`], use it, to have better performance.
 ///
-/// If it was gotten from [`BufPool`](crate::buf::BufPool), it will come back after drop.
+/// If it was gotten from [`BufPool`], it will come back after drop.
 ///
 /// # Buffer representation
 ///
@@ -77,9 +77,9 @@ impl Buffer {
 
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
-    pub(crate) fn new_from_pool(size: usize) -> Self {
+    pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
         Self {
-            slice: Self::raw_slice(size),
+            slice: Self::raw_slice(pool.default_buffer_cap()),
             len: 0,
         }
     }
@@ -210,7 +210,7 @@ impl Buffer {
     /// # Safety
     ///
     /// - [`buf.real_cap`](#method.real_cap) is equal to
-    ///   [`default cap`](crate::buf::BufPool::default_buffer_cap)
+    ///   [`default cap`](BufPool::default_buffer_cap)
     #[inline(always)]
     pub unsafe fn release_unchecked(self) {
         unsafe { buf_pool().put_unchecked(self) };
@@ -250,14 +250,16 @@ impl<I: SliceIndex<[u8]>> IndexMut<I> for Buffer {
 }
 
 impl AsRef<[u8]> for Buffer {
+    #[inline(always)]
     fn as_ref(&self) -> &[u8] {
-        unsafe { &self.slice.as_ref()[0..self.len] }
+        unsafe { &self.slice.as_ref()[..self.len] }
     }
 }
 
 impl AsMut<[u8]> for Buffer {
+    #[inline(always)]
     fn as_mut(&mut self) -> &mut [u8] {
-        unsafe { &mut self.slice.as_mut()[0..self.len] }
+        unsafe { &mut self.slice.as_mut()[..self.len] }
     }
 }
 
@@ -306,14 +308,12 @@ impl From<Vec<u8>> for Buffer {
 unsafe impl Send for Buffer {}
 
 impl Drop for Buffer {
+    #[inline(always)]
     fn drop(&mut self) {
-        let pool = buf_pool();
-        if self.cap() == pool.default_buffer_cap() {
-            let buf = Self {
-                slice: self.slice,
-                len: self.len,
-            };
-            unsafe { pool.put_unchecked(buf) };
+        let buf_pool = buf_pool();
+
+        if self.cap() == buf_pool.default_buffer_cap() {
+            unsafe { buf_pool.put_unchecked(ptr::read(self)) };
         } else {
             unsafe {
                 dealloc(

@@ -17,6 +17,7 @@ use std::task::{RawWaker, RawWakerVTable, Waker};
 ///   it was dropped (after it returned [`Poll::Ready`](std::task::Poll::Ready)).
 ///
 /// - [`Task`] never executed while it is running.
+#[inline(always)]
 unsafe fn clone(data_ptr: *const ()) -> RawWaker {
     RawWaker::new(data_ptr, &VTABLE)
 }
@@ -36,6 +37,7 @@ macro_rules! generate_wake {
 /// Do the same as [`wake_by_ref`].
 /// [`Executor`](crate::runtime::Executor) will drop the [`Task`] only when it is needed.
 /// So, you can call it without fear.
+#[inline(always)]
 unsafe fn wake(data_ptr: *const ()) {
     generate_wake!(data_ptr);
 }
@@ -43,14 +45,17 @@ unsafe fn wake(data_ptr: *const ()) {
 /// Wakes the [`Task`].
 /// [`Executor`](crate::runtime::Executor) will drop the [`Task`] only when it is needed.
 /// So, you can call it without fear.
+#[inline(always)]
 unsafe fn wake_by_ref(data_ptr: *const ()) {
     generate_wake!(data_ptr);
 }
 
 /// Do nothing, because [`Executor`](crate::runtime::Executor) will drop the [`Task`]
 /// only when it is needed.
-#[allow(unused)] // because #[cfg(debug_assertions)]
-unsafe fn drop(data_ptr: *const ()) {}
+#[inline(always)]
+unsafe fn drop(_data_ptr: *const ()) {
+    // Executor doesn't drop context. So, if you want to update this function, you should update it in `Executor` too.
+}
 
 /// [`RawWakerVTable`] for `orengine` runtime only!
 pub const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
