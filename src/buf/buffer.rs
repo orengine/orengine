@@ -41,7 +41,6 @@ use crate::buf::{buffer, BufPool};
 pub struct Buffer {
     pub(crate) slice: NonNull<[u8]>,
     len: usize,
-    buf_pool: &'static mut BufPool,
 }
 
 impl Buffer {
@@ -73,19 +72,15 @@ impl Buffer {
         Self {
             slice: Self::raw_slice(size),
             len: 0,
-            buf_pool: buf_pool(),
         }
     }
 
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
-    pub(crate) fn new_from_pool(pool: *mut BufPool) -> Self {
-        let pool_ref = unsafe { &mut *pool };
-
+    pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
         Self {
-            slice: Self::raw_slice(pool_ref.default_buffer_cap()),
+            slice: Self::raw_slice(pool.default_buffer_cap()),
             len: 0,
-            buf_pool: pool_ref,
         }
     }
 
@@ -285,7 +280,6 @@ impl From<Box<[u8]>> for Buffer {
         Self {
             len: slice.len(),
             slice: NonNull::from(Box::leak(slice)),
-            buf_pool: buf_pool(),
         }
     }
 }
@@ -295,7 +289,6 @@ impl<const N: usize> From<Box<[u8; N]>> for Buffer {
         Self {
             len: slice.len(),
             slice: NonNull::from(Box::leak(slice)),
-            buf_pool: buf_pool(),
         }
     }
 }
@@ -308,7 +301,6 @@ impl From<Vec<u8>> for Buffer {
         Self {
             len: l,
             slice: NonNull::from(slice.leak()),
-            buf_pool: buf_pool(),
         }
     }
 }
@@ -318,8 +310,10 @@ unsafe impl Send for Buffer {}
 impl Drop for Buffer {
     #[inline(always)]
     fn drop(&mut self) {
-        if self.cap() == self.buf_pool.default_buffer_cap() {
-            unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
+        let buf_pool = buf_pool();
+
+        if self.cap() == buf_pool.default_buffer_cap() {
+            unsafe { buf_pool.put_unchecked(ptr::read(self)) };
         } else {
             unsafe {
                 dealloc(
