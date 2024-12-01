@@ -77,6 +77,7 @@ impl BufPool {
     }
 
     /// Get default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
+    #[inline(always)]
     pub fn default_buffer_cap(&self) -> usize {
         self.default_buffer_cap
     }
@@ -114,7 +115,8 @@ impl BufPool {
     /// # Safety
     ///
     /// - `buf.cap()` == `self.buffer_len`
-    #[inline(always)]
+    // TODO always
+    #[inline(never)]
     pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
         buf.clear();
         self.pool.push(buf);

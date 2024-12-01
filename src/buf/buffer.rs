@@ -1,4 +1,4 @@
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 use std::cmp::max;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
@@ -199,7 +199,8 @@ impl Buffer {
     }
 
     /// Clears the buffer.
-    #[inline(always)]
+    // TODO always
+    #[inline(never)]
     pub fn clear(&mut self) {
         self.len = 0;
     }
@@ -215,7 +216,7 @@ impl Buffer {
     /// # Safety
     ///
     /// - [`buf.real_cap`](#method.real_cap) is equal to
-    ///   [`default cap`](crate::buf::BufPool::default_buffer_cap)
+    ///   [`default cap`](BufPool::default_buffer_cap)
     #[inline(always)]
     pub unsafe fn release_unchecked(self) {
         unsafe { buf_pool().put_unchecked(self) };
@@ -316,19 +317,18 @@ impl From<Vec<u8>> for Buffer {
 unsafe impl Send for Buffer {}
 
 impl Drop for Buffer {
+    #[inline(always)]
     fn drop(&mut self) {
-        unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
-        // TODO
-        // if self.cap() == self.buf_pool.default_buffer_cap() {
-        //     unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
-        // } else {
-        //     unsafe {
-        //         dealloc(
-        //             self.slice.as_ptr().cast(),
-        //             Layout::array::<u8>(self.cap()).unwrap_unchecked(),
-        //         );
-        //     }
-        // }
+        if self.cap() == self.buf_pool.default_buffer_cap() {
+            unsafe { self.buf_pool.put_unchecked(ptr::read(self)) };
+        } else {
+            unsafe {
+                dealloc(
+                    self.slice.as_ptr().cast(),
+                    Layout::array::<u8>(self.cap()).unwrap_unchecked(),
+                );
+            }
+        }
     }
 }
 
