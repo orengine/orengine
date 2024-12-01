@@ -10,6 +10,7 @@ use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
 use crate::runtime::local_executor;
 use std::io::{Error, Result};
+use std::mem::ManuallyDrop;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::{io, mem};
@@ -195,10 +196,7 @@ impl File {
 
 impl From<File> for std::fs::File {
     fn from(file: File) -> Self {
-        let fd = file.fd;
-        mem::forget(file);
-
-        unsafe { Self::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(ManuallyDrop::new(file).fd) }
     }
 }
 
@@ -324,7 +322,6 @@ mod tests {
         std::fs::remove_dir("./test/test_file").expect("failed to remove test file dir");
     }
 
-    // TODO
     #[orengine::test::test_local]
     fn test_file_unpositional_read_write() {
         create_test_dir_if_not_exist();

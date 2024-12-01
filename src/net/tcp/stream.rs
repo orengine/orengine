@@ -1,10 +1,9 @@
 //! This module contains [`TcpStream`].
 
+use socket2::{Domain, Protocol, Type};
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
-use std::mem;
-
-use socket2::{Domain, Protocol, Type};
+use std::mem::ManuallyDrop;
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
@@ -68,10 +67,7 @@ impl AsFd for TcpStream {
 
 impl From<TcpStream> for std::net::TcpStream {
     fn from(stream: TcpStream) -> Self {
-        let fd = stream.fd;
-        mem::forget(stream);
-
-        unsafe { Self::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(ManuallyDrop::new(stream).fd) }
     }
 }
 
@@ -86,10 +82,7 @@ impl From<std::net::TcpStream> for TcpStream {
 impl IntoRawFd for TcpStream {
     #[inline(always)]
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.fd;
-        mem::forget(self);
-
-        fd
+        ManuallyDrop::new(self).fd
     }
 }
 

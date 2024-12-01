@@ -105,6 +105,7 @@ macro_rules! new_local_pool {
             $vis fn into_inner(mut self) -> $value_type {
                 let value = unsafe { std::mem::ManuallyDrop::take(&mut self.value) };
                 std::mem::forget(self);
+
                 value
             }
         }

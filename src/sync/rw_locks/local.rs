@@ -9,7 +9,7 @@ use crate::runtime::task::Task;
 use crate::sync::{AsyncRWLock, AsyncReadLockGuard, AsyncWriteLockGuard, LockStatus};
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -47,18 +47,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for LocalReadLockGuard
 
     #[inline(always)]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        #[allow(
-            clippy::transmute_ptr_to_ptr,
-            reason = "It is not possible to write it any other way"
-        )]
-        let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
-        mem::forget(self);
-
-        static_local_rw_lock
+        ManuallyDrop::new(self).local_rw_lock
     }
 }
 
@@ -109,18 +98,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for LocalWriteLockGua
 
     #[inline(always)]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        #[allow(
-            clippy::transmute_ptr_to_ptr,
-            reason = "It is not possible to write it any other way"
-        )]
-        let static_local_rw_lock = unsafe { mem::transmute(self.local_rw_lock) };
-        mem::forget(self);
-
-        static_local_rw_lock
+        ManuallyDrop::new(self).local_rw_lock
     }
 }
 
