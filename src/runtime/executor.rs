@@ -521,6 +521,9 @@ impl Executor {
                 }
             }
         }
+
+        // orengine::Waker::drop does nothing, but virtual call is not free.
+        mem::forget(waker);
     }
 
     /// Executes a provided [`task`](Task) in the current [`executor`](Executor).
