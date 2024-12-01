@@ -1,11 +1,22 @@
-use std::{io, thread};
-
 use orengine::buf::full_buffer;
 use orengine::runtime::Config;
 use orengine::utils::{get_core_ids, CoreId};
 use orengine::Executor;
+use std::sync::LazyLock;
+use std::{io, thread};
 
-const ADDR: &str = "server:8083";
+static ADDR: LazyLock<String> = LazyLock::new(|| {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        println!("Server address is {} (given as second argument)", args[2]);
+
+        args[2].clone()
+    } else {
+        println!("Server address is not specified, defaulting to localhost:8083");
+
+        "localhost:8083".to_string()
+    }
+});
 
 fn std_server() {
     println!("Using std.");
@@ -26,7 +37,7 @@ fn std_server() {
         Ok(())
     }
 
-    let listener = std::net::TcpListener::bind(ADDR).unwrap();
+    let listener = std::net::TcpListener::bind::<&str>(ADDR.as_ref()).unwrap();
     while let Ok((stream, _)) = listener.accept() {
         thread::spawn(|| handle_client(stream));
     }
@@ -50,7 +61,7 @@ fn may() {
         Ok(())
     }
 
-    let listener = may::net::TcpListener::bind(ADDR).unwrap();
+    let listener = may::net::TcpListener::bind::<&str>(ADDR.as_ref()).unwrap();
     while let Ok((stream, _)) = listener.accept() {
         may::go!(|| { handle_client(stream) });
     }
@@ -84,7 +95,9 @@ fn tokio() {
         .build()
         .unwrap()
         .block_on(async {
-            let listener = tokio::net::TcpListener::bind(ADDR).await.unwrap();
+            let listener = tokio::net::TcpListener::bind::<&str>(ADDR.as_ref())
+                .await
+                .unwrap();
             while let Ok((stream, _)) = listener.accept().await {
                 tokio::spawn(async move { handle_client(stream).await });
             }
@@ -110,7 +123,9 @@ fn async_std() {
     }
 
     async_std::task::block_on(async {
-        let listener = async_std::net::TcpListener::bind(ADDR).await.unwrap();
+        let listener = async_std::net::TcpListener::bind::<&str>(ADDR.as_ref())
+            .await
+            .unwrap();
         while let Ok((stream, _)) = listener.accept().await {
             async_std::task::spawn(async move { handle_client(stream).await });
         }
@@ -143,7 +158,9 @@ fn orengine() {
             Config::default().set_work_sharing_level(20),
         );
         let _ = ex.run_and_block_on_local(async {
-            let mut listener = orengine::net::TcpListener::bind(ADDR).await.unwrap();
+            let mut listener = orengine::net::TcpListener::bind::<&str>(ADDR.as_ref())
+                .await
+                .unwrap();
             while let Ok((stream, _)) = listener.accept().await {
                 orengine::local_executor().spawn_shared(handle_client(stream));
             }
@@ -160,7 +177,7 @@ fn orengine() {
 }
 
 fn main() {
-    let server = std::env::var("SERVER").expect("Environment variable 'SERVER' is not set.");
+    let server = std::env::args().nth(1).expect("First argument (server name) is required. Use one of: std, may, tokio, async_std, orengine");
     match server.as_str() {
         "std" => std_server(),
         "tokio" => tokio(),

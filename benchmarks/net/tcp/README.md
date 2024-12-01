@@ -8,7 +8,9 @@ __More is better__
 
 ![images/echo_server.png](images/echo_server.png)
 
-To run it set __SERVER__ environment variable to server application with one of the following values:
+# Run server
+
+Run server with one argument with one of the following values:
 
 - `std`
 - `async-std`
@@ -16,10 +18,22 @@ To run it set __SERVER__ environment variable to server application with one of 
 - `may`
 - `orengine`
 
-And set __CLIENT__ environment variable to client application with one of the following values:
+And second argument that is the server address (default is `localhost:8083`).
+
+Example command: `cargo run --release`
+
+# Run client
+
+Run client with one argument with one of the following values:
 
 - `std`
 - `async-std`
 - `tokio`
 - `smol`
 - `orengine`
+
+Second argument that is the server address (default is `localhost:8083`).
+
+Third argument that is the number of messages (default is 5,200,000).
+
+And fourth argument that is the number of connections (default is 512).

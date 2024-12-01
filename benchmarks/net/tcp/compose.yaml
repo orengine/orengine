@@ -4,19 +4,17 @@ services:
       context: server
       dockerfile: Dockerfile
       target: final
-    environment:
-      - SERVER=orengine
     ports:
       - "8083:8083"
+    command: [ "/bin/app", "std", "server:8083" ]
 
   client:
     build:
       context: client
       dockerfile: Dockerfile
       target: final
-    environment:
-      - CLIENT=orengine
     ports:
       - "8081:8081"
     depends_on:
       - server
+    command: [ "/bin/app", "std", "server:8083", "5200000", "512" ]
