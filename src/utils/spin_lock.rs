@@ -7,7 +7,7 @@
 //! only if it is not possible to use asynchronous locking.
 use crossbeam::utils::{Backoff, CachePadded};
 use std::cell::UnsafeCell;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic;
@@ -58,10 +58,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// The mutex is unlocked by calling [`SpinLock::unlock`] later.
     #[inline(always)]
     pub unsafe fn leak(self) -> *const CachePadded<AtomicBool> {
-        let atomic_ptr = &self.spin_lock.is_locked;
-        mem::forget(self);
-
-        atomic_ptr
+        &ManuallyDrop::new(self).spin_lock.is_locked
     }
 
     /// Returns a reference to the [`CachePadded<AtomicBool>`]
@@ -74,14 +71,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
     #[inline(always)]
     pub unsafe fn leak_to_atomic(self) -> &'spin_lock CachePadded<AtomicBool> {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        let static_spin_lock = unsafe { mem::transmute(&self.spin_lock.is_locked) };
-        mem::forget(self);
-
-        static_spin_lock
+        &ManuallyDrop::new(self).spin_lock.is_locked
     }
 }
 

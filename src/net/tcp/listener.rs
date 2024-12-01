@@ -2,7 +2,7 @@
 use std::ffi::c_int;
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::net::SocketAddr;
 
 use socket2::{SockAddr, SockRef};
@@ -40,10 +40,7 @@ pub struct TcpListener {
 
 impl From<TcpListener> for std::net::TcpListener {
     fn from(listener: TcpListener) -> Self {
-        let fd = listener.fd;
-        mem::forget(listener);
-
-        unsafe { Self::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(ManuallyDrop::new(listener).fd) }
     }
 }
 
@@ -57,10 +54,7 @@ impl From<std::net::TcpListener> for TcpListener {
 
 impl IntoRawFd for TcpListener {
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.fd;
-        mem::forget(self);
-
-        fd
+        ManuallyDrop::new(self).fd
     }
 }
 

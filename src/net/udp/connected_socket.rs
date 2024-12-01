@@ -1,10 +1,9 @@
-use std::fmt::{Debug, Formatter};
-use std::mem;
-
 use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use crate::io::{AsyncClose, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncShutdown};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
+use std::fmt::{Debug, Formatter};
+use std::mem::ManuallyDrop;
 
 /// A UDP socket.
 ///
@@ -43,10 +42,7 @@ pub struct UdpConnectedSocket {
 
 impl From<UdpConnectedSocket> for std::net::UdpSocket {
     fn from(connected_socket: UdpConnectedSocket) -> Self {
-        let fd = connected_socket.fd;
-        mem::forget(connected_socket);
-
-        unsafe { Self::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(ManuallyDrop::new(connected_socket).fd) }
     }
 }
 
@@ -60,10 +56,7 @@ impl From<std::net::UdpSocket> for UdpConnectedSocket {
 
 impl IntoRawFd for UdpConnectedSocket {
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.fd;
-        mem::forget(self);
-
-        fd
+        ManuallyDrop::new(self).fd
     }
 }
 

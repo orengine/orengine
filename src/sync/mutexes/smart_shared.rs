@@ -4,7 +4,7 @@
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::hint::spin_loop;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
@@ -48,14 +48,7 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for MutexGuard<'mutex, T> {
     }
 
     unsafe fn leak(self) -> &'mutex Self::Mutex {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        let static_mutex = unsafe { mem::transmute(self.mutex) };
-        mem::forget(self);
-
-        static_mutex
+        ManuallyDrop::new(self).mutex
     }
 }
 

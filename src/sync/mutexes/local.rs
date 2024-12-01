@@ -9,7 +9,7 @@ use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -55,14 +55,7 @@ impl<'mutex, T: ?Sized> AsyncMutexGuard<'mutex, T> for LocalMutexGuard<'mutex, T
     }
 
     unsafe fn leak(self) -> &'mutex Self::Mutex {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        let static_local_mutex = unsafe { mem::transmute(self.local_mutex) };
-        mem::forget(self);
-
-        static_local_mutex
+        ManuallyDrop::new(self).local_mutex
     }
 }
 

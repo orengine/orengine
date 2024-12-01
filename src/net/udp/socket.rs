@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::net::SocketAddr;
 
 use socket2::{SockAddr, SockRef};
@@ -81,10 +81,7 @@ pub struct UdpSocket {
 
 impl From<UdpSocket> for std::net::UdpSocket {
     fn from(socket: UdpSocket) -> Self {
-        let fd = socket.fd;
-        mem::forget(socket);
-
-        unsafe { Self::from_raw_fd(fd) }
+        unsafe { Self::from_raw_fd(ManuallyDrop::new(socket).fd) }
     }
 }
 
@@ -98,10 +95,7 @@ impl From<std::net::UdpSocket> for UdpSocket {
 
 impl IntoRawFd for UdpSocket {
     fn into_raw_fd(self) -> RawFd {
-        let fd = self.fd;
-        mem::forget(self);
-
-        fd
+        ManuallyDrop::new(self).fd
     }
 }
 

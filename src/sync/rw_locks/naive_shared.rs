@@ -3,7 +3,7 @@
 //! It allows for asynchronous read or write locking and unlocking, and provides
 //! ownership-based locking through [`ReadLockGuard`] and [`WriteLockGuard`].
 use std::cell::UnsafeCell;
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -40,18 +40,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for ReadLockGuard<'rw_
 
     #[inline(always)]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        #[allow(
-            clippy::transmute_ptr_to_ptr,
-            reason = "It is not possible to write it any other way"
-        )]
-        let static_mutex = unsafe { mem::transmute(self.rw_lock) };
-        mem::forget(self);
-
-        static_mutex
+        ManuallyDrop::new(self).rw_lock
     }
 }
 
@@ -100,18 +89,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for WriteLockGuard<'r
 
     #[inline(always)]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
-        #[allow(
-            clippy::missing_transmute_annotations,
-            reason = "It is not possible to write Dst"
-        )]
-        #[allow(
-            clippy::transmute_ptr_to_ptr,
-            reason = "It is not possible to write it any other way"
-        )]
-        let static_mutex = unsafe { mem::transmute(self.rw_lock) };
-        mem::forget(self);
-
-        static_mutex
+        ManuallyDrop::new(self).rw_lock
     }
 }
 

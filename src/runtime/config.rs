@@ -345,10 +345,11 @@ impl Eq for Config {}
 pub(crate) mod tests {
     use super::*;
     use crate as orengine;
+    use std::panic;
     use std::sync::atomic;
     use std::sync::{Condvar as STDCvar, Mutex as STDMutex};
 
-    const NUMBER_OF_TESTS: usize = 2;
+    const NUMBER_OF_TESTS: usize = 6;
 
     pub(crate) static WAS_READY: (STDMutex<bool>, STDCvar) = (STDMutex::new(false), STDCvar::new());
     static NUMBER_OF_READY_TESTS: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
@@ -404,6 +405,19 @@ pub(crate) mod tests {
         handle_test_ready();
     }
 
+    fn handle_panic_in_config_test(func: impl FnOnce() + panic::UnwindSafe) {
+        let lock = get_lock();
+        let res = panic::catch_unwind(func);
+        handle_test_ready();
+        drop(lock);
+
+        if let Err(err) = res {
+            panic::resume_unwind(err);
+        } else {
+            panic!("test failed");
+        }
+    }
+
     // 4 cases for panic
     // 1 - first config with io worker and task, next with work sharing and without io worker
     // 2 - first config with work sharing and without io worker, next with io worker and work sharing
@@ -416,16 +430,15 @@ pub(crate) mod tests {
     )]
     #[should_panic]
     fn test_config_first_case_panic() {
-        let lock = get_lock();
         // with io worker and work sharing
-        let _first_config = Config::default().validate();
-        let _second_config = Config::default()
-            .set_io_worker_config(None)
-            .unwrap()
-            .enable_work_sharing()
-            .validate();
-
-        drop(lock);
+        handle_panic_in_config_test(|| {
+            let _first_config = Config::default().validate();
+            let _second_config = Config::default()
+                .set_io_worker_config(None)
+                .unwrap()
+                .enable_work_sharing()
+                .validate();
+        });
     }
 
     #[orengine::test::test_local]
@@ -435,16 +448,15 @@ pub(crate) mod tests {
     )]
     #[should_panic]
     fn test_config_second_case_panic() {
-        let lock = get_lock();
         // with work sharing and without io worker
-        let _first_config = Config::default()
-            .set_io_worker_config(None)
-            .unwrap()
-            .enable_work_sharing()
-            .validate();
-        let _second_config = Config::default().validate();
-
-        drop(lock);
+        handle_panic_in_config_test(|| {
+            let _first_config = Config::default()
+                .set_io_worker_config(None)
+                .unwrap()
+                .enable_work_sharing()
+                .validate();
+            let _second_config = Config::default().validate();
+        });
     }
 
     #[orengine::test::test_local]
@@ -454,15 +466,14 @@ pub(crate) mod tests {
     )]
     #[should_panic]
     fn test_config_third_case_panic() {
-        let lock = get_lock();
         // with work sharing and without thread pool
-        let _first_config = Config::default()
-            .set_numbers_of_thread_workers(0)
-            .enable_work_sharing()
-            .validate();
-        let _second_config = Config::default().validate();
-
-        drop(lock);
+        handle_panic_in_config_test(|| {
+            let _first_config = Config::default()
+                .set_numbers_of_thread_workers(0)
+                .enable_work_sharing()
+                .validate();
+            let _second_config = Config::default().validate();
+        });
     }
 
     #[orengine::test::test_local]
@@ -472,14 +483,13 @@ pub(crate) mod tests {
     )]
     #[should_panic]
     fn test_config_fourth_case_panic() {
-        let lock = get_lock();
         // with thread pool and work sharing
-        let _first_config = Config::default().validate();
-        let _second_config = Config::default()
-            .set_numbers_of_thread_workers(0)
-            .enable_work_sharing()
-            .validate();
-
-        drop(lock);
+        handle_panic_in_config_test(|| {
+            let _first_config = Config::default().validate();
+            let _second_config = Config::default()
+                .set_numbers_of_thread_workers(0)
+                .enable_work_sharing()
+                .validate();
+        });
     }
 }
