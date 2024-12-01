@@ -199,8 +199,7 @@ impl Buffer {
     }
 
     /// Clears the buffer.
-    // TODO always
-    #[inline(never)]
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
     }

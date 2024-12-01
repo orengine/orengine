@@ -119,6 +119,16 @@ impl BufPool {
     #[inline(never)]
     pub unsafe fn put_unchecked(&mut self, mut buf: Buffer) {
         buf.clear();
+        if self.pool.capacity() == self.pool.len() {
+            if self.pool.capacity() == 0 {
+                self.pool.reserve(4);
+            } else if self.pool.capacity() < 512 {
+                self.pool.reserve(self.pool.capacity() * 2);
+            } else {
+                self.pool.reserve(self.pool.capacity() * 12 / 10);
+            }
+        }
+
         self.pool.push(buf);
     }
 }
