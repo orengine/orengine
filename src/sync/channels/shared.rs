@@ -776,12 +776,11 @@ fn test_compile_shared_channel() {}
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering::Relaxed;
+    use std::sync::atomic::Ordering::{Relaxed, SeqCst};
     use std::sync::Arc;
     use std::time::Duration;
 
     use crate as orengine;
-    use crate::sleep;
     use crate::sync::{
         AsyncChannel, AsyncReceiver, AsyncSender, AsyncWaitGroup, Channel, RecvResult, SendResult,
         TryRecvResult, TrySendResult, WaitGroup,
@@ -789,6 +788,7 @@ mod tests {
     use crate::test::sched_future_to_another_thread;
     use crate::utils::droppable_element::DroppableElement;
     use crate::utils::{get_core_ids, SpinLock};
+    use crate::{local_executor, sleep, yield_now};
 
     #[orengine::test::test_shared]
     fn test_zero_capacity_shared_channel() {
@@ -1091,5 +1091,89 @@ mod tests {
     #[orengine::test::test_shared]
     fn stress_test_zero_capacity_shared_channel() {
         stress_test(Channel::bounded(0), 20).await;
+    }
+
+    #[allow(clippy::future_not_send, reason = "Because it is test")]
+    async fn stress_test_local_channel_try(original_channel: Arc<Channel<usize>>) {
+        const PAR: usize = 10;
+        const COUNT: usize = 100;
+
+        for i in 0..100 {
+            let original_res = Arc::new(AtomicUsize::new(0));
+            let original_wg = Arc::new(WaitGroup::new());
+
+            for i in 0..PAR {
+                let wg = original_wg.clone();
+                let channel = original_channel.clone();
+                wg.inc();
+
+                local_executor().spawn_shared(async move {
+                    if i % 2 == 0 {
+                        for j in 0..COUNT {
+                            loop {
+                                match channel.try_send(j) {
+                                    TrySendResult::Ok => break,
+                                    TrySendResult::Full(_) | TrySendResult::Locked(_) => {
+                                        yield_now().await;
+                                    }
+                                    TrySendResult::Closed(_) => panic!("send failed"),
+                                }
+                            }
+                        }
+                    } else {
+                        for j in 0..COUNT {
+                            channel.send(j).await.unwrap();
+                        }
+                    }
+
+                    wg.done();
+                });
+
+                let wg = original_wg.clone();
+                let res = original_res.clone();
+                let channel = original_channel.clone();
+                wg.inc();
+
+                local_executor().spawn_shared(async move {
+                    if i % 2 == 0 {
+                        for _ in 0..COUNT {
+                            loop {
+                                match channel.try_recv() {
+                                    TryRecvResult::Ok(v) => {
+                                        res.fetch_add(v, SeqCst);
+                                        break;
+                                    }
+                                    TryRecvResult::Empty | TryRecvResult::Locked => {
+                                        yield_now().await;
+                                    }
+                                    TryRecvResult::Closed => panic!("recv failed"),
+                                }
+                            }
+                        }
+                    } else {
+                        for _ in 0..COUNT {
+                            let r = channel.recv().await.unwrap();
+                            res.fetch_add(r, SeqCst);
+                        }
+                    }
+
+                    wg.done();
+                });
+            }
+
+            original_wg.wait().await;
+
+            assert_eq!(original_res.load(SeqCst), PAR * COUNT * (COUNT - 1) / 2);
+        }
+    }
+
+    #[orengine::test::test_shared]
+    fn stress_test_local_channel_try_unbounded() {
+        stress_test_local_channel_try(Arc::new(Channel::unbounded())).await;
+    }
+
+    #[orengine::test::test_shared]
+    fn stress_test_local_channel_try_bounded() {
+        stress_test_local_channel_try(Arc::new(Channel::bounded(1024))).await;
     }
 }

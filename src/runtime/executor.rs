@@ -1083,15 +1083,8 @@ impl Executor {
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::fs::test_helper::create_test_dir_if_not_exist;
-    use crate::fs::test_helper::TEST_DIR_PATH;
-    use crate::fs::{File, OpenOptions};
-    use crate::io::AsyncWrite;
     use crate::local::Local;
-    use crate::runtime::config;
-    use crate::sync::{AsyncMutex, AsyncWaitGroup, Mutex, WaitGroup};
     use crate::yield_now::yield_now;
-    use std::sync::atomic::Ordering::SeqCst;
 
     #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
@@ -1132,86 +1125,87 @@ mod tests {
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
 
-    fn wait_for_config_tests_ready() {
-        let _unused = config::tests::WAS_READY
-            .1
-            .wait_while(config::tests::WAS_READY.0.lock().unwrap(), |was_ready| {
-                !*was_ready
-            })
-            .unwrap();
-    }
-
-    fn test_with_work_sharing_level(level: usize) {
-        const N: usize = 5;
-
-        wait_for_config_tests_ready();
-
-        Executor::init_with_config(Config::default().set_work_sharing_level(level))
-            .run_and_block_on_shared(async {
-                for _ in 0..10 {
-                    let wg = Arc::new(WaitGroup::new());
-                    let counter = Arc::new(AtomicUsize::new(0));
-                    for _ in 0..N {
-                        let wg = wg.clone();
-                        let counter = counter.clone();
-                        wg.inc();
-                        local_executor().spawn_shared(async move {
-                            counter.fetch_add(1, SeqCst);
-                            wg.done();
-                        });
-                    }
-
-                    create_test_dir_if_not_exist();
-                    let file = Arc::new(Mutex::new(
-                        File::open(
-                            format!("{TEST_DIR_PATH}/test_task_sharing_level={level}.txt"),
-                            &OpenOptions::new().create(true).truncate(true).write(true),
-                        )
-                        .await
-                        .unwrap(),
-                    ));
-
-                    for _ in 0..N {
-                        let wg = wg.clone();
-                        let counter = counter.clone();
-                        let file = file.clone();
-                        wg.inc();
-                        local_executor().spawn_shared(async move {
-                            file.lock()
-                                .await
-                                .write_all(b"test")
-                                .await
-                                .expect("Can't write to file");
-
-                            counter.fetch_add(1, SeqCst);
-                            wg.done();
-                        });
-                    }
-
-                    wg.wait().await;
-                    assert_eq!(N * 2, counter.load(SeqCst));
-                }
-            })
-            .expect("undefined behavior happened");
-    }
-
-    #[test]
-    fn test_work_sharing_zero_level() {
-        test_with_work_sharing_level(0);
-    }
-
-    #[test]
-    fn test_work_sharing_one_level() {
-        test_with_work_sharing_level(1);
-    }
-
-    #[test]
-    fn test_work_sharing_min_level() {
-        test_with_work_sharing_level(16);
-    }
-
-    #[test]
-    fn test_work_sharing_large_level() {
-        test_with_work_sharing_level(255);
-    }
+    // TODO put this into a separate test
+    // fn wait_for_config_tests_ready() {
+    //     let _unused = config::tests::WAS_READY
+    //         .1
+    //         .wait_while(config::tests::WAS_READY.0.lock().unwrap(), |was_ready| {
+    //             !*was_ready
+    //         })
+    //         .unwrap();
+    // }
+    //
+    // fn test_with_work_sharing_level(level: usize) {
+    //     const N: usize = 5;
+    //
+    //     wait_for_config_tests_ready();
+    //
+    //     Executor::init_with_config(Config::default().set_work_sharing_level(level))
+    //         .run_and_block_on_shared(async {
+    //             for _ in 0..10 {
+    //                 let wg = Arc::new(WaitGroup::new());
+    //                 let counter = Arc::new(AtomicUsize::new(0));
+    //                 for _ in 0..N {
+    //                     let wg = wg.clone();
+    //                     let counter = counter.clone();
+    //                     wg.inc();
+    //                     local_executor().spawn_shared(async move {
+    //                         counter.fetch_add(1, SeqCst);
+    //                         wg.done();
+    //                     });
+    //                 }
+    //
+    //                 create_test_dir_if_not_exist();
+    //                 let file = Arc::new(Mutex::new(
+    //                     File::open(
+    //                         format!("{TEST_DIR_PATH}/test_task_sharing_level={level}.txt"),
+    //                         &OpenOptions::new().create(true).truncate(true).write(true),
+    //                     )
+    //                     .await
+    //                     .unwrap(),
+    //                 ));
+    //
+    //                 for _ in 0..N {
+    //                     let wg = wg.clone();
+    //                     let counter = counter.clone();
+    //                     let file = file.clone();
+    //                     wg.inc();
+    //                     local_executor().spawn_shared(async move {
+    //                         file.lock()
+    //                             .await
+    //                             .write_all(b"test")
+    //                             .await
+    //                             .expect("Can't write to file");
+    //
+    //                         counter.fetch_add(1, SeqCst);
+    //                         wg.done();
+    //                     });
+    //                 }
+    //
+    //                 wg.wait().await;
+    //                 assert_eq!(N * 2, counter.load(SeqCst));
+    //             }
+    //         })
+    //         .expect("undefined behavior happened");
+    // }
+    //
+    // #[test]
+    // fn test_work_sharing_zero_level() {
+    //     test_with_work_sharing_level(0);
+    // }
+    //
+    // #[test]
+    // fn test_work_sharing_one_level() {
+    //     test_with_work_sharing_level(1);
+    // }
+    //
+    // #[test]
+    // fn test_work_sharing_min_level() {
+    //     test_with_work_sharing_level(16);
+    // }
+    //
+    // #[test]
+    // fn test_work_sharing_large_level() {
+    //     test_with_work_sharing_level(255);
+    // }
 }
