@@ -1,4 +1,4 @@
-/// Returns a [`Task`] from a [`Context`](std::task::Context).
+/// Returns a [`Task`](crate::runtime::Task) from a [`Context`](std::task::Context).
 ///
 /// # Safety
 ///
