@@ -31,7 +31,7 @@ impl Future for CreateDir {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        #[allow(unused)]
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_io_request!((

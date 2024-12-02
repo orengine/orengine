@@ -37,7 +37,7 @@ impl Future for Connect<'_> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        #[allow(unused)]
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_io_request!((
@@ -75,7 +75,7 @@ impl Future for ConnectWithDeadline<'_> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
-        #[allow(unused)]
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_time_bounded_io_request!((

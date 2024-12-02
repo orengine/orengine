@@ -175,8 +175,10 @@ pub trait AsyncBind: Sized + FromRawFd {
                             len: 2,
                             filter: code.as_mut_ptr(),
                         };
-                        #[allow(clippy::cast_possible_truncation)] // size of libc::sock_fprog
-                        // is less than u32::MAX
+                        #[allow(
+                            clippy::cast_possible_truncation,
+                            reason = "size of libc::sock_fprog is less than u32::MAX"
+                        )]
                         let res = unsafe {
                             libc::setsockopt(
                                 fd as _,

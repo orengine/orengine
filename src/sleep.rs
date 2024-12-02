@@ -75,7 +75,7 @@ mod tests {
 
     #[orengine::test::test_local]
     fn test_sleep() {
-        #[allow(clippy::future_not_send)] // because it is `local`
+        #[allow(clippy::future_not_send, reason = "It is `local`.")]
         async fn sleep_for(dur: Duration, number: u16, arr: Local<Vec<u16>>) {
             sleep(dur).await;
             arr.borrow_mut().push(number);

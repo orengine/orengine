@@ -8,7 +8,7 @@ use std::mem::discriminant;
 ///
 /// For example, when the task that uses an IO worker is
 /// shared with the [`Executor`](crate::runtime::executor::Executor), that has no IO worker.
-#[allow(clippy::struct_excessive_bools)] // false positive
+#[allow(clippy::struct_excessive_bools, reason = "False positive")]
 struct ConfigStats {
     number_of_executors_with_enabled_io_worker_and_work_sharing: usize,
     number_of_executors_with_enabled_thread_pool_and_work_sharing: usize,

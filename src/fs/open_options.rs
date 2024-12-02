@@ -6,7 +6,7 @@ use std::io::Error;
 
 /// Options and flags which can be used to configure how a file is opened.
 #[derive(Copy, Clone)]
-#[allow(clippy::struct_excessive_bools)] // false positive
+#[allow(clippy::struct_excessive_bools, reason = "False positive.")]
 pub struct OpenOptions {
     /// This option, when true, will indicate that the file should be read-able if opened.
     read: bool,
@@ -182,7 +182,7 @@ impl OpenOptions {
             (_, _, true) => libc::O_CREAT | libc::O_EXCL,
         };
 
-        #[allow(clippy::cast_sign_loss)] // flags has no sign
+        #[allow(clippy::cast_sign_loss, reason = "Flags don't have signs.")]
         Ok(OpenHow::new()
             .flags(
                 (libc::O_CLOEXEC

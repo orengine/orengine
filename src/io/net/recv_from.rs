@@ -49,7 +49,10 @@ impl Future for RecvFrom<'_> {
     }
 }
 
-#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `RecvFrom` is `Send`
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `RecvFrom` is `Send`."
+)]
 unsafe impl Send for RecvFrom<'_> {}
 
 /// `recv_from` io operation with deadline.
@@ -97,7 +100,10 @@ impl Future for RecvFromWithDeadline<'_> {
     }
 }
 
-#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `RecvFromWithDeadline` is `Send`
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `RecvFromWithDeadline` is `Send`."
+)]
 unsafe impl Send for RecvFromWithDeadline<'_> {}
 
 /// The `AsyncRecvFrom` trait provides asynchronous methods for receiving at the incoming data

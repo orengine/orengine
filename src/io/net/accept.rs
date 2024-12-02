@@ -29,7 +29,10 @@ impl<S: FromRawFd> Accept<S> {
     pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
-            #[allow(clippy::cast_possible_truncation)] // size of SockAddr is less than u32::MAX
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "size of SockAddr is less than u32::MAX"
+            )]
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             io_request_data: None,
             phantom_data: PhantomData,
@@ -70,7 +73,10 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
     pub fn new(fd: RawFd, deadline: Instant) -> Self {
         Self {
             fd,
-            #[allow(clippy::cast_possible_truncation)] // size of SockAddr is less than u32::MAX
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "size of SockAddr is less than u32::MAX"
+            )]
             addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
             io_request_data: None,
             deadline,

@@ -265,7 +265,7 @@ mod tests {
 
     const TIME_TO_SLEEP: Duration = Duration::from_millis(1);
 
-    #[allow(clippy::future_not_send)] // because it is `local`
+    #[allow(clippy::future_not_send, reason = "It is local.")]
     async fn test_notify_one(need_drop: bool) {
         let start = Instant::now();
         let pair = Rc::new((LocalMutex::new(false), LocalCondVar::new()));
@@ -293,7 +293,7 @@ mod tests {
         assert!(start.elapsed() >= TIME_TO_SLEEP);
     }
 
-    #[allow(clippy::future_not_send)] // because it is `local`
+    #[allow(clippy::future_not_send, reason = "It is local.")]
     async fn test_notify_all(need_drop: bool) {
         const NUMBER_OF_WAITERS: usize = 10;
 

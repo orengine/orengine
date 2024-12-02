@@ -1,21 +1,37 @@
-#![allow(internal_features)]
-#![allow(async_fn_in_trait)]
 #![deny(clippy::all)]
+#![deny(clippy::assertions_on_result_states)]
+#![deny(clippy::match_wild_err_arm)]
+#![deny(clippy::allow_attributes_without_reason)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 #![warn(clippy::cargo)]
-#![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::inline_always)]
-#![allow(clippy::must_use_candidate)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::redundant_pub_crate)]
-#![allow(clippy::struct_field_names)]
-#![deny(clippy::allow_attributes_without_reason)]
-#![deny(clippy::assertions_on_result_states)]
-#![deny(clippy::match_wild_err_arm)]
-#![allow(clippy::module_inception)]
-#![allow(clippy::if_not_else)]
+#![allow(async_fn_in_trait, reason = "It improves readability.")]
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "Since we cannot make a constant function non-constant after its release,
+    we need to look for a reason to make it constant, and not vice versa."
+)]
+#![allow(clippy::inline_always, reason = "We write highly optimized code.")]
+#![allow(
+    clippy::must_use_candidate,
+    reason = "It is better to developer think about it."
+)]
+#![allow(
+    clippy::module_name_repetitions,
+    reason = "This is acceptable most of the time."
+)]
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "Unless the error is something special,
+    the developer should document it."
+)]
+#![allow(clippy::redundant_pub_crate, reason = "It improves readability.")]
+#![allow(clippy::struct_field_names, reason = "It improves readability.")]
+#![allow(
+    clippy::module_inception,
+    reason = "It is fine if a file in has the same mane as a module."
+)]
+#![allow(clippy::if_not_else, reason = "It improves readability.")]
 pub mod buf;
 pub(crate) mod bug_message;
 pub mod fs;

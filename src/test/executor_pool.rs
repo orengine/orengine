@@ -98,7 +98,10 @@ impl Future for Job {
     }
 }
 
-#[allow(clippy::non_send_fields_in_send_ty)] // we care about Send manually
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `Job` is `Send`"
+)]
 unsafe impl Send for Job {}
 
 /// `ExecutorPoolJoinHandle` is used to wait for the task sent to the [`ExecutorPool`]
@@ -239,7 +242,10 @@ impl ExecutorPool {
     ///     });
     /// }
     /// ```
-    #[allow(clippy::missing_panics_doc)] // It panics only when a bug is occurred.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "It panics only when a bug is occurred"
+    )]
     pub async fn sched_future<Fut>(future: Fut) -> ExecutorPoolJoinHandle
     where
         Fut: Future<Output = ()> + Send + 'static + UnwindSafe,
