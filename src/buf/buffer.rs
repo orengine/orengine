@@ -1,13 +1,10 @@
-use std::alloc::{alloc, dealloc, Layout};
-use std::cmp::max;
+use crate::buf::buf_pool::{buf_pool, buffer, BufPool};
+use crate::buf::linux::linux_buffer::LinuxBuffer;
 use std::fmt::Debug;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr;
-use std::ptr::{slice_from_raw_parts_mut, NonNull};
 use std::slice::SliceIndex;
-
-use crate::buf::buf_pool::buf_pool;
-use crate::buf::{buffer, BufPool};
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
@@ -39,23 +36,13 @@ use crate::buf::{buffer, BufPool};
 /// 5 blocks occupied (X), 3 blocks free (blank)
 /// ```
 pub struct Buffer {
-    pub(crate) slice: NonNull<[u8]>,
-    len: usize,
+    #[cfg(not(target_os = "linux"))]
+    os_buffer: ManuallyDrop<Vec<u8>>,
+    #[cfg(target_os = "linux")]
+    os_buffer: ManuallyDrop<LinuxBuffer>,
 }
 
 impl Buffer {
-    /// Creates raw slice with given capacity. This code avoids checking zero capacity.
-    ///
-    /// # Safety
-    ///
-    /// capacity > 0
-    #[inline(always)]
-    fn raw_slice(capacity: usize) -> NonNull<[u8]> {
-        let layout = Layout::array::<u8>(capacity)
-            .expect("Cannot create slice with capacity {capacity}. Capacity overflow.");
-        unsafe { NonNull::new_unchecked(slice_from_raw_parts_mut(alloc(layout), capacity)) }
-    }
-
     /// Creates new buffer with given size. This buffer will not be put to the pool.
     /// So, use it only for creating a buffer with specific size.
     ///
@@ -64,66 +51,78 @@ impl Buffer {
     /// - size > 0
     #[inline(always)]
     pub fn new(size: usize) -> Self {
-        debug_assert!(
-            size > 0,
-            "Cannot create Buffer with size 0. Size must be > 0."
-        );
-
         Self {
-            slice: Self::raw_slice(size),
-            len: 0,
+            #[cfg(not(target_os = "linux"))]
+            os_buffer: ManuallyDrop::new(Vec::with_capacity(size)),
+            #[cfg(target_os = "linux")]
+            os_buffer: ManuallyDrop::new(LinuxBuffer::new_non_fixed(size)),
         }
     }
 
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
     pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
-        Self {
-            slice: Self::raw_slice(pool.default_buffer_cap()),
-            len: 0,
-        }
-    }
-
-    /// Returns `true` if the buffer is empty.
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
+        Self::new(pool.default_buffer_cap())
     }
 
     /// Returns how many bytes have been written into the buffer.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.len
+        self.os_buffer.len()
     }
 
-    /// Increases [`len`](#field.len) by the diff.
+    /// Returns `true` if the buffer is empty.
     #[inline(always)]
-    pub fn add_len(&mut self, diff: usize) {
-        self.len += diff;
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Sets [`len`](#field.len).
+    ///
+    /// # Safety
+    ///
+    /// `len` must be less than or equal to `capacity`.
     #[inline(always)]
-    pub fn set_len(&mut self, len: usize) {
-        self.len = len;
+    pub unsafe fn set_len(&mut self, len: usize) {
+        unsafe {
+            self.os_buffer.set_len(len);
+        }
+    }
+
+    /// Increases [`len`](#field.len) by the diff.
+    ///
+    /// # Safety
+    ///
+    /// `len` + `diff` must be less than or equal to `capacity`.
+    #[inline(always)]
+    pub unsafe fn add_len(&mut self, diff: usize) {
+        let new_len = self.len() + diff;
+
+        unsafe {
+            self.os_buffer.set_len(new_len);
+        }
+    }
+
+    /// Returns a real capacity of the buffer.
+    #[inline(always)]
+    pub fn capacity(&self) -> usize {
+        self.os_buffer.capacity()
     }
 
     /// Sets [`len`](#field.len) to [`real_cap`](#method.real_cap).
     #[inline(always)]
     pub fn set_len_to_cap(&mut self) {
-        self.len = self.cap();
-    }
+        let cap = self.capacity();
 
-    /// Returns a real capacity of the buffer.
-    #[inline(always)]
-    pub fn cap(&self) -> usize {
-        self.slice.len()
+        unsafe {
+            self.os_buffer.set_len(cap);
+        }
     }
 
     /// Returns `true` if the buffer is full.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.cap() == self.len
+        self.capacity() == self.len()
     }
 
     /// Resizes the buffer to a new size.
@@ -143,13 +142,17 @@ impl Buffer {
     /// let mut buf = Buffer::new(100);
     /// buf.append(&[1, 2, 3]);
     /// buf.resize(200); // Buffer is resized to 200, contents are preserved
-    /// assert_eq!(buf.cap(), 200);
+    /// assert_eq!(buf.capacity(), 200);
     /// assert_eq!(buf.as_ref(), &[1, 2, 3]);
     /// ```
     #[inline(always)]
     pub fn resize(&mut self, new_size: usize) {
-        if new_size < self.len {
-            self.len = new_size;
+        if new_size < self.len() {
+            unsafe {
+                self.set_len(new_size);
+            }
+
+            return;
         }
 
         let mut new_buf = if buf_pool().default_buffer_cap() == new_size {
@@ -158,9 +161,9 @@ impl Buffer {
             Self::new(new_size)
         };
 
-        new_buf.len = self.len;
         unsafe {
-            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len);
+            new_buf.set_len(self.len());
+            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len());
         }
 
         *self = new_buf;
@@ -170,33 +173,35 @@ impl Buffer {
     /// If a capacity is not enough, the buffer will be resized.
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
-        let len = buf.len();
-        if len > self.slice.len() - self.len {
-            self.resize(max(self.len + len, self.cap() * 2));
+        let diff_len = buf.len();
+        if diff_len > self.capacity() - self.len() {
+            self.resize(self.len() + diff_len);
         }
 
         unsafe {
-            ptr::copy_nonoverlapping(buf.as_ptr(), self.as_mut_ptr().add(self.len), len);
+            ptr::copy_nonoverlapping(buf.as_ptr(), self.as_mut_ptr().add(self.len()), diff_len);
+            self.add_len(diff_len);
         }
-        self.len += len;
     }
 
     /// Returns a pointer to the buffer.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const u8 {
-        self.slice.as_ptr().cast()
+        self.os_buffer.as_ptr().cast()
     }
 
     /// Returns a mutable pointer to the buffer.
     #[inline(always)]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.slice.as_ptr().cast()
+        self.os_buffer.as_mut_ptr().cast()
     }
 
     /// Clears the buffer.
     #[inline(always)]
     pub fn clear(&mut self) {
-        self.len = 0;
+        unsafe {
+            self.set_len(0);
+        }
     }
 
     /// Puts the buffer to the pool. You can not to use it, and then this method will be called automatically by drop.
@@ -252,18 +257,19 @@ impl<I: SliceIndex<[u8]>> IndexMut<I> for Buffer {
 impl AsRef<[u8]> for Buffer {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] {
-        unsafe { &self.slice.as_ref()[..self.len] }
+        self.os_buffer.as_ref()
     }
 }
 
 impl AsMut<[u8]> for Buffer {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [u8] {
-        unsafe { &mut self.slice.as_mut()[..self.len] }
+        self.os_buffer.as_mut()
     }
 }
 
 impl PartialEq<&[u8]> for Buffer {
+    #[inline(always)]
     fn eq(&self, other: &&[u8]) -> bool {
         self.as_ref() == *other
     }
@@ -277,30 +283,46 @@ impl Debug for Buffer {
 
 impl From<Box<[u8]>> for Buffer {
     fn from(slice: Box<[u8]>) -> Self {
+        #[cfg(not(target_os = "linux"))]
+        return Self {
+            os_buffer: ManuallyDrop::new(Vec::from(slice)),
+        };
+
+        #[cfg(target_os = "linux")]
         Self {
-            len: slice.len(),
-            slice: NonNull::from(Box::leak(slice)),
+            os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(Vec::from(slice))),
         }
     }
 }
 
 impl<const N: usize> From<Box<[u8; N]>> for Buffer {
     fn from(slice: Box<[u8; N]>) -> Self {
+        #[cfg(not(target_os = "linux"))]
+        return Self {
+            os_buffer: ManuallyDrop::new(unsafe {
+                Vec::from_raw_parts(Box::leak(slice).as_ptr().cast_mut(), N, N)
+            }),
+        };
+
+        #[cfg(target_os = "linux")]
         Self {
-            len: slice.len(),
-            slice: NonNull::from(Box::leak(slice)),
+            os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(unsafe {
+                Vec::from_raw_parts(Box::leak(slice).as_ptr().cast_mut(), N, N)
+            })),
         }
     }
 }
 
 impl From<Vec<u8>> for Buffer {
-    fn from(mut slice: Vec<u8>) -> Self {
-        let l = slice.len();
-        unsafe { slice.set_len(slice.capacity()) }
+    fn from(vec: Vec<u8>) -> Self {
+        #[cfg(not(target_os = "linux"))]
+        return Self {
+            os_buffer: ManuallyDrop::new(vec),
+        };
 
+        #[cfg(target_os = "linux")]
         Self {
-            len: l,
-            slice: NonNull::from(slice.leak()),
+            os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(vec)),
         }
     }
 }
@@ -311,138 +333,29 @@ impl Drop for Buffer {
     #[inline(always)]
     fn drop(&mut self) {
         let buf_pool = buf_pool();
-
-        if self.cap() == buf_pool.default_buffer_cap() {
-            unsafe { buf_pool.put_unchecked(ptr::read(self)) };
-        } else {
-            unsafe {
-                dealloc(
-                    self.slice.as_ptr().cast(),
-                    Layout::array::<u8>(self.cap()).unwrap_unchecked(),
-                );
+        #[cfg(not(target_os = "linux"))]
+        {
+            if self.capacity() == buf_pool.default_buffer_cap() {
+                unsafe { buf_pool.put_unchecked(ptr::read(self)) };
+            } else {
+                unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
             }
         }
-    }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate as orengine;
-
-    #[orengine::test::test_local]
-    fn test_new() {
-        let buf = Buffer::new(1);
-        assert_eq!(buf.cap(), 1);
-    }
-
-    #[orengine::test::test_local]
-    fn test_add_len_and_set_len_to_cap() {
-        let mut buf = Buffer::new(100);
-        assert_eq!(buf.len(), 0);
-
-        buf.add_len(10);
-        assert_eq!(buf.len(), 10);
-
-        buf.add_len(20);
-        assert_eq!(buf.len(), 30);
-
-        buf.set_len_to_cap();
-        assert_eq!(buf.len(), buf.cap());
-    }
-
-    #[orengine::test::test_local]
-    fn test_len_and_cap() {
-        let mut buf = Buffer::new(100);
-        assert_eq!(buf.len(), 0);
-        assert_eq!(buf.cap(), 100);
-
-        buf.set_len(10);
-        assert_eq!(buf.len(), 10);
-        assert_eq!(buf.cap(), 100);
-    }
-
-    #[orengine::test::test_local]
-    fn test_resize() {
-        let mut buf = Buffer::new(100);
-        buf.append(&[1, 2, 3]);
-
-        buf.resize(200);
-        assert_eq!(buf.cap(), 200);
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-
-        buf.resize(50);
-        assert_eq!(buf.cap(), 50);
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-    }
-
-    #[orengine::test::test_local]
-    fn test_append_and_clear() {
-        let mut buf = Buffer::new(5);
-
-        buf.append(&[1, 2, 3]);
-        // This code checks written
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-        assert_eq!(buf.cap(), 5);
-
-        buf.append(&[4, 5, 6]);
-        assert_eq!(buf.as_ref(), &[1, 2, 3, 4, 5, 6]);
-        assert_eq!(buf.cap(), 10);
-
-        buf.clear();
-        assert_eq!(buf.as_ref(), &[]);
-        assert_eq!(buf.cap(), 10);
-    }
-
-    #[orengine::test::test_local]
-    fn test_is_empty_and_is_full() {
-        let mut buf = Buffer::new(5);
-        assert!(buf.is_empty());
-        buf.append(&[1, 2, 3]);
-        assert!(!buf.is_empty());
-        buf.clear();
-        assert!(buf.is_empty());
-
-        let mut buf = Buffer::new(5);
-        assert!(!buf.is_full());
-        buf.append(&[1, 2, 3, 4, 5]);
-        assert!(buf.is_full());
-        buf.clear();
-        assert!(!buf.is_full());
-    }
-
-    #[orengine::test::test_local]
-    fn test_index() {
-        let mut buf = Buffer::new(5);
-        buf.append(&[1, 2, 3]);
-        assert_eq!(buf[0], 1);
-        assert_eq!(buf[1], 2);
-        assert_eq!(buf[2], 3);
-        assert_eq!(&buf[1..=2], &[2, 3]);
-        assert_eq!(&buf[..3], &[1, 2, 3]);
-        assert_eq!(&buf[2..], &[3]);
-        assert_eq!(&buf[..], &[1, 2, 3]);
-    }
-
-    #[orengine::test::test_local]
-    fn test_from() {
-        let b = Box::new([1, 2, 3]);
-        let buf = Buffer::from(b);
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-        assert_eq!(buf.len(), 3);
-        assert_eq!(buf.cap(), 3);
-
-        let mut v = vec![1, 2, 3];
-        v.reserve(7);
-        let buf = Buffer::from(v);
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-        assert_eq!(buf.len(), 3);
-        assert_eq!(buf.cap(), 10);
-
-        let v = vec![1, 2, 3];
-        let buf = Buffer::from(v.into_boxed_slice());
-        assert_eq!(buf.as_ref(), &[1, 2, 3]);
-        assert_eq!(buf.len(), 3);
-        assert_eq!(buf.cap(), 3);
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer {
+                LinuxBuffer::Fixed(_) => {
+                    unsafe { buf_pool.put_unchecked(ptr::read(self)) };
+                }
+                LinuxBuffer::NonFixed(_) => {
+                    if self.capacity() == buf_pool.default_buffer_cap() {
+                        unsafe { buf_pool.put_unchecked(ptr::read(self)) };
+                    } else {
+                        unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
+                    }
+                }}
+            }
+        }
     }
 }

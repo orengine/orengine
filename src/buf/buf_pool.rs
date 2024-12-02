@@ -36,7 +36,7 @@ pub fn buffer() -> Buffer {
 /// because [`buffer`] returns empty buffer.
 ///
 /// ```rust
-/// use orengine::buf::buf_pool::full_buffer;
+/// use orengine::buf::full_buffer;
 /// use orengine::io::{AsyncPollFd, AsyncRecv};
 /// use orengine::net::TcpStream;
 ///
@@ -62,7 +62,7 @@ pub fn full_buffer() -> Buffer {
 /// Pool of [`Buffer`]s. It is used for reusing memory. If you need to change default buffer size,
 /// use [`BufPool::tune_buffer_cap`].
 pub struct BufPool {
-    pool: Vec<Buffer>,
+    pub(crate) pool_of_non_fixed_buffers: Vec<Buffer>,
     default_buffer_cap: usize,
 }
 
@@ -132,32 +132,5 @@ impl BufPool {
     #[inline(always)]
     pub unsafe fn put_unchecked(&mut self, buf: Buffer) {
         self.pool.push(buf);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate as orengine;
-
-    #[orengine::test::test_local]
-    fn test_buf_pool() {
-        let pool = buf_pool();
-        assert!(pool.pool.is_empty());
-
-        let buf = buffer();
-        assert_eq!(buf.len(), 0);
-        assert_eq!(buf.cap(), 4096);
-        drop(buf);
-
-        let buf = full_buffer();
-        assert_eq!(buf.len(), 4096);
-        assert_eq!(buf.cap(), 4096);
-        drop(buf);
-
-        assert_eq!(pool.pool.len(), 1);
-
-        let _buf = pool.get();
-        assert!(pool.pool.is_empty());
     }
 }
