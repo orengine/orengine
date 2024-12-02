@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use std::thread;
@@ -5,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use orengine::buf::buffer;
 use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
-use orengine::local::Local;
 use orengine::runtime::local_executor;
 use orengine::sync::{AsyncWaitGroup, LocalWaitGroup};
 use orengine::utils::get_core_ids;
@@ -253,10 +253,10 @@ fn bench_throughput() {
                     }
                 }
 
-                let wg = Local::new(LocalWaitGroup::new());
+                let wg = Rc::new(LocalWaitGroup::new());
 
                 for _ in 0..par {
-                    wg.borrow_mut().add(1);
+                    wg.add(1);
                     let wg = wg.clone();
                     local_executor().spawn_local(async move {
                         let mut stream = orengine::net::TcpStream::connect::<&str>(ADDR.as_ref())
@@ -271,11 +271,11 @@ fn bench_throughput() {
                             stream.recv(&mut buf).await.unwrap();
                         }
 
-                        wg.borrow_mut().done();
+                        wg.done();
                     });
                 }
 
-                wg.borrow_mut().wait().await;
+                wg.wait().await;
 
                 let mut guard = end_wg.0.lock().unwrap();
                 *guard += 1;
