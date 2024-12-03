@@ -1,10 +1,12 @@
-use crate::buf::buf_pool::{buf_pool, BufPool};
-use nix::libc::iovec;
+use crate::buf::buf_pool::BufPool;
 use std::alloc::{alloc, Layout};
 use std::ptr;
 
 pub(crate) struct FixedBuffer {
-    iovec: iovec,
+    ptr: *mut u8,
+    len: usize,
+    // cap is a default buffer capacity of pool. But we cache it here to avoid calling thread_static
+    cap: usize,
     index: usize,
 }
 
@@ -14,8 +16,13 @@ pub(crate) enum LinuxBuffer {
 }
 
 impl LinuxBuffer {
-    pub(crate) fn new_fixed(vec: iovec, index: usize) -> Self {
-        Self::Fixed(FixedBuffer { iovec: vec, index })
+    pub(crate) fn new_fixed(ptr: *mut u8, cap: usize, index: usize) -> Self {
+        Self::Fixed(FixedBuffer {
+            ptr,
+            len: 0,
+            cap,
+            index,
+        })
     }
 
     #[inline(always)]
@@ -35,13 +42,13 @@ impl LinuxBuffer {
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
     pub(crate) fn new_non_fixed_from_pool(pool: &BufPool) -> Self {
-        Self::new_non_fixed(pool.default_buffer_cap())
+        Self::new_non_fixed(pool.default_buffer_capacity())
     }
 
     #[inline(always)]
     pub(crate) fn len(&self) -> usize {
         match self {
-            Self::Fixed(f) => f.iovec.iov_len,
+            Self::Fixed(f) => f.len,
             Self::NonFixed(v) => v.len(),
         }
     }
@@ -52,7 +59,7 @@ impl LinuxBuffer {
     #[inline(always)]
     pub(crate) unsafe fn set_len(&mut self, len: usize) {
         match self {
-            Self::Fixed(f) => f.iovec.iov_len = len,
+            Self::Fixed(f) => f.len = len,
             Self::NonFixed(v) => unsafe { v.set_len(len) },
         }
     }
@@ -60,7 +67,7 @@ impl LinuxBuffer {
     #[inline(always)]
     pub(crate) fn capacity(&self) -> usize {
         match self {
-            Self::Fixed(_) => buf_pool().default_buffer_cap(),
+            Self::Fixed(f) => f.cap,
             Self::NonFixed(v) => v.capacity(),
         }
     }
@@ -68,7 +75,7 @@ impl LinuxBuffer {
     #[inline(always)]
     pub(crate) fn as_ptr(&self) -> *const u8 {
         match self {
-            Self::Fixed(f) => f.iovec.iov_base.cast(),
+            Self::Fixed(f) => f.ptr,
             Self::NonFixed(v) => v.as_ptr(),
         }
     }
@@ -76,7 +83,7 @@ impl LinuxBuffer {
     #[inline(always)]
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         match self {
-            Self::Fixed(f) => f.iovec.iov_base.cast(),
+            Self::Fixed(f) => f.ptr,
             Self::NonFixed(v) => v.as_mut_ptr(),
         }
     }
@@ -86,9 +93,7 @@ impl AsRef<[u8]> for LinuxBuffer {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] {
         match self {
-            Self::Fixed(f) => unsafe {
-                &*ptr::slice_from_raw_parts(f.iovec.iov_base.cast(), f.iovec.iov_len)
-            },
+            Self::Fixed(f) => unsafe { &*ptr::slice_from_raw_parts(f.ptr, f.len) },
             Self::NonFixed(v) => v.as_ref(),
         }
     }
@@ -98,9 +103,7 @@ impl AsMut<[u8]> for LinuxBuffer {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [u8] {
         match self {
-            Self::Fixed(f) => unsafe {
-                &mut *ptr::slice_from_raw_parts_mut(f.iovec.iov_base.cast(), f.iovec.iov_len)
-            },
+            Self::Fixed(f) => unsafe { &mut *ptr::slice_from_raw_parts_mut(f.ptr, f.len) },
             Self::NonFixed(v) => v.as_mut(),
         }
     }

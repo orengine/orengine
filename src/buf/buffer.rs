@@ -1,4 +1,5 @@
 use crate::buf::buf_pool::{buf_pool, buffer, BufPool};
+use crate::buf::io_buffer::{IOBuffer, IOBufferMut};
 use crate::buf::linux::linux_buffer::LinuxBuffer;
 use std::fmt::Debug;
 use std::mem::ManuallyDrop;
@@ -59,10 +60,20 @@ impl Buffer {
         }
     }
 
+    /// Creates new fixed buffer with given buffer.
+    #[cfg(target_os = "linux")]
+    #[inline(always)]
+    pub(crate) fn new_fixed(ptr: *mut u8, cap: usize, index: usize) -> Self {
+        Self {
+            #[cfg(target_os = "linux")]
+            os_buffer: ManuallyDrop::new(LinuxBuffer::new_fixed(ptr, cap, index)),
+        }
+    }
+
     /// Creates a new buffer from a pool with the given size.
     #[inline(always)]
     pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
-        Self::new(pool.default_buffer_cap())
+        Self::new(pool.default_buffer_capacity())
     }
 
     /// Returns how many bytes have been written into the buffer.
@@ -111,7 +122,7 @@ impl Buffer {
 
     /// Sets [`len`](#field.len) to [`real_cap`](#method.real_cap).
     #[inline(always)]
-    pub fn set_len_to_cap(&mut self) {
+    pub fn set_len_to_capacity(&mut self) {
         let cap = self.capacity();
 
         unsafe {
@@ -155,7 +166,7 @@ impl Buffer {
             return;
         }
 
-        let mut new_buf = if buf_pool().default_buffer_cap() == new_size {
+        let mut new_buf = if buf_pool().default_buffer_capacity() == new_size {
             buffer()
         } else {
             Self::new(new_size)
@@ -215,12 +226,51 @@ impl Buffer {
     /// # Safety
     ///
     /// - [`buf.real_cap`](#method.real_cap) is equal to
-    ///   [`default cap`](BufPool::default_buffer_cap)
+    ///   [`default cap`](BufPool::default_buffer_capacity)
     #[inline(always)]
     pub unsafe fn release_unchecked(self) {
         unsafe { buf_pool().put_unchecked(self) };
     }
+
+    /// Deallocates the buffer.
+    #[inline(always)]
+    pub(crate) fn deallocate(mut self) {
+        #[cfg(not(target_os = "linux"))]
+        {
+            unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
+        }
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            match ManuallyDrop::take(&mut self.os_buffer) {
+                LinuxBuffer::Fixed(_) => {
+                    // do nothing, because it is a reference to real buffer
+                }
+                LinuxBuffer::NonFixed(buf) => drop(buf),
+            };
+        }
+    }
 }
+
+impl IOBuffer for Buffer {
+    #[inline(always)]
+    fn is_fixed(&self) -> bool {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return false;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(_) => true,
+                LinuxBuffer::NonFixed(_) => false,
+            }
+        }
+    }
+}
+
+impl IOBufferMut for Buffer {}
 
 impl Deref for Buffer {
     type Target = [u8];
@@ -349,12 +399,12 @@ impl Drop for Buffer {
                     unsafe { buf_pool.put_unchecked(ptr::read(self)) };
                 }
                 LinuxBuffer::NonFixed(_) => {
-                    if self.capacity() == buf_pool.default_buffer_cap() {
+                    if self.capacity() == buf_pool.default_buffer_capacity() {
                         unsafe { buf_pool.put_unchecked(ptr::read(self)) };
                     } else {
                         unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
                     }
-                }}
+                }
             }
         }
     }
