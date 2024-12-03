@@ -2,6 +2,7 @@ use crate::buf::buf_pool::{buf_pool, buffer, BufPool};
 use crate::buf::io_buffer::{IOBuffer, IOBufferMut};
 use crate::buf::linux::linux_buffer::LinuxBuffer;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr;
@@ -13,6 +14,10 @@ use std::slice::SliceIndex;
 ///
 /// - `len` is how many bytes have been written into the buffer.
 /// - `cap` is how many bytes have been allocated for the buffer.
+///
+/// # Why it is !Send
+///
+/// [`Buffer`] is not `Send`, because it can be __fixed__.
 ///
 /// # About pool
 ///
@@ -41,6 +46,8 @@ pub struct Buffer {
     os_buffer: ManuallyDrop<Vec<u8>>,
     #[cfg(target_os = "linux")]
     os_buffer: ManuallyDrop<LinuxBuffer>,
+    // impl !Send
+    no_send_marker: PhantomData<*const ()>,
 }
 
 impl Buffer {
@@ -51,22 +58,24 @@ impl Buffer {
     ///
     /// - size > 0
     #[inline(always)]
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: u32) -> Self {
         Self {
             #[cfg(not(target_os = "linux"))]
-            os_buffer: ManuallyDrop::new(Vec::with_capacity(size)),
+            os_buffer: ManuallyDrop::new(Vec::with_capacity(size as _)),
             #[cfg(target_os = "linux")]
             os_buffer: ManuallyDrop::new(LinuxBuffer::new_non_fixed(size)),
+            no_send_marker: PhantomData,
         }
     }
 
     /// Creates new fixed buffer with given buffer.
     #[cfg(target_os = "linux")]
     #[inline(always)]
-    pub(crate) fn new_fixed(ptr: *mut u8, cap: usize, index: usize) -> Self {
+    pub(crate) fn new_fixed(ptr: *mut u8, cap: u32, index: u16) -> Self {
         Self {
             #[cfg(target_os = "linux")]
             os_buffer: ManuallyDrop::new(LinuxBuffer::new_fixed(ptr, cap, index)),
+            no_send_marker: PhantomData,
         }
     }
 
@@ -74,12 +83,6 @@ impl Buffer {
     #[inline(always)]
     pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
         Self::new(pool.default_buffer_capacity())
-    }
-
-    /// Returns how many bytes have been written into the buffer.
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.os_buffer.len()
     }
 
     /// Returns `true` if the buffer is empty.
@@ -94,7 +97,13 @@ impl Buffer {
     ///
     /// `len` must be less than or equal to `capacity`.
     #[inline(always)]
-    pub unsafe fn set_len(&mut self, len: usize) {
+    pub unsafe fn set_len(&mut self, len: u32) {
+        #[cfg(not(target_os = "linux"))]
+        unsafe {
+            self.os_buffer.set_len(len as usize);
+        }
+
+        #[cfg(target_os = "linux")]
         unsafe {
             self.os_buffer.set_len(len);
         }
@@ -106,17 +115,17 @@ impl Buffer {
     ///
     /// `len` + `diff` must be less than or equal to `capacity`.
     #[inline(always)]
-    pub unsafe fn add_len(&mut self, diff: usize) {
+    pub unsafe fn add_len(&mut self, diff: u32) {
         let new_len = self.len() + diff;
 
         unsafe {
-            self.os_buffer.set_len(new_len);
+            self.set_len(new_len);
         }
     }
 
     /// Returns a real capacity of the buffer.
     #[inline(always)]
-    pub fn capacity(&self) -> usize {
+    pub fn capacity(&self) -> u32 {
         self.os_buffer.capacity()
     }
 
@@ -157,7 +166,7 @@ impl Buffer {
     /// assert_eq!(buf.as_ref(), &[1, 2, 3]);
     /// ```
     #[inline(always)]
-    pub fn resize(&mut self, new_size: usize) {
+    pub fn resize(&mut self, new_size: u32) {
         if new_size < self.len() {
             unsafe {
                 self.set_len(new_size);
@@ -174,7 +183,7 @@ impl Buffer {
 
         unsafe {
             new_buf.set_len(self.len());
-            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len());
+            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len() as usize);
         }
 
         *self = new_buf;
@@ -184,13 +193,17 @@ impl Buffer {
     /// If a capacity is not enough, the buffer will be resized.
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
-        let diff_len = buf.len();
+        let diff_len = buf.len() as u32;
         if diff_len > self.capacity() - self.len() {
             self.resize(self.len() + diff_len);
         }
 
         unsafe {
-            ptr::copy_nonoverlapping(buf.as_ptr(), self.as_mut_ptr().add(self.len()), diff_len);
+            ptr::copy_nonoverlapping(
+                buf.as_ptr(),
+                self.as_mut_ptr().add(self.len() as usize),
+                buf.len(),
+            );
             self.add_len(diff_len);
         }
     }
@@ -215,21 +228,17 @@ impl Buffer {
         }
     }
 
+    /// Fills provided `Buffer` with zeros.
+    pub fn fill_with_zeros(&mut self) {
+        unsafe {
+            ptr::write_bytes(self.as_mut_ptr(), 0, self.capacity() as usize);
+        }
+    }
+
     /// Puts the buffer to the pool. You can not to use it, and then this method will be called automatically by drop.
     #[inline(always)]
     pub fn release(self) {
         buf_pool().put(self);
-    }
-
-    /// Puts the buffer to the pool without checking for a size.
-    ///
-    /// # Safety
-    ///
-    /// - [`buf.real_cap`](#method.real_cap) is equal to
-    ///   [`default cap`](BufPool::default_buffer_capacity)
-    #[inline(always)]
-    pub unsafe fn release_unchecked(self) {
-        unsafe { buf_pool().put_unchecked(self) };
     }
 
     /// Deallocates the buffer.
@@ -253,6 +262,35 @@ impl Buffer {
 }
 
 impl IOBuffer for Buffer {
+    #[inline(always)]
+    fn fixed_index(&self) -> u16 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return u16::MAX;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
+                LinuxBuffer::NonFixed(_) => u16::MAX,
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> u32 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return self.as_ref().len() as u32;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            self.os_buffer.len()
+        }
+    }
+
     #[inline(always)]
     fn is_fixed(&self) -> bool {
         #[cfg(not(target_os = "linux"))]
@@ -336,11 +374,13 @@ impl From<Box<[u8]>> for Buffer {
         #[cfg(not(target_os = "linux"))]
         return Self {
             os_buffer: ManuallyDrop::new(Vec::from(slice)),
+            no_send_marker: PhantomData,
         };
 
         #[cfg(target_os = "linux")]
         Self {
             os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(Vec::from(slice))),
+            no_send_marker: PhantomData,
         }
     }
 }
@@ -352,6 +392,7 @@ impl<const N: usize> From<Box<[u8; N]>> for Buffer {
             os_buffer: ManuallyDrop::new(unsafe {
                 Vec::from_raw_parts(Box::leak(slice).as_ptr().cast_mut(), N, N)
             }),
+            no_send_marker: PhantomData,
         };
 
         #[cfg(target_os = "linux")]
@@ -359,6 +400,7 @@ impl<const N: usize> From<Box<[u8; N]>> for Buffer {
             os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(unsafe {
                 Vec::from_raw_parts(Box::leak(slice).as_ptr().cast_mut(), N, N)
             })),
+            no_send_marker: PhantomData,
         }
     }
 }
@@ -368,44 +410,57 @@ impl From<Vec<u8>> for Buffer {
         #[cfg(not(target_os = "linux"))]
         return Self {
             os_buffer: ManuallyDrop::new(vec),
+            no_send_marker: PhantomData,
         };
 
         #[cfg(target_os = "linux")]
         Self {
             os_buffer: ManuallyDrop::new(LinuxBuffer::NonFixed(vec)),
+            no_send_marker: PhantomData,
         }
     }
 }
-
-unsafe impl Send for Buffer {}
 
 impl Drop for Buffer {
     #[inline(always)]
     fn drop(&mut self) {
         let buf_pool = buf_pool();
-        #[cfg(not(target_os = "linux"))]
-        {
-            if self.capacity() == buf_pool.default_buffer_cap() {
-                unsafe { buf_pool.put_unchecked(ptr::read(self)) };
-            } else {
-                unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match self.os_buffer {
-                LinuxBuffer::Fixed(_) => {
-                    unsafe { buf_pool.put_unchecked(ptr::read(self)) };
-                }
-                LinuxBuffer::NonFixed(_) => {
-                    if self.capacity() == buf_pool.default_buffer_capacity() {
-                        unsafe { buf_pool.put_unchecked(ptr::read(self)) };
-                    } else {
-                        unsafe { ManuallyDrop::drop(&mut self.os_buffer) };
-                    }
-                }
-            }
-        }
+        unsafe { buf_pool.put(ptr::read(self)) };
     }
 }
+
+/// ```rust
+/// use orengine::{Executor, Local};
+/// use orengine::buf::full_buffer;
+/// use orengine::fs::{File, OpenOptions};
+/// use orengine::io::AsyncWrite;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// Executor::init().run_with_shared_future(async {
+///     let mut buf = full_buffer();
+///     buf.append(b"hello");
+///     let mut file = File::open("foo.txt", &OpenOptions::new().write(true)).await.unwrap();
+///     file.write(buf);
+/// });
+/// ```
+///
+/// ```rust
+/// use orengine::Local;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// let value = Local::new(42);
+/// check_send(value.borrow());
+/// ```
+///
+/// ```rust
+/// use orengine::Local;
+///
+/// fn check_send<T: Send>(value: T) -> T { value }
+///
+/// let value = Local::new(42);
+/// check_send(value.borrow_mut());
+/// ```
+#[allow(dead_code, reason = "It is used only in compile tests")]
+fn test_compile_local() {}

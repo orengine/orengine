@@ -1,3 +1,4 @@
+use crate::buf::{init_local_buf_pool, uninit_local_buf_pool};
 use crate::bug_message::BUG_MESSAGE;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
@@ -205,7 +206,11 @@ impl Executor {
         unsafe {
             if let Some(io_config) = valid_config.io_worker_config {
                 init_local_worker(io_config);
+                init_local_buf_pool(io_config.number_of_fixed_buffers, config.buffer_cap());
+            } else {
+                init_local_buf_pool(0, config.buffer_cap());
             }
+
             *get_local_executor_ref() = Some(Self {
                 core_id,
                 executor_id,
@@ -796,6 +801,7 @@ impl Executor {
     /// Called after [`check_version_and_update_if_needed`](SubscribedState::check_version_and_update_if_needed).
     #[inline(never)]
     unsafe fn graceful_stop(&mut self) {
+        uninit_local_buf_pool();
         if self.config.is_work_sharing_enabled() {
             unsafe {
                 self.subscribed_state.with_tasks_lists(|lists| {
@@ -873,7 +879,6 @@ impl Executor {
             self.subscribed_state
                 .check_version_and_update_if_needed(self.executor_id);
             if self.subscribed_state.is_stopped() {
-                unsafe { self.graceful_stop() };
                 break;
             }
 
@@ -942,6 +947,8 @@ impl Executor {
 
             shrink!(self.local_tasks);
         }
+
+        unsafe { self.graceful_stop() };
     }
 
     /// Runs the executor with a local task.

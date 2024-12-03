@@ -1,4 +1,5 @@
 use crate as orengine;
+use crate::buf::IOBufferMut;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
@@ -9,24 +10,26 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Future for the `read` operation.
-pub struct Read<'buf> {
+pub struct Read<'buf, Buf: IOBufferMut + 'buf> {
     fd: RawFd,
-    buf: &'buf mut [u8],
+    buf: Buf,
     io_request_data: Option<IoRequestData>,
+    _buf_lifetime: std::marker::PhantomData<&'buf Buf>,
 }
 
-impl<'buf> Read<'buf> {
+impl<'buf, Buf: IOBufferMut + 'buf> Read<'buf, Buf> {
     /// Creates a new `read` io operation.
-    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
+    pub fn new(fd: RawFd, buf: Buf) -> Self {
         Self {
             fd,
             buf,
             io_request_data: None,
+            _buf_lifetime: std::marker::PhantomData,
         }
     }
 }
 
-impl Future for Read<'_> {
+impl<Buf: IOBufferMut> Future for Read<'_, Buf> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -34,7 +37,7 @@ impl Future for Read<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().read(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
+            local_worker().read(this.fd, &this.buf, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ret

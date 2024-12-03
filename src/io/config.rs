@@ -6,7 +6,9 @@ pub struct IoWorkerConfig {
     /// Config for [`IOUringWorker`](crate::io::sys::unix::IOUringWorker).
     ///
     /// Read [`IOUringConfig`](IOUringConfig) for more details.
-    pub(crate) io_uring: IOUringConfig,
+    pub io_uring: IOUringConfig,
+    /// Number of __fixed__ buffers.
+    pub number_of_fixed_buffers: u16,
 }
 
 impl IoWorkerConfig {
@@ -14,12 +16,8 @@ impl IoWorkerConfig {
     pub const fn default() -> Self {
         Self {
             io_uring: IOUringConfig::default(),
+            number_of_fixed_buffers: 16,
         }
-    }
-
-    /// Returns current [`IOUringConfig`] of this [`IoWorkerConfig`].
-    pub const fn io_uring_config(&self) -> IOUringConfig {
-        self.io_uring
     }
 
     /// Checks if [`IoWorkerConfig`] is valid.

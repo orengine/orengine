@@ -32,7 +32,7 @@ impl ConfigStats {
 static GLOBAL_CONFIG_STATS: SpinLock<ConfigStats> = SpinLock::new(ConfigStats::new());
 
 /// The default [`buffers`](crate::buf::Buffer) capacity.
-pub const DEFAULT_BUF_CAP: usize = 4096;
+pub const DEFAULT_BUF_CAP: u32 = 4096;
 
 /// Config that can be used to create an Executor, because it is valid.
 #[derive(Clone)]
@@ -99,7 +99,7 @@ impl Drop for ValidConfig {
 #[derive(Clone, Copy)]
 pub struct Config {
     /// The size of the [`buffers`](crate::buf::Buffer).
-    buffer_cap: usize,
+    buffer_cap: u32,
     /// An optional configuration for I/O workers. If none is provided,
     /// the IO worker will be disabled.
     io_worker_config: Option<IoWorkerConfig>,
@@ -153,7 +153,7 @@ impl Config {
     }
 
     /// Returns the capacity of the [`buffers`](crate::buf::Buffer).
-    pub const fn buffer_cap(&self) -> usize {
+    pub const fn buffer_cap(&self) -> u32 {
         self.buffer_cap
     }
 

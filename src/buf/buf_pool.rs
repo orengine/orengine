@@ -1,33 +1,51 @@
-use crate::buf::io_buffer::IOBuffer;
-use crate::buf::Buffer;
+use crate::buf::{Buffer, IOBuffer};
+use crate::io::worker::local_worker;
+use crate::utils::assert_hint;
+use nix::libc;
 use std::cell::UnsafeCell;
 use std::io::IoSliceMut;
-use std::mem::ManuallyDrop;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.
-    static BUF_POOL: UnsafeCell<ManuallyDrop<BufPool>> = const {
-        UnsafeCell::new(
-            ManuallyDrop::new(BufPool{
-                default_buffer_cap: usize::MAX // if BufPool is not initialized,
-                // it will panic because of trying to allocate usize::MAX bytes.
-                #[cfg(not(target_os = "linux"))]
-                pool: Vec::new(),
-                #[cfg(target_os = "linux")]
-                pool_of_fixed_buffers: Vec::new(),
-                #[cfg(target_os = "linux")]
-                pool_of_non_fixed_buffers: Vec::new(),
-                #[cfg(target_os = "linux")]
-                fixed_buffers: Box::new([]),
-            })
-        )
+    static BUF_POOL: UnsafeCell<Option<BufPool>> = const {
+        UnsafeCell::new(None)
     };
+}
+
+/// Initialize local [`BufPool`] and register __fixed__ buffers.
+pub(crate) fn init_local_buf_pool(number_of_fixed_buffers: u16, default_buffer_cap: u32) {
+    BUF_POOL.with(|buf_pool_static| {
+        let buf_pool_ = unsafe { &mut *buf_pool_static.get() };
+        assert!(buf_pool_.is_none(), "BufPool is already initialized.");
+
+        let buf_pool = BufPool::new(number_of_fixed_buffers, default_buffer_cap);
+        *buf_pool_ = Some(buf_pool);
+    });
+}
+
+/// Uninitialize local [`BufPool`].
+pub(crate) fn uninit_local_buf_pool() {
+    BUF_POOL.with(|buf_pool_static| unsafe {
+        let buf_pool_ = &mut *buf_pool_static.get();
+        if let Some(buf_pool) = buf_pool_.as_mut() {
+            buf_pool.deallocate();
+        } else {
+            panic!("BufPool is not initialized.");
+        };
+
+        buf_pool_static.get().write(None);
+    })
 }
 
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
 #[inline(always)]
 pub fn buf_pool() -> &'static mut BufPool {
-    BUF_POOL.with(|buf_pool| unsafe { &mut *buf_pool.get() })
+    BUF_POOL.with(|buf_pool| unsafe {
+        let buf_pool_ = &mut *buf_pool.get();
+        assert_hint(buf_pool_.is_some(), "BufPool is not initialized.");
+
+        buf_pool_.as_mut().unwrap()
+    })
 }
 
 /// Get [`Buffer`] from local [`BufPool`].
@@ -79,17 +97,19 @@ pub struct BufPool {
     pub(crate) pool: Vec<Buffer>,
     #[cfg(target_os = "linux")]
     pub(crate) fixed_buffers: Box<[IoSliceMut<'static>]>,
-    default_buffer_cap: usize,
+    default_buffer_cap: u32,
     #[cfg(target_os = "linux")]
     pub(crate) pool_of_non_fixed_buffers: Vec<Buffer>,
 }
 
 impl BufPool {
-    fn new(number_of_preallocated_buffers: usize, default_buffer_cap: usize) -> Self {
+    /// Creates new [`BufPool`]. If `number_of_fixed_buffers` > 0,
+    /// it creates __fixed__ buffers.
+    fn new(number_of_fixed_buffers: u16, default_buffer_cap: u32) -> Self {
         #[cfg(not(target_os = "linux"))]
         {
             Self {
-                pool: (0..number_of_preallocated_buffers)
+                pool: (0..number_of_fixed_buffers)
                     .map(|_| Buffer::new(default_buffer_cap))
                     .collect(),
                 default_buffer_cap,
@@ -98,38 +118,89 @@ impl BufPool {
 
         #[cfg(target_os = "linux")]
         {
-            let mut slices: Box<[IoSliceMut<'static>]> = (0..number_of_preallocated_buffers)
+            if number_of_fixed_buffers == 0 {
+                return Self {
+                    fixed_buffers: Box::new([]),
+                    pool_of_fixed_buffers: Vec::new(),
+                    default_buffer_cap,
+                    pool_of_non_fixed_buffers: Vec::new(),
+                };
+            }
+
+            let mut fixed_buffers: Box<[IoSliceMut<'static>]> = (0..number_of_fixed_buffers)
                 .map(|_| {
-                    let slice = Box::leak(vec![0; default_buffer_cap].into_boxed_slice());
+                    let slice = Box::leak(vec![0; default_buffer_cap as _].into_boxed_slice());
                     IoSliceMut::new(slice)
                 })
                 .collect();
-            let fixed_buffers = slices
+            let pool_of_fixed_buffers = fixed_buffers
                 .iter_mut()
                 .enumerate()
-                .map(|(i, buf)| Buffer::new_fixed(buf.as_mut_ptr(), default_buffer_cap, i))
+                .map(|(i, buf)| {
+                    Buffer::new_fixed(buf.as_mut_ptr(), default_buffer_cap as _, i as _)
+                })
                 .collect();
+            let iovecs: Vec<libc::iovec> = fixed_buffers
+                .iter()
+                .map(|buf| libc::iovec {
+                    iov_base: buf.as_ptr() as _,
+                    iov_len: buf.len() as _,
+                })
+                .collect();
+            local_worker().register_buffers(&*iovecs);
 
             Self {
-                fixed_buffers: slices,
-                pool_of_fixed_buffers: Vec::new(),
+                fixed_buffers,
+                pool_of_fixed_buffers,
                 default_buffer_cap,
-                pool_of_non_fixed_buffers: fixed_buffers,
+                pool_of_non_fixed_buffers: Vec::new(),
+            }
+        }
+    }
+
+    /// Deallocates the `BufPool` and unregisters __fixed__ buffers.
+    fn deallocate(&mut self) {
+        #[cfg(not(target_os = "linux"))]
+        {
+            for buf in self.pool.drain(..) {
+                buf.deallocate();
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            for buf in self.pool_of_non_fixed_buffers.drain(..) {
+                buf.deallocate();
+            }
+
+            if self.pool_of_fixed_buffers.is_empty() {
+                return;
+            }
+
+            for buf in self.pool_of_fixed_buffers.drain(..) {
+                buf.deallocate();
+            }
+
+            local_worker().unregister_buffers();
+
+            for buf in self.fixed_buffers.iter_mut() {
+                unsafe { drop(Box::from_raw(buf.as_mut() as *mut [u8])) };
             }
         }
     }
 
     /// Get default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
     #[inline(always)]
-    pub fn default_buffer_capacity(&self) -> usize {
+    pub fn default_buffer_capacity(&self) -> u32 {
         self.default_buffer_cap
     }
 
-    /// Returns [`Buffer`] from the pool. It will return __fixed__ buffer if it is possible.
+    /// Returns [`Buffer`] from the pool. It returns __fixed__ buffer if it is possible.
     ///
     /// This method doesn't guarantee any len of the buffer.
+    /// Returned buffer is filled with any value (not only 0).
     #[inline(always)]
-    fn get_any_buffer(&mut self) -> Buffer {
+    pub fn get_buffer_with_any_len(&mut self) -> Buffer {
         #[cfg(not(target_os = "linux"))]
         {
             self.pool
@@ -147,19 +218,25 @@ impl BufPool {
         }
     }
 
-    /// Gets [`Buffer`] from [`BufPool`] with full length.
+    /// Gets [`Buffer`] from [`BufPool`] with full length. It returns __fixed__ buffer
+    /// if it is possible.
+    ///
+    /// Returned buffer is filled with any value (not only 0).
     #[inline(always)]
     pub fn get_full(&mut self) -> Buffer {
-        let mut buffer = self.get_any_buffer();
+        let mut buffer = self.get_buffer_with_any_len();
         buffer.set_len_to_capacity();
 
         buffer
     }
 
-    /// Gets empty [`Buffer`] from [`BufPool`].
+    /// Gets empty (len == 0) [`Buffer`] from [`BufPool`]. It returns __fixed__ buffer
+    /// if it is possible.
+    ///
+    /// Returned buffer is filled with any value (not only 0).
     #[inline(always)]
     pub fn get(&mut self) -> Buffer {
-        let mut buffer = self.get_any_buffer();
+        let mut buffer = self.get_buffer_with_any_len();
         buffer.clear();
 
         buffer

@@ -1,3 +1,4 @@
+use crate::buf::{IOBuffer, IOBufferMut};
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{MessageRecvHeader, OpenHow, OsMessageHeader, RawFd, WorkerSys};
@@ -157,20 +158,20 @@ pub(crate) trait IoWorker {
         self.poll_fd_write(fd, request_ptr);
     }
     /// Registers a new `recv` io operation.
-    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    fn recv(&mut self, fd: RawFd, buf: impl IOBufferMut, request_ptr: *mut IoRequestData);
     /// Registers a new `recv` io operation with deadline.
     fn recv_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        buf: impl IOBufferMut,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.recv(fd, buf_ptr, len, request_ptr);
+        self.recv(fd, buf, request_ptr);
     }
     /// Registers a new `recv_from` io operation.
+    // TODO with fixed buffer
     fn recv_from(
         &mut self,
         fd: RawFd,
@@ -189,20 +190,20 @@ pub(crate) trait IoWorker {
         self.recv_from(fd, msg_header, request_ptr);
     }
     /// Registers a new `send` io operation.
-    fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData);
+    fn send(&mut self, fd: RawFd, buf: impl IOBuffer, request_ptr: *mut IoRequestData);
     /// Registers a new `send` io operation with deadline.
     fn send_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        buf: impl IOBuffer,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.send(fd, buf_ptr, len, request_ptr);
+        self.send(fd, buf, request_ptr);
     }
     /// Registers a new `send_to` io operation.
+    // TODO with fixed buffer
     fn send_to(
         &mut self,
         fd: RawFd,
@@ -221,20 +222,20 @@ pub(crate) trait IoWorker {
         self.send_to(fd, msg_header, request_ptr);
     }
     /// Registers a new `peek` io operation.
-    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    fn peek(&mut self, fd: RawFd, buf: impl IOBufferMut, request_ptr: *mut IoRequestData);
     /// Registers a new `peek` io operation with deadline.
     fn peek_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        buf: impl IOBufferMut,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.peek(fd, buf_ptr, len, request_ptr);
+        self.peek(fd, buf, request_ptr);
     }
     /// Registers a new `peek_from` io operation.
+    // TODO with fixed buffer
     fn peek_from(
         &mut self,
         fd: RawFd,
@@ -275,24 +276,22 @@ pub(crate) trait IoWorker {
     /// Registers a new `sync_data` io operation.
     fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
     /// Registers a new `read` io operation.
-    fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    fn read(&mut self, fd: RawFd, buf: impl IOBufferMut, request_ptr: *mut IoRequestData);
     /// Registers a new `pread` io operation if the kernel supports it else uses cursors.
     fn pread(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        buf: impl IOBufferMut,
         offset: usize,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `write` io operation.
-    fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData);
+    fn write(&mut self, fd: RawFd, buf: impl IOBuffer, request_ptr: *mut IoRequestData);
     /// Registers a new `pwrite` io operation if the kernel supports it else uses cursors.
     fn pwrite(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        buf: impl IOBuffer,
         offset: usize,
         request_ptr: *mut IoRequestData,
     );
