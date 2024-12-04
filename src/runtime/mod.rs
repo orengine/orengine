@@ -15,6 +15,5 @@ pub use executor::{local_executor, Executor};
 pub use asyncify::*;
 pub use config::Config;
 pub use executors_on_cores_table::get_core_id_for_executor;
-pub use get_task_from_context::*;
 pub use global_state::{stop_all_executors, stop_executor};
 pub use task::*;

@@ -1098,7 +1098,7 @@ mod tests {
         const PAR: usize = 10;
         const COUNT: usize = 100;
 
-        for i in 0..100 {
+        for _ in 0..100 {
             let original_res = Arc::new(AtomicUsize::new(0));
             let original_wg = Arc::new(WaitGroup::new());
 

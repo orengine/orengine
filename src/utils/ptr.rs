@@ -250,7 +250,6 @@ mod tests {
     use crate as orengine;
 
     struct MustDropIfCounterMoreThanOne {
-        #[allow(dead_code)]
         counter: u32,
     }
 

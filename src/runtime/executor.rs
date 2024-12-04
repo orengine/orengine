@@ -722,7 +722,7 @@ impl Executor {
     ///
     /// It is used only when no work is available.
     #[inline(always)]
-    #[allow(clippy::unused_self)] // because in the future it will use it
+    #[allow(clippy::unused_self, reason = "It will be used in the future")]
     fn sleep_at_most(&self, max_duration: Duration) {
         // Wait for more work
 
@@ -1088,8 +1088,8 @@ mod tests {
 
     #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
-        #[allow(clippy::unused_async)] // because it is a test
-        #[allow(clippy::future_not_send)] // because it is a local
+        #[allow(clippy::unused_async, reason = "It is a test.")]
+        #[allow(clippy::future_not_send, reason = "It is a test.")]
         async fn insert(number: u16, arr: Local<Vec<u16>>) {
             arr.borrow_mut().push(number);
         }
@@ -1116,7 +1116,7 @@ mod tests {
 
     #[test]
     fn test_run_and_block_on() {
-        #[allow(clippy::unused_async)] // because it is a test
+        #[allow(clippy::unused_async, reason = "It is a test.")]
         async fn async_42() -> u32 {
             42
         }

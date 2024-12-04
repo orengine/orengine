@@ -28,7 +28,10 @@ impl Future for Asyncify<'_> {
         if !this.was_called {
             this.was_called = true;
             let ptr = unsafe {
-                #[allow(clippy::transmute_ptr_to_ptr)] // 'future is equal to 'static in this code
+                #[allow(
+                    clippy::transmute_ptr_to_ptr,
+                    reason = "'future is equal to 'static in this code"
+                )]
                 mem::transmute::<*mut dyn Fn(), *mut dyn Fn()>(this.f)
             };
             unsafe {

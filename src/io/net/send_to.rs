@@ -40,6 +40,7 @@ impl Future for SendTo<'_> {
     type Output = Result<usize>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_io_request!((
@@ -54,7 +55,10 @@ impl Future for SendTo<'_> {
     }
 }
 
-#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendTo` is `Send`
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `SendTo` is `Send`."
+)]
 unsafe impl Send for SendTo<'_> {}
 
 /// `send_to` io operation with deadline.
@@ -87,6 +91,7 @@ impl Future for SendToWithDeadline<'_> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_time_bounded_io_request!((
@@ -102,7 +107,10 @@ impl Future for SendToWithDeadline<'_> {
     }
 }
 
-#[allow(clippy::non_send_fields_in_send_ty)] // We guarantee that `SendToWithDeadline` is `Send`
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `SendToWithDeadline` is `Send`."
+)]
 unsafe impl Send for SendToWithDeadline<'_> {}
 
 #[inline(always)]
