@@ -1,5 +1,4 @@
 use crate::buf::buf_pool::{buf_pool, buffer, BufPool};
-use crate::buf::io_buffer::{IOBuffer, IOBufferMut};
 use crate::buf::linux::linux_buffer::LinuxBuffer;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -85,10 +84,58 @@ impl Buffer {
         Self::new(pool.default_buffer_capacity())
     }
 
+    /// Returns the index of the __fixed__ buffer or `u16::MAX`.
+    #[inline(always)]
+    pub fn fixed_index(&self) -> u16 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return u16::MAX;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
+                LinuxBuffer::NonFixed(_) => u16::MAX,
+            }
+        }
+    }
+
+    /// Returns length of the `Buffer` as u32.
+    #[inline(always)]
+    pub fn len_u32(&self) -> u32 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return self.as_ref().len() as u32;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            self.os_buffer.len()
+        }
+    }
+
+    /// Returns whether the buffer is __fixed__.
+    #[inline(always)]
+    pub fn is_fixed(&self) -> bool {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return false;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(_) => true,
+                LinuxBuffer::NonFixed(_) => false,
+            }
+        }
+    }
+
     /// Returns `true` if the buffer is empty.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len_u32() == 0
     }
 
     /// Sets [`len`](#field.len).
@@ -97,7 +144,7 @@ impl Buffer {
     ///
     /// `len` must be less than or equal to `capacity`.
     #[inline(always)]
-    pub unsafe fn set_len(&mut self, len: u32) {
+    pub unsafe fn set_len_unchecked(&mut self, len: u32) {
         #[cfg(not(target_os = "linux"))]
         unsafe {
             self.os_buffer.set_len(len as usize);
@@ -109,6 +156,18 @@ impl Buffer {
         }
     }
 
+    /// Sets [`len`](#field.len). Returns `Err<()>` if `len` is greater than `capacity`.
+    #[inline(always)]
+    pub fn set_len(&mut self, len: u32) -> Result<(), ()> {
+        if len <= self.capacity() {
+            unsafe { self.set_len_unchecked(len) };
+
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     /// Increases [`len`](#field.len) by the diff.
     ///
     /// # Safety
@@ -116,10 +175,10 @@ impl Buffer {
     /// `len` + `diff` must be less than or equal to `capacity`.
     #[inline(always)]
     pub unsafe fn add_len(&mut self, diff: u32) {
-        let new_len = self.len() + diff;
+        let new_len = self.len_u32() + diff;
 
         unsafe {
-            self.set_len(new_len);
+            self.set_len_unchecked(new_len);
         }
     }
 
@@ -142,7 +201,7 @@ impl Buffer {
     /// Returns `true` if the buffer is full.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.capacity() == self.len()
+        self.capacity() == self.len_u32()
     }
 
     /// Resizes the buffer to a new size.
@@ -167,9 +226,9 @@ impl Buffer {
     /// ```
     #[inline(always)]
     pub fn resize(&mut self, new_size: u32) {
-        if new_size < self.len() {
+        if new_size < self.len_u32() {
             unsafe {
-                self.set_len(new_size);
+                self.set_len_unchecked(new_size);
             }
 
             return;
@@ -182,8 +241,8 @@ impl Buffer {
         };
 
         unsafe {
-            new_buf.set_len(self.len());
-            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len() as usize);
+            new_buf.set_len_unchecked(self.len_u32());
+            ptr::copy_nonoverlapping(self.as_ptr(), new_buf.as_mut_ptr(), self.len_u32() as usize);
         }
 
         *self = new_buf;
@@ -194,14 +253,14 @@ impl Buffer {
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
         let diff_len = buf.len() as u32;
-        if diff_len > self.capacity() - self.len() {
-            self.resize(self.len() + diff_len);
+        if diff_len > self.capacity() - self.len_u32() {
+            self.resize(self.len_u32() + diff_len);
         }
 
         unsafe {
             ptr::copy_nonoverlapping(
                 buf.as_ptr(),
-                self.as_mut_ptr().add(self.len() as usize),
+                self.as_mut_ptr().add(self.len_u32() as usize),
                 buf.len(),
             );
             self.add_len(diff_len);
@@ -224,7 +283,7 @@ impl Buffer {
     #[inline(always)]
     pub fn clear(&mut self) {
         unsafe {
-            self.set_len(0);
+            self.set_len_unchecked(0);
         }
     }
 
@@ -260,55 +319,6 @@ impl Buffer {
         }
     }
 }
-
-impl IOBuffer for Buffer {
-    #[inline(always)]
-    fn fixed_index(&self) -> u16 {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return u16::MAX;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match self.os_buffer.deref() {
-                LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
-                LinuxBuffer::NonFixed(_) => u16::MAX,
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn len(&self) -> u32 {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return self.as_ref().len() as u32;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            self.os_buffer.len()
-        }
-    }
-
-    #[inline(always)]
-    fn is_fixed(&self) -> bool {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return false;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match self.os_buffer.deref() {
-                LinuxBuffer::Fixed(_) => true,
-                LinuxBuffer::NonFixed(_) => false,
-            }
-        }
-    }
-}
-
-impl IOBufferMut for Buffer {}
 
 impl Deref for Buffer {
     type Target = [u8];

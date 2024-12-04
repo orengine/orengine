@@ -1,4 +1,3 @@
-use crate::buf::{IOBuffer, IOBufferMut};
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{IntoRawFd, MessageRecvHeader, OsMessageHeader, RawFd};
@@ -322,24 +321,26 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn recv(&mut self, fd: RawFd, mut buf: impl IOBufferMut, request_ptr: *mut IoRequestData) {
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::ReadFixed::new(
-                    types::Fd(fd),
-                    buf.as_mut().as_mut_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
-                .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Recv::new(types::Fd(fd), buf.as_mut().as_mut_ptr(), buf.len()).build(),
-                request_ptr,
-            );
-        }
+    fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Recv::new(types::Fd(fd), ptr, len).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn recv_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
@@ -356,7 +357,22 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn send(&mut self, fd: RawFd, buf: impl IOBuffer, request_ptr: *mut IoRequestData) {
+    fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Send::new(types::Fd(fd), ptr, len).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn send_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
         // TODO https://github.com/tokio-rs/io-uring/issues/308
         // if self.is_supported(opcode::SendZc::CODE) {
         //     self.register_entry(
@@ -366,23 +382,10 @@ impl IoWorker for IOUringWorker {
         //     return;
         // }
 
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::WriteFixed::new(
-                    types::Fd(fd),
-                    buf.as_ref().as_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
-                .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Send::new(types::Fd(fd), buf.as_ref().as_ptr(), buf.len()).build(),
-                request_ptr,
-            );
-        }
+        self.register_entry(
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
@@ -408,28 +411,31 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn peek(&mut self, fd: RawFd, mut buf: impl IOBufferMut, request_ptr: *mut IoRequestData) {
-        if buf.is_fixed() {
-            // TODO test it (create test with fixed buffers and without them)
-            self.register_entry(
-                opcode::ReadFixed::new(
-                    types::Fd(fd),
-                    buf.as_mut().as_mut_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
+    fn peek(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Recv::new(types::Fd(fd), ptr, len)
+                .flags(libc::MSG_PEEK)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn peek_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        // TODO test it (create test with fixed buffers and without them)
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .rw_flags(libc::MSG_PEEK)
                 .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Recv::new(types::Fd(fd), buf.as_mut().as_mut_ptr(), buf.len())
-                    .flags(libc::MSG_PEEK)
-                    .build(),
-                request_ptr,
-            );
-        }
+            request_ptr,
+        );
     }
 
     #[inline(always)]
@@ -508,115 +514,131 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn read(&mut self, fd: RawFd, mut buf: impl IOBufferMut, request_ptr: *mut IoRequestData) {
-        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::ReadFixed::new(
-                    types::Fd(fd),
-                    buf.as_mut().as_mut_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
+    fn read(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Read::new(types::Fd(fd), ptr, len)
                 .offset(-1 as _)
                 .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Read::new(types::Fd(fd), buf.as_mut().as_mut_ptr(), buf.len())
-                    .offset(-1 as _)
-                    .build(),
-                request_ptr,
-            );
-        }
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn read_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+                .offset(-1 as _)
+                .build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
     fn pread(
         &mut self,
         fd: RawFd,
-        mut buf: impl IOBufferMut,
+        ptr: *mut u8,
+        len: u32,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Read::new(types::Fd(fd), ptr, len)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn pread_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::ReadFixed::new(
-                    types::Fd(fd),
-                    buf.as_mut().as_mut_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .offset(offset as _)
                 .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Read::new(types::Fd(fd), buf.as_mut().as_mut_ptr(), buf.len())
-                    .offset(offset as _)
-                    .build(),
-                request_ptr,
-            );
-        }
+            request_ptr,
+        );
     }
 
     #[inline(always)]
-    fn write(&mut self, fd: RawFd, buf: impl IOBuffer, request_ptr: *mut IoRequestData) {
-        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::WriteFixed::new(
-                    types::Fd(fd),
-                    buf.as_ref().as_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
+    fn write(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Write::new(types::Fd(fd), ptr, len)
                 .offset(-1 as _)
                 .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Write::new(types::Fd(fd), buf.as_ref().as_ptr(), buf.len())
-                    .offset(-1 as _)
-                    .build(),
-                request_ptr,
-            );
-        }
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn write_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
+                .offset(-1 as _)
+                .build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]
     fn pwrite(
         &mut self,
         fd: RawFd,
-        buf: impl IOBuffer,
+        ptr: *const u8,
+        len: u32,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::Write::new(types::Fd(fd), ptr, len)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn pwrite_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-        if buf.is_fixed() {
-            self.register_entry(
-                opcode::WriteFixed::new(
-                    types::Fd(fd),
-                    buf.as_ref().as_ptr(),
-                    buf.len(),
-                    buf.fixed_index(),
-                )
+        self.register_entry(
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .offset(offset as _)
                 .build(),
-                request_ptr,
-            );
-        } else {
-            self.register_entry(
-                opcode::Write::new(types::Fd(fd), buf.as_ref().as_ptr(), buf.len())
-                    .offset(offset as _)
-                    .build(),
-                request_ptr,
-            );
-        }
+            request_ptr,
+        );
     }
 
     #[inline(always)]

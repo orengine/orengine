@@ -300,7 +300,7 @@ mod tests {
         }
 
         buf.clear();
-        buf.set_len(MSG.len() + 6);
+        buf.set_len_unchecked(MSG.len() + 6);
         match file.pread_exact(buf.as_mut(), 0).await {
             Ok(()) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
             Err(err) => panic!("Can't read file: {err}"),
