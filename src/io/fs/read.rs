@@ -1,8 +1,8 @@
 use crate as orengine;
-use crate::buf::Buffer;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::io::{Buffer, FixedBufferMut};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
@@ -72,7 +72,7 @@ impl<'buf> ReadFixed<'buf> {
 }
 
 impl Future for ReadFixed<'_> {
-    type Output = Result<usize>;
+    type Output = Result<u32>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -164,7 +164,7 @@ impl<'buf> PositionedReadFixed<'buf> {
 }
 
 impl Future for PositionedReadFixed<'_> {
-    type Output = Result<usize>;
+    type Output = Result<u32>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -196,7 +196,7 @@ impl Future for PositionedReadFixed<'_> {
 ///
 /// ```rust
 /// use std::ops::Deref;
-/// use orengine::buf::full_buffer;
+/// use orengine::io::full_buffer;
 /// use orengine::fs::{File, OpenOptions};
 /// use orengine::io::{AsyncRead, AsyncWrite};
 ///
@@ -211,9 +211,8 @@ impl Future for PositionedReadFixed<'_> {
 ///
 /// // Asynchronously read into buffer
 /// let bytes_read = file.read(&mut buffer).await?;
-/// buffer.set_len(12).expect("12 > buffer.capacity()");
 /// // Asynchronously read exactly 12 bytes
-/// file.read_exact(&mut buffer).await?;
+/// file.read_exact(&mut buffer.slice_mut(..12)).await?;
 /// assert_eq!(&buffer[..12], b"Hello world!");
 ///
 /// let bytes_read = file.pread(&mut buffer, 6).await?;
@@ -224,7 +223,7 @@ impl Future for PositionedReadFixed<'_> {
 /// # }
 /// ```
 pub trait AsyncRead: AsRawFd {
-    /// Asynchronously reads data from the reader into the provided byte array.
+    /// Asynchronously reads data from the reader into the provided byte slice.
     ///
     /// This method starts reading from the current file position
     /// and reads up to the length of the buffer.
@@ -266,9 +265,8 @@ pub trait AsyncRead: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncRead};
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::AsyncRead;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().read(true);
@@ -279,7 +277,7 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    fn read<'buf>(&mut self, buf: &'buf mut Buffer) -> ReadFixed<'buf> {
+    fn read<'buf>(&mut self, buf: &'buf mut impl FixedBufferMut) -> ReadFixed<'buf> {
         ReadFixed::new(
             self.as_raw_fd(),
             buf.as_mut_ptr(),
@@ -300,9 +298,8 @@ pub trait AsyncRead: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::fs::{File, OpenOptions};
     /// use orengine::io::AsyncRead;
+    /// use orengine::fs::{File, OpenOptions};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().read(true);
@@ -329,9 +326,8 @@ pub trait AsyncRead: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncRead};
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::AsyncRead;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().read(true);
@@ -342,7 +338,7 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn pread(&mut self, buf: &mut Buffer, offset: usize) -> Result<usize> {
+    async fn pread(&mut self, buf: &mut impl FixedBufferMut, offset: usize) -> Result<u32> {
         if buf.is_fixed() {
             PositionedReadFixed::new(
                 self.as_raw_fd(),
@@ -353,11 +349,13 @@ pub trait AsyncRead: AsRawFd {
             )
             .await
         } else {
-            PositionedRead::new(self.as_raw_fd(), buf, offset).await
+            PositionedRead::new(self.as_raw_fd(), buf.as_bytes_mut(), offset)
+                .await
+                .map(|ret| ret as u32)
         }
     }
 
-    /// Asynchronously reads the exact number of bytes required to fill the byte array.
+    /// Asynchronously reads the exact number of bytes required to fill the byte slice.
     ///
     /// This method continuously reads from the file descriptor until the entire buffer is filled.
     /// If the end of the file is reached before filling the buffer, it returns an error.
@@ -403,9 +401,8 @@ pub trait AsyncRead: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncRead};
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::AsyncRead;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().read(true);
@@ -416,11 +413,11 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn read_exact(&mut self, buf: &mut Buffer) -> Result<()> {
-        let mut read = 0;
-
+    async fn read_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
-            while read < buf.len() {
+            let mut read = 0;
+
+            while read < buf.len_u32() {
                 read += ReadFixed::new(
                     self.as_raw_fd(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
@@ -430,15 +427,18 @@ pub trait AsyncRead: AsRawFd {
                 .await?;
             }
         } else {
-            while read < buf.len() {
-                read += self.read_bytes(&mut buf[read..]).await?;
+            let mut read = 0;
+            let slice = buf.as_bytes_mut();
+
+            while read < slice.len() {
+                read += self.read_bytes(&mut slice[read..]).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Asynchronously performs a positioned read, reading exactly the number of bytes needed to fill the byte array.
+    /// Asynchronously performs a positioned read, reading exactly the number of bytes needed to fill the byte slice.
     ///
     /// This method reads data starting at the specified `offset` until the entire buffer is filled.
     /// If the end of the file is reached before filling the buffer, it returns an error.
@@ -487,36 +487,38 @@ pub trait AsyncRead: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncRead};
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::AsyncRead;
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().read(true);
     /// let mut file = File::open("example.txt", &options).await?;
     /// let mut buffer = full_buffer();
-    /// file.pread_exact(&mut buffer, 512).await?;  // Read exactly starting from offset 512
+    /// file.pread_exact(&mut buffer.slice_mut(..13), 512).await?;  // Read exactly 13 bytes starting from offset 512
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn pread_exact(&mut self, buf: &mut Buffer, offset: usize) -> Result<()> {
-        let mut read = 0;
-
+    async fn pread_exact(&mut self, buf: &mut impl FixedBufferMut, offset: usize) -> Result<()> {
         if buf.is_fixed() {
-            while read < buf.len() {
+            let mut read = 0;
+
+            while read < buf.len_u32() {
                 read += PositionedReadFixed::new(
                     self.as_raw_fd(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
                     buf.len_u32(),
                     buf.fixed_index(),
-                    offset + read,
+                    offset + read as usize,
                 )
                 .await?;
             }
         } else {
-            while read < buf.len() {
-                read += self.pread_bytes(&mut buf[read..], offset + read).await?;
+            let mut read = 0;
+            let slice = buf.as_bytes_mut();
+
+            while read < slice.len() {
+                read += self.pread_bytes(&mut slice[read..], offset + read).await?;
             }
         }
 

@@ -32,7 +32,6 @@
     reason = "It is fine if a file in has the same mane as a module."
 )]
 #![allow(clippy::if_not_else, reason = "It improves readability.")]
-pub mod buf;
 pub(crate) mod bug_message;
 pub mod fs;
 pub mod io;

@@ -1,9 +1,9 @@
-use crate::buf::{Buffer, IOBuffer};
 use crate::io::worker::local_worker;
 use crate::utils::assert_hint;
 use nix::libc;
 use std::cell::UnsafeCell;
 use std::io::IoSliceMut;
+use crate::io::Buffer;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.

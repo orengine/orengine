@@ -1,12 +1,13 @@
 //! This module contains [`Buffer`] and [`BufPool`].
 //! Read [`Buffer`] and [`BufPool`] for more information.
 pub use buf_pool::*;
-#[cfg(target_os = "linux")]
 pub use buffer::*;
-#[cfg(not(target_os = "linux"))]
-pub use other_os::buffer::Buffer;
+pub use fixed_io_buffer::*;
+pub use slice::*;
 
 pub mod buf_pool;
 pub mod buffer;
+pub mod fixed_io_buffer;
 pub(crate) mod linux;
+pub mod slice;
 mod tests;

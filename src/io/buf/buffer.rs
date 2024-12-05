@@ -1,9 +1,12 @@
-use crate::buf::buf_pool::{buf_pool, buffer, BufPool};
-use crate::buf::linux::linux_buffer::LinuxBuffer;
+use crate::io::buf_pool::{buf_pool, buffer, BufPool};
+use crate::io::linux::linux_buffer::LinuxBuffer;
+use crate::io::slice::{Slice, SliceMut};
+use crate::io::{FixedBuffer, FixedBufferMut};
+use crate::utils::Sealed;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::ops::{Bound, Deref, DerefMut, Index, IndexMut, RangeBounds};
 use std::ptr;
 use std::slice::SliceIndex;
 
@@ -57,7 +60,7 @@ impl Buffer {
     ///
     /// - size > 0
     #[inline(always)]
-    pub fn new(size: u32) -> Self {
+    pub(crate) fn new(size: u32) -> Self {
         Self {
             #[cfg(not(target_os = "linux"))]
             os_buffer: ManuallyDrop::new(Vec::with_capacity(size as _)),
@@ -82,54 +85,6 @@ impl Buffer {
     #[inline(always)]
     pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
         Self::new(pool.default_buffer_capacity())
-    }
-
-    /// Returns the index of the __fixed__ buffer or `u16::MAX`.
-    #[inline(always)]
-    pub fn fixed_index(&self) -> u16 {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return u16::MAX;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match self.os_buffer.deref() {
-                LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
-                LinuxBuffer::NonFixed(_) => u16::MAX,
-            }
-        }
-    }
-
-    /// Returns length of the `Buffer` as u32.
-    #[inline(always)]
-    pub fn len_u32(&self) -> u32 {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return self.as_ref().len() as u32;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            self.os_buffer.len()
-        }
-    }
-
-    /// Returns whether the buffer is __fixed__.
-    #[inline(always)]
-    pub fn is_fixed(&self) -> bool {
-        #[cfg(not(target_os = "linux"))]
-        {
-            return false;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match self.os_buffer.deref() {
-                LinuxBuffer::Fixed(_) => true,
-                LinuxBuffer::NonFixed(_) => false,
-            }
-        }
     }
 
     /// Returns `true` if the buffer is empty.
@@ -204,7 +159,8 @@ impl Buffer {
         self.capacity() == self.len_u32()
     }
 
-    /// Resizes the buffer to a new size.
+    /// Resizes the buffer to a new size. If the buffer is __fixed__, after resizing it
+    /// can become __not fixed__.
     ///
     /// If the `new_size` is less than the current length of the buffer,
     /// the length is truncated to `new_size`.
@@ -216,12 +172,12 @@ impl Buffer {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::Buffer;
+    /// use orengine::io::{buffer, Buffer};
     ///
-    /// let mut buf = Buffer::new(100);
+    /// let mut buf = buffer();
     /// buf.append(&[1, 2, 3]);
-    /// buf.resize(200); // Buffer is resized to 200, contents are preserved
-    /// assert_eq!(buf.capacity(), 200);
+    /// buf.resize(20000); // Buffer is resized to 20000, contents are preserved
+    /// assert_eq!(buf.capacity(), 20000);
     /// assert_eq!(buf.as_ref(), &[1, 2, 3]);
     /// ```
     #[inline(always)]
@@ -267,18 +223,6 @@ impl Buffer {
         }
     }
 
-    /// Returns a pointer to the buffer.
-    #[inline(always)]
-    pub fn as_ptr(&self) -> *const u8 {
-        self.os_buffer.as_ptr().cast()
-    }
-
-    /// Returns a mutable pointer to the buffer.
-    #[inline(always)]
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.os_buffer.as_mut_ptr().cast()
-    }
-
     /// Clears the buffer.
     #[inline(always)]
     pub fn clear(&mut self) {
@@ -292,6 +236,42 @@ impl Buffer {
         unsafe {
             ptr::write_bytes(self.as_mut_ptr(), 0, self.capacity() as usize);
         }
+    }
+
+    /// Returns [`Slice`] with the specified range.
+    #[inline(always)]
+    pub fn slice<R: RangeBounds<u32>>(&self, range: R) -> Slice<'_> {
+        let start = match range.start_bound() {
+            Bound::Included(s) => *s,
+            Bound::Unbounded => 0,
+            Bound::Excluded(s) => *s + 1,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(e) => *e + 1,
+            Bound::Excluded(e) => *e,
+            Bound::Unbounded => self.len_u32(),
+        };
+
+        Slice::new(self, start, end)
+    }
+
+    /// Returns [`SliceMut`] with the specified range.
+    #[inline(always)]
+    pub fn slice_mut<R: RangeBounds<u32>>(&mut self, range: R) -> SliceMut<'_> {
+        let start = match range.start_bound() {
+            Bound::Included(s) => *s,
+            Bound::Unbounded => 0,
+            Bound::Excluded(s) => *s + 1,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(e) => *e + 1,
+            Bound::Excluded(e) => *e,
+            Bound::Unbounded => self.len_u32(),
+        };
+
+        SliceMut::new(self, start, end)
     }
 
     /// Puts the buffer to the pool. You can not to use it, and then this method will be called automatically by drop.
@@ -317,6 +297,67 @@ impl Buffer {
                 LinuxBuffer::NonFixed(buf) => drop(buf),
             };
         }
+    }
+}
+
+impl Sealed for Buffer {}
+
+impl FixedBuffer for Buffer {
+    #[inline(always)]
+    fn as_ptr(&self) -> *const u8 {
+        self.os_buffer.as_ptr().cast()
+    }
+
+    #[inline(always)]
+    fn len_u32(&self) -> u32 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return self.as_ref().len() as u32;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            self.os_buffer.len()
+        }
+    }
+
+    #[inline(always)]
+    fn fixed_index(&self) -> u16 {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return u16::MAX;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
+                LinuxBuffer::NonFixed(_) => u16::MAX,
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn is_fixed(&self) -> bool {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return false;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            match self.os_buffer.deref() {
+                LinuxBuffer::Fixed(_) => true,
+                LinuxBuffer::NonFixed(_) => false,
+            }
+        }
+    }
+}
+
+impl FixedBufferMut for Buffer {
+    #[inline(always)]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.os_buffer.as_mut_ptr().cast()
     }
 }
 
@@ -441,9 +482,8 @@ impl Drop for Buffer {
 
 /// ```rust
 /// use orengine::{Executor, Local};
-/// use orengine::buf::full_buffer;
+/// use orengine::io::{full_buffer, AsyncWrite};
 /// use orengine::fs::{File, OpenOptions};
-/// use orengine::io::AsyncWrite;
 ///
 /// fn check_send<T: Send>(value: T) -> T { value }
 ///
