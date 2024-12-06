@@ -10,7 +10,7 @@ use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::io::Buffer;
+use crate::io::{Buffer, FixedBufferMut};
 
 /// `peek` io operation.
 pub struct PeekBytes<'buf> {
@@ -157,7 +157,7 @@ impl<'buf> PeekFixedWithDeadline<'buf> {
 }
 
 impl Future for PeekFixedWithDeadline<'_> {
-    type Output = Result<usize>;
+    type Output = Result<u32>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -173,7 +173,7 @@ impl Future for PeekFixedWithDeadline<'_> {
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
-            ret
+            ret as u32
         ));
     }
 }
@@ -189,17 +189,15 @@ impl Future for PeekFixedWithDeadline<'_> {
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
 /// use orengine::net::TcpStream;
-/// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
 /// stream.poll_recv().await?;
-/// let mut buf = full_buffer();
 ///
-/// // Peek at the incoming data without consuming it
-/// let bytes_peeked = stream.peek(&mut buf).await?;
+/// let mut buf = full_buffer();
+/// let bytes_peeked = stream.peek(&mut buf).await?; // Peek at the incoming data without consuming it
 /// # Ok(())
 /// # }
 /// ```
@@ -207,24 +205,69 @@ pub trait AsyncPeek: AsRawFd {
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
     /// filling the buffer with available data. Returns the number of bytes peeked.
     ///
+    /// # Difference between `peek` and `peek_bytes`
+    ///
+    /// Use [`peek`](Self::peek) if it is possible, because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
     /// stream.poll_recv().await?;
-    /// let mut buf = full_buffer();
-    /// let bytes_peeked = stream.peek(&mut buf).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_peeked = stream.peek_bytes(&mut vec).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek(&mut self, buf: &mut [u8]) -> Result<usize> {
-        PeekBytes::new(self.as_raw_fd(), buf).await
+    fn peek_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
+        PeekBytes::new(self.as_raw_fd(), buf)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// filling the buffer with available data. Returns the number of bytes peeked.
+    ///
+    /// # Difference between `peek` and `peek_bytes`
+    ///
+    /// Use [`peek`](Self::peek) if it is possible, because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_peeked = stream.peek(&mut buffer).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
+        if buf.is_fixed() {
+            PeekFixed::new(
+                self.as_raw_fd(),
+                buf.as_mut_ptr(),
+                buf.len_u32(),
+                buf.fixed_index(),
+            )
+            .await
+        } else {
+            PeekBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+                .await
+                .map(|r| r as u32)
+        }
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -233,27 +276,87 @@ pub trait AsyncPeek: AsRawFd {
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
     ///
+    /// # Difference between `peek_with_deadline` and `peek_bytes_with_deadline`
+    ///
+    /// Use [`peek_with_deadline`](Self::peek_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
-    /// stream.poll_recv_with_deadline(deadline).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// let bytes_peeked = stream.peek_with_deadline(&mut buf, deadline).await?;
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_peeked = stream.peek_bytes_with_deadline(&mut vec, deadline).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<usize> {
-        PeekBytesWithDeadline::new(self.as_raw_fd(), buf, deadline).await
+    fn peek_bytes_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant,
+    ) -> impl Future<Output = Result<usize>> {
+        PeekBytesWithDeadline::new(self.as_raw_fd(), buf, deadline)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a specified deadline. Returns the number of bytes peeked.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_with_deadline` and `peek_bytes_with_deadline`
+    ///
+    /// Use [`peek_with_deadline`](Self::peek_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use std::time::{Duration, Instant};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_peeked = stream.peek_with_deadline(&mut buffer, deadline).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_with_deadline(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        deadline: Instant,
+    ) -> Result<u32> {
+        if buf.is_fixed() {
+            PeekFixedWithDeadline::new(
+                self.as_raw_fd(),
+                buf.as_mut_ptr(),
+                buf.len_u32(),
+                buf.fixed_index(),
+                deadline,
+            )
+            .await
+        } else {
+            PeekBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
+                .await
+                .map(|r| r as u32)
+        }
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -262,54 +365,200 @@ pub trait AsyncPeek: AsRawFd {
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
     ///
+    /// # Difference between `peek_with_timeout` and `peek_bytes_with_timeout`
+    ///
+    /// Use [`peek_with_timeout`](Self::peek_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let timeout = Duration::from_secs(5);
-    /// stream.poll_recv_with_timeout(timeout).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// let bytes_peeked = stream.peek_with_timeout(&mut buf, timeout).await?;
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_peeked = stream.peek_bytes_with_timeout(&mut vec, timeout).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
-        self.peek_with_deadline(buf, Instant::now() + timeout).await
+    fn peek_bytes_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> impl Future<Output = Result<usize>> {
+        self.peek_bytes_with_deadline(buf, Instant::now() + timeout)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a specified timeout. Returns the number of bytes peeked.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_with_timeout` and `peek_bytes_with_timeout`
+    ///
+    /// Use [`peek_with_timeout`](Self::peek_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_peeked = stream.peek_with_timeout(&mut buffer, timeout).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_with_timeout(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<u32>> {
+        self.peek_with_deadline(buf, Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
     /// until the buffer is completely filled with exactly the requested number of bytes.
     ///
+    /// # Difference between `peek_exact` and `peek_bytes_exact`
+    ///
+    /// Use [`peek_exact`](Self::peek_exact) if it is possible,
+    ///
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// stream.poll_recv().await?;
-    /// let mut buf = full_buffer();
     ///
-    /// stream.peek_exact(&mut buf[..100]).await?; // Peek 100 bytes
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.peek_bytes_exact(&mut vec[..100]).await?; // Peek exactly 100 bytes or return an error
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+    async fn peek_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut peeked = 0;
 
         while peeked < buf.len() {
-            peeked += self.peek(&mut buf[peeked..]).await?;
+            peeked += self.peek_bytes(&mut buf[peeked..]).await?;
+        }
+        Ok(())
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// until the buffer is completely filled with exactly the requested number of bytes.
+    ///
+    /// # Difference between `peek_exact` and `peek_bytes_exact`
+    ///
+    /// Use [`peek_exact`](Self::peek_exact) if it is possible,
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// stream.peek_exact(&mut buffer.slice_mut(..100)).await?; // Peek exactly 100 bytes or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
+        if buf.is_fixed() {
+            let mut peeked = 0;
+
+            while peeked < buf.len_u32() {
+                peeked += PeekFixed::new(
+                    self.as_raw_fd(),
+                    unsafe { buf.as_mut_ptr().offset(peeked as isize) },
+                    buf.len_u32() - peeked,
+                    buf.fixed_index(),
+                )
+                .await?;
+            }
+        } else {
+            let mut peeked = 0;
+            let slice = buf.as_bytes_mut();
+
+            while peeked < slice.len() {
+                peeked += self.peek_bytes(&mut slice[peeked..]).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a deadline until the buffer is completely filled with the exact number of bytes.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_exact_with_deadline` and `peek_bytes_exact_with_deadline`
+    ///
+    /// Use [`peek_exact_with_deadline`](Self::peek_exact_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use std::time::{Instant, Duration};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.peek_bytes_exact_with_deadline(&mut vec[..100], deadline).await?; // Peek exactly 100 bytes
+    /// // or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_bytes_exact_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant,
+    ) -> Result<()> {
+        let mut peeked = 0;
+
+        while peeked < buf.len() {
+            peeked += self
+                .peek_bytes_with_deadline(&mut buf[peeked..], deadline)
+                .await?;
         }
         Ok(())
     }
@@ -320,33 +569,60 @@ pub trait AsyncPeek: AsRawFd {
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
     ///
+    /// # Difference between `peek_exact_with_deadline` and `peek_bytes_exact_with_deadline`
+    ///
+    /// Use [`peek_exact_with_deadline`](Self::peek_exact_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
-    /// use orengine::buf::full_buffer;
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
-    /// stream.poll_recv_with_deadline(deadline).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// stream.peek_exact_with_deadline(&mut buf[..100], deadline).await?; // Peek 100 bytes
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.peek_exact_with_deadline(&mut vec[..100], deadline).await?; // Peek exactly 100 bytes
+    /// // or return an error
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_exact_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<()> {
-        let mut peeked = 0;
+    async fn peek_exact_with_deadline(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        deadline: Instant,
+    ) -> Result<()> {
+        if buf.is_fixed() {
+            let mut peeked = 0;
 
-        while peeked < buf.len() {
-            peeked += self
-                .peek_with_deadline(&mut buf[peeked..], deadline)
+            while peeked < buf.len_u32() {
+                peeked += PeekFixedWithDeadline::new(
+                    self.as_raw_fd(),
+                    unsafe { buf.as_mut_ptr().offset(peeked as isize) },
+                    buf.len_u32() - peeked,
+                    buf.fixed_index(),
+                    deadline,
+                )
                 .await?;
+            }
+        } else {
+            let mut peeked = 0;
+            let slice = buf.as_bytes_mut();
+
+            while peeked < slice.len() {
+                peeked += self
+                    .peek_bytes_with_deadline(&mut slice[peeked..], deadline)
+                    .await?;
+            }
         }
+
         Ok(())
     }
 
@@ -356,27 +632,75 @@ pub trait AsyncPeek: AsRawFd {
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
     ///
+    /// # Difference between `peek_exact_with_timeout` and `peek_bytes_exact_with_timeout`
+    ///
+    /// Use [`peek_exact_with_timeout`](Self::peek_exact_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
     /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
-    /// use orengine::buf::full_buffer;
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let timeout = Duration::from_secs(5);
-    /// stream.poll_recv_with_timeout(timeout).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// stream.peek_exact_with_timeout(&mut buf[..100], timeout).await?; // Peek 100 bytes
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.peek_bytes_exact_with_timeout(&mut vec[..100], timeout).await?; // Peek exactly 100 bytes
+    /// // or return an error
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
+    fn peek_bytes_exact_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> impl Future<Output = Result<()>> {
+        self.peek_bytes_exact_with_deadline(buf, Instant::now() + timeout)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a timeout until the buffer is completely filled with the exact number of bytes.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_exact_with_timeout` and `peek_bytes_exact_with_timeout`
+    ///
+    /// Use [`peek_exact_with_timeout`](Self::peek_exact_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// stream.peek_exact_with_timeout(&mut buffer.slice_mut(..100), timeout).await?; // Peek exactly 100 bytes
+    /// // or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    fn peek_exact_with_timeout(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<()>> {
         self.peek_exact_with_deadline(buf, Instant::now() + timeout)
-            .await
     }
 }
