@@ -2,7 +2,7 @@ use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::io::{Buffer, FixedBufferMut};
+use crate::io::FixedBufferMut;
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
@@ -11,13 +11,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Future for the `read` operation.
-pub struct Read<'buf> {
+pub struct ReadBytes<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
 }
 
-impl<'buf> Read<'buf> {
+impl<'buf> ReadBytes<'buf> {
     /// Creates a new `read` io operation.
     pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
@@ -28,7 +28,7 @@ impl<'buf> Read<'buf> {
     }
 }
 
-impl Future for Read<'_> {
+impl Future for ReadBytes<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -52,19 +52,19 @@ pub struct ReadFixed<'buf> {
     fd: RawFd,
     ptr: *mut u8,
     len: u32,
-    buf_index: u16,
+    fixed_index: u16,
     io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<&'buf ()>,
 }
 
 impl<'buf> ReadFixed<'buf> {
     /// Creates a new `read` io operation.
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, buf_index: u16) -> Self {
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
             fd,
             ptr,
             len,
-            buf_index,
+            fixed_index,
             io_request_data: None,
             phantom_data: PhantomData,
         }
@@ -79,10 +79,10 @@ impl Future for ReadFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv_fixed(this.fd, this.ptr, this.len, this.buf_index, unsafe {
+            local_worker().recv_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
-            ret
+            ret as u32
         ));
     }
 }
@@ -93,14 +93,14 @@ impl Future for ReadFixed<'_> {
 ///
 /// This is a variation of `read` that allows
 /// to specify the offset from which the data should be read.
-pub struct PositionedRead<'buf> {
+pub struct PositionedReadBytes<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     offset: usize,
     io_request_data: Option<IoRequestData>,
 }
 
-impl<'buf> PositionedRead<'buf> {
+impl<'buf> PositionedReadBytes<'buf> {
     /// Creates a new `pread` io operation.
     pub fn new(fd: RawFd, buf: &'buf mut [u8], offset: usize) -> Self {
         Self {
@@ -112,7 +112,7 @@ impl<'buf> PositionedRead<'buf> {
     }
 }
 
-impl Future for PositionedRead<'_> {
+impl Future for PositionedReadBytes<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -142,7 +142,7 @@ pub struct PositionedReadFixed<'buf> {
     fd: RawFd,
     ptr: *mut u8,
     len: u32,
-    buf_index: u16,
+    fixed_index: u16,
     offset: usize,
     io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<&'buf ()>,
@@ -150,12 +150,12 @@ pub struct PositionedReadFixed<'buf> {
 
 impl<'buf> PositionedReadFixed<'buf> {
     /// Creates a new `pread` io operation.
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, buf_index: u16, offset: usize) -> Self {
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, offset: usize) -> Self {
         Self {
             fd,
             ptr,
             len,
-            buf_index,
+            fixed_index,
             offset,
             io_request_data: None,
             phantom_data: PhantomData,
@@ -175,11 +175,11 @@ impl Future for PositionedReadFixed<'_> {
                 this.fd,
                 this.ptr,
                 this.len,
-                this.buf_index,
+                this.fixed_index,
                 this.offset,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
-            ret
+            ret as u32
         ));
     }
 }
@@ -248,8 +248,8 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    fn read_bytes<'buf>(&mut self, buf: &'buf mut [u8]) -> Read<'buf> {
-        Read::new(self.as_raw_fd(), buf)
+    fn read_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
+        ReadBytes::new(self.as_raw_fd(), buf)
     }
 
     /// Asynchronously reads data from the reader into the provided [`Buffer`].
@@ -277,13 +277,20 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    fn read<'buf>(&mut self, buf: &'buf mut impl FixedBufferMut) -> ReadFixed<'buf> {
-        ReadFixed::new(
-            self.as_raw_fd(),
-            buf.as_mut_ptr(),
-            buf.len_u32(),
-            buf.fixed_index(),
-        )
+    async fn read(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
+        if buf.is_fixed() {
+            ReadFixed::new(
+                self.as_raw_fd(),
+                buf.as_mut_ptr(),
+                buf.len_u32(),
+                buf.fixed_index(),
+            )
+            .await
+        } else {
+            ReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+                .await
+                .map(|r| r as u32)
+        }
     }
 
     /// Asynchronously performs a positioned read, reading from the file at the specified offset.
@@ -310,8 +317,12 @@ pub trait AsyncRead: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    fn pread_bytes<'buf>(&mut self, buf: &'buf mut [u8], offset: usize) -> PositionedRead<'buf> {
-        PositionedRead::new(self.as_raw_fd(), buf, offset)
+    fn pread_bytes(
+        &mut self,
+        buf: &mut [u8],
+        offset: usize,
+    ) -> impl Future<Output = Result<usize>> {
+        PositionedReadBytes::new(self.as_raw_fd(), buf, offset)
     }
 
     /// Asynchronously performs a positioned read, reading from the file at the specified offset.
@@ -349,7 +360,7 @@ pub trait AsyncRead: AsRawFd {
             )
             .await
         } else {
-            PositionedRead::new(self.as_raw_fd(), buf.as_bytes_mut(), offset)
+            PositionedReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut(), offset)
                 .await
                 .map(|ret| ret as u32)
         }
@@ -421,7 +432,7 @@ pub trait AsyncRead: AsRawFd {
                 read += ReadFixed::new(
                     self.as_raw_fd(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
-                    buf.len_u32(),
+                    buf.len_u32() - read,
                     buf.fixed_index(),
                 )
                 .await?;
@@ -507,7 +518,7 @@ pub trait AsyncRead: AsRawFd {
                 read += PositionedReadFixed::new(
                     self.as_raw_fd(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
-                    buf.len_u32(),
+                    buf.len_u32() - read,
                     buf.fixed_index(),
                     offset + read as usize,
                 )

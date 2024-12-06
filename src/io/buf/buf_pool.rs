@@ -1,9 +1,9 @@
 use crate::io::worker::local_worker;
+use crate::io::{Buffer, FixedBuffer};
 use crate::utils::assert_hint;
 use nix::libc;
 use std::cell::UnsafeCell;
 use std::io::IoSliceMut;
-use crate::io::Buffer;
 
 thread_local! {
     /// Local [`BufPool`]. Therefore, it is lockless.
@@ -65,7 +65,7 @@ pub fn buffer() -> Buffer {
 /// because [`buffer`] returns empty buffer.
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
+/// use orengine::io::full_buffer;
 /// use orengine::io::{AsyncPollFd, AsyncRecv};
 /// use orengine::net::TcpStream;
 ///
@@ -189,7 +189,20 @@ impl BufPool {
         }
     }
 
-    /// Get default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
+    /// Returns the number of buffers in the pool. Uses in tests.
+    pub(super) fn len(&self) -> usize {
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.pool.len()
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            self.pool_of_fixed_buffers.len() + self.pool_of_non_fixed_buffers.len()
+        }
+    }
+
+    /// Returns default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
     #[inline(always)]
     pub fn default_buffer_capacity(&self) -> u32 {
         self.default_buffer_cap

@@ -1,4 +1,3 @@
-use crate::buf::buf_pool::BufPool;
 use std::alloc::{alloc, Layout};
 use std::marker::PhantomData;
 use std::ptr;
@@ -51,13 +50,6 @@ impl LinuxBuffer {
 
         Self::NonFixed(unsafe { Vec::from_raw_parts(alloc(layout), 0, size as _) })
     }
-
-    /// Creates a new buffer from a pool with the given size.
-    #[inline(always)]
-    pub(crate) fn new_non_fixed_from_pool(pool: &BufPool) -> Self {
-        Self::new_non_fixed(pool.default_buffer_capacity())
-    }
-
     #[inline(always)]
     pub(crate) fn len(&self) -> u32 {
         match self {

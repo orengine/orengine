@@ -328,7 +328,7 @@ pub(crate) trait IoWorker {
     fn peek_fixed_with_deadline(
         &mut self,
         fd: RawFd,
-        ptr: *const u8,
+        ptr: *mut u8,
         len: u32,
         buf_index: u16,
         request_ptr: *mut IoRequestData,

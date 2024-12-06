@@ -1,7 +1,7 @@
-use crate::buf::{init_local_buf_pool, uninit_local_buf_pool};
 use crate::bug_message::BUG_MESSAGE;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
+use crate::io::{init_local_buf_pool, uninit_local_buf_pool};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;

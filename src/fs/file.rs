@@ -245,8 +245,8 @@ impl Drop for File {
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::buf::{buffer, full_buffer};
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
+    use crate::io::{buffer, full_buffer};
     use std::fs::{create_dir, create_dir_all};
     use std::io::{Seek, SeekFrom};
     use std::path::PathBuf;
