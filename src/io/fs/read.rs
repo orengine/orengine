@@ -2,7 +2,7 @@ use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::io::FixedBufferMut;
+use crate::io::{Buffer, FixedBufferMut};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
@@ -47,7 +47,7 @@ impl Future for ReadBytes<'_> {
     }
 }
 
-/// Future for the `read` operation with [`Buffer`].
+/// Future for the `read` operation with __fixed__ [`Buffer`].
 pub struct ReadFixed<'buf> {
     fd: RawFd,
     ptr: *mut u8,
@@ -58,7 +58,7 @@ pub struct ReadFixed<'buf> {
 }
 
 impl<'buf> ReadFixed<'buf> {
-    /// Creates a new `read` io operation.
+    /// Creates a new `read` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
             fd,
@@ -132,7 +132,7 @@ impl Future for PositionedReadBytes<'_> {
     }
 }
 
-/// Future for the `pread` operation with [`Buffer`].
+/// Future for the `pread` operation with __fixed__ [`Buffer`].
 ///
 /// # Positional read
 ///
@@ -149,7 +149,7 @@ pub struct PositionedReadFixed<'buf> {
 }
 
 impl<'buf> PositionedReadFixed<'buf> {
-    /// Creates a new `pread` io operation.
+    /// Creates a new `pread` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, offset: usize) -> Self {
         Self {
             fd,

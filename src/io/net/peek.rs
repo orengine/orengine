@@ -10,15 +10,16 @@ use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::io::Buffer;
 
 /// `peek` io operation.
-pub struct Peek<'buf> {
+pub struct PeekBytes<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
 }
 
-impl<'buf> Peek<'buf> {
+impl<'buf> PeekBytes<'buf> {
     /// Creates a new `peek` io operation.
     pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
@@ -29,7 +30,7 @@ impl<'buf> Peek<'buf> {
     }
 }
 
-impl Future for Peek<'_> {
+impl Future for PeekBytes<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -37,23 +38,66 @@ impl Future for Peek<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().peek(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().peek(
+                this.fd,
+                this.buf.as_mut_ptr(),
+                this.buf.len() as u32,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+            ),
             ret
         ));
     }
 }
 
+/// `peek` io operation with __fixed__ [`Buffer`].
+pub struct PeekFixed<'buf> {
+    fd: RawFd,
+    ptr: *mut u8,
+    len: u32,
+    fixed_index: u16,
+    io_request_data: Option<IoRequestData>,
+    phantom_data: std::marker::PhantomData<&'buf Buffer>,
+}
+
+impl<'buf> PeekFixed<'buf> {
+    /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
+        Self {
+            fd,
+            ptr,
+            len,
+            fixed_index,
+            io_request_data: None,
+            phantom_data: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Future for PeekFixed<'_> {
+    type Output = Result<u32>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let ret;
+
+        poll_for_io_request!((
+            local_worker().peek_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
+            ret as u32
+        ));
+    }
+}
+
 /// `peek` io operation with deadline.
-pub struct PeekWithDeadline<'buf> {
+pub struct PeekBytesWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
 }
 
-impl<'buf> PeekWithDeadline<'buf> {
+impl<'buf> PeekBytesWithDeadline<'buf> {
     /// Creates a new `peek` io operation.
     pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
@@ -65,7 +109,7 @@ impl<'buf> PeekWithDeadline<'buf> {
     }
 }
 
-impl Future for PeekWithDeadline<'_> {
+impl Future for PeekBytesWithDeadline<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -77,7 +121,55 @@ impl Future for PeekWithDeadline<'_> {
             worker.peek_with_deadline(
                 this.fd,
                 this.buf.as_mut_ptr(),
-                this.buf.len(),
+                this.buf.len() as u32,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
+            ),
+            ret
+        ));
+    }
+}
+
+/// `peek` io operation with __fixed__ [`Buffer`] with deadline.
+pub struct PeekFixedWithDeadline<'buf> {
+    fd: RawFd,
+    ptr: *mut u8,
+    len: u32,
+    fixed_index: u16,
+    io_request_data: Option<IoRequestData>,
+    deadline: Instant,
+    phantom_data: std::marker::PhantomData<&'buf Buffer>,
+}
+
+impl<'buf> PeekFixedWithDeadline<'buf> {
+    /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
+        Self {
+            fd,
+            ptr,
+            len,
+            fixed_index,
+            io_request_data: None,
+            deadline,
+            phantom_data: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Future for PeekFixedWithDeadline<'_> {
+    type Output = Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let worker = local_worker();
+        let ret;
+
+        poll_for_time_bounded_io_request!((
+            worker.peek_fixed_with_deadline(
+                this.fd,
+                this.ptr,
+                this.len,
+                this.fixed_index,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
@@ -112,8 +204,8 @@ impl Future for PeekWithDeadline<'_> {
 /// # }
 /// ```
 pub trait AsyncPeek: AsRawFd {
-    /// Asynchronously peeks into the incoming data without consuming it, filling the buffer with
-    /// available data. Returns the number of bytes peeked.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// filling the buffer with available data. Returns the number of bytes peeked.
     ///
     /// # Example
     ///
@@ -132,11 +224,11 @@ pub trait AsyncPeek: AsRawFd {
     /// ```
     #[inline(always)]
     async fn peek(&mut self, buf: &mut [u8]) -> Result<usize> {
-        Peek::new(self.as_raw_fd(), buf).await
+        PeekBytes::new(self.as_raw_fd(), buf).await
     }
 
-    /// Asynchronously peeks into the incoming data with a specified deadline.
-    /// Returns the number of bytes peeked.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a specified deadline. Returns the number of bytes peeked.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
@@ -161,11 +253,11 @@ pub trait AsyncPeek: AsRawFd {
     /// ```
     #[inline(always)]
     async fn peek_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<usize> {
-        PeekWithDeadline::new(self.as_raw_fd(), buf, deadline).await
+        PeekBytesWithDeadline::new(self.as_raw_fd(), buf, deadline).await
     }
 
-    /// Asynchronously peeks into the incoming data with a specified timeout.
-    /// Returns the number of bytes peeked.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a specified timeout. Returns the number of bytes peeked.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
@@ -193,8 +285,8 @@ pub trait AsyncPeek: AsRawFd {
         self.peek_with_deadline(buf, Instant::now() + timeout).await
     }
 
-    /// Asynchronously peeks into the incoming data until the buffer is completely filled with
-    /// exactly the requested number of bytes.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// until the buffer is completely filled with exactly the requested number of bytes.
     ///
     /// # Example
     ///
@@ -222,8 +314,8 @@ pub trait AsyncPeek: AsRawFd {
         Ok(())
     }
 
-    /// Asynchronously peeks into the incoming data with a deadline until the buffer is completely
-    /// filled with the exact number of bytes.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a deadline until the buffer is completely filled with the exact number of bytes.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
@@ -258,8 +350,8 @@ pub trait AsyncPeek: AsRawFd {
         Ok(())
     }
 
-    /// Asynchronously peeks into the incoming data with a timeout until the buffer is completely
-    /// filled with the exact number of bytes.
+    /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
+    /// with a timeout until the buffer is completely filled with the exact number of bytes.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).

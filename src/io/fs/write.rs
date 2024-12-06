@@ -45,7 +45,7 @@ impl Future for WriteBytes<'_> {
     }
 }
 
-/// `write` io operation with [`Buffer`].
+/// `write` io operation with __fixed__ [`Buffer`].
 pub struct WriteFixed<'buf> {
     fd: RawFd,
     ptr: *const u8,
@@ -56,7 +56,7 @@ pub struct WriteFixed<'buf> {
 }
 
 impl<'buf> WriteFixed<'buf> {
-    /// Creates a new `write` io operation.
+    /// Creates a new `write` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
         Self {
             fd,
@@ -124,7 +124,8 @@ impl Future for PositionedWriteBytes<'_> {
         ));
     }
 }
-/// `pwrite` io operation.
+
+/// `pwrite` io operation with __fixed__ [`Buffer`].
 pub struct PositionedWriteFixed<'buf> {
     fd: RawFd,
     ptr: *const u8,
@@ -136,7 +137,7 @@ pub struct PositionedWriteFixed<'buf> {
 }
 
 impl<'buf> PositionedWriteFixed<'buf> {
-    /// Creates a new `pwrite` io operation.
+    /// Creates a new `pwrite` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16, offset: usize) -> Self {
         Self {
             fd,
