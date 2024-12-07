@@ -79,7 +79,7 @@ impl Future for ReadFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
+            local_worker().read_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ret as u32
@@ -206,8 +206,9 @@ impl Future for PositionedReadFixed<'_> {
 ///                 .write(true)
 ///                 .create(true);
 /// let mut file = File::open("example.txt", &options).await?;
-/// file.write_all(b"Hello world!").await?;
 /// let mut buffer = full_buffer();
+/// buffer.append(b"Hello world!");
+/// file.write_all(&buffer).await?;
 ///
 /// // Asynchronously read into buffer
 /// let bytes_read = file.read(&mut buffer).await?;
