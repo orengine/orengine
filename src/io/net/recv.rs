@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::Result;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -10,15 +11,16 @@ use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::{AsRawFd, RawFd};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::io::FixedBufferMut;
 
 /// `recv` io operation.
-pub struct Recv<'buf> {
+pub struct RecvBytes<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
 }
 
-impl<'buf> Recv<'buf> {
+impl<'buf> RecvBytes<'buf> {
     /// Creates a new `recv` io operation.
     pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
         Self {
@@ -29,7 +31,7 @@ impl<'buf> Recv<'buf> {
     }
 }
 
-impl Future for Recv<'_> {
+impl Future for RecvBytes<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -37,23 +39,66 @@ impl Future for Recv<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv(this.fd, this.buf.as_mut_ptr(), this.buf.len(), unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().recv(
+                this.fd,
+                this.buf.as_mut_ptr(),
+                this.buf.len() as u32,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+            ),
             ret
         ));
     }
 }
 
+/// `recv` io operation with __fixed__ [`Buffer`].
+pub struct RecvFixed<'buf> {
+    fd: RawFd,
+    ptr: *mut u8,
+    len: u32,
+    fixed_index: u16,
+    io_request_data: Option<IoRequestData>,
+    phantom_data: PhantomData<&'buf [u8]>,
+}
+
+impl<'buf> RecvFixed<'buf> {
+    /// Creates a new `recv` io operation with __fixed__ [`Buffer`].
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
+        Self {
+            fd,
+            ptr,
+            len,
+            fixed_index,
+            io_request_data: None,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+impl Future for RecvFixed<'_> {
+    type Output = Result<u32>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let ret;
+
+        poll_for_io_request!((
+            local_worker().recv_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
+                this.io_request_data.as_mut().unwrap_unchecked()
+            }),
+            ret as u32
+        ));
+    }
+}
+
 /// `recv` io operation with deadline.
-pub struct RecvWithDeadline<'buf> {
+pub struct RecvBytesWithDeadline<'buf> {
     fd: RawFd,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
 }
 
-impl<'buf> RecvWithDeadline<'buf> {
+impl<'buf> RecvBytesWithDeadline<'buf> {
     /// Creates a new `recv` io operation with deadline.
     pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
@@ -65,7 +110,7 @@ impl<'buf> RecvWithDeadline<'buf> {
     }
 }
 
-impl Future for RecvWithDeadline<'_> {
+impl Future for RecvBytesWithDeadline<'_> {
     type Output = Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -77,11 +122,59 @@ impl Future for RecvWithDeadline<'_> {
             worker.recv_with_deadline(
                 this.fd,
                 this.buf.as_mut_ptr(),
-                this.buf.len(),
+                this.buf.len() as u32,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
             ret
+        ));
+    }
+}
+
+/// `recv` io operation with deadline and __fixed__ [`Buffer`].
+pub struct RecvFixedWithDeadline<'buf> {
+    fd: RawFd,
+    ptr: *mut u8,
+    len: u32,
+    fixed_index: u16,
+    io_request_data: Option<IoRequestData>,
+    deadline: Instant,
+    phantom_data: PhantomData<&'buf [u8]>,
+}
+
+impl<'buf> RecvFixedWithDeadline<'buf> {
+    /// Creates a new `recv` io operation with deadline and __fixed__ [`Buffer`].
+    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
+        Self {
+            fd,
+            ptr,
+            len,
+            fixed_index,
+            io_request_data: None,
+            deadline,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+impl Future for RecvFixedWithDeadline<'_> {
+    type Output = Result<u32>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let worker = local_worker();
+        let ret;
+
+        poll_for_time_bounded_io_request!((
+            worker.recv_fixed_with_deadline(
+                this.fd,
+                this.ptr,
+                this.len,
+                this.fixed_index,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                &mut this.deadline
+            ),
+            ret as u32
         ));
     }
 }
@@ -92,200 +185,728 @@ impl Future for RecvWithDeadline<'_> {
 /// It offers options to recv with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawFd`
-/// and can be connected.
+/// This trait can be implemented for any socket that supports the `AsRawFd` and can be connected.
 ///
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
 /// use orengine::net::TcpStream;
-/// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
 /// stream.poll_recv().await?;
-/// let mut buf = full_buffer();
 ///
-/// // Recv at the incoming data with consuming it
-/// let bytes_peeked = stream.recv(&mut buf).await?;
+/// let mut buf = full_buffer();
+/// let bytes_received = stream.recv(&mut buf).await?; // Recv at the incoming data with consuming it
 /// # Ok(())
 /// # }
 /// ```
 pub trait AsyncRecv: AsRawFd {
-    /// Asynchronously receives into the incoming data with consuming it, filling the buffer with
-    /// available data. Returns the number of bytes received.
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// filling the buffer with available data. Returns the number of bytes received.
+    ///
+    /// # Difference between `recv` and `recv_bytes`
+    ///
+    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`] can be __fixed__.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
     /// stream.poll_recv().await?;
-    /// let mut buf = full_buffer();
-    /// let bytes_peeked = stream.recv(&mut buf).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_received = stream.recv_bytes(&mut vec).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
-        Recv::new(self.as_raw_fd(), buf).await
+    fn recv_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
+        RecvBytes::new(self.as_raw_fd(), buf)
     }
 
-    /// Asynchronously receives into the incoming data with a specified deadline.
-    /// Returns the number of bytes received.
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// filling the buffer with available data. Returns the number of bytes received.
     ///
-    /// If the deadline is exceeded, the method will return an error with
-    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    /// # Difference between `recv` and `recv_bytes`
+    ///
+    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`] can be __fixed__.
     ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_received = stream.recv(&mut buffer).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
+        if buf.is_fixed() {
+            RecvFixed::new(
+                self.as_raw_fd(),
+                buf.as_mut_ptr(),
+                buf.len_u32(),
+                buf.fixed_index(),
+            )
+            .await
+        } else {
+            RecvBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+                .await
+                .map(|r| r as u32)
+        }
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a specified deadline. Returns the number of bytes received.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_with_deadline` and `recv_bytes_with_deadline`
+    ///
+    /// Use [`recv_with_deadline`](Self::recv_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
-    /// stream.poll_recv_with_deadline(deadline).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// let bytes_peeked = stream.recv_with_deadline(&mut buf, deadline).await?;
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_received = stream.recv_bytes_with_deadline(&mut vec, deadline).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<usize> {
-        RecvWithDeadline::new(self.as_raw_fd(), buf, deadline).await
+    fn recv_bytes_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant,
+    ) -> impl Future<Output = Result<usize>> {
+        RecvBytesWithDeadline::new(self.as_raw_fd(), buf, deadline)
     }
 
-    /// Asynchronously receives into the incoming data with a specified timeout.
-    /// Returns the number of bytes received.
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a specified deadline. Returns the number of bytes received.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_with_deadline` and `recv_bytes_with_deadline`
+    ///
+    /// Use [`recv_with_deadline`](Self::recv_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
     ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use std::time::{Duration, Instant};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_received = stream.recv_with_deadline(&mut buffer, deadline).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv_with_deadline(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        deadline: Instant,
+    ) -> Result<u32> {
+        if buf.is_fixed() {
+            RecvFixedWithDeadline::new(
+                self.as_raw_fd(),
+                buf.as_mut_ptr(),
+                buf.len_u32(),
+                buf.fixed_index(),
+                deadline,
+            )
+            .await
+        } else {
+            RecvBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
+                .await
+                .map(|r| r as u32)
+        }
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a specified timeout. Returns the number of bytes received.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_with_timeout` and `recv_bytes_with_timeout`
+    ///
+    /// Use [`recv_with_timeout`](Self::recv_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let timeout = Duration::from_secs(5);
+    ///
     /// stream.poll_recv_with_timeout(timeout).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// let bytes_peeked = stream.recv_with_timeout(&mut buf, timeout).await?;
+    /// let mut vec = vec![0u8; 1024];
+    /// let bytes_received = stream.recv_bytes_with_timeout(&mut vec, timeout).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
-        self.recv_with_deadline(buf, Instant::now() + timeout).await
+    fn recv_bytes_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> impl Future<Output = Result<usize>> {
+        self.recv_bytes_with_deadline(buf, Instant::now() + timeout)
     }
 
-    /// Asynchronously receives into the incoming data until the buffer is completely filled with
-    /// exactly the requested number of bytes.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
-    /// stream.poll_recv().await?;
-    /// let mut buf = full_buffer();
-    ///
-    /// stream.recv_exact(&mut buf[..100]).await?; // Receive 100 bytes
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[inline(always)]
-    async fn recv_exact(&mut self, buf: &mut [u8]) -> Result<()> {
-        let mut received = 0;
-
-        while received < buf.len() {
-            received += self.recv(&mut buf[received..]).await?;
-        }
-        Ok(())
-    }
-
-    /// Asynchronously receives into the incoming data with a deadline
-    /// until the buffer is completely filled with the exact number of bytes.
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a specified timeout. Returns the number of bytes received.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
     ///
+    /// # Difference between `recv_with_timeout` and `recv_bytes_with_timeout`
+    ///
+    /// Use [`recv_with_timeout`](Self::recv_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// let bytes_received = stream.recv_with_timeout(&mut buffer, timeout).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv_with_timeout(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<u32>> {
+        self.recv_with_deadline(buf, Instant::now() + timeout)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// until the buffer is completely filled with exactly the requested number of bytes.
+    ///
+    /// # Difference between `recv_exact` and `recv_bytes_exact`
+    ///
+    /// Use [`recv_exact`](Self::recv_exact) if it is possible,
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.recv_bytes_exact(&mut vec[..100]).await?; // Recv exactly 100 bytes or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        let mut received = 0;
+
+        while received < buf.len() {
+            received += self.recv_bytes(&mut buf[received..]).await?;
+        }
+        Ok(())
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// until the buffer is completely filled with exactly the requested number of bytes.
+    ///
+    /// # Difference between `recv_exact` and `recv_bytes_exact`
+    ///
+    /// Use [`recv_exact`](Self::recv_exact) if it is possible,
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    ///
+    /// # async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    ///
+    /// stream.poll_recv().await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// stream.recv_exact(&mut buffer.slice_mut(..100)).await?; // Recv exactly 100 bytes or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
+        if buf.is_fixed() {
+            let mut received = 0;
+
+            while received < buf.len_u32() {
+                received += RecvFixed::new(
+                    self.as_raw_fd(),
+                    unsafe { buf.as_mut_ptr().offset(received as isize) },
+                    buf.len_u32() - received,
+                    buf.fixed_index(),
+                )
+                .await?;
+            }
+        } else {
+            let mut received = 0;
+            let slice = buf.as_bytes_mut();
+
+            while received < slice.len() {
+                received += self.recv_bytes(&mut slice[received..]).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a deadline until the buffer is completely filled with the exact number of bytes.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_exact_with_deadline` and `recv_bytes_exact_with_deadline`
+    ///
+    /// Use [`recv_exact_with_deadline`](Self::recv_exact_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
-    /// stream.poll_recv_with_deadline(deadline).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// stream.recv_exact_with_deadline(&mut buf[..100], deadline).await?; // Receive 100 bytes
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.recv_bytes_exact_with_deadline(&mut vec[..100], deadline).await?; // Recv exactly 100 bytes
+    /// // or return an error
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_exact_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<()> {
+    async fn recv_bytes_exact_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant,
+    ) -> Result<()> {
         let mut received = 0;
 
         while received < buf.len() {
             received += self
-                .recv_with_deadline(&mut buf[received..], deadline)
+                .recv_bytes_with_deadline(&mut buf[received..], deadline)
                 .await?;
         }
         Ok(())
     }
 
-    /// Asynchronously receives into the incoming data with a timeout until the buffer is completely
-    /// filled with the exact number of bytes.
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a deadline until the buffer is completely filled with the exact number of bytes.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_exact_with_deadline` and `recv_bytes_exact_with_deadline`
+    ///
+    /// Use [`recv_exact_with_deadline`](Self::recv_exact_with_deadline) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
     ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use std::time::{Instant, Duration};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_deadline(deadline).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.recv_exact_with_deadline(&mut vec[..100], deadline).await?; // Recv exactly 100 bytes
+    /// // or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn recv_exact_with_deadline(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        deadline: Instant,
+    ) -> Result<()> {
+        if buf.is_fixed() {
+            let mut received = 0;
+
+            while received < buf.len_u32() {
+                received += RecvFixedWithDeadline::new(
+                    self.as_raw_fd(),
+                    unsafe { buf.as_mut_ptr().offset(received as isize) },
+                    buf.len_u32() - received,
+                    buf.fixed_index(),
+                    deadline,
+                )
+                .await?;
+            }
+        } else {
+            let mut received = 0;
+            let slice = buf.as_bytes_mut();
+
+            while received < slice.len() {
+                received += self
+                    .recv_bytes_with_deadline(&mut slice[received..], deadline)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a timeout until the buffer is completely filled with the exact number of bytes.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_exact_with_timeout` and `recv_bytes_exact_with_timeout`
+    ///
+    /// Use [`recv_exact_with_timeout`](Self::recv_exact_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     /// let timeout = Duration::from_secs(5);
-    /// stream.poll_recv_with_timeout(timeout).await?;
-    /// let mut buf = full_buffer();
     ///
-    /// stream.recv_exact_with_timeout(&mut buf[..100], timeout).await?; // Receive 100 bytes
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut vec = vec![0u8; 1024];
+    /// stream.recv_bytes_exact_with_timeout(&mut vec[..100], timeout).await?; // Recv exactly 100 bytes
+    /// // or return an error
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
+    fn recv_bytes_exact_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> impl Future<Output = Result<()>> {
+        self.recv_bytes_exact_with_deadline(buf, Instant::now() + timeout)
+    }
+
+    /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
+    /// with a timeout until the buffer is completely filled with the exact number of bytes.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_exact_with_timeout` and `recv_bytes_exact_with_timeout`
+    ///
+    /// Use [`recv_exact_with_timeout`](Self::recv_exact_with_timeout) if it is possible,
+    /// because [`Buffer`] can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::net::TcpStream;
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    ///
+    /// stream.poll_recv_with_timeout(timeout).await?;
+    ///
+    /// let mut buffer = full_buffer();
+    /// stream.recv_exact_with_timeout(&mut buffer.slice_mut(..100), timeout).await?; // Recv exactly 100 bytes
+    /// // or return an error
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    fn recv_exact_with_timeout(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<()>> {
         self.recv_exact_with_deadline(buf, Instant::now() + timeout)
-            .await
     }
 }
+
+// TODO r
+// /// The `AsyncRecv` trait provides asynchronous methods for receiving at the incoming data
+// /// with consuming it.
+// ///
+// /// It offers options to recv with deadlines, timeouts, and to ensure
+// /// reading an exact number of bytes.
+// ///
+// /// This trait can be implemented for any socket that supports the `AsRawFd`
+// /// and can be connected.
+// ///
+// /// # Example
+// ///
+// /// ```rust
+// /// use orengine::buf::full_buffer;
+// /// use orengine::net::TcpStream;
+// /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+// ///
+// /// # async fn foo() -> std::io::Result<()> {
+// /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+// /// stream.poll_recv().await?;
+// /// let mut buf = full_buffer();
+// ///
+// /// // Recv at the incoming data with consuming it
+// /// let bytes_received = stream.recv(&mut buf).await?;
+// /// # Ok(())
+// /// # }
+// /// ```
+// pub trait AsyncRecv: AsRawFd {
+//     /// Asynchronously receives into the incoming data with consuming it, filling the buffer with
+//     /// available data. Returns the number of bytes received.
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::buf::full_buffer;
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     ///
+//     /// # async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// stream.poll_recv().await?;
+//     /// let mut buf = full_buffer();
+//     /// let bytes_received = stream.recv(&mut buf).await?;
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
+//         RecvBytes::new(self.as_raw_fd(), buf).await
+//     }
+//
+//     /// Asynchronously receives into the incoming data with a specified deadline.
+//     /// Returns the number of bytes received.
+//     ///
+//     /// If the deadline is exceeded, the method will return an error with
+//     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::buf::full_buffer;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     /// use std::time::{Duration, Instant};
+//     ///
+//     /// async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// let deadline = Instant::now() + Duration::from_secs(5);
+//     /// stream.poll_recv_with_deadline(deadline).await?;
+//     /// let mut buf = full_buffer();
+//     ///
+//     /// let bytes_received = stream.recv_with_deadline(&mut buf, deadline).await?;
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<usize> {
+//         RecvBytesWithDeadline::new(self.as_raw_fd(), buf, deadline).await
+//     }
+//
+//     /// Asynchronously receives into the incoming data with a specified timeout.
+//     /// Returns the number of bytes received.
+//     ///
+//     /// If the deadline is exceeded, the method will return an error with
+//     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::buf::full_buffer;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     /// use std::time::Duration;
+//     ///
+//     /// async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// let timeout = Duration::from_secs(5);
+//     /// stream.poll_recv_with_timeout(timeout).await?;
+//     /// let mut buf = full_buffer();
+//     ///
+//     /// let bytes_received = stream.recv_with_timeout(&mut buf, timeout).await?;
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
+//         self.recv_with_deadline(buf, Instant::now() + timeout).await
+//     }
+//
+//     /// Asynchronously receives into the incoming data until the buffer is completely filled with
+//     /// exactly the requested number of bytes.
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::buf::full_buffer;
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     ///
+//     /// # async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// stream.poll_recv().await?;
+//     /// let mut buf = full_buffer();
+//     ///
+//     /// stream.recv_exact(&mut buf[..100]).await?; // Receive 100 bytes
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+//         let mut received = 0;
+//
+//         while received < buf.len() {
+//             received += self.recv(&mut buf[received..]).await?;
+//         }
+//         Ok(())
+//     }
+//
+//     /// Asynchronously receives into the incoming data with a deadline
+//     /// until the buffer is completely filled with the exact number of bytes.
+//     ///
+//     /// If the deadline is exceeded, the method will return an error with
+//     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     /// use orengine::buf::full_buffer;
+//     /// use std::time::{Instant, Duration};
+//     ///
+//     /// async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// let deadline = Instant::now() + Duration::from_secs(5);
+//     /// stream.poll_recv_with_deadline(deadline).await?;
+//     /// let mut buf = full_buffer();
+//     ///
+//     /// stream.recv_exact_with_deadline(&mut buf[..100], deadline).await?; // Receive 100 bytes
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv_exact_with_deadline(&mut self, buf: &mut [u8], deadline: Instant) -> Result<()> {
+//         let mut received = 0;
+//
+//         while received < buf.len() {
+//             received += self
+//                 .recv_with_deadline(&mut buf[received..], deadline)
+//                 .await?;
+//         }
+//         Ok(())
+//     }
+//
+//     /// Asynchronously receives into the incoming data with a timeout until the buffer is completely
+//     /// filled with the exact number of bytes.
+//     ///
+//     /// If the deadline is exceeded, the method will return an error with
+//     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+//     ///
+//     /// # Example
+//     ///
+//     /// ```rust
+//     /// use orengine::net::TcpStream;
+//     /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+//     /// use orengine::buf::full_buffer;
+//     /// use std::time::Duration;
+//     ///
+//     /// async fn foo() -> std::io::Result<()> {
+//     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
+//     /// let timeout = Duration::from_secs(5);
+//     /// stream.poll_recv_with_timeout(timeout).await?;
+//     /// let mut buf = full_buffer();
+//     ///
+//     /// stream.recv_exact_with_timeout(&mut buf[..100], timeout).await?; // Receive 100 bytes
+//     /// # Ok(())
+//     /// # }
+//     /// ```
+//     #[inline(always)]
+//     async fn recv_exact_with_timeout(&mut self, buf: &mut [u8], timeout: Duration) -> Result<()> {
+//         self.recv_exact_with_deadline(buf, Instant::now() + timeout)
+//             .await
+//     }
+// }
