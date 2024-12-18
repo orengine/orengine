@@ -36,7 +36,7 @@ impl Future for ReadBytes<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv(
+            local_worker().read(
                 this.fd,
                 this.buf.as_mut_ptr(),
                 this.buf.len() as u32,
@@ -54,10 +54,10 @@ pub struct ReadFixed<'buf> {
     len: u32,
     fixed_index: u16,
     io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<&'buf ()>,
+    phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> ReadFixed<'buf> {
+impl ReadFixed<'_> {
     /// Creates a new `read` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
@@ -145,10 +145,10 @@ pub struct PositionedReadFixed<'buf> {
     fixed_index: u16,
     offset: usize,
     io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<&'buf ()>,
+    phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> PositionedReadFixed<'buf> {
+impl PositionedReadFixed<'_> {
     /// Creates a new `pread` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, offset: usize) -> Self {
         Self {

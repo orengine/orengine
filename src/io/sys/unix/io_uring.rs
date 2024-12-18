@@ -400,7 +400,7 @@ impl IoWorker for IOUringWorker {
         //     self.register_entry(
         //         opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
         //         request_ptr,
-        //     );
+        //     ); // TODO read https://github.com/tokio-rs/io-uring/blob/master/io-uring-test/src/tests/net.rs
         //     return;
         // }
 
@@ -426,16 +426,18 @@ impl IoWorker for IOUringWorker {
         fd: RawFd,
         ptr: *mut u8,
         len: u32,
-        buf_index: u16,
+        _buf_index: u16,
         request_ptr: *mut IoRequestData,
     ) {
-        // TODO test it (create test with fixed buffers and without them)
-        self.register_entry(
-            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
-                .rw_flags(libc::MSG_PEEK)
-                .build(),
-            request_ptr,
-        );
+        // TODO peek fixed
+        // self.register_entry(
+        //     opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+        //         .rw_flags(libc::MSG_PEEK)
+        //         .build(),
+        //     request_ptr,
+        // );
+
+        self.peek(fd, ptr, len, request_ptr);
     }
 
     #[inline(always)]

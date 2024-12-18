@@ -428,7 +428,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn recv_with_timeout(
+    fn recv_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,

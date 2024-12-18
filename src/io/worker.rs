@@ -40,18 +40,10 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
 pub(crate) fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
     {
-        if crate::local_executor()
-            .config()
-            .io_worker_config()
-            .is_none()
-        {
-            panic!(
-                "An attempt to call io-operation has failed, \
-             because an Executor has no io-worker. Look at the config of the Executor."
-            );
-        }
-
-        get_local_worker_ref().as_mut().expect(BUG_MESSAGE)
+        get_local_worker_ref().as_mut().expect(
+            "An attempt to call io-operation has failed, \
+             because an Executor has no io-worker. Look at the config of the Executor.",
+        )
     }
 
     #[cfg(not(debug_assertions))]

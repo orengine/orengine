@@ -1,7 +1,7 @@
+use crate::io::{Buffer, FixedBuffer, FixedBufferMut};
 use crate::utils::Sealed;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
-use crate::io::{Buffer, FixedBufferMut, FixedBuffer};
 
 macro_rules! impl_shared_slice {
     ($($ty:ty),*) => {
@@ -43,13 +43,13 @@ macro_rules! impl_shared_slice {
                     self.buf.is_fixed()
                 }
             }
-        
+
         impl<'buf> Deref for $ty {
                 type Target = [u8];
 
                 #[inline(always)]
                 fn deref(&self) -> &Self::Target {
-                    unsafe { &mut *ptr::slice_from_raw_parts(self.as_ptr(), self.len_u32() as usize) }
+                    unsafe { &*ptr::slice_from_raw_parts(self.as_ptr(), self.len_u32() as usize) }
                 }
             }
         )*
@@ -139,7 +139,7 @@ mod tests {
         let slice = buf.slice(..);
         assert_eq!(slice.start(), 0);
         assert_eq!(slice.end(), 5);
-        assert_eq!(slice.as_ref(), &[1, 2, 3, 4, 5]);
+        assert_eq!(slice.as_ref(), &[10, 2, 3, 40, 5]);
 
         let mut slice = buf.slice_mut(..);
         slice[2] = 30;

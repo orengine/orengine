@@ -7,8 +7,21 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Bound, Deref, DerefMut, Index, IndexMut, RangeBounds};
-use std::ptr;
 use std::slice::SliceIndex;
+use std::{fmt, mem, ptr};
+
+#[derive(Debug)]
+/// `LenIsGreaterThanCapacity` is a custom error type that is returned by [`Buffer::set_len`]
+/// if the provided len is greater than the buffer capacity.
+pub struct LenIsGreaterThanCapacity;
+
+impl fmt::Display for LenIsGreaterThanCapacity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Provided len is greater than buffer capacity.")
+    }
+}
+
+impl std::error::Error for LenIsGreaterThanCapacity {}
 
 /// Buffer for data transfer. Buffer is allocated in heap.
 ///
@@ -113,13 +126,13 @@ impl Buffer {
 
     /// Sets [`len`](#field.len). Returns `Err<()>` if `len` is greater than `capacity`.
     #[inline(always)]
-    pub fn set_len(&mut self, len: u32) -> Result<(), ()> {
+    pub fn set_len(&mut self, len: u32) -> Result<(), LenIsGreaterThanCapacity> {
         if len <= self.capacity() {
             unsafe { self.set_len_unchecked(len) };
 
             Ok(())
         } else {
-            Err(())
+            Err(LenIsGreaterThanCapacity)
         }
     }
 
@@ -172,13 +185,18 @@ impl Buffer {
     /// # Example
     ///
     /// ```rust
+    /// use orengine::Executor;
     /// use orengine::io::{buffer, Buffer};
     ///
-    /// let mut buf = buffer();
-    /// buf.append(&[1, 2, 3]);
-    /// buf.resize(20000); // Buffer is resized to 20000, contents are preserved
-    /// assert_eq!(buf.capacity(), 20000);
-    /// assert_eq!(buf.as_ref(), &[1, 2, 3]);
+    /// Executor::init().run_and_block_on_local(async {
+    ///     let mut buf = buffer();
+    ///
+    ///     buf.append(&[1, 2, 3]);
+    ///     buf.resize(20000); // Buffer is resized to 20000, contents are preserved
+    ///
+    ///     assert_eq!(buf.capacity(), 20000);
+    ///     assert_eq!(buf.as_ref(), &[1, 2, 3]);
+    /// }).unwrap();
     /// ```
     #[inline(always)]
     pub fn resize(&mut self, new_size: u32) {
@@ -297,6 +315,8 @@ impl Buffer {
                 LinuxBuffer::NonFixed(buf) => drop(buf),
             };
         }
+
+        mem::forget(self);
     }
 }
 
@@ -481,17 +501,20 @@ impl Drop for Buffer {
 }
 
 /// ```rust
-/// use orengine::{Executor, Local};
+/// use orengine::{yield_now, Executor, Local};
 /// use orengine::io::{full_buffer, AsyncWrite};
 /// use orengine::fs::{File, OpenOptions};
 ///
 /// fn check_send<T: Send>(value: T) -> T { value }
 ///
 /// Executor::init().run_with_shared_future(async {
+///     let mut file = File::open("foo.txt", &OpenOptions::new().write(true)).await.unwrap();
 ///     let mut buf = full_buffer();
 ///     buf.append(b"hello");
-///     let mut file = File::open("foo.txt", &OpenOptions::new().write(true)).await.unwrap();
-///     file.write(buf);
+///     file.write(&buf).await.unwrap();
+///     drop(buf);
+///
+///     yield_now().await;
 /// });
 /// ```
 ///
@@ -513,4 +536,4 @@ impl Drop for Buffer {
 /// check_send(value.borrow_mut());
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
-fn test_compile_local() {}
+fn test_compile_buffer() {}

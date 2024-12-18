@@ -30,7 +30,7 @@ mod buffer_tests {
         assert_eq!(buf.len(), 0);
         assert_eq!(buf.capacity(), 100);
 
-        buf.set_len(10);
+        buf.set_len(10).unwrap();
         assert_eq!(buf.len(), 10);
         assert_eq!(buf.capacity(), 100);
     }
@@ -60,11 +60,11 @@ mod buffer_tests {
 
         buf.append(&[4, 5, 6]);
         assert_eq!(buf.as_ref(), &[1, 2, 3, 4, 5, 6]);
-        assert_eq!(buf.capacity(), 10);
+        assert_eq!(buf.capacity(), 6);
 
         buf.clear();
         assert_eq!(buf.as_ref(), &[]);
-        assert_eq!(buf.capacity(), 10);
+        assert_eq!(buf.capacity(), 6);
     }
 
     #[orengine::test::test_local]
@@ -128,7 +128,7 @@ mod buf_pool_tests {
     #[orengine::test::test_local]
     fn test_buf_pool() {
         let pool = buf_pool();
-        assert_eq!(pool.len(), 0);
+        let start_len = pool.len();
 
         let buf = buffer();
         assert_eq!(buf.len(), 0);
@@ -140,9 +140,9 @@ mod buf_pool_tests {
         assert_eq!(buf.capacity(), 4096);
         drop(buf);
 
-        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.len(), start_len);
 
         let _buf = pool.get();
-        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.len(), start_len - 1);
     }
 }

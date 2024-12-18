@@ -148,7 +148,6 @@ pub struct Executor {
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
     current_call: Call,
-    // We can't use BTreeMap, because it consumes and not insert value, if key already exists
     local_sleeping_tasks: BTreeMap<Instant, Task>,
 }
 
@@ -329,11 +328,6 @@ impl Executor {
     /// Returns a reference to the shared tasks list of the executor.
     pub(crate) fn shared_task_list(&self) -> Option<&Arc<ExecutorSharedTaskList>> {
         self.shared_tasks_list.as_ref()
-    }
-
-    /// Sets the buffer capacity of the executor.
-    pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
-        self.config.buffer_cap = buffer_len;
     }
 
     /// Returns the number of spawned tasks (shared and local).

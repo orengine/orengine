@@ -35,8 +35,7 @@ use crate::runtime::local_executor;
 ///
 /// ```rust
 /// use orengine::net::UdpSocket;
-/// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
-/// use orengine::buf::full_buffer;
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
 ///
 /// # async fn foo() {
 /// let mut socket = UdpSocket::bind("127.0.0.1:8081").await.unwrap();
@@ -56,8 +55,7 @@ use crate::runtime::local_executor;
 /// ## Usage with [`connect`](AsyncConnectDatagram)
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
-/// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
 ///
 /// # async fn foo() {
@@ -316,13 +314,13 @@ mod tests {
 
         for _ in 0..TIMES {
             socket
-                .send_with_timeout(REQUEST, Duration::from_secs(10))
+                .send_bytes_with_timeout(REQUEST, Duration::from_secs(10))
                 .await
                 .expect("send failed");
 
             let mut buf = vec![0u8; RESPONSE.len()];
             socket
-                .recv_with_timeout(&mut buf, Duration::from_secs(10))
+                .recv_bytes_with_timeout(&mut buf, Duration::from_secs(10))
                 .await
                 .expect("recv failed");
         }

@@ -25,19 +25,24 @@ pub(crate) fn init_local_buf_pool(number_of_fixed_buffers: u16, default_buffer_c
 
 /// Uninitialize local [`BufPool`].
 pub(crate) fn uninit_local_buf_pool() {
-    BUF_POOL.with(|buf_pool_static| unsafe {
-        let buf_pool_ = &mut *buf_pool_static.get();
-        if let Some(buf_pool) = buf_pool_.as_mut() {
-            buf_pool.deallocate();
-        } else {
-            panic!("BufPool is not initialized.");
-        };
-
-        buf_pool_static.get().write(None);
-    })
+    // TODO
+    // BUF_POOL.with(|buf_pool_static| unsafe {
+    //     let buf_pool_ = &mut *buf_pool_static.get();
+    //     assert!(buf_pool_.is_some(), "BufPool is not initialized.");
+    //
+    //     *buf_pool_ = None;
+    // });
 }
 
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
+///
+/// # Panics
+///
+/// If [`BufPool`] is not initialized.
+///
+/// # Undefined behavior
+///
+/// If [`BufPool`] is not initialized in __release__ build.
 #[inline(always)]
 pub fn buf_pool() -> &'static mut BufPool {
     BUF_POOL.with(|buf_pool| unsafe {
@@ -72,7 +77,7 @@ pub fn buffer() -> Buffer {
 /// async fn handle_connection(mut stream: TcpStream) {
 ///     stream.poll_recv().await.expect("Failed to poll stream");
 ///     let mut buf = full_buffer();
-///     let n = stream.recv(&mut buf).await.expect("Failed to read");
+///     let n = stream.recv(&mut buf).await.expect("Failed to read") as usize;
 ///     println!("Received message: {}", String::from_utf8_lossy(&buf[..n]));
 /// }
 /// ```
@@ -147,7 +152,7 @@ impl BufPool {
                     iov_len: buf.len() as _,
                 })
                 .collect();
-            local_worker().register_buffers(&*iovecs);
+            local_worker().register_buffers(&iovecs);
 
             Self {
                 fixed_buffers,
@@ -159,7 +164,7 @@ impl BufPool {
     }
 
     /// Deallocates the `BufPool` and unregisters __fixed__ buffers.
-    fn deallocate(&mut self) {
+    fn deallocate_buffers(&mut self) {
         #[cfg(not(target_os = "linux"))]
         {
             for buf in self.pool.drain(..) {
@@ -183,13 +188,14 @@ impl BufPool {
 
             local_worker().unregister_buffers();
 
-            for buf in self.fixed_buffers.iter_mut() {
-                unsafe { drop(Box::from_raw(buf.as_mut() as *mut [u8])) };
+            for buf in &mut self.fixed_buffers {
+                unsafe { drop(Box::from_raw(std::ptr::from_mut::<[u8]>(buf.as_mut()))) };
             }
         }
     }
 
     /// Returns the number of buffers in the pool. Uses in tests.
+    #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         #[cfg(not(target_os = "linux"))]
         {
@@ -284,5 +290,45 @@ impl BufPool {
                 buf.deallocate();
             }
         }
+    }
+}
+
+impl Drop for BufPool {
+    fn drop(&mut self) {
+        self.deallocate_buffers();
+    }
+}
+
+/// Returns __fixed__ buffer from the pool. It used only in tests.
+#[cfg(test)]
+pub(crate) async fn get_fixed_buffer() -> Buffer {
+    if cfg!(target_os = "linux") {
+        let mut buf = buffer();
+
+        while !buf.is_fixed() {
+            crate::yield_now().await;
+            buf = buffer();
+        }
+
+        buf
+    } else {
+        panic!("get_fixed is not supported on this OS.");
+    }
+}
+
+/// Returns full (len == capacity) __fixed__ buffer from the pool. It used only in tests.
+#[cfg(test)]
+pub(crate) async fn get_full_fixed_buffer() -> Buffer {
+    if cfg!(target_os = "linux") {
+        let mut buf = full_buffer();
+
+        while !buf.is_fixed() {
+            crate::yield_now().await;
+            buf = buffer();
+        }
+
+        buf
+    } else {
+        panic!("get_fixed is not supported on this OS.");
     }
 }

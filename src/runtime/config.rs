@@ -37,7 +37,7 @@ pub const DEFAULT_BUF_CAP: u32 = 4096;
 /// Config that can be used to create an Executor, because it is valid.
 #[derive(Clone)]
 pub(crate) struct ValidConfig {
-    pub(crate) buffer_cap: usize,
+    pub(crate) buffer_cap: u32,
     pub(crate) io_worker_config: Option<IoWorkerConfig>,
     pub(crate) number_of_thread_workers: usize,
     /// If it is `usize::MAX`, it means that work sharing is disabled.
@@ -159,7 +159,7 @@ impl Config {
 
     /// Sets the capacity of the [`buffers`](crate::buf::Buffer).
     #[must_use]
-    pub const fn set_buffer_cap(mut self, buf_cap: usize) -> Self {
+    pub const fn set_buffer_cap(mut self, buf_cap: u32) -> Self {
         self.buffer_cap = buf_cap;
 
         self

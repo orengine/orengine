@@ -427,7 +427,7 @@ pub trait AsyncPeek: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_with_timeout(
+    fn peek_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,

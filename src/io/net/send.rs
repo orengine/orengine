@@ -82,7 +82,7 @@ impl Future for SendFixed<'_> {
             local_worker().send_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
-            ret
+            ret as u32
         ));
     }
 }

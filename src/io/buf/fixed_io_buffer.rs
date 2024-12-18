@@ -1,6 +1,10 @@
 use crate::utils::Sealed;
 
 /// Represents an immutable __fixed__ I/O buffer.
+#[allow(
+    private_bounds,
+    reason = "It is forbidden for users to implement this trait"
+)]
 pub trait FixedBuffer: Sealed {
     /// Returns a pointer to the buffer data.
     fn as_ptr(&self) -> *const u8;

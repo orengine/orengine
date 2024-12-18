@@ -20,8 +20,7 @@ use crate::runtime::local_executor;
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
-/// use orengine::io::{AsyncAccept, AsyncBind};
+/// use orengine::io::{full_buffer, AsyncAccept, AsyncBind};
 /// use orengine::local_executor;
 /// use orengine::net::{Stream, TcpListener};
 ///
@@ -33,8 +32,11 @@ use crate::runtime::local_executor;
 ///         if n == 0 {
 ///             break;
 ///         }
+///         
+///         buf.clear();
+///         buf.append(b"pong");
 ///
-///         stream.send_all(b"pong").await.expect("send_all was failed");
+///         stream.send_all(&buf).await.expect("send_all was failed");
 ///     }
 /// }
 ///
@@ -164,7 +166,8 @@ impl Drop for TcpStream {
 mod tests {
     use crate as orengine;
     use crate::io::{
-        AsyncAccept, AsyncBind, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend,
+        buffer, get_fixed_buffer, AsyncAccept, AsyncBind, AsyncConnectStream, AsyncPeek,
+        AsyncPollFd, AsyncRecv, AsyncSend, FixedBuffer,
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
@@ -228,11 +231,14 @@ mod tests {
         let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
 
         for _ in 0..TIMES {
-            stream.send_all(REQUEST).await.expect("send failed");
+            stream.send_all_bytes(REQUEST).await.expect("send failed");
 
             stream.poll_recv().await.expect("poll failed");
             let mut buf = vec![0u8; RESPONSE.len()];
-            stream.recv_exact(&mut buf).await.expect("recv failed");
+            stream
+                .recv_bytes_exact(&mut buf)
+                .await
+                .expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
 
@@ -285,17 +291,25 @@ mod tests {
 
         for _ in 0..TIMES {
             stream.poll_recv().await.expect("poll failed");
-            let mut buf = vec![0u8; REQUEST.len()];
+            let mut buf = buffer();
+            buf.set_len(u32::try_from(REQUEST.len()).unwrap()).unwrap();
             stream.recv_exact(&mut buf).await.expect("recv failed");
-            assert_eq!(REQUEST, buf);
+            assert_eq!(REQUEST, buf.as_bytes());
 
-            stream.send_all(RESPONSE).await.expect("send failed");
+            buf.clear();
+            buf.append(RESPONSE);
+
+            stream.send_all(&buf).await.expect("send failed");
         }
     }
 
     #[orengine::test::test_local]
     fn test_tcp_stream() {
         const ADDR: &str = "127.0.0.1:6082";
+
+        let mut buffered_request = get_fixed_buffer().await;
+        buffered_request.append(REQUEST);
+        assert_eq!(REQUEST, buffered_request.as_bytes());
 
         let wg = Rc::new(LocalWaitGroup::new());
         wg.inc();
@@ -312,15 +326,24 @@ mod tests {
                 stream.poll_recv().await.expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
 
-                stream.peek_exact(&mut buf).await.expect("peek failed");
+                stream
+                    .peek_bytes_exact(&mut buf)
+                    .await
+                    .expect("peek failed");
                 assert_eq!(REQUEST, buf);
-                stream.peek_exact(&mut buf).await.expect("peek failed");
+                stream
+                    .peek_bytes_exact(&mut buf)
+                    .await
+                    .expect("peek failed");
                 assert_eq!(REQUEST, buf);
 
-                stream.recv_exact(&mut buf).await.expect("recv failed");
+                stream
+                    .recv_bytes_exact(&mut buf)
+                    .await
+                    .expect("recv failed");
                 assert_eq!(REQUEST, buf);
 
-                stream.send_all(RESPONSE).await.expect("send failed");
+                stream.send_all_bytes(RESPONSE).await.expect("send failed");
             }
         });
 
@@ -347,9 +370,11 @@ mod tests {
         );
 
         for _ in 0..TIMES {
+            buffered_request.clear();
+            buffered_request.append(REQUEST);
             stream.poll_send().await.expect("poll failed");
             stream
-                .send_all_with_timeout(REQUEST, Duration::from_secs(2))
+                .send_all_with_timeout(&buffered_request, Duration::from_secs(2))
                 .await
                 .expect("send with timeout failed");
 
@@ -357,20 +382,26 @@ mod tests {
                 .poll_recv_with_timeout(Duration::from_secs(2))
                 .await
                 .expect("poll with timeout failed");
-            let mut buf = vec![0u8; RESPONSE.len()];
+            buffered_request
+                .set_len(u32::try_from(RESPONSE.len()).unwrap())
+                .unwrap();
             stream
-                .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                .peek_exact_with_timeout(&mut buffered_request, Duration::from_secs(2))
                 .await
                 .expect("peek with timeout failed");
+            assert_eq!(RESPONSE, buffered_request.as_bytes());
+
             stream
-                .peek_with_timeout(&mut buf, Duration::from_secs(2))
+                .peek_exact_with_timeout(&mut buffered_request, Duration::from_secs(2))
                 .await
                 .expect("peek with timeout failed");
+            assert_eq!(RESPONSE, buffered_request.as_bytes());
+
             stream
-                .recv_with_timeout(&mut buf, Duration::from_secs(2))
+                .recv_with_timeout(&mut buffered_request, Duration::from_secs(2))
                 .await
                 .expect("recv with timeout failed");
-            assert_eq!(RESPONSE, buf);
+            assert_eq!(RESPONSE, buffered_request.as_bytes());
         }
     }
 
@@ -450,7 +481,10 @@ mod tests {
                     let buf = vec![0u8; 1 << 24]; // 16 MB.
                                                   // It is impossible to send 16 MB in 1 microsecond (16 TB/s).
                     let res = stream
-                        .send_all_with_deadline(&buf, Instant::now() + Duration::from_micros(1))
+                        .send_all_bytes_with_deadline(
+                            &buf,
+                            Instant::now() + Duration::from_micros(1),
+                        )
                         .await;
                     match res {
                         Ok(()) => panic!("send with timeout should failed"),
@@ -482,7 +516,7 @@ mod tests {
                         .expect("connect with timeout failed");
 
                     let mut buf = vec![0u8; REQUEST.len()];
-                    let res = stream.recv_with_timeout(&mut buf, TIMEOUT).await;
+                    let res = stream.recv_bytes_with_timeout(&mut buf, TIMEOUT).await;
                     match res {
                         Ok(_) => panic!("recv with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
@@ -498,7 +532,7 @@ mod tests {
                         .expect("connect with timeout failed");
 
                     let mut buf = vec![0u8; REQUEST.len()];
-                    let res = stream.peek_with_timeout(&mut buf, TIMEOUT).await;
+                    let res = stream.peek_bytes_with_timeout(&mut buf, TIMEOUT).await;
                     match res {
                         Ok(_) => panic!("peek with timeout should failed"),
                         Err(err) if err.kind() != io::ErrorKind::TimedOut => {
