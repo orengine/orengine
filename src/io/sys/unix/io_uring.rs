@@ -395,15 +395,6 @@ impl IoWorker for IOUringWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     ) {
-        // TODO https://github.com/tokio-rs/io-uring/issues/308
-        // if self.is_supported(opcode::SendMsgZc::CODE) {
-        //     self.register_entry(
-        //         opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
-        //         request_ptr,
-        //     ); // TODO read https://github.com/tokio-rs/io-uring/blob/master/io-uring-test/src/tests/net.rs
-        //     return;
-        // }
-
         self.register_entry(
             opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
             request_ptr,

@@ -25,13 +25,12 @@ pub(crate) fn init_local_buf_pool(number_of_fixed_buffers: u16, default_buffer_c
 
 /// Uninitialize local [`BufPool`].
 pub(crate) fn uninit_local_buf_pool() {
-    // TODO
-    // BUF_POOL.with(|buf_pool_static| unsafe {
-    //     let buf_pool_ = &mut *buf_pool_static.get();
-    //     assert!(buf_pool_.is_some(), "BufPool is not initialized.");
-    //
-    //     *buf_pool_ = None;
-    // });
+    BUF_POOL.with(|buf_pool_static| unsafe {
+        let buf_pool_ = &mut *buf_pool_static.get();
+        assert!(buf_pool_.is_some(), "BufPool is not initialized.");
+
+        *buf_pool_ = None;
+    });
 }
 
 /// Get [`BufPool`] from thread local. Therefore, it is lockless.
