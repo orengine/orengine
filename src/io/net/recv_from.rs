@@ -118,8 +118,7 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
-/// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd, AsyncRecvFrom};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd, AsyncRecvFrom};
 /// use orengine::net::UdpSocket;
 ///
 /// async fn foo() -> std::io::Result<()> {
@@ -139,8 +138,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -176,8 +174,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;
     /// use std::time::{Duration, Instant};
     ///
@@ -220,8 +217,7 @@ pub trait AsyncRecvFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPollFd, AsyncRecvFrom};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollFd, AsyncRecvFrom};
     /// use orengine::net::UdpSocket;
     /// use std::time::Duration;
     ///

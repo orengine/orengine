@@ -14,6 +14,7 @@ use std::task::{Context, Poll};
 
 use crossbeam::utils::{Backoff, CachePadded};
 
+use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
@@ -110,7 +111,9 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
             }
 
             this.was_called = true;
-            unsafe { local_executor().push_current_task_to(&this.mutex.wait_queue) };
+            unsafe {
+                local_executor().invoke_call(Call::PushCurrentTaskTo(&this.mutex.wait_queue))
+            };
 
             Poll::Pending
         } else {

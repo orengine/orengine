@@ -69,7 +69,7 @@ use crate::runtime::local_executor;
 ///        break;
 ///    }
 ///
-///    connected_socket.send(&buf[..n]).await.expect("send_to failed");
+///    connected_socket.send(&buf.slice(..n)).await.expect("send_to failed");
 /// }
 /// # }
 /// ```

@@ -1,4 +1,5 @@
 use crate::panic_if_local_in_future;
+use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::wait_groups::AsyncWaitGroup;
 use crate::sync_task_queue::SyncTaskList;
@@ -45,13 +46,13 @@ impl Future for WaitSharedWaitGroup<'_> {
             // Otherwise, I'd have to keep track of how many tasks are in the queue,
             // which means calling out one more atomic operation in each done call.
             //
-            // So I enqueue the task first, and only then do the check.
+            // So, I enqueue the task first, and only then do the check.
             unsafe {
-                local_executor().push_current_task_to_and_remove_it_if_counter_is_zero(
+                local_executor().invoke_call(Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
                     &this.wait_group.waited_tasks,
                     &this.wait_group.counter,
                     Acquire,
-                );
+                ));
             }
 
             Poll::Pending

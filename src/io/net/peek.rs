@@ -578,7 +578,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -587,8 +587,8 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// stream.poll_recv_with_deadline(deadline).await?;
     ///
-    /// let mut vec = vec![0u8; 1024];
-    /// stream.peek_exact_with_deadline(&mut vec[..100], deadline).await?; // Peek exactly 100 bytes
+    /// let mut vec = full_buffer();
+    /// stream.peek_exact_with_deadline(&mut vec.slice_mut(..100), deadline).await?; // Peek exactly 100 bytes
     /// // or return an error
     /// # Ok(())
     /// # }

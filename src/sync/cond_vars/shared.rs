@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::panic_if_local_in_future;
+use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::{AsyncCondVar, AsyncMutex, AsyncMutexGuard, AsyncSubscribableMutex, Mutex};
 use crate::sync_task_queue::SyncTaskList;
@@ -61,7 +62,9 @@ where
         match this.state {
             WaitState::Sleep => {
                 this.state = WaitState::Wake;
-                unsafe { local_executor().push_current_task_to(&this.cond_var.wait_queue) };
+                unsafe {
+                    local_executor().invoke_call(Call::PushCurrentTaskTo(&this.cond_var.wait_queue))
+                };
                 Poll::Pending
             }
             WaitState::Wake => {

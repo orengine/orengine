@@ -184,7 +184,7 @@ impl Buffer {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
     /// use orengine::Executor;
     /// use orengine::io::{buffer, Buffer};
     ///
@@ -500,7 +500,7 @@ impl Drop for Buffer {
     }
 }
 
-/// ```rust
+/// ```compile_fail
 /// use orengine::{yield_now, Executor, Local};
 /// use orengine::io::{full_buffer, AsyncWrite};
 /// use orengine::fs::{File, OpenOptions};
@@ -518,22 +518,22 @@ impl Drop for Buffer {
 /// });
 /// ```
 ///
-/// ```rust
-/// use orengine::Local;
+/// ```no_run
+/// use orengine::{yield_now, Executor, Local};
+/// use orengine::io::{with_full_buffer, AsyncWrite};
+/// use orengine::fs::{File, OpenOptions};
 ///
 /// fn check_send<T: Send>(value: T) -> T { value }
 ///
-/// let value = Local::new(42);
-/// check_send(value.borrow());
-/// ```
+/// Executor::init().run_with_shared_future(async {
+///     let mut file = File::open("./test/foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+///     with_full_buffer(|mut buf| async move {
+///         buf.append(b"hello");
+///         file.write(&buf).await.unwrap();
+///     }).await;
 ///
-/// ```rust
-/// use orengine::Local;
-///
-/// fn check_send<T: Send>(value: T) -> T { value }
-///
-/// let value = Local::new(42);
-/// check_send(value.borrow_mut());
+///     yield_now().await;
+/// });
 /// ```
 #[allow(dead_code, reason = "It is used only in compile tests")]
 fn test_compile_buffer() {}

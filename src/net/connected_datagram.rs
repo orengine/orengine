@@ -26,7 +26,7 @@ use std::net::SocketAddr;
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
+/// use orengine::io::full_buffer;
 /// use orengine::net::ConnectedDatagram;
 ///
 /// async fn handle_connected_datagram<CD: ConnectedDatagram>(mut connected_datagram: CD) {
@@ -38,7 +38,7 @@ use std::net::SocketAddr;
 ///             break;
 ///         }
 ///
-///         connected_datagram.send(&buf[..n]).await.expect("send_to failed");
+///         connected_datagram.send(&buf.slice(..n)).await.expect("send_to failed");
 ///     }
 /// }
 /// ```

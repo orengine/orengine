@@ -1,7 +1,11 @@
+use crate::local_executor;
+use crate::runtime::call::Call;
 use crate::runtime::task::task_data::TaskData;
 use crate::runtime::{task_pool, Locality};
 use std::future::Future;
 use std::panic::{RefUnwindSafe, UnwindSafe};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// `Task` is a wrapper of a future.
 ///
@@ -144,4 +148,68 @@ macro_rules! panic_if_local_in_future {
             }
         }
     };
+}
+
+// TODO docs
+pub async unsafe fn update_current_task_locality(locality: Locality) {
+    struct UpdateCurrentTaskLocality {
+        locality: Locality,
+        was_called: bool,
+    }
+
+    impl Future for UpdateCurrentTaskLocality {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = unsafe { self.get_unchecked_mut() };
+
+            if !this.was_called {
+                this.was_called = true;
+
+                unsafe {
+                    local_executor().invoke_call(Call::ChangeCurrentTaskLocality(this.locality));
+                };
+
+                return Poll::Pending;
+            }
+
+            Poll::Ready(())
+        }
+    }
+
+    UpdateCurrentTaskLocality {
+        locality,
+        was_called: false,
+    }
+    .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::get_task_from_context;
+
+    #[orengine::test::test_local]
+    fn test_update_current_task_locality() {
+        struct GetCurrentTaskLocality {}
+
+        impl Future for GetCurrentTaskLocality {
+            type Output = bool;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                let task = unsafe { get_task_from_context!(cx) };
+
+                Poll::Ready(task.is_local())
+            }
+        }
+
+        assert!(GetCurrentTaskLocality {}.await);
+
+        unsafe {
+            update_current_task_locality(Locality::shared()).await;
+        }
+
+        assert!(!GetCurrentTaskLocality {}.await);
+    }
 }

@@ -31,7 +31,7 @@ use std::mem::ManuallyDrop;
 ///        break;
 ///    }
 ///
-///    connected_socket.send(&buf[..n]).await.expect("send_to failed");
+///    connected_socket.send(&buf.slice(..n)).await.expect("send_to failed");
 /// }
 /// # }
 /// ```

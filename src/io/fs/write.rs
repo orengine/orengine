@@ -55,7 +55,7 @@ pub struct WriteFixed<'buf> {
     phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> WriteFixed<'buf> {
+impl WriteFixed<'_> {
     /// Creates a new `write` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
         Self {
@@ -84,6 +84,8 @@ impl Future for WriteFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for WriteFixed<'_> {}
 
 /// `pwrite` io operation.
 pub struct PositionedWriteBytes<'buf> {
@@ -136,7 +138,7 @@ pub struct PositionedWriteFixed<'buf> {
     phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> PositionedWriteFixed<'buf> {
+impl PositionedWriteFixed<'_> {
     /// Creates a new `pwrite` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16, offset: usize) -> Self {
         Self {

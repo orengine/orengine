@@ -31,7 +31,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
+/// use orengine::io::full_buffer;
 /// use orengine::net::Datagram;
 ///
 /// async fn handle_datagram<D: Datagram>(mut datagram: D) {

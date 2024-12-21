@@ -30,7 +30,7 @@ use std::time::Duration;
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
+/// use orengine::io::full_buffer;
 /// use orengine::local_executor;
 /// use orengine::net::Stream;
 ///
@@ -43,7 +43,10 @@ use std::time::Duration;
 ///             break;
 ///         }
 ///
-///         stream.send_all(b"pong").await.expect("send_all was failed");
+///         buf.clear();
+///         buf.append(b"pong");
+///
+///         stream.send_all(&buf).await.expect("send_all was failed");
 ///     }
 /// }
 /// ```

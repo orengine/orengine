@@ -119,9 +119,8 @@ pub trait AsyncPollFd: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -157,8 +156,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -197,8 +195,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
