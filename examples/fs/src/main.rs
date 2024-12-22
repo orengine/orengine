@@ -1,6 +1,5 @@
-use orengine::buf::buffer;
 use orengine::fs::{DirBuilder, File, OpenOptions};
-use orengine::io::{AsyncRead, AsyncWrite};
+use orengine::io::{buffer, AsyncRead, AsyncWrite};
 use orengine::{asyncify, Executor};
 
 fn main() {
@@ -21,11 +20,10 @@ fn main() {
                 .await
                 .unwrap();
 
-            file.write_all(b"Hello, world!").await.unwrap(); // non-positioned write
+            file.write_all_bytes(b"Hello, world!").await.unwrap(); // non-positioned write
 
             let mut buf = buffer();
-            buf.set_len(5);
-            file.pread_exact(&mut buf, 7).await.unwrap(); // positioned read
+            file.pread_exact(&mut buf.slice_mut(..5), 7).await.unwrap(); // positioned read
 
             assert_eq!(buf, b"world");
 
