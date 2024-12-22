@@ -31,6 +31,10 @@ impl<'buf> ReadBytes<'buf> {
 impl Future for ReadBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never read more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -46,6 +50,8 @@ impl Future for ReadBytes<'_> {
         ));
     }
 }
+
+unsafe impl Send for ReadBytes<'_> {}
 
 /// Future for the `read` operation with __fixed__ [`Buffer`].
 pub struct ReadFixed<'buf> {
@@ -74,6 +80,10 @@ impl ReadFixed<'_> {
 impl Future for ReadFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never read more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -86,6 +96,8 @@ impl Future for ReadFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for ReadFixed<'_> {}
 
 /// Future for the `pread` operation.
 ///
@@ -115,6 +127,10 @@ impl<'buf> PositionedReadBytes<'buf> {
 impl Future for PositionedReadBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never read more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -131,6 +147,8 @@ impl Future for PositionedReadBytes<'_> {
         ));
     }
 }
+
+unsafe impl Send for PositionedReadBytes<'_> {}
 
 /// Future for the `pread` operation with __fixed__ [`Buffer`].
 ///
@@ -166,6 +184,10 @@ impl PositionedReadFixed<'_> {
 impl Future for PositionedReadFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never read more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -183,6 +205,8 @@ impl Future for PositionedReadFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for PositionedReadFixed<'_> {}
 
 /// The `AsyncRead` trait provides asynchronous methods for reading bytes from readers.
 ///
@@ -288,6 +312,10 @@ pub trait AsyncRead: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never read more than u32::MAX bytes"
+            )]
             ReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
@@ -361,6 +389,10 @@ pub trait AsyncRead: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never read more than u32::MAX bytes"
+            )]
             PositionedReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut(), offset)
                 .await
                 .map(|ret| ret as u32)
@@ -429,6 +461,10 @@ pub trait AsyncRead: AsRawFd {
         if buf.is_fixed() {
             let mut read = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never read u32::MAX bytes"
+            )]
             while read < buf.len_u32() {
                 read += ReadFixed::new(
                     self.as_raw_fd(),
@@ -515,6 +551,10 @@ pub trait AsyncRead: AsRawFd {
         if buf.is_fixed() {
             let mut read = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never read u32::MAX bytes"
+            )]
             while read < buf.len_u32() {
                 read += PositionedReadFixed::new(
                     self.as_raw_fd(),

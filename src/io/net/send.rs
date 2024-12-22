@@ -34,6 +34,10 @@ impl<'buf> SendBytes<'buf> {
 impl Future for SendBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never send more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -47,6 +51,8 @@ impl Future for SendBytes<'_> {
     }
 }
 
+unsafe impl Send for SendBytes<'_> {}
+
 /// `send` io operation.
 pub struct SendFixed<'buf> {
     fd: RawFd,
@@ -57,7 +63,7 @@ pub struct SendFixed<'buf> {
     phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> SendFixed<'buf> {
+impl SendFixed<'_> {
     /// Creates new `send` io operation.
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
         Self {
@@ -74,6 +80,10 @@ impl<'buf> SendFixed<'buf> {
 impl Future for SendFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never send more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -86,6 +96,8 @@ impl Future for SendFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for SendFixed<'_> {}
 
 /// `send` io operation with deadline.
 pub struct SendBytesWithDeadline<'buf> {
@@ -110,6 +122,10 @@ impl<'buf> SendBytesWithDeadline<'buf> {
 impl Future for SendBytesWithDeadline<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never send more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -128,6 +144,8 @@ impl Future for SendBytesWithDeadline<'_> {
     }
 }
 
+unsafe impl Send for SendBytesWithDeadline<'_> {}
+
 /// `send` io operation with deadline.
 pub struct SendFixedWithDeadline<'buf> {
     fd: RawFd,
@@ -139,7 +157,7 @@ pub struct SendFixedWithDeadline<'buf> {
     phantom_data: PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> SendFixedWithDeadline<'buf> {
+impl SendFixedWithDeadline<'_> {
     /// Creates new `send` io operation with deadline.
     pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
         Self {
@@ -157,6 +175,10 @@ impl<'buf> SendFixedWithDeadline<'buf> {
 impl Future for SendFixedWithDeadline<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never send more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -175,6 +197,8 @@ impl Future for SendFixedWithDeadline<'_> {
         ));
     }
 }
+
+unsafe impl Send for SendFixedWithDeadline<'_> {}
 
 /// The `AsyncSend` trait provides asynchronous methods for sending data over a stream or socket.
 ///
@@ -261,6 +285,10 @@ pub trait AsyncSend: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never send more than u32::MAX bytes"
+            )]
             SendBytes::new(self.as_raw_fd(), buf.as_bytes())
                 .await
                 .map(|r| r as u32)
@@ -349,6 +377,10 @@ pub trait AsyncSend: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never send more than u32::MAX bytes"
+            )]
             SendBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes(), deadline)
                 .await
                 .map(|r| r as u32)
@@ -489,6 +521,11 @@ pub trait AsyncSend: AsRawFd {
     async fn send_all(&mut self, buf: &impl FixedBuffer) -> Result<()> {
         if buf.is_fixed() {
             let mut sent = 0;
+
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never send u32::MAX bytes"
+            )]
             while sent < buf.len_u32() {
                 sent += SendFixed::new(
                     self.as_raw_fd(),
@@ -587,6 +624,10 @@ pub trait AsyncSend: AsRawFd {
         if buf.is_fixed() {
             let mut sent = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never send u32::MAX bytes"
+            )]
             while sent < buf.len_u32() {
                 sent += SendFixedWithDeadline::new(
                     self.as_raw_fd(),

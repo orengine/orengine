@@ -43,3 +43,5 @@ impl Future for Socket {
         ));
     }
 }
+
+unsafe impl Send for Socket {}

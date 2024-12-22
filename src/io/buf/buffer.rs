@@ -37,7 +37,7 @@ impl std::error::Error for LenIsGreaterThanCapacity {}
 /// # About pool
 ///
 /// For get from [`BufPool`], call [`buffer()`]
-/// or [`full_buffer()`](crate::buf::full_buffer).
+/// or [`full_buffer()`](crate::io::full_buffer).
 /// If you can use [`BufPool`], use it, to have better performance.
 ///
 /// If it was gotten from [`BufPool`], it will come back after drop.
@@ -226,6 +226,7 @@ impl Buffer {
     /// If a capacity is not enough, the buffer will be resized.
     #[inline(always)]
     pub fn append(&mut self, buf: &[u8]) {
+        #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
         let diff_len = buf.len() as u32;
         if diff_len > self.capacity() - self.len_u32() {
             self.resize(self.len_u32() + diff_len);
@@ -257,6 +258,22 @@ impl Buffer {
     }
 
     /// Returns [`Slice`] with the specified range.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::{buffer, AsyncWrite};
+    ///
+    /// # async fn foo() {
+    /// let mut file = File::open("./foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+    /// let mut buf = buffer();
+    ///
+    /// buf.append(&*vec![1u8; 200]);
+    ///
+    /// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn slice<R: RangeBounds<u32>>(&self, range: R) -> Slice<'_> {
         let start = match range.start_bound() {
@@ -275,6 +292,20 @@ impl Buffer {
     }
 
     /// Returns [`SliceMut`] with the specified range.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::{full_buffer, AsyncRead};
+    ///
+    /// # async fn foo() {
+    /// let mut file = File::open("./foo.txt", &OpenOptions::new().read(true).write(true).create(true)).await.unwrap();
+    /// let mut buf = full_buffer();
+    ///
+    /// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
+    /// # }
+    /// ```
     #[inline(always)]
     pub fn slice_mut<R: RangeBounds<u32>>(&mut self, range: R) -> SliceMut<'_> {
         let start = match range.start_bound() {
@@ -350,7 +381,7 @@ impl FixedBuffer for Buffer {
 
         #[cfg(target_os = "linux")]
         {
-            match self.os_buffer.deref() {
+            match &*self.os_buffer {
                 LinuxBuffer::Fixed(fixed_buf) => fixed_buf.index(),
                 LinuxBuffer::NonFixed(_) => u16::MAX,
             }
@@ -366,7 +397,7 @@ impl FixedBuffer for Buffer {
 
         #[cfg(target_os = "linux")]
         {
-            match self.os_buffer.deref() {
+            match &*self.os_buffer {
                 LinuxBuffer::Fixed(_) => true,
                 LinuxBuffer::NonFixed(_) => false,
             }

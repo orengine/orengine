@@ -63,7 +63,8 @@ where
             WaitState::Sleep => {
                 this.state = WaitState::Wake;
                 unsafe {
-                    local_executor().invoke_call(Call::PushCurrentTaskTo(&this.cond_var.wait_queue))
+                    local_executor()
+                        .invoke_call(Call::PushCurrentTaskTo(&this.cond_var.wait_queue));
                 };
                 Poll::Pending
             }

@@ -51,6 +51,8 @@ impl Future for Fallocate {
     }
 }
 
+unsafe impl Send for Fallocate {}
+
 /// This trait allows to create a `fallocate` io operation
 /// which allows to allocate space in a file from a given offset.
 ///

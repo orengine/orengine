@@ -33,6 +33,10 @@ impl<'buf> PeekBytes<'buf> {
 impl Future for PeekBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never peek more than u32::MAX"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -49,6 +53,8 @@ impl Future for PeekBytes<'_> {
     }
 }
 
+unsafe impl Send for PeekBytes<'_> {}
+
 /// `peek` io operation with __fixed__ [`Buffer`].
 pub struct PeekFixed<'buf> {
     fd: RawFd,
@@ -59,7 +65,7 @@ pub struct PeekFixed<'buf> {
     phantom_data: std::marker::PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> PeekFixed<'buf> {
+impl PeekFixed<'_> {
     /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
@@ -76,6 +82,10 @@ impl<'buf> PeekFixed<'buf> {
 impl Future for PeekFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never peek more than u32::MAX"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -88,6 +98,8 @@ impl Future for PeekFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for PeekFixed<'_> {}
 
 /// `peek` io operation with deadline.
 pub struct PeekBytesWithDeadline<'buf> {
@@ -112,6 +124,10 @@ impl<'buf> PeekBytesWithDeadline<'buf> {
 impl Future for PeekBytesWithDeadline<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never peek more than u32::MAX"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -130,6 +146,8 @@ impl Future for PeekBytesWithDeadline<'_> {
     }
 }
 
+unsafe impl Send for PeekBytesWithDeadline<'_> {}
+
 /// `peek` io operation with __fixed__ [`Buffer`] with deadline.
 pub struct PeekFixedWithDeadline<'buf> {
     fd: RawFd,
@@ -141,7 +159,7 @@ pub struct PeekFixedWithDeadline<'buf> {
     phantom_data: std::marker::PhantomData<&'buf Buffer>,
 }
 
-impl<'buf> PeekFixedWithDeadline<'buf> {
+impl PeekFixedWithDeadline<'_> {
     /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
         Self {
@@ -159,6 +177,10 @@ impl<'buf> PeekFixedWithDeadline<'buf> {
 impl Future for PeekFixedWithDeadline<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never peek more than u32::MAX"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -177,6 +199,8 @@ impl Future for PeekFixedWithDeadline<'_> {
         ));
     }
 }
+
+unsafe impl Send for PeekFixedWithDeadline<'_> {}
 
 /// The `AsyncPeek` trait provides asynchronous methods for peeking at the incoming data
 /// without consuming it.
@@ -264,6 +288,10 @@ pub trait AsyncPeek: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never peek more than u32::MAX"
+            )]
             PeekBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
@@ -353,6 +381,10 @@ pub trait AsyncPeek: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never peek more than u32::MAX"
+            )]
             PeekBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
                 .await
                 .map(|r| r as u32)
@@ -496,6 +528,10 @@ pub trait AsyncPeek: AsRawFd {
         if buf.is_fixed() {
             let mut peeked = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never peek u32::MAX bytes"
+            )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixed::new(
                     self.as_raw_fd(),
@@ -602,6 +638,10 @@ pub trait AsyncPeek: AsRawFd {
         if buf.is_fixed() {
             let mut peeked = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never peek u32::MAX bytes"
+            )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixedWithDeadline::new(
                     self.as_raw_fd(),

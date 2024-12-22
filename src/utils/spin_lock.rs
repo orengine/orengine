@@ -63,12 +63,14 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
 
     /// Returns a reference to the [`CachePadded<AtomicBool>`]
     /// associated with the original [`SpinLock`] to
-    /// use [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
+    /// [`call`](crate::Executor::invoke_call)
+    /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
     ///
     /// # Safety
     ///
-    /// The mutex is unlocked by calling [`SpinLock::unlock`] later or
-    /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
+    /// The mutex is unlocked by calling [`SpinLock::unlock`] later
+    /// or by [calling](crate::Executor::invoke_call)
+    /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
     #[inline(always)]
     pub unsafe fn leak_to_atomic(self) -> &'spin_lock CachePadded<AtomicBool> {
         &ManuallyDrop::new(self).spin_lock.is_locked

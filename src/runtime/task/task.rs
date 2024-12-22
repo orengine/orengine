@@ -150,7 +150,16 @@ macro_rules! panic_if_local_in_future {
     };
 }
 
-// TODO docs
+/// Update current [`task`](Task) locality via [`calling`](crate::Executor::invoke_call)
+/// [`ChangeCurrentTaskLocality`](Call::ChangeCurrentTaskLocality).
+///
+/// It is unsafe because you have to think about making sure
+/// that current task can have provided locality. Use it only if you know what you are doing.
+/// Maybe it is the most unsafe function in the whole crate.
+///
+/// # Safety
+///
+/// Provided `locality` is valid for the current [`task`](Task).
 pub async unsafe fn update_current_task_locality(locality: Locality) {
     struct UpdateCurrentTaskLocality {
         locality: Locality,

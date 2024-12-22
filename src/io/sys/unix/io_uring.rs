@@ -508,6 +508,7 @@ impl IoWorker for IOUringWorker {
 
     #[inline(always)]
     fn read(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
             opcode::Read::new(types::Fd(fd), ptr, len)
                 .offset(-1 as _)
@@ -572,6 +573,7 @@ impl IoWorker for IOUringWorker {
 
     #[inline(always)]
     fn write(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
             opcode::Write::new(types::Fd(fd), ptr, len)
                 .offset(-1 as _)

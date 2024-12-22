@@ -124,7 +124,7 @@ mod tests {
         let res = Local::new(false);
         let res_clone = res.clone();
         let mut task = Task::from_future(
-            async {
+            async move {
                 *res_clone.borrow_mut() = true;
             },
             Locality::local(),

@@ -26,6 +26,8 @@ impl CreateDir {
     }
 }
 
+unsafe impl Send for CreateDir {}
+
 impl Future for CreateDir {
     type Output = Result<()>;
 

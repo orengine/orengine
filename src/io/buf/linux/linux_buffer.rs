@@ -44,9 +44,9 @@ impl LinuxBuffer {
             "Cannot create Buffer with size 0. Size must be > 0."
         );
 
-        let layout = Layout::array::<u8>(size as _).expect(&format!(
-            "Cannot create slice with capacity {size}. Capacity overflow."
-        ));
+        let layout = Layout::array::<u8>(size as _).unwrap_or_else(|_| {
+            panic!("Cannot create slice with capacity {size}. Capacity overflow.")
+        });
 
         Self::NonFixed(unsafe { Vec::from_raw_parts(alloc(layout), 0, size as _) })
     }

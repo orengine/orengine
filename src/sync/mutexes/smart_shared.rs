@@ -112,7 +112,7 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
 
             this.was_called = true;
             unsafe {
-                local_executor().invoke_call(Call::PushCurrentTaskTo(&this.mutex.wait_queue))
+                local_executor().invoke_call(Call::PushCurrentTaskTo(&this.mutex.wait_queue));
             };
 
             Poll::Pending

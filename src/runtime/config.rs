@@ -31,7 +31,7 @@ impl ConfigStats {
 /// A shared config of state of the all runtime.
 static GLOBAL_CONFIG_STATS: SpinLock<ConfigStats> = SpinLock::new(ConfigStats::new());
 
-/// The default [`buffers`](crate::buf::Buffer) capacity.
+/// The default [`buffers`](crate::io::Buffer) capacity.
 pub const DEFAULT_BUF_CAP: u32 = 4096;
 
 /// Config that can be used to create an Executor, because it is valid.
@@ -84,7 +84,7 @@ impl Drop for ValidConfig {
 /// related to buffers, I/O workers, thread workers, and work-sharing behavior.
 ///
 /// # Fields
-/// - `buffer_cap`: The size of the [`buffers`](crate::buf::Buffer).
+/// - `buffer_cap`: The size of the [`buffers`](crate::io::Buffer).
 ///
 /// - `io_worker_config`: An optional configuration for I/O workers. If none is provided,
 ///   the IO worker will be disabled.
@@ -98,7 +98,7 @@ impl Drop for ValidConfig {
 ///   If [`usize::MAX`] is provided, work sharing will be disabled.
 #[derive(Clone, Copy)]
 pub struct Config {
-    /// The size of the [`buffers`](crate::buf::Buffer).
+    /// The size of the [`buffers`](crate::io::Buffer).
     buffer_cap: u32,
     /// An optional configuration for I/O workers. If none is provided,
     /// the IO worker will be disabled.
@@ -152,12 +152,12 @@ impl Config {
         }
     }
 
-    /// Returns the capacity of the [`buffers`](crate::buf::Buffer).
+    /// Returns the capacity of the [`buffers`](crate::io::Buffer).
     pub const fn buffer_cap(&self) -> u32 {
         self.buffer_cap
     }
 
-    /// Sets the capacity of the [`buffers`](crate::buf::Buffer).
+    /// Sets the capacity of the [`buffers`](crate::io::Buffer).
     #[must_use]
     pub const fn set_buffer_cap(mut self, buf_cap: u32) -> Self {
         self.buffer_cap = buf_cap;

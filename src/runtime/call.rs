@@ -28,7 +28,7 @@ pub enum Call {
     ///
     /// # Safety
     ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
+    /// * task must return [`Poll::Pending`](std::task::Poll::Pending) immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     PushCurrentTaskAtTheStartOfLIFOSharedQueue,
@@ -40,7 +40,7 @@ pub enum Call {
     ///
     /// * the reference must live at least as long as this state of the task
     ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
+    /// * task must return [`Poll::Pending`](std::task::Poll::Pending) immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     PushCurrentTaskTo(*const SyncTaskList),
@@ -51,7 +51,7 @@ pub enum Call {
     ///
     /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
     ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
+    /// * task must return [`Poll::Pending`](std::task::Poll::Pending) immediately after calling this function
     ///
     /// * counter must be a valid pointer to [`AtomicUsize`]
     ///
@@ -67,7 +67,7 @@ pub enum Call {
     ///
     /// * the [`AtomicBool`] must live at least as long as this state of the task
     ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
+    /// * task must return [`Poll::Pending`](std::task::Poll::Pending) immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     ReleaseAtomicBool(*const CachePadded<AtomicBool>),
@@ -77,7 +77,7 @@ pub enum Call {
     ///
     /// * the [`Fn`] must live at least as long as this state of the task.
     ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
+    /// * task must return [`Poll::Pending`](std::task::Poll::Pending) immediately after calling this function
     ///
     /// * calling task must be shared (else you don't need any [`Calls`](Call))
     PushFnToThreadPool(*mut dyn Fn()),

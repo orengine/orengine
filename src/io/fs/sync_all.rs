@@ -41,6 +41,8 @@ impl Future for SyncAll {
     }
 }
 
+unsafe impl Send for SyncAll {}
+
 /// The [`AsyncSyncAll`] trait provides a [`sync_all`](AsyncSyncAll::sync_all) method
 /// to synchronize the data and metadata of a file with the underlying storage device.
 ///

@@ -44,6 +44,8 @@ impl Future for Shutdown {
     }
 }
 
+unsafe impl Send for Shutdown {}
+
 /// The `AsyncShutdown` trait provides a method for asynchronously shutting down part or all of a
 /// connection.
 ///

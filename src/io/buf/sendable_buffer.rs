@@ -1,8 +1,7 @@
-// TODO docs
-
 use crate::io::{Buffer, FixedBuffer, FixedBufferMut, SendableSlice, SendableSliceMut};
 use crate::utils::Sealed;
-use std::ops::{Deref, DerefMut};
+use std::collections::Bound;
+use std::ops::{Deref, DerefMut, RangeBounds};
 
 /// `SendableBuffer` is a wrapper struct that tells the compiler that the [`Buffer`] is
 /// [`sendable`](Send). But only The caller  should ensure that it never sends to another thread.
@@ -37,14 +36,67 @@ impl SendableBuffer {
     }
 
     /// Returns [`SendableSlice`] with the specified range.
-    // TODO examples
-    pub fn slice(&self, start: u32, end: u32) -> SendableSlice {
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use orengine::Executor;
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::{buffer, AsyncRead, AsyncWrite, SendableBuffer};
+    ///
+    /// # Executor::init().run_and_block_on_shared(async {
+    /// let mut file = File::open("./foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+    /// let mut buf = unsafe { SendableBuffer::from_buffer(buffer()) };
+    ///
+    /// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
+    /// # }).unwrap();
+    pub fn slice<R: RangeBounds<u32>>(&self, range: R) -> SendableSlice {
+        let start = match range.start_bound() {
+            Bound::Included(s) => *s,
+            Bound::Unbounded => 0,
+            Bound::Excluded(s) => *s + 1,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(e) => *e + 1,
+            Bound::Excluded(e) => *e,
+            Bound::Unbounded => self.len_u32(),
+        };
+
         SendableSlice::new(self, start, end)
     }
 
-    /// Returns [`SendableSliceMut`] with the specified range.
-    // TODO examples
-    pub fn slice_mut(&mut self, start: u32, end: u32) -> SendableSliceMut {
+    /// Returns [`SendableSlice`] with the specified range.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use orengine::Executor;
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::{full_buffer, AsyncWrite, SendableBuffer};
+    ///
+    /// # Executor::init().run_and_block_on_shared(async {
+    /// let mut file = File::open("./foo.txt", &OpenOptions::new().read(true).write(true).create(true)).await.unwrap();
+    /// let mut buf = unsafe { SendableBuffer::from_buffer(full_buffer()) };
+    ///
+    /// buf.append(&*vec![1u8; 200]);
+    ///
+    /// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
+    /// # }).unwrap();
+    /// ```
+    pub fn slice_mut<R: RangeBounds<u32>>(&mut self, range: R) -> SendableSliceMut {
+        let start = match range.start_bound() {
+            Bound::Included(s) => *s,
+            Bound::Unbounded => 0,
+            Bound::Excluded(s) => *s + 1,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(e) => *e + 1,
+            Bound::Excluded(e) => *e,
+            Bound::Unbounded => self.len_u32(),
+        };
+
         SendableSliceMut::new(self, start, end)
     }
 }

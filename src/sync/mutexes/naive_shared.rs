@@ -31,12 +31,14 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
 
     /// Returns a reference to the [`CachePadded<AtomicBool>`]
     /// associated with the original [`NaiveMutex`] to
-    /// use [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool).
+    /// [`call`](crate::Executor::invoke_call)
+    /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
     ///
     /// # Safety
     ///
     /// The mutex is locked now and will be unlocked by calling [`NaiveMutex::unlock`] or
-    /// [`Executor::release_atomic_bool`](crate::Executor::release_atomic_bool) later.
+    /// [calling](crate::Executor::invoke_call)
+    /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
     #[inline(always)]
     pub unsafe fn leak_to_atomic(self) -> &'static CachePadded<AtomicBool> {
         debug_assert!(self.mutex.is_locked.load(Acquire));

@@ -42,6 +42,8 @@ impl Future for Close {
     }
 }
 
+unsafe impl Send for Close {}
+
 /// The [`AsyncClose`] trait represents an asynchronous close operation.
 ///
 /// This trait can be implemented for all types that implement [`AsRawFd`].

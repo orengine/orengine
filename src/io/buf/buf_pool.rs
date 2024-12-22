@@ -92,8 +92,7 @@ pub fn full_buffer() -> Buffer {
     buf_pool().get_full()
 }
 
-/// Pool of [`Buffer`]s. It is used for reusing memory. If you need to change default buffer size,
-/// use [`BufPool::tune_buffer_cap`].
+/// Pool of [`Buffer`]s. It is used for reusing memory.
 pub struct BufPool {
     #[cfg(target_os = "linux")]
     pub(crate) pool_of_fixed_buffers: Vec<Buffer>,
@@ -141,13 +140,17 @@ impl BufPool {
                 .iter_mut()
                 .enumerate()
                 .map(|(i, buf)| {
-                    Buffer::new_fixed(buf.as_mut_ptr(), default_buffer_cap as _, i as _)
+                    Buffer::new_fixed(
+                        buf.as_mut_ptr(),
+                        default_buffer_cap as _,
+                        u16::try_from(i).expect("number_of_fixed_buffers > u16::MAX"),
+                    )
                 })
                 .collect();
             let iovecs: Vec<libc::iovec> = fixed_buffers
-                .iter()
+                .iter_mut()
                 .map(|buf| libc::iovec {
-                    iov_base: buf.as_ptr() as _,
+                    iov_base: buf.as_mut_ptr().cast(),
                     iov_len: buf.len() as _,
                 })
                 .collect();
@@ -207,7 +210,7 @@ impl BufPool {
         }
     }
 
-    /// Returns default buffer capacity. It can be set with [`BufPool::tune_buffer_cap`].
+    /// Returns default buffer capacity.
     #[inline(always)]
     pub fn default_buffer_capacity(&self) -> u32 {
         self.default_buffer_cap
@@ -299,6 +302,7 @@ impl Drop for BufPool {
 }
 
 /// Returns __fixed__ buffer from the pool. It used only in tests.
+#[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_fixed_buffer() -> Buffer {
     if cfg!(target_os = "linux") {
@@ -316,6 +320,7 @@ pub(crate) async fn get_fixed_buffer() -> Buffer {
 }
 
 /// Returns full (len == capacity) __fixed__ buffer from the pool. It used only in tests.
+#[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_full_fixed_buffer() -> Buffer {
     if cfg!(target_os = "linux") {

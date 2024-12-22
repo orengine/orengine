@@ -32,6 +32,10 @@ impl<'buf> WriteBytes<'buf> {
 impl Future for WriteBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never write more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -44,6 +48,8 @@ impl Future for WriteBytes<'_> {
         ));
     }
 }
+
+unsafe impl Send for WriteBytes<'_> {}
 
 /// `write` io operation with __fixed__ [`Buffer`].
 pub struct WriteFixed<'buf> {
@@ -72,6 +78,10 @@ impl WriteFixed<'_> {
 impl Future for WriteFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never write more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -110,6 +120,10 @@ impl<'buf> PositionedWriteBytes<'buf> {
 impl Future for PositionedWriteBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never write more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -126,6 +140,8 @@ impl Future for PositionedWriteBytes<'_> {
         ));
     }
 }
+
+unsafe impl Send for PositionedWriteBytes<'_> {}
 
 /// `pwrite` io operation with __fixed__ [`Buffer`].
 pub struct PositionedWriteFixed<'buf> {
@@ -156,6 +172,10 @@ impl PositionedWriteFixed<'_> {
 impl Future for PositionedWriteFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never write more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -173,6 +193,8 @@ impl Future for PositionedWriteFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for PositionedWriteFixed<'_> {}
 
 /// The `AsyncWrite` trait provides asynchronous methods for writing to a file descriptor.
 ///
@@ -271,6 +293,10 @@ pub trait AsyncWrite: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never write more than u32::MAX bytes"
+            )]
             WriteBytes::new(self.as_raw_fd(), buf.as_bytes())
                 .await
                 .map(|r| r as u32)
@@ -349,6 +375,10 @@ pub trait AsyncWrite: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never write more than u32::MAX bytes"
+            )]
             PositionedWriteBytes::new(self.as_raw_fd(), buf.as_bytes(), offset)
                 .await
                 .map(|r| r as u32)
@@ -424,6 +454,10 @@ pub trait AsyncWrite: AsRawFd {
         if buf.is_fixed() {
             let mut written = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never write u32::MAX bytes"
+            )]
             while written < buf.len_u32() {
                 written += WriteFixed::new(
                     self.as_raw_fd(),
@@ -515,6 +549,10 @@ pub trait AsyncWrite: AsRawFd {
         if buf.is_fixed() {
             let mut written = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never write u32::MAX bytes"
+            )]
             while written < buf.len_u32() {
                 written += PositionedWriteFixed::new(
                     self.as_raw_fd(),

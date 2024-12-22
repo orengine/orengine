@@ -25,6 +25,10 @@ macro_rules! impl_shared_slice {
             impl FixedBuffer for $ty {
                 #[inline(always)]
                 fn as_ptr(&self) -> *const u8 {
+                    #[allow(
+                        clippy::cast_possible_wrap,
+                        reason = "We believe it never contains u32::MAX bytes"
+                    )]
                     unsafe { self.buf.as_ptr().offset(self.start as isize) }
                 }
 
@@ -58,7 +62,21 @@ macro_rules! impl_shared_slice {
 
 /// Represents an immutable slice of [`Buffer`].
 ///
-// TODO example with read_exact
+/// # Example
+///
+/// ```no_run
+/// use orengine::fs::{File, OpenOptions};
+/// use orengine::io::{buffer, AsyncWrite};
+///
+/// # async fn foo() {
+/// let mut file = File::open("./foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+/// let mut buf = buffer();
+///
+/// buf.append(&*vec![1u8; 200]);
+///
+/// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
+/// # }
+/// ```
 pub struct Slice<'buf> {
     buf: &'buf Buffer,
     start: u32,
@@ -74,7 +92,19 @@ impl<'buf> Slice<'buf> {
 
 /// Represents a mutable slice of [`SliceMut`].
 ///
-// TODO example
+/// # Example
+///
+/// ```no_run
+/// use orengine::fs::{File, OpenOptions};
+/// use orengine::io::{full_buffer, AsyncRead};
+///
+/// # async fn foo() {
+/// let mut file = File::open("./foo.txt", &OpenOptions::new().read(true).write(true).create(true)).await.unwrap();
+/// let mut buf = full_buffer();
+///
+/// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
+/// # }
+/// ```
 pub struct SliceMut<'buf> {
     buf: &'buf mut Buffer,
     start: u32,
@@ -98,7 +128,13 @@ impl DerefMut for SliceMut<'_> {
 impl FixedBufferMut for SliceMut<'_> {
     #[inline(always)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
-        unsafe { self.buf.as_mut_ptr().offset(self.start as isize) }
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "We believe it never contains u32::MAX bytes"
+        )]
+        unsafe {
+            self.buf.as_mut_ptr().offset(self.start as isize)
+        }
     }
 }
 
@@ -106,7 +142,19 @@ impl_shared_slice! { Slice<'_>, SliceMut<'_> }
 
 /// Represents an immutable slice of [`Buffer`].
 ///
-// TODO example with read_exact
+/// # Example
+///
+/// ```no_run
+/// # use orengine::Executor;
+/// use orengine::fs::{File, OpenOptions};
+/// use orengine::io::{buffer, AsyncRead, AsyncWrite, SendableBuffer};
+///
+/// # Executor::init().run_and_block_on_shared(async {
+/// let mut file = File::open("./foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+/// let mut buf = unsafe { SendableBuffer::from_buffer(buffer()) };
+///
+/// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
+/// # }).unwrap();
 pub struct SendableSlice<'buf> {
     buf: &'buf SendableBuffer,
     start: u32,
@@ -122,7 +170,22 @@ impl<'buf> SendableSlice<'buf> {
 
 /// Represents a mutable slice of [`SliceMut`].
 ///
-// TODO example
+/// # Example
+///
+/// ```no_run
+/// # use orengine::Executor;
+/// use orengine::fs::{File, OpenOptions};
+/// use orengine::io::{full_buffer, AsyncWrite, SendableBuffer};
+///
+/// # Executor::init().run_and_block_on_shared(async {
+/// let mut file = File::open("./foo.txt", &OpenOptions::new().read(true).write(true).create(true)).await.unwrap();
+/// let mut buf = unsafe { SendableBuffer::from_buffer(full_buffer()) };
+///
+/// buf.append(&*vec![1u8; 200]);
+///
+/// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
+/// # }).unwrap();
+/// ```
 pub struct SendableSliceMut<'buf> {
     buf: &'buf mut SendableBuffer,
     start: u32,
@@ -146,7 +209,13 @@ impl DerefMut for SendableSliceMut<'_> {
 impl FixedBufferMut for SendableSliceMut<'_> {
     #[inline(always)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
-        unsafe { self.buf.as_mut_ptr().offset(self.start as isize) }
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "We believe it never contains u32::MAX bytes"
+        )]
+        unsafe {
+            self.buf.as_mut_ptr().offset(self.start as isize)
+        }
     }
 }
 

@@ -49,6 +49,8 @@ impl Future for Connect<'_> {
     }
 }
 
+unsafe impl Send for Connect<'_> {}
+
 /// `connect` io operation with deadline.
 pub struct ConnectWithDeadline<'fut> {
     fd: RawFd,
@@ -90,6 +92,8 @@ impl Future for ConnectWithDeadline<'_> {
         ));
     }
 }
+
+unsafe impl Send for ConnectWithDeadline<'_> {}
 
 /// The `AsyncConnectStream` trait provides asynchronous methods for creating and connecting
 /// stream-oriented sockets (like TCP) to a remote address.

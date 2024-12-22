@@ -34,6 +34,10 @@ impl<'buf> RecvBytes<'buf> {
 impl Future for RecvBytes<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never receive more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -50,7 +54,9 @@ impl Future for RecvBytes<'_> {
     }
 }
 
-/// `recv` io operation with __fixed__ [`Buffer`].
+unsafe impl Send for RecvBytes<'_> {}
+
+/// `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
 pub struct RecvFixed<'buf> {
     fd: RawFd,
     ptr: *mut u8,
@@ -60,8 +66,8 @@ pub struct RecvFixed<'buf> {
     phantom_data: PhantomData<&'buf [u8]>,
 }
 
-impl<'buf> RecvFixed<'buf> {
-    /// Creates a new `recv` io operation with __fixed__ [`Buffer`].
+impl RecvFixed<'_> {
+    /// Creates a new `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
             fd,
@@ -77,6 +83,10 @@ impl<'buf> RecvFixed<'buf> {
 impl Future for RecvFixed<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never receive more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let ret;
@@ -89,6 +99,8 @@ impl Future for RecvFixed<'_> {
         ));
     }
 }
+
+unsafe impl Send for RecvFixed<'_> {}
 
 /// `recv` io operation with deadline.
 pub struct RecvBytesWithDeadline<'buf> {
@@ -113,6 +125,10 @@ impl<'buf> RecvBytesWithDeadline<'buf> {
 impl Future for RecvBytesWithDeadline<'_> {
     type Output = Result<usize>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never receive more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -131,7 +147,9 @@ impl Future for RecvBytesWithDeadline<'_> {
     }
 }
 
-/// `recv` io operation with deadline and __fixed__ [`Buffer`].
+unsafe impl Send for RecvBytesWithDeadline<'_> {}
+
+/// `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
 pub struct RecvFixedWithDeadline<'buf> {
     fd: RawFd,
     ptr: *mut u8,
@@ -142,8 +160,8 @@ pub struct RecvFixedWithDeadline<'buf> {
     phantom_data: PhantomData<&'buf [u8]>,
 }
 
-impl<'buf> RecvFixedWithDeadline<'buf> {
-    /// Creates a new `recv` io operation with deadline and __fixed__ [`Buffer`].
+impl RecvFixedWithDeadline<'_> {
+    /// Creates a new `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
     pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
         Self {
             fd,
@@ -160,6 +178,10 @@ impl<'buf> RecvFixedWithDeadline<'buf> {
 impl Future for RecvFixedWithDeadline<'_> {
     type Output = Result<u32>;
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "It never receive more than u32::MAX bytes"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -178,6 +200,8 @@ impl Future for RecvFixedWithDeadline<'_> {
         ));
     }
 }
+
+unsafe impl Send for RecvFixedWithDeadline<'_> {}
 
 /// The `AsyncRecv` trait provides asynchronous methods for receiving at the incoming data
 /// with consuming it.
@@ -208,7 +232,8 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Difference between `recv` and `recv_bytes`
     ///
-    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`] can be __fixed__.
+    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`](crate::io::Buffer)
+    /// can be __fixed__.
     ///
     /// # Example
     ///
@@ -236,7 +261,8 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// # Difference between `recv` and `recv_bytes`
     ///
-    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`] can be __fixed__.
+    /// Use [`recv`](Self::recv) if it is possible, because [`Buffer`](crate::io::Buffer)
+    /// can be __fixed__.
     ///
     /// # Example
     ///
@@ -265,6 +291,10 @@ pub trait AsyncRecv: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never receive more than u32::MAX bytes"
+            )]
             RecvBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
@@ -280,7 +310,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_with_deadline` and `recv_bytes_with_deadline`
     ///
     /// Use [`recv_with_deadline`](Self::recv_with_deadline) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -318,7 +348,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_with_deadline` and `recv_bytes_with_deadline`
     ///
     /// Use [`recv_with_deadline`](Self::recv_with_deadline) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -354,6 +384,10 @@ pub trait AsyncRecv: AsRawFd {
             )
             .await
         } else {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "It never receive more than u32::MAX bytes"
+            )]
             RecvBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
                 .await
                 .map(|r| r as u32)
@@ -369,7 +403,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_with_timeout` and `recv_bytes_with_timeout`
     ///
     /// Use [`recv_with_timeout`](Self::recv_with_timeout) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -407,7 +441,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_with_timeout` and `recv_bytes_with_timeout`
     ///
     /// Use [`recv_with_timeout`](Self::recv_with_timeout) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -497,6 +531,10 @@ pub trait AsyncRecv: AsRawFd {
         if buf.is_fixed() {
             let mut received = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never receive u32::MAX bytes"
+            )]
             while received < buf.len_u32() {
                 received += RecvFixed::new(
                     self.as_raw_fd(),
@@ -527,7 +565,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_exact_with_deadline` and `recv_bytes_exact_with_deadline`
     ///
     /// Use [`recv_exact_with_deadline`](Self::recv_exact_with_deadline) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -573,7 +611,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_exact_with_deadline` and `recv_bytes_exact_with_deadline`
     ///
     /// Use [`recv_exact_with_deadline`](Self::recv_exact_with_deadline) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -603,6 +641,10 @@ pub trait AsyncRecv: AsRawFd {
         if buf.is_fixed() {
             let mut received = 0;
 
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "We believe it never receive u32::MAX bytes"
+            )]
             while received < buf.len_u32() {
                 received += RecvFixedWithDeadline::new(
                     self.as_raw_fd(),
@@ -636,7 +678,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_exact_with_timeout` and `recv_bytes_exact_with_timeout`
     ///
     /// Use [`recv_exact_with_timeout`](Self::recv_exact_with_timeout) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -675,7 +717,7 @@ pub trait AsyncRecv: AsRawFd {
     /// # Difference between `recv_exact_with_timeout` and `recv_bytes_exact_with_timeout`
     ///
     /// Use [`recv_exact_with_timeout`](Self::recv_exact_with_timeout) if it is possible,
-    /// because [`Buffer`] can be __fixed__.
+    /// because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
