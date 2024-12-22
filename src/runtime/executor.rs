@@ -383,8 +383,20 @@ impl Executor {
             }
             Call::ChangeCurrentTaskLocality(locality) => {
                 task.data.set_locality(locality);
+                assert_eq!(
+                    task.is_local(),
+                    locality.is_local(),
+                    "locality is {}, local is {}, shared is {}",
+                    locality.value,
+                    Locality::local().value,
+                    Locality::shared().value
+                );
 
-                self.exec_task(task);
+                if locality.is_local() {
+                    self.spawn_local_task(task);
+                } else {
+                    self.spawn_shared_task(task);
+                }
             }
         }
     }
@@ -449,17 +461,18 @@ impl Executor {
     /// Execute [`tasks`](Task) only by this method or [`exec_task_now`](Executor::exec_task_now)!
     #[inline(always)]
     pub fn exec_task(&mut self, task: Task) {
-        if self.exec_series >= 106 {
-            self.exec_series = 0;
-            if task.is_local() {
-                self.spawn_local_task(task);
-            } else {
-                self.spawn_shared_task(task);
-            }
+        if self.exec_series < 63 {
+            self.exec_task_now(task);
+
             return;
         }
 
-        self.exec_task_now(task);
+        self.exec_series = 0;
+        if task.is_local() {
+            self.spawn_local_task(task);
+        } else {
+            self.spawn_shared_task(task);
+        }
     }
 
     /// Creates a `local` [`task`](Task) from a provided [`future`](Future)
@@ -542,6 +555,20 @@ impl Executor {
     {
         let task = Task::from_future(future, Locality::shared());
         self.spawn_shared_task(task);
+    }
+
+    /// Calls [`spawn_local_task`](Executor::spawn_local_task)
+    /// or [`spawn_shared_task`](Executor::spawn_shared_task) depending on
+    /// the [`locality`](Locality) of the provided [`task`](Task).
+    ///
+    /// It is a little bit slower than calling them directly.
+    #[inline(always)]
+    pub fn spawn_task(&mut self, task: Task) {
+        if task.is_local() {
+            self.spawn_local_task(task);
+        } else {
+            self.spawn_shared_task(task);
+        }
     }
 
     /// Enqueues a shared [`task`](Task).

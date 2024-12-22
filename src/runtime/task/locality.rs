@@ -81,7 +81,7 @@ impl Locality {
 
         #[cfg(target_pointer_width = "64")]
         {
-            self.value > 0
+            self.value != 0
         }
     }
 }

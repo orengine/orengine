@@ -714,6 +714,8 @@ mod tests {
                     ch_ref.send(i).await.unwrap();
                 }
 
+                yield_now().await; // Drops streak (maximum 63 executions)
+
                 ch_ref.close().await;
             });
 

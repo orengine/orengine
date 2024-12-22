@@ -69,9 +69,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate as orengine;
-    use crate::io::FixedBuffer;
+    use crate::io::{with_any_len_buffer, with_buffer, with_full_buffer, FixedBuffer};
 
     #[orengine::test::test_shared]
     fn test_with_buffer() {
@@ -82,19 +81,19 @@ mod tests {
         })
         .await;
 
-        // with_buffer(|mut buffer| async move {
-        //     assert!(buffer.is_empty());
-        //     buffer.append(b"Hello, world!");
-        //     assert_eq!(buffer.as_bytes(), b"Hello, world!");
-        // })
-        // .await;
-        //
-        // with_full_buffer(|mut buffer| async move {
-        //     assert!(buffer.is_full());
-        //     buffer.clear();
-        //     buffer.append(b"Hello, world!");
-        //     assert_eq!(buffer.as_bytes(), b"Hello, world!");
-        // })
-        // .await;
+        with_buffer(|mut buffer| async move {
+            assert!(buffer.is_empty());
+            buffer.append(b"Hello, world!");
+            assert_eq!(buffer.as_bytes(), b"Hello, world!");
+        })
+        .await;
+
+        with_full_buffer(|mut buffer| async move {
+            assert!(buffer.is_full());
+            buffer.clear();
+            buffer.append(b"Hello, world!");
+            assert_eq!(buffer.as_bytes(), b"Hello, world!");
+        })
+        .await;
     }
 }
