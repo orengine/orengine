@@ -4,8 +4,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orengine::buf::buffer;
-use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
+use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
 use orengine::runtime::local_executor;
 use orengine::sync::{AsyncWaitGroup, LocalWaitGroup};
 use orengine::utils::get_core_ids;
@@ -53,13 +52,15 @@ static PAR: LazyLock<usize> = LazyLock::new(|| {
         );
 
         usize::from_str(args[4].as_str())
-            .expect("Number of connections should be an integer (second argument)")
+            .expect("Number of connections should be an integer (fourth argument)")
     } else {
         println!("Number of connections is not specified, defaulting to 512");
 
         512
     }
 });
+
+const MSG_SIZE: usize = 1024;
 
 static COUNT: LazyLock<usize> = LazyLock::new(|| *N / *PAR);
 
@@ -96,11 +97,12 @@ fn bench_throughput() {
                 for _ in 0..*PAR {
                     handles.push(thread::spawn(move || {
                         let mut conn = std::net::TcpStream::connect::<&str>(ADDR.as_ref()).unwrap();
-                        let mut buf = [0u8; 4096];
+                        let mut buf = vec![0u8; MSG_SIZE];
+                        let msg = vec![0u8; MSG_SIZE];
 
                         for _ in 0..*COUNT {
-                            conn.write_all(b"ping").unwrap();
-                            let _ = conn.read(&mut buf).unwrap();
+                            conn.write_all(&msg).unwrap();
+                            let _ = conn.read_exact(&mut buf).unwrap();
                         }
                     }));
                 }
@@ -131,11 +133,12 @@ fn bench_throughput() {
                             let mut conn = smol::net::TcpStream::connect::<&str>(ADDR.as_ref())
                                 .await
                                 .unwrap();
-                            let mut buf = [0u8; 4096];
+                            let mut buf = vec![0u8; MSG_SIZE];
+                            let msg = vec![0u8; MSG_SIZE];
 
                             for _ in 0..*COUNT {
-                                conn.write_all(b"ping").await.unwrap();
-                                conn.read(&mut buf).await.unwrap();
+                                conn.write_all(&msg).await.unwrap();
+                                conn.read_exact(&mut buf).await.unwrap();
                             }
 
                             tx.send_async(()).await.unwrap();
@@ -174,11 +177,12 @@ fn bench_throughput() {
                                     tokio::net::TcpStream::connect::<&str>(ADDR.as_ref())
                                         .await
                                         .unwrap();
-                                let mut buf = [0u8; 4096];
+                                let mut buf = vec![0u8; MSG_SIZE];
+                                let msg = vec![0u8; MSG_SIZE];
 
                                 for _ in 0..*COUNT {
-                                    conn.write_all(b"ping").await.unwrap();
-                                    let _ = conn.read(&mut buf).await.unwrap();
+                                    conn.write_all(&msg).await.unwrap();
+                                    let _ = conn.read_exact(&mut buf).await.unwrap();
                                 }
 
                                 tx.send_async(()).await.unwrap();
@@ -212,11 +216,12 @@ fn bench_throughput() {
                                 async_std::net::TcpStream::connect::<&str>(ADDR.as_ref())
                                     .await
                                     .unwrap();
-                            let mut buf = [0u8; 4096];
+                            let mut buf = vec![0u8; MSG_SIZE];
+                            let msg = vec![0u8; MSG_SIZE];
 
                             for _ in 0..*COUNT {
-                                conn.write_all(b"ping").await.unwrap();
-                                conn.read(&mut buf).await.unwrap();
+                                conn.write_all(&msg).await.unwrap();
+                                conn.read_exact(&mut buf).await.unwrap();
                             }
 
                             tx.send_async(()).await.unwrap();
@@ -262,13 +267,20 @@ fn bench_throughput() {
                         let mut stream = orengine::net::TcpStream::connect::<&str>(ADDR.as_ref())
                             .await
                             .unwrap();
+                        let mut msg = full_buffer();
+                        msg.fill_with_zeros();
                         for _ in 0..*COUNT {
-                            stream.send_all(b"ping").await.unwrap();
+                            stream
+                                .send_all(&msg.slice(0..MSG_SIZE as u32))
+                                .await
+                                .unwrap();
 
                             stream.poll_recv().await.unwrap();
-                            let mut buf = buffer();
-                            buf.set_len_to_cap();
-                            stream.recv(&mut buf).await.unwrap();
+                            let mut buf = full_buffer();
+                            stream
+                                .recv_exact(&mut buf.slice_mut(..MSG_SIZE as u32))
+                                .await
+                                .unwrap();
                         }
 
                         wg.done();

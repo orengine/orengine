@@ -775,6 +775,8 @@ impl Executor {
                 });
             }
         }
+
+        *get_local_executor_ref() = None;
     }
 }
 
