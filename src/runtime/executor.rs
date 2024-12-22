@@ -1,6 +1,7 @@
 use crate::bug_message::BUG_MESSAGE;
 use crate::io::sys::WorkerSys;
 use crate::io::worker::{get_local_worker_ref, init_local_worker, IoWorker};
+use crate::io::{init_local_buf_pool, uninit_local_buf_pool};
 use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
@@ -9,15 +10,13 @@ use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
-use crate::sync_task_queue::SyncTaskList;
 use crate::utils::{assert_hint, CoreId};
-use crossbeam::utils::CachePadded;
 use fastrand::Rng;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -147,7 +146,6 @@ pub struct Executor {
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
     current_call: Call,
-    // We can't use BTreeMap, because it consumes and not insert value, if key already exists
     local_sleeping_tasks: BTreeMap<Instant, Task>,
 }
 
@@ -205,7 +203,11 @@ impl Executor {
         unsafe {
             if let Some(io_config) = valid_config.io_worker_config {
                 init_local_worker(io_config);
+                init_local_buf_pool(io_config.number_of_fixed_buffers, config.buffer_cap());
+            } else {
+                init_local_buf_pool(0, config.buffer_cap());
             }
+
             *get_local_executor_ref() = Some(Self {
                 core_id,
                 executor_id,
@@ -326,119 +328,28 @@ impl Executor {
         self.shared_tasks_list.as_ref()
     }
 
-    /// Sets the buffer capacity of the executor.
-    pub(crate) fn set_config_buffer_cap(&mut self, buffer_len: usize) {
-        self.config.buffer_cap = buffer_len;
-    }
-
     /// Returns the number of spawned tasks (shared and local).
     pub(crate) fn number_of_spawned_tasks(&self) -> usize {
         self.shared_tasks.len() + self.local_tasks.len()
     }
 
-    /// Invokes [`Call::PushCurrentTaskTo`]. Use it only if you know what you are doing.
-    ///
-    /// Read [`Call`] for more details.
+    /// Invokes the current [`Call`].
     ///
     /// # Safety
     ///
-    /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
-    ///
-    /// * the reference must live at least as long as this state of the task
-    ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
-    ///
-    /// * calling task must be shared (else you don't need any [`Calls`](Call))
+    /// This function is unsafe because it can break the program if provided [`Call`] is used
+    /// with wrong arguments. Think twice before using [`Calls`](Call) and twice read the `Safety`
+    /// region of provided [`Call`] before using it.
     #[inline(always)]
-    pub unsafe fn push_current_task_to(&mut self, send_to: &SyncTaskList) {
-        debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushCurrentTaskTo(send_to);
-    }
+    pub unsafe fn invoke_call(&mut self, call: Call) {
+        debug_assert!(self.current_call.is_none());
 
-    /// Invokes [`Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue`]. Use it only if you know what you are doing.
-    ///
-    /// Read [`Call`] for more details.
-    ///
-    /// # Safety
-    ///
-    /// * the reference must live at least as long as this state of the task
-    ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
-    ///
-    /// * calling task must be shared (else you don't need any [`Calls`](Call))
-    #[inline(always)]
-    pub unsafe fn push_current_task_at_the_start_of_lifo_shared_queue(&mut self) {
-        debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue;
-    }
-
-    /// Invokes [`Call::PushCurrentTaskToAndRemoveItIfCounterIsZero`].
-    /// Use it only if you know what you are doing.
-    ///
-    /// Read [`Call`] for more details.
-    ///
-    /// # Safety
-    ///
-    /// * `send_to` must be a valid pointer to [`SyncTaskQueue`](SyncTaskList)
-    ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
-    ///
-    /// * counter must be a valid pointer to [`AtomicUsize`]
-    ///
-    /// * the references must live at least as long as this state of the task
-    ///
-    /// * calling task must be shared (else you don't need any [`Calls`](Call))
-    #[inline(always)]
-    pub unsafe fn push_current_task_to_and_remove_it_if_counter_is_zero(
-        &mut self,
-        send_to: &SyncTaskList,
-        counter: &AtomicUsize,
-        order: Ordering,
-    ) {
-        debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call =
-            Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(send_to, counter, order);
-    }
-
-    /// Invokes [`Call::ReleaseAtomicBool`]. Use it only if you know what you are doing.
-    ///
-    /// Read [`Call`] for more details.
-    ///
-    /// # Safety
-    ///
-    /// * `atomic_bool` must be a valid pointer to [`AtomicBool`]
-    ///
-    /// * the [`AtomicBool`] must live at least as long as this state of the task
-    ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
-    ///
-    /// * calling task must be shared (else you don't need any [`Calls`](Call))
-    #[inline(always)]
-    pub unsafe fn release_atomic_bool(&mut self, atomic_bool: *const CachePadded<AtomicBool>) {
-        debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::ReleaseAtomicBool(atomic_bool);
-    }
-
-    /// Invokes [`Call::PushFnToThreadPool`]. Use it only if you know what you are doing.
-    ///
-    /// Read [`Call`] for more details.
-    ///
-    /// # Safety
-    ///
-    /// * the [`Fn`] must live at least as long as this state of the task.
-    ///
-    /// * task must return [`Poll::Pending`] immediately after calling this function
-    ///
-    /// * calling task must be shared (else you don't need any [`Calls`](Call))
-    #[inline(always)]
-    pub unsafe fn push_fn_to_thread_pool(&mut self, f: *mut dyn Fn()) {
-        debug_assert!(self.current_call.is_none(), "Call is already set.");
-        self.current_call = Call::PushFnToThreadPool(f);
+        self.current_call = call;
     }
 
     /// Processing current [`Call`]. It is taken out [`exec_task_now`](Executor::exec_task_now)
     /// to allow the compiler to decide whether to inline this function.
-    fn handle_call(&mut self, task: Task) {
+    fn handle_call(&mut self, mut task: Task) {
         match mem::take(&mut self.current_call) {
             Call::None => {}
             Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue => {
@@ -469,6 +380,23 @@ impl Executor {
                 );
 
                 self.thread_pool.push(task, f);
+            }
+            Call::ChangeCurrentTaskLocality(locality) => {
+                task.data.set_locality(locality);
+                assert_eq!(
+                    task.is_local(),
+                    locality.is_local(),
+                    "locality is {}, local is {}, shared is {}",
+                    locality.value,
+                    Locality::local().value,
+                    Locality::shared().value
+                );
+
+                if locality.is_local() {
+                    self.spawn_local_task(task);
+                } else {
+                    self.spawn_shared_task(task);
+                }
             }
         }
     }
@@ -533,17 +461,18 @@ impl Executor {
     /// Execute [`tasks`](Task) only by this method or [`exec_task_now`](Executor::exec_task_now)!
     #[inline(always)]
     pub fn exec_task(&mut self, task: Task) {
-        if self.exec_series >= 106 {
-            self.exec_series = 0;
-            if task.is_local() {
-                self.spawn_local_task(task);
-            } else {
-                self.spawn_shared_task(task);
-            }
+        if self.exec_series < 63 {
+            self.exec_task_now(task);
+
             return;
         }
 
-        self.exec_task_now(task);
+        self.exec_series = 0;
+        if task.is_local() {
+            self.spawn_local_task(task);
+        } else {
+            self.spawn_shared_task(task);
+        }
     }
 
     /// Creates a `local` [`task`](Task) from a provided [`future`](Future)
@@ -605,6 +534,8 @@ impl Executor {
     /// Read it in [`Executor`].
     #[inline(always)]
     pub fn spawn_local_task(&mut self, task: Task) {
+        debug_assert!(task.is_local(), "Try to spawn `shared` task as `local`!");
+
         self.local_tasks.push_back(task);
     }
 
@@ -626,6 +557,20 @@ impl Executor {
         self.spawn_shared_task(task);
     }
 
+    /// Calls [`spawn_local_task`](Executor::spawn_local_task)
+    /// or [`spawn_shared_task`](Executor::spawn_shared_task) depending on
+    /// the [`locality`](Locality) of the provided [`task`](Task).
+    ///
+    /// It is a little bit slower than calling them directly.
+    #[inline(always)]
+    pub fn spawn_task(&mut self, task: Task) {
+        if task.is_local() {
+            self.spawn_local_task(task);
+        } else {
+            self.spawn_shared_task(task);
+        }
+    }
+
     /// Enqueues a shared [`task`](Task).
     ///
     /// # Attention
@@ -637,6 +582,8 @@ impl Executor {
     /// Read it in [`Executor`].
     #[inline(always)]
     pub fn spawn_shared_task(&mut self, task: Task) {
+        debug_assert!(!task.is_local(), "Try to spawn `local` task as `shared`!");
+
         #[allow(clippy::branches_sharing_code, reason = "It is more readable")]
         if self.config.is_work_sharing_enabled() {
             if self.shared_tasks.len() <= self.config.work_sharing_level {
@@ -796,6 +743,7 @@ impl Executor {
     /// Called after [`check_version_and_update_if_needed`](SubscribedState::check_version_and_update_if_needed).
     #[inline(never)]
     unsafe fn graceful_stop(&mut self) {
+        uninit_local_buf_pool();
         if self.config.is_work_sharing_enabled() {
             unsafe {
                 self.subscribed_state.with_tasks_lists(|lists| {
@@ -827,6 +775,8 @@ impl Executor {
                 });
             }
         }
+
+        *get_local_executor_ref() = None;
     }
 }
 
@@ -873,7 +823,6 @@ impl Executor {
             self.subscribed_state
                 .check_version_and_update_if_needed(self.executor_id);
             if self.subscribed_state.is_stopped() {
-                unsafe { self.graceful_stop() };
                 break;
             }
 
@@ -942,6 +891,8 @@ impl Executor {
 
             shrink!(self.local_tasks);
         }
+
+        unsafe { self.graceful_stop() };
     }
 
     /// Runs the executor with a local task.

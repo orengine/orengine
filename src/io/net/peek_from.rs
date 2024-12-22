@@ -48,6 +48,12 @@ impl Future for PeekFrom<'_> {
     }
 }
 
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `PeekFrom` is `Send`."
+)]
+unsafe impl Send for PeekFrom<'_> {}
+
 /// `peek_from` io operation with deadline.
 pub struct PeekFromWithDeadline<'fut> {
     fd: RawFd,
@@ -93,6 +99,12 @@ impl Future for PeekFromWithDeadline<'_> {
     }
 }
 
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `PeekFromWithDeadline` is `Send`."
+)]
+unsafe impl Send for PeekFromWithDeadline<'_> {}
+
 /// The `AsyncPeekFrom` trait provides asynchronous methods for peeking at the incoming data
 /// without consuming it from the socket (datagram).
 ///
@@ -104,8 +116,7 @@ impl Future for PeekFromWithDeadline<'_> {
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
-/// use orengine::io::{AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
 /// use orengine::net::UdpSocket;
 ///
 /// async fn foo() -> std::io::Result<()> {
@@ -125,8 +136,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -162,8 +172,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;
     /// use std::time::{Duration, Instant};
     ///
@@ -206,8 +215,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
     /// use orengine::net::UdpSocket;
     /// use std::time::Duration;
     ///

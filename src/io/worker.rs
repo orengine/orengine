@@ -40,18 +40,10 @@ pub(crate) unsafe fn init_local_worker(config: IoWorkerConfig) {
 pub(crate) fn local_worker() -> &'static mut WorkerSys {
     #[cfg(debug_assertions)]
     {
-        if crate::local_executor()
-            .config()
-            .io_worker_config()
-            .is_none()
-        {
-            panic!(
-                "An attempt to call io-operation has failed, \
-             because an Executor has no io-worker. Look at the config of the Executor."
-            );
-        }
-
-        get_local_worker_ref().as_mut().expect(BUG_MESSAGE)
+        get_local_worker_ref().as_mut().expect(
+            "An attempt to call io-operation has failed, \
+             because an Executor has no io-worker. Look at the config of the Executor.",
+        )
     }
 
     #[cfg(not(debug_assertions))]
@@ -132,6 +124,9 @@ pub(crate) trait IoWorker {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
         self.connect(socket_fd, addr_ptr, addr_len, request_ptr);
     }
+
+    // region poll fd
+
     /// Registers a new `poll` for readable io operation.
     fn poll_fd_read(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
     /// Registers a new `poll` for readable io operation with deadline.
@@ -156,27 +151,63 @@ pub(crate) trait IoWorker {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
         self.poll_fd_write(fd, request_ptr);
     }
+
+    // endregion
+
+    // region recv
+
     /// Registers a new `recv` io operation.
-    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData);
+    /// Registers a new `recv` io operation with __fixed__ buffer.
+    fn recv_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    );
+
     /// Registers a new `recv` io operation with deadline.
     fn recv_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        ptr: *mut u8,
+        len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.recv(fd, buf_ptr, len, request_ptr);
+        self.recv(fd, ptr, len, request_ptr);
     }
+
+    /// Registers a new `recv` io operation with deadline with __fixed__ buffer.
+    fn recv_fixed_with_deadline(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.recv_fixed(fd, ptr, len, buf_index, request_ptr);
+    }
+
+    // endregion
+
+    // region recv_from
+
     /// Registers a new `recv_from` io operation.
+    // TODO with fixed buffer
     fn recv_from(
         &mut self,
         fd: RawFd,
         msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     );
+
     /// Registers a new `recv_from` io operation with deadline.
     fn recv_from_with_deadline(
         &mut self,
@@ -188,21 +219,56 @@ pub(crate) trait IoWorker {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
         self.recv_from(fd, msg_header, request_ptr);
     }
+
+    // endregion
+
+    // region send
+
     /// Registers a new `send` io operation.
-    fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData);
+    fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData);
+    /// Registers a new `send` io operation with __fixed__ buffer.
+    fn send_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    );
+
     /// Registers a new `send` io operation with deadline.
     fn send_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        ptr: *const u8,
+        len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.send(fd, buf_ptr, len, request_ptr);
+        self.send(fd, ptr, len, request_ptr);
     }
+
+    /// Registers a new `send` io operation with deadline with __fixed__ buffer.
+    fn send_fixed_with_deadline(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.send_fixed(fd, ptr, len, buf_index, request_ptr);
+    }
+
+    // endregion
+
+    // region send_to
+
     /// Registers a new `send_to` io operation.
+    // TODO with fixed buffer
     fn send_to(
         &mut self,
         fd: RawFd,
@@ -220,21 +286,56 @@ pub(crate) trait IoWorker {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
         self.send_to(fd, msg_header, request_ptr);
     }
+
+    // endregion
+
+    // region peek
+
     /// Registers a new `peek` io operation.
-    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
+    fn peek(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData);
+    /// Registers a new `peek` io operation with __fixed__ buffer.
+    fn peek_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    );
+
     /// Registers a new `peek` io operation with deadline.
     fn peek_with_deadline(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        ptr: *mut u8,
+        len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
     ) {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.peek(fd, buf_ptr, len, request_ptr);
+        self.peek(fd, ptr, len, request_ptr);
     }
+
+    /// Registers a new `peek` io operation with deadline with __fixed__ buffer.
+    fn peek_fixed_with_deadline(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+        deadline: &mut Instant,
+    ) {
+        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
+        self.peek_fixed(fd, ptr, len, buf_index, request_ptr);
+    }
+
+    // endregion
+
+    // region peek_from
+
     /// Registers a new `peek_from` io operation.
+    // TODO with fixed buffer
     fn peek_from(
         &mut self,
         fd: RawFd,
@@ -252,6 +353,9 @@ pub(crate) trait IoWorker {
         self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
         self.peek_from(fd, msg, request_ptr);
     }
+
+    // endregion
+
     /// Registers a new `shutdown` io operation.
     fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequestData);
     /// Registers a new `open` io operation.
@@ -274,28 +378,77 @@ pub(crate) trait IoWorker {
     fn sync_all(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
     /// Registers a new `sync_data` io operation.
     fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
+
+    // region read
+
     /// Registers a new `read` io operation.
-    fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData);
-    /// Registers a new `pread` io operation if the kernel supports it else uses cursors.
+    fn read(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData);
+    /// Registers a new `read` io operation with __fixed__ buffer.
+    fn read_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    );
+    /// Registers a new `pread` io operation.
     fn pread(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        ptr: *mut u8,
+        len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     );
+    /// Registers a new `pread` io operation with __fixed__ buffer.
+    fn pread_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    );
+
+    // endregion
+
+    // region write
+
     /// Registers a new `write` io operation.
-    fn write(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData);
-    /// Registers a new `pwrite` io operation if the kernel supports it else uses cursors.
+    fn write(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData);
+    /// Registers a new `write` io operation with __fixed__ buffer.
+    fn write_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    );
+    /// Registers a new `pwrite` io operation.
     fn pwrite(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        ptr: *const u8,
+        len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     );
+    /// Registers a new `pwrite` io operation with __fixed__ buffer.
+    fn pwrite_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    );
+
+    // endregion
+
     /// Registers a new `close` io operation.
     fn close(&mut self, fd: RawFd, request_ptr: *mut IoRequestData);
     /// Registers a new `rename` io operation.

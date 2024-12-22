@@ -245,14 +245,137 @@ impl Drop for File {
 mod tests {
     use super::*;
     use crate as orengine;
-    use crate::buf::{buffer, full_buffer};
     use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
+    use crate::io::{full_buffer, get_fixed_buffer, get_full_fixed_buffer, FixedBuffer};
     use std::fs::{create_dir, create_dir_all};
     use std::io::{Seek, SeekFrom};
     use std::path::PathBuf;
 
     #[orengine::test::test_local]
-    fn test_file_create_write_read_pread_pwrite_remove_close() {
+    fn test_file_create_write_read_pread_pwrite_remove_close_with_nonfixed() {
+        const MSG: &[u8] = b"Hello, world!";
+
+        let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/test_file_nonfixed/");
+
+        create_test_dir_if_not_exist();
+
+        let file_path = {
+            let mut file_path_ = PathBuf::from(test_file_dir_path);
+            let _ = create_dir(test_file_dir_path);
+            file_path_.push("test.txt");
+            file_path_
+        };
+        let options = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .truncate(true)
+            .create(true);
+        let mut file = match File::open(&file_path, &options).await {
+            Ok(file) => file,
+            Err(err) => panic!("Can't open (create) file: {err}"),
+        };
+
+        assert!(is_exists(file_path.clone()));
+
+        let mut buf = Vec::with_capacity(0);
+        buf.extend(MSG);
+
+        match file.write_all_bytes(buf.as_ref()).await {
+            Ok(()) => (),
+            Err(err) => panic!("Can't write file: {err}"),
+        }
+
+        file.with_std_mut_file(|file| file.seek(SeekFrom::Start(0)))
+            .unwrap();
+        match file.read_bytes_exact(buf.as_mut()).await {
+            Ok(()) => assert_eq!(buf, MSG),
+            Err(err) => panic!("Can't read file: {err}"),
+        }
+
+        buf.clear();
+        buf.extend(b"great World!");
+        match file.pwrite_all_bytes(buf.as_ref(), 7).await {
+            Ok(()) => (),
+            Err(err) => panic!("Can't pwrite file: {err}"),
+        }
+
+        buf.clear();
+        unsafe { buf.set_len(b"Hello, great World!".len()) };
+        match file.pread_bytes_exact(buf.as_mut(), 0).await {
+            Ok(()) => assert_eq!(buf, b"Hello, great World!"),
+            Err(err) => panic!("Can't read file: {err}"),
+        }
+
+        File::rename(
+            test_file_dir_path.to_string() + "test.txt",
+            test_file_dir_path.to_string() + "test2.txt",
+        )
+        .await
+        .expect("Can't rename file");
+        assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
+
+        File::remove(test_file_dir_path.to_string() + "/test2.txt")
+            .await
+            .expect("Can't remove file");
+        assert!(!is_exists(file_path));
+
+        std::fs::remove_dir("./test/test_file_nonfixed").expect("failed to remove test file dir");
+    }
+
+    #[orengine::test::test_local]
+    fn test_file_unpositional_read_write_with_nonfixed() {
+        create_test_dir_if_not_exist();
+
+        let test_file_dir_path: &str =
+            &(TEST_DIR_PATH.to_string() + "/unpositional_file_nonfixed/");
+        let file_path = {
+            let mut file_path_ = PathBuf::from(test_file_dir_path);
+            let _ = create_dir_all(test_file_dir_path);
+            file_path_.push("test.txt");
+            file_path_
+        };
+        let options = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .truncate(true)
+            .create(true);
+        let mut file = match File::open(&file_path, &options).await {
+            Ok(file) => file,
+            Err(err) => panic!("Can't open (create) file: {err}"),
+        };
+
+        let mut write_buf = vec![0u8; 4096];
+        for i in 0..write_buf.capacity() {
+            write_buf[i] = u8::try_from(i % 256).unwrap();
+        }
+
+        file.write_all_bytes(write_buf.as_ref()).await.unwrap();
+
+        let mut read_buf = [0; 10];
+        let mut read = 0usize;
+        let mut read_file = File::open(&file_path, &OpenOptions::new().read(true))
+            .await
+            .unwrap();
+
+        while read < write_buf.capacity() {
+            let n = read_file.read_bytes(&mut read_buf).await.unwrap();
+            assert_eq!(write_buf[read..read + n], read_buf[..n]);
+            read += n;
+        }
+
+        let mut large_big_buff = full_buffer();
+        read_file
+            .with_std_mut_file(|file| file.seek(SeekFrom::Start(0)))
+            .unwrap();
+        read_file
+            .read_bytes_exact(&mut large_big_buff[..write_buf.capacity()])
+            .await
+            .unwrap();
+        assert_eq!(large_big_buff.as_ref(), write_buf);
+    }
+
+    #[orengine::test::test_local]
+    fn test_file_create_write_read_pread_pwrite_remove_close_with_fixed() {
         const MSG: &[u8] = b"Hello, world!";
 
         let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/test_file/");
@@ -277,31 +400,32 @@ mod tests {
 
         assert!(is_exists(file_path.clone()));
 
-        let mut buf = buffer();
+        let mut buf = get_fixed_buffer().await;
         buf.append(MSG);
 
-        match file.write_all(buf.as_ref()).await {
+        match file.write_all(&buf).await {
             Ok(()) => (),
             Err(err) => panic!("Can't write file: {err}"),
         }
 
         file.with_std_mut_file(|file| file.seek(SeekFrom::Start(0)))
             .unwrap();
-        match file.read_exact(buf.as_mut()).await {
+        match file.read_exact(&mut buf).await {
             Ok(()) => assert_eq!(buf.as_ref(), MSG),
             Err(err) => panic!("Can't read file: {err}"),
         }
 
         buf.clear();
         buf.append(b"great World!");
-        match file.pwrite_all(buf.as_ref(), 7).await {
+        match file.pwrite_all(&buf, 7).await {
             Ok(()) => (),
             Err(err) => panic!("Can't pwrite file: {err}"),
         }
 
         buf.clear();
-        buf.set_len(MSG.len() + 6);
-        match file.pread_exact(buf.as_mut(), 0).await {
+        buf.set_len(u32::try_from(b"Hello, great World!".len()).unwrap())
+            .unwrap();
+        match file.pread_exact(&mut buf, 0).await {
             Ok(()) => assert_eq!(buf.as_ref(), b"Hello, great World!"),
             Err(err) => panic!("Can't read file: {err}"),
         }
@@ -323,7 +447,7 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    fn test_file_unpositional_read_write() {
+    fn test_file_unpositional_read_write_with_fixed() {
         create_test_dir_if_not_exist();
 
         let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/unpositional_file/");
@@ -346,22 +470,26 @@ mod tests {
             Err(err) => panic!("Can't open (create) file: {err}"),
         };
 
-        let mut write_buf = full_buffer();
-        for i in 0..write_buf.cap() {
+        let mut write_buf = get_full_fixed_buffer().await;
+        for i in 0..write_buf.capacity() as usize {
             write_buf[i] = u8::try_from(i % 256).unwrap();
         }
 
-        file.write_all(write_buf.as_ref()).await.unwrap();
+        file.write_all(&write_buf).await.unwrap();
 
-        let mut read_buf = [0; 10];
+        let mut read_buf = get_fixed_buffer().await;
+        read_buf.set_len(10).unwrap();
         let mut read = 0;
         let mut read_file = File::open(&file_path, &OpenOptions::new().read(true))
             .await
             .unwrap();
 
-        while read < write_buf.cap() {
+        while read < write_buf.capacity() {
             let n = read_file.read(&mut read_buf).await.unwrap();
-            assert_eq!(write_buf.as_ref()[read..read + n], read_buf[..n]);
+            assert_eq!(
+                write_buf.as_bytes()[read as usize..read as usize + n as usize],
+                read_buf.as_bytes()[..n as usize]
+            );
             read += n;
         }
 
@@ -370,7 +498,7 @@ mod tests {
             .with_std_mut_file(|file| file.seek(SeekFrom::Start(0)))
             .unwrap();
         read_file
-            .read_exact(&mut large_big_buff[..write_buf.cap()])
+            .read_bytes_exact(&mut large_big_buff[..write_buf.capacity() as usize])
             .await
             .unwrap();
         assert_eq!(large_big_buff.as_ref(), write_buf.as_ref());

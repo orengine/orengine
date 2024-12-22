@@ -18,9 +18,9 @@ Run server with one argument with one of the following values:
 - `may`
 - `orengine`
 
-And second argument that is the server address (default is `localhost:8083`).
+Second argument that is the server address (default is `localhost:8083`).
 
-Example command: `cargo run --release`
+Example command: `cargo run --release orengine localhost:8083`
 
 # Run client
 
@@ -36,4 +36,6 @@ Second argument that is the server address (default is `localhost:8083`).
 
 Third argument that is the number of messages (default is 5,200,000).
 
-And fourth argument that is the number of connections (default is 512).
+Fourth argument that is the number of connections (default is 512).
+
+Example command: `cargo run --release orengine localhost:8083 5200000 512`

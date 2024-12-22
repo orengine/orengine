@@ -1,4 +1,5 @@
 use crate::local_executor;
+use crate::runtime::call::Call;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -35,7 +36,7 @@ impl Future for Asyncify<'_> {
                 mem::transmute::<*mut dyn Fn(), *mut dyn Fn()>(this.f)
             };
             unsafe {
-                local_executor().push_fn_to_thread_pool(ptr);
+                local_executor().invoke_call(Call::PushFnToThreadPool(ptr));
             };
 
             return Poll::Pending;

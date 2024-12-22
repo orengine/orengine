@@ -40,3 +40,5 @@ impl Future for RemoveDir {
         ));
     }
 }
+
+unsafe impl Send for RemoveDir {}

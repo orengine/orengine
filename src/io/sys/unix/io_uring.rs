@@ -49,6 +49,18 @@ impl IOUringWorker {
         self.probe.is_supported(opcode)
     }
 
+    /// Register __fixed__ buffers.
+    pub(crate) fn register_buffers(&mut self, buffers: &[libc::iovec]) {
+        let submitter = unsafe { &mut *self.ring.get() }.submitter();
+        unsafe { submitter.register_buffers(buffers) }.expect(BUG_MESSAGE);
+    }
+
+    /// Unregister __fixed__ buffers.
+    pub(crate) fn unregister_buffers(&mut self) {
+        let submitter = unsafe { &mut *self.ring.get() }.submitter();
+        submitter.unregister_buffers().expect(BUG_MESSAGE);
+    }
+
     /// Add a new sqe to the submission queue.
     #[inline(always)]
     fn add_sqe(&mut self, sqe: Entry) {
@@ -309,10 +321,24 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn recv(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
+    fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Recv::new(types::Fd(fd), buf_ptr, len as _).build(),
+            opcode::Recv::new(types::Fd(fd), ptr, len).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn recv_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
             request_ptr,
         );
     }
@@ -331,7 +357,22 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn send(&mut self, fd: RawFd, buf_ptr: *const u8, len: usize, request_ptr: *mut IoRequestData) {
+    fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Send::new(types::Fd(fd), ptr, len).build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn send_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
         // TODO https://github.com/tokio-rs/io-uring/issues/308
         // if self.is_supported(opcode::SendZc::CODE) {
         //     self.register_entry(
@@ -342,8 +383,7 @@ impl IoWorker for IOUringWorker {
         // }
 
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Send::new(types::Fd(fd), buf_ptr, len as _).build(),
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
             request_ptr,
         );
     }
@@ -355,15 +395,6 @@ impl IoWorker for IOUringWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     ) {
-        // TODO https://github.com/tokio-rs/io-uring/issues/308
-        // if self.is_supported(opcode::SendMsgZc::CODE) {
-        //     self.register_entry(
-        //         opcode::SendMsgZc::new(types::Fd(fd), msg_header).build(),
-        //         request_ptr,
-        //     );
-        //     return;
-        // }
-
         self.register_entry(
             opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
             request_ptr,
@@ -371,14 +402,33 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn peek(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
+    fn peek(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Recv::new(types::Fd(fd), buf_ptr, len as _)
+            opcode::Recv::new(types::Fd(fd), ptr, len)
                 .flags(libc::MSG_PEEK)
                 .build(),
             request_ptr,
         );
+    }
+
+    #[inline(always)]
+    fn peek_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        _buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        // TODO peek fixed
+        // self.register_entry(
+        //     opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+        //         .rw_flags(libc::MSG_PEEK)
+        //         .build(),
+        //     request_ptr,
+        // );
+
+        self.peek(fd, ptr, len, request_ptr);
     }
 
     #[inline(always)]
@@ -457,11 +507,28 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn read(&mut self, fd: RawFd, buf_ptr: *mut u8, len: usize, request_ptr: *mut IoRequestData) {
+    fn read(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-            opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
+            opcode::Read::new(types::Fd(fd), ptr, len)
+                .offset(-1 as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn read_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -472,14 +539,13 @@ impl IoWorker for IOUringWorker {
     fn pread(
         &mut self,
         fd: RawFd,
-        buf_ptr: *mut u8,
-        len: usize,
+        ptr: *mut u8,
+        len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Read::new(types::Fd(fd), buf_ptr, len as _)
+            opcode::Read::new(types::Fd(fd), ptr, len)
                 .offset(offset as _)
                 .build(),
             request_ptr,
@@ -487,17 +553,47 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn write(
+    fn pread_fixed(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        ptr: *mut u8,
+        len: u32,
+        buf_index: u16,
+        offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
-            opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
+            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn write(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::Write::new(types::Fd(fd), ptr, len)
+                .offset(-1 as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn write_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        request_ptr: *mut IoRequestData,
+    ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -508,14 +604,32 @@ impl IoWorker for IOUringWorker {
     fn pwrite(
         &mut self,
         fd: RawFd,
-        buf_ptr: *const u8,
-        len: usize,
+        ptr: *const u8,
+        len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
-            opcode::Write::new(types::Fd(fd), buf_ptr, len as _)
+            opcode::Write::new(types::Fd(fd), ptr, len)
+                .offset(offset as _)
+                .build(),
+            request_ptr,
+        );
+    }
+
+    #[inline(always)]
+    fn pwrite_fixed(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        buf_index: u16,
+        offset: usize,
+        request_ptr: *mut IoRequestData,
+    ) {
+        #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
+        self.register_entry(
+            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
                 .offset(offset as _)
                 .build(),
             request_ptr,

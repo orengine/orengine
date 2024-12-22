@@ -42,3 +42,5 @@ impl Future for Rename {
         ));
     }
 }
+
+unsafe impl Send for Rename {}

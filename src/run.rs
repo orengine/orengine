@@ -15,22 +15,21 @@ use std::future::Future;
 /// ## High-performance echo server
 ///
 /// ```no_run
-/// use orengine::buf::full_buffer;
 /// use orengine::{run_on_all_cores_with_config, local_executor};
 /// use orengine::runtime::Config;
-/// use orengine::io::{AsyncBind, AsyncAccept};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncAccept};
 /// use orengine::net::{Stream, TcpListener, TcpStream};
 ///
 /// async fn handle_stream<S: Stream>(mut stream: S) {
 ///     loop {
 ///         stream.poll_recv().await.unwrap();
 ///         let mut buf = full_buffer();
-///         buf.set_len_to_cap();
+///         buf.set_len_to_capacity();
 ///         let n = stream.recv(&mut buf).await.unwrap();
 ///         if n == 0 {
 ///             break;
 ///         }
-///         stream.send_all(&buf[..n]).await.unwrap();
+///         stream.send_all(&buf.slice(..n)).await.unwrap();
 ///     }
 /// }
 ///
@@ -83,21 +82,20 @@ where
 /// ## High-performance echo server
 ///
 /// ```no_run
-/// use orengine::buf::full_buffer;
 /// use orengine::{run_on_all_cores, local_executor};
-/// use orengine::io::{AsyncBind, AsyncAccept};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncAccept};
 /// use orengine::net::{Stream, TcpListener, TcpStream};
 ///
 /// async fn handle_stream<S: Stream>(mut stream: S) {
 ///     loop {
 ///         stream.poll_recv().await.unwrap();
 ///         let mut buf = full_buffer();
-///         buf.set_len_to_cap();
+///         buf.set_len_to_capacity();
 ///         let n = stream.recv(&mut buf).await.unwrap();
 ///         if n == 0 {
 ///             break;
 ///         }
-///         stream.send_all(&buf[..n]).await.unwrap();
+///         stream.send_all(&buf.slice(..n)).await.unwrap();
 ///     }
 /// }
 ///

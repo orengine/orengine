@@ -49,6 +49,8 @@ impl Future for Connect<'_> {
     }
 }
 
+unsafe impl Send for Connect<'_> {}
+
 /// `connect` io operation with deadline.
 pub struct ConnectWithDeadline<'fut> {
     fd: RawFd,
@@ -90,6 +92,8 @@ impl Future for ConnectWithDeadline<'_> {
         ));
     }
 }
+
+unsafe impl Send for ConnectWithDeadline<'_> {}
 
 /// The `AsyncConnectStream` trait provides asynchronous methods for creating and connecting
 /// stream-oriented sockets (like TCP) to a remote address.
@@ -286,9 +290,8 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
@@ -302,7 +305,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///         break;
     ///     }
     ///
-    ///     connected_datagram.send_all(&buf[..n]).await?;
+    ///     connected_datagram.send_all(&buf.slice(..n)).await?;
     /// }
     ///
     /// # Ok(())
@@ -326,10 +329,8 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
-    /// use std::time::{Instant, Duration};    ///
-    /// #
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
@@ -344,7 +345,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///         break;
     ///     }
     ///
-    ///     connected_datagram.send_all(&buf[..n]).await?;
+    ///     connected_datagram.send_all(&buf.slice(..n)).await?;
     /// }
     /// # Ok(())
     /// # }
@@ -372,10 +373,8 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
-    /// use std::time::Duration;    ///
-    /// #
-    /// use orengine::buf::full_buffer;
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
@@ -389,7 +388,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///         break;
     ///     }
     ///
-    ///     connected_datagram.send_all(&buf[..n]).await?;
+    ///     connected_datagram.send_all(&buf.slice(..n)).await?;
     /// }
     /// # Ok(())
     /// # }

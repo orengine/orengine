@@ -24,10 +24,12 @@ impl Future for Yield {
             let task = unsafe { get_task_from_context!(cx) };
             if task.is_local() {
                 local_executor().add_task_at_the_start_of_lifo_local_queue(task);
+
                 return Poll::Pending;
             }
 
             local_executor().add_task_at_the_start_of_lifo_shared_queue(task);
+
             Poll::Pending
         }
     }

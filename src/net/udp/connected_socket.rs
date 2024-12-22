@@ -17,8 +17,7 @@ use std::mem::ManuallyDrop;
 /// # Example
 ///
 /// ```rust
-/// use orengine::buf::full_buffer;
-/// use orengine::io::{AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
 ///
 /// # async fn foo() {
@@ -32,7 +31,7 @@ use std::mem::ManuallyDrop;
 ///        break;
 ///    }
 ///
-///    connected_socket.send(&buf[..n]).await.expect("send_to failed");
+///    connected_socket.send(&buf.slice(..n)).await.expect("send_to failed");
 /// }
 /// # }
 /// ```
@@ -137,7 +136,7 @@ impl Drop for UdpConnectedSocket {
 
 #[cfg(test)]
 mod tests {
-    use crate::io::{AsyncBind, AsyncConnectDatagram};
+    use crate::io::{get_fixed_buffer, AsyncBind, AsyncConnectDatagram};
     use crate::net::udp::UdpSocket;
     use std::net::SocketAddr;
     use std::str::FromStr;
@@ -204,12 +203,15 @@ mod tests {
 
         for _ in 0..TIMES {
             connected_stream
-                .send_all(REQUEST)
+                .send_all_bytes(REQUEST)
                 .await
                 .expect("send failed");
             let mut buf = vec![0u8; RESPONSE.len()];
 
-            connected_stream.recv(&mut buf).await.expect("recv failed");
+            connected_stream
+                .recv_bytes(&mut buf)
+                .await
+                .expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
 
@@ -232,8 +234,11 @@ mod tests {
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
         }
 
+        let mut buffered_request = get_fixed_buffer().await;
+        buffered_request.append(REQUEST);
+
         match connected_socket
-            .recv_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .recv_with_timeout(&mut buffered_request, TIMEOUT)
             .await
         {
             Ok(_) => panic!("recv_from should timeout"),
@@ -241,7 +246,7 @@ mod tests {
         }
 
         match connected_socket
-            .peek_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .peek_with_timeout(&mut buffered_request, TIMEOUT)
             .await
         {
             Ok(_) => panic!("peek_from should timeout"),

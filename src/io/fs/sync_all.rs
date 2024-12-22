@@ -41,6 +41,8 @@ impl Future for SyncAll {
     }
 }
 
+unsafe impl Send for SyncAll {}
+
 /// The [`AsyncSyncAll`] trait provides a [`sync_all`](AsyncSyncAll::sync_all) method
 /// to synchronize the data and metadata of a file with the underlying storage device.
 ///
@@ -63,16 +65,17 @@ pub trait AsyncSyncAll: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::{AsyncRead, AsyncWrite};
-    /// use orengine::io::sync_all::AsyncSyncAll;
+    /// use orengine::io::{AsyncRead, AsyncSyncAll, AsyncWrite, buffer};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().write(true);
     /// let mut file = File::open("example.txt", &options).await?;
-    /// let mut buffer = b"Hello, world";
-    /// file.write_all(buffer).await?;
+    ///
+    /// let mut buf = buffer();
+    /// buf.append(b"Hello, World!");
+    ///
+    /// file.write_all(&buf).await?;
     /// file.sync_all().await?;
     /// # Ok(())
     /// # }

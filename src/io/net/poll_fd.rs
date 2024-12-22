@@ -43,6 +43,8 @@ macro_rules! generate_poll {
             }
         }
 
+        unsafe impl Send for $name {}
+
         /// `poll_fd` io operation with deadline.
         pub struct $name_with_deadline {
             fd: RawFd,
@@ -80,6 +82,8 @@ macro_rules! generate_poll {
                 ));
             }
         }
+
+        unsafe impl Send for $name_with_deadline {}
     };
 }
 
@@ -110,8 +114,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::io::Buffer).
     ///
     /// Asynchronously peeks into the incoming data without consuming it, filling the buffer with
     /// available data. Returns the number of bytes peeked.
@@ -119,9 +123,8 @@ pub trait AsyncPollFd: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -144,8 +147,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::io::Buffer).
     ///
     /// Asynchronously peeks into the incoming data with a specified deadline.
     /// Returns the number of bytes peeked.
@@ -157,8 +160,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -184,8 +186,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and receive from the stream. After receive release (drop) the [`buffer`](crate::io::Buffer).
     ///
     /// Asynchronously peeks into the incoming data with a specified timeout.
     /// Returns the number of bytes peeked.
@@ -197,8 +199,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::buf::full_buffer;
-    /// use orengine::io::{AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -221,8 +222,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and send to the stream. After send release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv`](Self::poll_recv) it does not have a significant impact
     /// on productivity and efficiency.
     #[inline(always)]
@@ -238,8 +239,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and send to the stream. After send release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv_with_deadline`](Self::poll_recv_with_deadline) it does not have a significant impact
     /// on productivity and efficiency.
     #[inline(always)]
@@ -255,8 +256,8 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// # Usage
     ///
-    /// Call this method on the stream before allocate a [`buffer`](crate::buf::Buffer)
-    /// and send to the stream. After send release (drop) the [`buffer`](crate::buf::Buffer).
+    /// Call this method on the stream before allocate a [`buffer`](crate::io::Buffer)
+    /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv_with_timeout`](Self::poll_recv_with_timeout) it does not have a significant impact
     /// on productivity and efficiency.
     #[inline(always)]

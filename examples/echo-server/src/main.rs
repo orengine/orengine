@@ -1,4 +1,4 @@
-use orengine::buf::full_buffer;
+use orengine::io::full_buffer;
 use orengine::net::{Listener, Stream, TcpListener};
 use orengine::{local_executor, run_on_all_cores};
 
@@ -12,7 +12,7 @@ async fn handle_stream<S: Stream>(mut stream: S) {
             break;
         }
 
-        stream.send_all(&buf[..n]).await.expect("send failed");
+        stream.send_all(&buf.slice(..n)).await.expect("send failed");
     }
 }
 

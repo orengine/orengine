@@ -40,6 +40,8 @@ impl Future for SyncData {
     }
 }
 
+unsafe impl Send for SyncData {}
+
 /// The [`AsyncSyncData`] trait provides
 /// a [`sync_data`](AsyncSyncData::sync_data) method to synchronize the data of a
 /// file with the underlying storage device.
@@ -58,16 +60,17 @@ pub trait AsyncSyncData: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::buf::full_buffer;
     /// use orengine::fs::{File, OpenOptions};
-    /// use orengine::io::{AsyncRead, AsyncSyncData, AsyncWrite};
-    /// use orengine::io::sync_all::AsyncSyncAll;
+    /// use orengine::io::{AsyncRead, AsyncSyncData, AsyncWrite, buffer};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let options = OpenOptions::new().write(true);
     /// let mut file = File::open("example.txt", &options).await?;
-    /// let mut buffer = b"Hello, world";
-    /// file.write_all(buffer).await?;
+    ///
+    /// let mut buf = buffer();
+    /// buf.append(b"Hello, world!");
+    ///
+    /// file.write_all(&buf).await?;
     /// file.sync_data().await?;
     /// # Ok(())
     /// # }

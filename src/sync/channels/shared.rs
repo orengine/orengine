@@ -1,3 +1,4 @@
+use crate::runtime::call::Call;
 use crate::runtime::{local_executor, Task};
 use crate::sync::mutexes::naive_shared::NaiveMutex;
 use crate::sync::{
@@ -73,7 +74,7 @@ unsafe impl<T: Send> Send for Inner<T> {}
 /// [`release_atomic_bool`](crate::Executor::release_atomic_bool).
 macro_rules! return_pending_and_release_lock {
     ($ex:expr, $lock:expr) => {
-        unsafe { $ex.release_atomic_bool($lock.leak_to_atomic()) };
+        unsafe { $ex.invoke_call(Call::ReleaseAtomicBool($lock.leak_to_atomic())) };
         return Poll::Pending;
     };
 }
@@ -84,7 +85,9 @@ macro_rules! acquire_lock {
         match $mutex.try_lock() {
             Some(lock) => lock,
             None => {
-                unsafe { local_executor().push_current_task_at_the_start_of_lifo_shared_queue() };
+                unsafe {
+                    local_executor().invoke_call(Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue)
+                };
 
                 return Poll::Pending;
             }

@@ -14,8 +14,7 @@ Wait for `v1.0.0` and media posts.
 # Before release
 
 - add more docs;
-- add fallback to `asyncify` for non-Linux OS;
-- think about __fixed__ buffers and files.
+- add fallback to `asyncify` for non-Linux OS.
 
 # Why Orengine?
 

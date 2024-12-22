@@ -59,6 +59,8 @@ impl<S: FromRawFd> Future for Accept<S> {
     }
 }
 
+unsafe impl<S: FromRawFd> Send for Accept<S> {}
+
 /// `accept` io operation with deadline.
 pub struct AcceptWithDeadline<S: FromRawFd> {
     fd: RawFd,
@@ -105,6 +107,8 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
         ));
     }
 }
+
+unsafe impl<S: FromRawFd> Send for AcceptWithDeadline<S> {}
 
 /// The `AsyncAccept` trait provides asynchronous methods for accepting new incoming connections.
 ///

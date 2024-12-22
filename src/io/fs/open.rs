@@ -46,3 +46,5 @@ impl<F: FromRawFd> Future for Open<F> {
         ));
     }
 }
+
+unsafe impl<F: FromRawFd> Send for Open<F> {}

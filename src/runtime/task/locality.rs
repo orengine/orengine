@@ -24,7 +24,7 @@ pub(crate) const IS_LOCAL_MASK: i128 = 1 << IS_LOCAL_SHIFT;
 /// # The difference between shared and local tasks
 ///
 /// Read it in [`crate::Executor`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Locality {
     #[cfg(not(target_pointer_width = "64"))]
     pub(crate) value: bool,
@@ -81,7 +81,7 @@ impl Locality {
 
         #[cfg(target_pointer_width = "64")]
         {
-            self.value > 0
+            self.value != 0
         }
     }
 }

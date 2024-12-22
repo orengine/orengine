@@ -40,3 +40,5 @@ impl Future for Remove {
         ));
     }
 }
+
+unsafe impl Send for Remove {}

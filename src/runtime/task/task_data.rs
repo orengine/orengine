@@ -83,4 +83,63 @@ impl TaskData {
             (future_tagged_ptr & IS_LOCAL_MASK) != 0
         }
     }
+
+    /// Sets locality for the `TaskData`.
+    #[inline(always)]
+    pub(crate) fn set_locality(&mut self, locality: Locality) {
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            self.is_local = locality.value;
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[allow(clippy::transmute_undefined_repr, reason = "dark magic")]
+        {
+            let future_tagged_ptr = unsafe {
+                std::mem::transmute::<*mut dyn Future<Output = ()>, i128>(self.future_tagged_ptr)
+            };
+
+            let tagged_ptr = future_tagged_ptr & !IS_LOCAL_MASK;
+            let tagged_ptr = tagged_ptr | locality.value;
+
+            #[allow(clippy::useless_transmute, reason = "false positive")]
+            {
+                self.future_tagged_ptr = unsafe {
+                    std::mem::transmute::<i128, *mut dyn Future<Output = ()>>(tagged_ptr)
+                };
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::runtime::Task;
+    use crate::{local_executor, Local};
+
+    #[orengine::test::test_local]
+    fn test_task_data() {
+        let res = Local::new(false);
+        let res_clone = res.clone();
+        let mut task = Task::from_future(
+            async move {
+                *res_clone.borrow_mut() = true;
+            },
+            Locality::local(),
+        );
+
+        assert!(task.data.is_local());
+        assert!(task.is_local());
+
+        task.data.set_locality(Locality::shared());
+
+        assert!(!task.data.is_local());
+        assert!(!task.is_local());
+
+        local_executor().exec_task(task);
+
+        assert!(*res.borrow());
+    }
 }
