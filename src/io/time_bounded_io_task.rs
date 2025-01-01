@@ -8,15 +8,33 @@ pub(crate) struct TimeBoundedIoTask {
     deadline: Instant,
     /// User data is used to cancel the task if needed.
     user_data: u64,
+    #[cfg(not(target_os = "linux"))]
+    raw_socket: crate::io::sys::RawSocket,
 }
 
 impl TimeBoundedIoTask {
     /// Creates a new [`TimeBoundedIoTask`]
     #[inline(always)]
+    #[cfg(target_os = "linux")]
     pub(crate) fn new(io_request_data: &IoRequestData, deadline: Instant) -> Self {
         Self {
             deadline,
             user_data: std::ptr::from_ref(io_request_data) as u64,
+        }
+    }
+
+    /// Creates a new [`TimeBoundedIoTask`]
+    #[inline(always)]
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn new(
+        io_request_data: &IoRequestData,
+        deadline: Instant,
+        raw_socket: crate::io::sys::RawSocket,
+    ) -> Self {
+        Self {
+            deadline,
+            user_data: std::ptr::from_ref(io_request_data) as u64,
+            raw_socket,
         }
     }
 
@@ -30,6 +48,13 @@ impl TimeBoundedIoTask {
     #[inline(always)]
     pub(crate) fn deadline(&self) -> Instant {
         self.deadline
+    }
+
+    /// Returns the raw socket.
+    #[inline(always)]
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn raw_socket(&self) -> crate::io::sys::RawSocket {
+        self.raw_socket
     }
 }
 

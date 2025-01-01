@@ -9,22 +9,22 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
 
 /// `send` io operation.
 pub struct SendBytes<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf [u8],
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> SendBytes<'buf> {
     /// Creates new `send` io operation.
-    pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf [u8]) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
         }
@@ -43,9 +43,12 @@ impl Future for SendBytes<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().send(this.fd, this.buf.as_ptr(), this.buf.len() as u32, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().send(
+                this.raw_socket,
+                this.buf.as_ptr(),
+                this.buf.len() as u32,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+            ),
             ret
         ));
     }
@@ -55,7 +58,7 @@ unsafe impl Send for SendBytes<'_> {}
 
 /// `send` io operation.
 pub struct SendFixed<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *const u8,
     len: u32,
     fixed_index: u16,
@@ -65,9 +68,9 @@ pub struct SendFixed<'buf> {
 
 impl SendFixed<'_> {
     /// Creates new `send` io operation.
-    pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
+    pub fn new(raw_socket: RawSocket, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -89,9 +92,13 @@ impl Future for SendFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().send_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().send_fixed(
+                this.raw_socket,
+                this.ptr,
+                this.len,
+                this.fixed_index,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+            ),
             ret as u32
         ));
     }
@@ -101,7 +108,7 @@ unsafe impl Send for SendFixed<'_> {}
 
 /// `send` io operation with deadline.
 pub struct SendBytesWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf [u8],
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -109,9 +116,9 @@ pub struct SendBytesWithDeadline<'buf> {
 
 impl<'buf> SendBytesWithDeadline<'buf> {
     /// Creates new `send` io operation with deadline.
-    pub fn new(fd: RawFd, buf: &'buf [u8], deadline: Instant) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf [u8], deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
             deadline,
@@ -133,7 +140,7 @@ impl Future for SendBytesWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.send_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
@@ -148,7 +155,7 @@ unsafe impl Send for SendBytesWithDeadline<'_> {}
 
 /// `send` io operation with deadline.
 pub struct SendFixedWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *const u8,
     len: u32,
     fixed_index: u16,
@@ -159,9 +166,15 @@ pub struct SendFixedWithDeadline<'buf> {
 
 impl SendFixedWithDeadline<'_> {
     /// Creates new `send` io operation with deadline.
-    pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
+    pub fn new(
+        raw_socket: RawSocket,
+        ptr: *const u8,
+        len: u32,
+        fixed_index: u16,
+        deadline: Instant,
+    ) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -186,7 +199,7 @@ impl Future for SendFixedWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.send_fixed_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.ptr,
                 this.len,
                 this.fixed_index,
@@ -205,7 +218,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// It allows for sending data with or without deadlines, and ensures the complete transmission
 /// of data when required.
 ///
-/// This trait can be implemented for any sockets that supports the `AsRawFd` trait
+/// This trait can be implemented for any sockets that supports the `AsRawSocket` trait
 /// and can be connected.
 ///
 /// # Example
@@ -225,7 +238,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncSend: AsRawFd {
+pub trait AsyncSend: AsRawSocket {
     /// Asynchronously sends the provided byte slice. Returns the number of bytes sent.
     ///
     /// # Difference between `send` and `send_bytes`
@@ -247,7 +260,7 @@ pub trait AsyncSend: AsRawFd {
     /// ```
     #[inline(always)]
     fn send_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
-        SendBytes::new(self.as_raw_fd(), buf)
+        SendBytes::new(self.as_raw_socket(), buf)
     }
 
     /// Asynchronously sends the provided [`Buffer`]. Returns the number of bytes sent.
@@ -278,7 +291,7 @@ pub trait AsyncSend: AsRawFd {
     async fn send(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             SendFixed::new(
-                self.as_raw_fd(),
+                self.as_raw_socket(),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -289,7 +302,7 @@ pub trait AsyncSend: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never send more than u32::MAX bytes"
             )]
-            SendBytes::new(self.as_raw_fd(), buf.as_bytes())
+            SendBytes::new(self.as_raw_socket(), buf.as_bytes())
                 .await
                 .map(|r| r as u32)
         }
@@ -327,7 +340,7 @@ pub trait AsyncSend: AsRawFd {
         buf: &[u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        SendBytesWithDeadline::new(self.as_raw_fd(), buf, deadline)
+        SendBytesWithDeadline::new(self.as_raw_socket(), buf, deadline)
     }
 
     /// Asynchronously sends the provided [`Buffer`] with a specified deadline.
@@ -369,7 +382,7 @@ pub trait AsyncSend: AsRawFd {
     ) -> Result<u32> {
         if buf.is_fixed() {
             SendFixedWithDeadline::new(
-                self.as_raw_fd(),
+                self.as_raw_socket(),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -381,7 +394,7 @@ pub trait AsyncSend: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never send more than u32::MAX bytes"
             )]
-            SendBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes(), deadline)
+            SendBytesWithDeadline::new(self.as_raw_socket(), buf.as_bytes(), deadline)
                 .await
                 .map(|r| r as u32)
         }
@@ -419,7 +432,7 @@ pub trait AsyncSend: AsRawFd {
         buf: &[u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        SendBytesWithDeadline::new(self.as_raw_fd(), buf, Instant::now() + timeout)
+        SendBytesWithDeadline::new(self.as_raw_socket(), buf, Instant::now() + timeout)
     }
 
     /// Asynchronously sends the provided [`Buffer`] with a specified timeout.
@@ -528,7 +541,7 @@ pub trait AsyncSend: AsRawFd {
             )]
             while sent < buf.len_u32() {
                 sent += SendFixed::new(
-                    self.as_raw_fd(),
+                    self.as_raw_socket(),
                     unsafe { buf.as_ptr().offset(sent as isize) },
                     buf.len_u32() - sent,
                     buf.fixed_index(),
@@ -630,7 +643,7 @@ pub trait AsyncSend: AsRawFd {
             )]
             while sent < buf.len_u32() {
                 sent += SendFixedWithDeadline::new(
-                    self.as_raw_fd(),
+                    self.as_raw_socket(),
                     unsafe { buf.as_ptr().offset(sent as isize) },
                     buf.len_u32() - sent,
                     buf.fixed_index(),

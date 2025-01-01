@@ -1,14 +1,13 @@
 //! This module contains [`TcpListener`].
+use socket2::{SockAddr, SockRef};
 use std::ffi::c_int;
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem::ManuallyDrop;
 use std::net::SocketAddr;
 
-use socket2::{SockAddr, SockRef};
-
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use crate::io::{AsyncAccept, AsyncBind, AsyncClose};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use crate::io::{AsyncAccept, AsyncBind, AsyncSocketClose};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::tcp::TcpStream;
 use crate::net::{BindConfig, Listener};
@@ -35,56 +34,89 @@ use crate::runtime::local_executor;
 /// # }
 /// ```
 pub struct TcpListener {
-    pub(crate) fd: RawFd,
+    pub(crate) raw_socket: RawSocket,
 }
 
 impl From<TcpListener> for std::net::TcpListener {
     fn from(listener: TcpListener) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(listener).fd) }
+        unsafe { Self::from_raw_socket(ManuallyDrop::new(listener).raw_socket) }
     }
 }
 
 impl From<std::net::TcpListener> for TcpListener {
     fn from(listener: std::net::TcpListener) -> Self {
         Self {
-            fd: listener.into_raw_fd(),
+            raw_socket: listener.into_raw_socket(),
         }
     }
 }
 
-impl IntoRawFd for TcpListener {
-    fn into_raw_fd(self) -> RawFd {
-        ManuallyDrop::new(self).fd
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for TcpListener {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsRawFd for TcpListener {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawSocket for TcpListener {
+    fn into_raw_socket(self) -> RawSocket {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsFd for TcpListener {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+impl IntoRawSocket for TcpListener {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for TcpListener {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_socket
     }
 }
 
-impl From<OwnedFd> for TcpListener {
-    fn from(fd: OwnedFd) -> Self {
-        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for TcpListener {
+    fn as_raw_socket(&self) -> RawSocket {
+        self.raw_socket
     }
 }
 
-impl From<TcpListener> for OwnedFd {
-    fn from(listener: TcpListener) -> Self {
-        unsafe { Self::from_raw_fd(listener.into_raw_fd()) }
+impl AsRawSocket for TcpListener {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for TcpListener {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
     }
 }
+
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for TcpListener {
+    fn as_socket(&self) -> BorrowedSocket {
+        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
+    }
+}
+
+impl AsSocket for TcpListener {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for TcpListener {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_socket: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for TcpListener {
+    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
+        Self { raw_socket }
+    }
+}
+
+impl FromRawSocket for TcpListener {}
 
 impl AsyncBind for TcpListener {
-    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+    async fn new_socket(addr: &SocketAddr) -> Result<RawSocket> {
         new_tcp_socket(addr).await
     }
 
@@ -103,13 +135,7 @@ impl AsyncBind for TcpListener {
 
 impl AsyncAccept<TcpStream> for TcpListener {}
 
-impl FromRawFd for TcpListener {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
-    }
-}
-
-impl AsyncClose for TcpListener {}
+impl AsyncSocketClose for TcpListener {}
 
 impl Listener for TcpListener {
     type Stream = TcpStream;
@@ -123,8 +149,7 @@ impl Debug for TcpListener {
             res.field("local addr", &addr);
         }
 
-        let name = if cfg!(windows) { "socket" } else { "fd" };
-        res.field(name, &self.as_raw_fd()).finish()
+        res.field("raw_socket", &self.as_raw_socket()).finish()
     }
 }
 

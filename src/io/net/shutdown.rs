@@ -1,6 +1,6 @@
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
@@ -11,16 +11,16 @@ use std::task::{Context, Poll};
 
 /// `shutdown` io operation.
 pub struct Shutdown {
-    fd: RawFd,
+    raw_socket: RawSocket,
     how: ShutdownHow,
     io_request_data: Option<IoRequestData>,
 }
 
 impl Shutdown {
     /// Creates new `shutdown` io operation.
-    pub fn new(fd: RawFd, how: ShutdownHow) -> Self {
+    pub fn new(raw_socket: RawSocket, how: ShutdownHow) -> Self {
         Self {
-            fd,
+            raw_socket,
             how,
             io_request_data: None,
         }
@@ -36,7 +36,7 @@ impl Future for Shutdown {
         let ret;
 
         poll_for_io_request!((
-            local_worker().shutdown(this.fd, this.how, unsafe {
+            local_worker().shutdown(this.raw_socket, this.how, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ()
@@ -49,7 +49,7 @@ unsafe impl Send for Shutdown {}
 /// The `AsyncShutdown` trait provides a method for asynchronously shutting down part or all of a
 /// connection.
 ///
-/// It can be implemented for sockets or connections that implement the `AsRawFd` trait.
+/// It can be implemented for sockets or connections that implement the `AsRawSocket` trait.
 /// The trait leverages different shutdown options [`Shutdown`](std::net::Shutdown)
 /// to control which aspects of the connection to shut down, such as reading, writing, or both.
 ///
@@ -68,7 +68,7 @@ unsafe impl Send for Shutdown {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncShutdown: AsRawFd {
+pub trait AsyncShutdown: AsRawSocket {
     /// Shuts down part or all of the connection. The shutdown behavior is determined by the
     /// [`Shutdown`](std::net::Shutdown) enum, which specifies whether to shut down reading,
     /// writing, or both.
@@ -91,7 +91,7 @@ pub trait AsyncShutdown: AsRawFd {
     /// # Ok(())
     /// # }
     /// ```
-    fn shutdown(&mut self, how: ShutdownHow) -> Shutdown {
-        Shutdown::new(self.as_raw_fd(), how)
+    fn shutdown(&mut self, how: ShutdownHow) -> impl Future<Output = Result<()>> {
+        Shutdown::new(self.as_raw_socket(), how)
     }
 }

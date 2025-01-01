@@ -17,7 +17,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 ///
 /// - [`Socket`]
 /// - [`AsyncPollFd`](crate::io::AsyncPollFd)
-/// - [`AsyncClose`](crate::io::AsyncClose)
+/// - [`AsyncClose`](crate::io::AsyncSocketClose)
 /// - [`IntoRawFd`](crate::io::sys::IntoRawFd)
 /// - [`FromRawFd`](crate::io::sys::FromRawFd)
 /// - [`AsFd`](crate::io::sys::AsFd)

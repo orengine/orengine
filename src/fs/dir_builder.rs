@@ -1,5 +1,5 @@
 use crate::io::create_dir::CreateDir;
-use crate::io::sys::OsPath::get_os_path;
+use crate::io::sys::os_path::get_os_path;
 use smallvec::SmallVec;
 use std::ffi::OsStr;
 use std::io;
@@ -82,8 +82,7 @@ impl DirBuilder {
         if self.recursive {
             Self::create_dir_all(path, self.mode).await
         } else {
-            let path = get_os_path(path)?;
-            CreateDir::new(path, self.mode).await
+            CreateDir::new(get_os_path(path)?, self.mode).await
         }
     }
 

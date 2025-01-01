@@ -1,19 +1,24 @@
 //! Helper for work with the system.
+#[cfg(not(target_os = "linux"))]
+pub(crate) mod fallback;
+pub mod sockets_and_files;
 #[cfg(unix)]
-pub mod unix;
-#[cfg(windows)]
-pub(crate) mod windows;
+pub(crate) mod unix;
+pub mod worker_configs;
 
-pub(crate) use io_uring::types::OpenHow;
+pub use sockets_and_files::*;
+pub use worker_configs::*;
+
 #[cfg(unix)]
-pub(crate) use unix::fd::*;
+pub(crate) use io_uring::types::OpenHow;
 #[cfg(target_os = "linux")]
 pub(crate) use unix::os_message_header::*;
 #[cfg(target_os = "linux")]
-pub(crate) use unix::os_path as OsPath;
-#[cfg(unix)]
-pub use unix::IOUringConfig;
+pub(crate) use unix::os_path;
 #[cfg(target_os = "linux")]
 pub(crate) use unix::IOUringWorker as WorkerSys;
-#[cfg(windows)]
-pub(crate) use windows::fd::*;
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) use fallback::os_path;
+#[cfg(not(target_os = "linux"))]
+pub(crate) use fallback::FallbackWorker as WorkerSys;

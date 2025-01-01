@@ -1,6 +1,6 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{IntoRawFd, MessageRecvHeader, OsMessageHeader, RawFd};
+use crate::io::sys::{IntoRawSocket, MessageRecvHeader, OsMessageHeader, RawFile, RawSocket};
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
 use crate::runtime::local_executor;
@@ -55,8 +55,8 @@ impl IOUringWorker {
         unsafe { submitter.register_buffers(buffers) }.expect(BUG_MESSAGE);
     }
 
-    /// Unregister __fixed__ buffers.
-    pub(crate) fn unregister_buffers(&mut self) {
+    /// Deregister __fixed__ buffers.
+    pub(crate) fn deregister_buffers(&mut self) {
         let submitter = unsafe { &mut *self.ring.get() }.submitter();
         submitter.unregister_buffers().expect(BUG_MESSAGE);
     }
@@ -110,6 +110,7 @@ impl IOUringWorker {
                 self.cancel_entry(time_bounded_io_task.user_data());
             } else {
                 self.time_bounded_io_task_queue.insert(time_bounded_io_task);
+
                 break;
             }
         }
@@ -213,8 +214,8 @@ impl IoWorker for IOUringWorker {
         cq.sync();
         let executor = local_executor();
 
-        for cqe in &mut cq {
-            self.number_of_active_tasks -= 1;
+        self.number_of_active_tasks -= cq.len();
+        for cqe in cq {
             if cqe.user_data() == ASYNC_CLOSE_DATA {
                 continue;
             }
@@ -271,7 +272,7 @@ impl IoWorker for IOUringWorker {
             clippy::cast_sign_loss,
             reason = "the sing was checked by map() method"
         )]
-        request.set_ret(socket_.map(|s| s.into_raw_fd() as usize));
+        request.set_ret(socket_.map(|s| s.into_raw_socket() as usize));
 
         local_executor().spawn_local_task(unsafe { request.task() });
     }
@@ -279,13 +280,13 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn accept(
         &mut self,
-        listen_fd: RawFd,
+        raw_socket: RawSocket,
         addr: *mut sockaddr,
         addrlen: *mut libc::socklen_t,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::Accept::new(types::Fd(listen_fd), addr, addrlen).build(),
+            opcode::Accept::new(types::Fd(raw_socket), addr, addrlen).build(),
             request_ptr,
         );
     }
@@ -293,37 +294,43 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn connect(
         &mut self,
-        socket_fd: RawFd,
+        raw_socket: RawSocket,
         addr_ptr: *const sockaddr,
         addr_len: libc::socklen_t,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::Connect::new(types::Fd(socket_fd), addr_ptr, addr_len).build(),
+            opcode::Connect::new(types::Fd(raw_socket), addr_ptr, addr_len).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
-    fn poll_fd_read(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
+    fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
         self.register_entry(
-            opcode::PollAdd::new(types::Fd(fd), libc::POLLIN as _).build(),
+            opcode::PollAdd::new(types::Fd(raw_socket), libc::POLLIN as _).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
-    fn poll_fd_write(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
+    fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
         self.register_entry(
-            opcode::PollAdd::new(types::Fd(fd), libc::POLLOUT as _).build(),
+            opcode::PollAdd::new(types::Fd(raw_socket), libc::POLLOUT as _).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
-    fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn recv(
+        &mut self,
+        raw_socket: RawSocket,
+        ptr: *mut u8,
+        len: u32,
+        request_ptr: *mut IoRequestData,
+    ) {
         self.register_entry(
-            opcode::Recv::new(types::Fd(fd), ptr, len).build(),
+            opcode::Recv::new(types::Fd(raw_socket), ptr, len).build(),
             request_ptr,
         );
     }
@@ -331,14 +338,14 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn recv_fixed(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
+            opcode::ReadFixed::new(types::Fd(raw_socket), ptr, len, buf_index).build(),
             request_ptr,
         );
     }
@@ -346,20 +353,26 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn recv_from(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header).build(),
+            opcode::RecvMsg::new(types::Fd(raw_socket), &mut msg_header.header).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
-    fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn send(
+        &mut self,
+        raw_socket: RawSocket,
+        ptr: *const u8,
+        len: u32,
+        request_ptr: *mut IoRequestData,
+    ) {
         self.register_entry(
-            opcode::Send::new(types::Fd(fd), ptr, len).build(),
+            opcode::Send::new(types::Fd(raw_socket), ptr, len).build(),
             request_ptr,
         );
     }
@@ -367,7 +380,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn send_fixed(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         ptr: *const u8,
         len: u32,
         buf_index: u16,
@@ -376,14 +389,14 @@ impl IoWorker for IOUringWorker {
         // TODO https://github.com/tokio-rs/io-uring/issues/308
         // if self.is_supported(opcode::SendZc::CODE) {
         //     self.register_entry(
-        //         opcode::SendZc::new(types::Fd(fd), buf_ptr, len as _).build(),
+        //         opcode::SendZc::new(types::Fd(raw_socket), buf_ptr, len as _).build(),
         //         request_ptr,
         //     );
         //     return;
         // }
 
         self.register_entry(
-            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index).build(),
+            opcode::WriteFixed::new(types::Fd(raw_socket), ptr, len, buf_index).build(),
             request_ptr,
         );
     }
@@ -391,20 +404,26 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn send_to(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::SendMsg::new(types::Fd(fd), msg_header).build(),
+            opcode::SendMsg::new(types::Fd(raw_socket), msg_header).build(),
             request_ptr,
         );
     }
 
     #[inline(always)]
-    fn peek(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn peek(
+        &mut self,
+        raw_socket: RawSocket,
+        ptr: *mut u8,
+        len: u32,
+        request_ptr: *mut IoRequestData,
+    ) {
         self.register_entry(
-            opcode::Recv::new(types::Fd(fd), ptr, len)
+            opcode::Recv::new(types::Fd(raw_socket), ptr, len)
                 .flags(libc::MSG_PEEK)
                 .build(),
             request_ptr,
@@ -414,7 +433,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn peek_fixed(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
@@ -422,25 +441,25 @@ impl IoWorker for IOUringWorker {
     ) {
         // TODO peek fixed
         // self.register_entry(
-        //     opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+        //     opcode::ReadFixed::new(types::Fd(raw_socket), ptr, len, buf_index)
         //         .rw_flags(libc::MSG_PEEK)
         //         .build(),
         //     request_ptr,
         // );
 
-        self.peek(fd, ptr, len, request_ptr);
+        self.peek(raw_socket, ptr, len, request_ptr);
     }
 
     #[inline(always)]
     fn peek_from(
         &mut self,
-        fd: RawFd,
+        raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
     ) {
         let msg_header = &mut *msg_header;
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(fd), &mut msg_header.header)
+            opcode::RecvMsg::new(types::Fd(raw_socket), &mut msg_header.header)
                 .flags(libc::MSG_PEEK as u32)
                 .build(),
             request_ptr,
@@ -448,14 +467,14 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn shutdown(&mut self, fd: RawFd, how: Shutdown, request_ptr: *mut IoRequestData) {
+    fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: *mut IoRequestData) {
         let how = match how {
             Shutdown::Read => libc::SHUT_RD,
             Shutdown::Write => libc::SHUT_WR,
             Shutdown::Both => libc::SHUT_RDWR,
         };
         self.register_entry(
-            opcode::Shutdown::new(types::Fd(fd), how).build(),
+            opcode::Shutdown::new(types::Fd(raw_socket), how).build(),
             request_ptr,
         );
     }
@@ -476,14 +495,14 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn fallocate(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         offset: u64,
         len: u64,
         flags: i32,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::Fallocate::new(types::Fd(fd), len)
+            opcode::Fallocate::new(types::Fd(raw_file), len)
                 .offset(offset)
                 .mode(flags)
                 .build(),
@@ -492,14 +511,14 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn sync_all(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Fsync::new(types::Fd(fd)).build(), request_ptr);
+    fn sync_all(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
+        self.register_entry(opcode::Fsync::new(types::Fd(raw_file)).build(), request_ptr);
     }
 
     #[inline(always)]
-    fn sync_data(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
+    fn sync_data(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
         self.register_entry(
-            opcode::Fsync::new(types::Fd(fd))
+            opcode::Fsync::new(types::Fd(raw_file))
                 .flags(types::FsyncFlags::DATASYNC)
                 .build(),
             request_ptr,
@@ -507,10 +526,10 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn read(&mut self, fd: RawFd, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::Read::new(types::Fd(fd), ptr, len)
+            opcode::Read::new(types::Fd(raw_file), ptr, len)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -520,7 +539,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn read_fixed(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
@@ -528,7 +547,7 @@ impl IoWorker for IOUringWorker {
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+            opcode::ReadFixed::new(types::Fd(raw_file), ptr, len, buf_index)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -538,14 +557,14 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn pread(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *mut u8,
         len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::Read::new(types::Fd(fd), ptr, len)
+            opcode::Read::new(types::Fd(raw_file), ptr, len)
                 .offset(offset as _)
                 .build(),
             request_ptr,
@@ -555,7 +574,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn pread_fixed(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
@@ -564,7 +583,7 @@ impl IoWorker for IOUringWorker {
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::ReadFixed::new(types::Fd(fd), ptr, len, buf_index)
+            opcode::ReadFixed::new(types::Fd(raw_file), ptr, len, buf_index)
                 .offset(offset as _)
                 .build(),
             request_ptr,
@@ -572,10 +591,16 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn write(&mut self, fd: RawFd, ptr: *const u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn write(
+        &mut self,
+        raw_file: RawFile,
+        ptr: *const u8,
+        len: u32,
+        request_ptr: *mut IoRequestData,
+    ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::Write::new(types::Fd(fd), ptr, len)
+            opcode::Write::new(types::Fd(raw_file), ptr, len)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -585,7 +610,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn write_fixed(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *const u8,
         len: u32,
         buf_index: u16,
@@ -593,7 +618,7 @@ impl IoWorker for IOUringWorker {
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
+            opcode::WriteFixed::new(types::Fd(raw_file), ptr, len, buf_index)
                 .offset(-1 as _)
                 .build(),
             request_ptr,
@@ -603,14 +628,14 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn pwrite(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *const u8,
         len: u32,
         offset: usize,
         request_ptr: *mut IoRequestData,
     ) {
         self.register_entry(
-            opcode::Write::new(types::Fd(fd), ptr, len)
+            opcode::Write::new(types::Fd(raw_file), ptr, len)
                 .offset(offset as _)
                 .build(),
             request_ptr,
@@ -620,7 +645,7 @@ impl IoWorker for IOUringWorker {
     #[inline(always)]
     fn pwrite_fixed(
         &mut self,
-        fd: RawFd,
+        raw_file: RawFile,
         ptr: *const u8,
         len: u32,
         buf_index: u16,
@@ -629,7 +654,7 @@ impl IoWorker for IOUringWorker {
     ) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
-            opcode::WriteFixed::new(types::Fd(fd), ptr, len, buf_index)
+            opcode::WriteFixed::new(types::Fd(raw_file), ptr, len, buf_index)
                 .offset(offset as _)
                 .build(),
             request_ptr,
@@ -637,8 +662,16 @@ impl IoWorker for IOUringWorker {
     }
 
     #[inline(always)]
-    fn close(&mut self, fd: RawFd, request_ptr: *mut IoRequestData) {
-        self.register_entry(opcode::Close::new(types::Fd(fd)).build(), request_ptr);
+    fn close_file(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
+        self.register_entry(opcode::Close::new(types::Fd(raw_file)).build(), request_ptr);
+    }
+
+    #[inline(always)]
+    fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
+        self.register_entry(
+            opcode::Close::new(types::Fd(raw_socket)).build(),
+            request_ptr,
+        );
     }
 
     #[inline(always)]

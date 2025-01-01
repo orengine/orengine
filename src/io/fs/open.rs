@@ -1,8 +1,8 @@
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::os_path::OsPath;
 use crate::io::sys::unix::OsOpenOptions;
-use crate::io::sys::OsPath::OsPath;
-use crate::io::sys::{FromRawFd, RawFd};
+use crate::io::sys::{FromRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
@@ -12,14 +12,14 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `open` io operation which opens a file at the given path with the given options.
-pub struct Open<F: FromRawFd> {
+pub struct Open<F: FromRawFile> {
     path: OsPath,
     os_open_options: OsOpenOptions,
     io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<F>,
 }
 
-impl<F: FromRawFd> Open<F> {
+impl<F: FromRawFile> Open<F> {
     /// Creates a new `open` io operation.
     pub fn new(path: OsPath, os_open_options: OsOpenOptions) -> Self {
         Self {
@@ -31,7 +31,7 @@ impl<F: FromRawFd> Open<F> {
     }
 }
 
-impl<F: FromRawFd> Future for Open<F> {
+impl<F: FromRawFile> Future for Open<F> {
     type Output = Result<F>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -42,9 +42,9 @@ impl<F: FromRawFd> Future for Open<F> {
             local_worker().open(this.path.as_ptr(), &this.os_open_options, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
-            unsafe { F::from_raw_fd(ret as RawFd) }
+            unsafe { F::from_raw_file(ret as RawFile) }
         ));
     }
 }
 
-unsafe impl<F: FromRawFd> Send for Open<F> {}
+unsafe impl<F: FromRawFile> Send for Open<F> {}

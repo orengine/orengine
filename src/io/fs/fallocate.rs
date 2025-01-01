@@ -6,12 +6,12 @@ use std::task::{Context, Poll};
 
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `fallocate` io operation which allows to allocate space in a file from a given offset.
 pub struct Fallocate {
-    fd: RawFd,
+    raw_file: RawFile,
     offset: usize,
     len: usize,
     flags: i32,
@@ -20,9 +20,9 @@ pub struct Fallocate {
 
 impl Fallocate {
     /// Creates a new `fallocate` io operation.
-    pub fn new(fd: RawFd, offset: usize, len: usize, flags: i32) -> Self {
+    pub fn new(raw_file: RawFile, offset: usize, len: usize, flags: i32) -> Self {
         Self {
-            fd,
+            raw_file,
             len,
             offset,
             flags,
@@ -40,7 +40,7 @@ impl Future for Fallocate {
 
         poll_for_io_request!((
             local_worker().fallocate(
-                this.fd,
+                this.raw_file,
                 this.offset as u64,
                 this.len as u64,
                 this.flags,
@@ -57,9 +57,14 @@ unsafe impl Send for Fallocate {}
 /// which allows to allocate space in a file from a given offset.
 ///
 /// Call [`fallocate`](AsyncFallocate::fallocate) to allocate len bytes on the disk.
-pub trait AsyncFallocate: AsRawFd {
+pub trait AsyncFallocate: AsRawFile {
     #[inline(always)]
-    fn fallocate(&self, offset: usize, len: usize, flags: i32) -> Fallocate {
-        Fallocate::new(self.as_raw_fd(), offset, len, flags)
+    fn fallocate(
+        &self,
+        offset: usize,
+        len: usize,
+        flags: i32,
+    ) -> impl Future<Output = Result<usize>> {
+        Fallocate::new(self.as_raw_file(), offset, len, flags)
     }
 }

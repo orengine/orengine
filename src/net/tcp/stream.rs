@@ -6,8 +6,10 @@ use std::io::Result;
 use std::mem::ManuallyDrop;
 
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use crate::io::{
+    AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncSocketClose,
+};
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
@@ -51,71 +53,97 @@ use crate::runtime::local_executor;
 /// }
 /// ```
 pub struct TcpStream {
-    fd: RawFd,
+    raw_socket: RawSocket,
 }
 
-impl AsRawFd for TcpStream {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for TcpStream {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsFd for TcpStream {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawSocket for TcpStream {
+    fn into_raw_socket(self) -> RawSocket {
+        ManuallyDrop::new(self).raw_socket
     }
 }
+
+impl IntoRawSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for TcpStream {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_socket
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for TcpStream {
+    fn as_raw_socket(&self) -> RawSocket {
+        self.raw_socket
+    }
+}
+
+impl AsRawSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for TcpStream {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for TcpStream {
+    fn as_socket(&self) -> BorrowedSocket {
+        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
+    }
+}
+
+impl AsSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for TcpStream {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_socket: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for TcpStream {
+    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
+        Self { raw_socket }
+    }
+}
+
+impl FromRawSocket for TcpStream {}
 
 impl From<TcpStream> for std::net::TcpStream {
     fn from(stream: TcpStream) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(stream).fd) }
+        unsafe { Self::from_raw_socket(ManuallyDrop::new(stream).raw_socket) }
     }
 }
 
 impl From<std::net::TcpStream> for TcpStream {
     fn from(stream: std::net::TcpStream) -> Self {
         Self {
-            fd: stream.into_raw_fd(),
+            raw_socket: stream.into_raw_socket(),
         }
-    }
-}
-
-impl IntoRawFd for TcpStream {
-    #[inline(always)]
-    fn into_raw_fd(self) -> RawFd {
-        ManuallyDrop::new(self).fd
-    }
-}
-
-impl FromRawFd for TcpStream {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
-    }
-}
-
-impl From<OwnedFd> for TcpStream {
-    fn from(fd: OwnedFd) -> Self {
-        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
-    }
-}
-
-impl From<TcpStream> for OwnedFd {
-    fn from(stream: TcpStream) -> Self {
-        unsafe { Self::from_raw_fd(stream.into_raw_fd()) }
     }
 }
 
 impl AsyncConnectStream for TcpStream {
     async fn new_ip4() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
+            raw_socket: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
         })
     }
 
     async fn new_ip6() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
+            raw_socket: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
         })
     }
 }
@@ -130,7 +158,7 @@ impl AsyncPeek for TcpStream {}
 
 impl AsyncShutdown for TcpStream {}
 
-impl AsyncClose for TcpStream {}
+impl AsyncSocketClose for TcpStream {}
 
 impl Socket for TcpStream {}
 
@@ -148,8 +176,7 @@ impl Debug for TcpStream {
             res.field("peer", &peer);
         }
 
-        let name = if cfg!(windows) { "socket" } else { "fd" };
-        res.field(name, &self.as_raw_fd()).finish()
+        res.field("raw_socket", &self.as_raw_socket()).finish()
     }
 }
 

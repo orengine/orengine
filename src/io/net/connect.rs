@@ -11,21 +11,21 @@ use socket2::SockAddr;
 
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `connect` io operation.
 pub struct Connect<'fut> {
-    fd: RawFd,
+    raw_fd: RawSocket,
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'fut> Connect<'fut> {
     /// Creates a new `connect` io operation.
-    pub fn new(fd: RawFd, addr: &'fut SockAddr) -> Self {
+    pub fn new(raw_fd: RawSocket, addr: &'fut SockAddr) -> Self {
         Self {
-            fd,
+            raw_fd,
             addr,
             io_request_data: None,
         }
@@ -41,7 +41,7 @@ impl Future for Connect<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
+            local_worker().connect(this.raw_fd, this.addr.as_ptr(), this.addr.len(), unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             ()
@@ -53,7 +53,7 @@ unsafe impl Send for Connect<'_> {}
 
 /// `connect` io operation with deadline.
 pub struct ConnectWithDeadline<'fut> {
-    fd: RawFd,
+    raw_fd: RawSocket,
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -61,9 +61,9 @@ pub struct ConnectWithDeadline<'fut> {
 
 impl<'fut> ConnectWithDeadline<'fut> {
     /// Creates a new `connect` io operation with deadline.
-    pub fn new(fd: RawFd, addr: &'fut SockAddr, deadline: Instant) -> Self {
+    pub fn new(raw_fd: RawSocket, addr: &'fut SockAddr, deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_fd,
             addr,
             io_request_data: None,
             deadline,
@@ -82,7 +82,7 @@ impl Future for ConnectWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.connect_with_deadline(
-                this.fd,
+                this.raw_fd,
                 this.addr.as_ptr(),
                 this.addr.len(),
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
@@ -119,7 +119,7 @@ unsafe impl Send for ConnectWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectStream: Sized + AsRawFd {
+pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// Creates a new IPv4 socket for stream-based communication.
     ///
     /// # Warning
@@ -284,7 +284,7 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
+pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized {
     /// Asynchronously connects a datagram socket to the specified address.
     ///
     /// # Example
@@ -313,10 +313,10 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     /// ```
     #[inline(always)]
     async fn connect<A: ToSocketAddrs>(self, addr: A) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
+        let new_datagram_socket_raw_fd = self.into_raw_socket();
         each_addr!(&addr, move |addr: SocketAddr| async move {
-            Connect::new(new_datagram_socket_fd, &SockAddr::from(addr)).await?;
-            Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
+            Connect::new(new_datagram_socket_raw_fd, &SockAddr::from(addr)).await?;
+            Ok(unsafe { S::from_raw_socket(new_datagram_socket_raw_fd) })
         })
     }
 
@@ -356,11 +356,11 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
         addr: A,
         deadline: Instant,
     ) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
+        let new_datagram_socket_raw_fd = self.into_raw_socket();
         each_addr!(&addr, move |addr: SocketAddr| async move {
-            ConnectWithDeadline::new(new_datagram_socket_fd, &SockAddr::from(addr), deadline)
+            ConnectWithDeadline::new(new_datagram_socket_raw_fd, &SockAddr::from(addr), deadline)
                 .await?;
-            Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
+            Ok(unsafe { S::from_raw_socket(new_datagram_socket_raw_fd) })
         })
     }
 

@@ -1,5 +1,5 @@
-use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncAccept, AsyncBind, AsyncClose};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket};
+use crate::io::{AsyncAccept, AsyncBind, AsyncSocketClose};
 use crate::net::Stream;
 use std::io;
 use std::io::Error;
@@ -14,20 +14,26 @@ use std::net::SocketAddr;
 /// to retrieve pending socket errors.
 ///
 /// This trait also requires implementors to handle raw file descriptors, as it is
-/// derived from multiple raw file descriptor traits such as `AsFd`, `AsRawFd`,
-/// `FromRawFd`, and `IntoRawFd`.
+/// derived from multiple raw file descriptor traits such as `AsSocket`, `AsRawSocket`,
+/// `FromRawSocket`, and `IntoRawSocket`.
 ///
 /// # Implemented Traits
 ///
 /// - [`AsyncAccept`]
-/// - [`AsyncClose`]
+/// - [`AsyncSocketClose`]
 /// - [`AsyncBind`]
-/// - [`FromRawFd`]
-/// - [`IntoRawFd`]
-/// - [`AsFd`]
-/// - [`AsRawFd`]
+/// - [`FromRawSocket`]
+/// - [`IntoRawSocket`]
+/// - [`AsSocket`]
+/// - [`AsRawSocket`]
 pub trait Listener:
-    AsyncAccept<Self::Stream> + FromRawFd + AsyncClose + AsyncBind + AsRawFd + AsFd + IntoRawFd
+    AsyncAccept<Self::Stream>
+    + FromRawSocket
+    + AsyncSocketClose
+    + AsyncBind
+    + AsRawSocket
+    + AsSocket
+    + IntoRawSocket
 {
     type Stream: Stream;
 

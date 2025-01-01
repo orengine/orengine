@@ -1,4 +1,4 @@
-use crate::io::sys::RawFd;
+use crate::io::sys::RawSocket;
 use crate::io::Socket;
 use socket2::{Domain, Protocol, Type};
 use std::net::SocketAddr;
@@ -13,7 +13,7 @@ pub(crate) async fn new_socket(
     addr: &SocketAddr,
     socket_type: Type,
     protocol: Protocol,
-) -> std::io::Result<RawFd> {
+) -> std::io::Result<RawSocket> {
     match addr {
         SocketAddr::V4(_) => Socket::new(Domain::IPV4, socket_type, protocol).await,
 
@@ -27,7 +27,7 @@ pub(crate) async fn new_socket(
 ///
 /// This function determines whether to create an IPv4 or IPv6 socket based on the address type.
 #[inline(always)]
-pub(crate) async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawFd> {
+pub(crate) async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawSocket> {
     new_socket(addr, Type::STREAM, Protocol::TCP).await
 }
 
@@ -37,6 +37,6 @@ pub(crate) async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawFd> 
 ///
 /// This function determines whether to create an IPv4 or IPv6 socket based on the address type.
 #[inline(always)]
-pub(crate) async fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<RawFd> {
+pub(crate) async fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<RawSocket> {
     new_socket(addr, Type::DGRAM, Protocol::UDP).await
 }

@@ -1,17 +1,17 @@
 use crate::fs::OpenOptions;
+use crate::io::close::AsyncFileClose;
 use crate::io::fallocate::AsyncFallocate;
 use crate::io::open::Open;
 use crate::io::remove::Remove;
 use crate::io::rename::Rename;
 use crate::io::sync_all::AsyncSyncAll;
 use crate::io::sync_data::AsyncSyncData;
-use crate::io::sys::OsPath::{get_os_path, OsPath};
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use crate::io::{AsyncClose, AsyncRead, AsyncWrite};
+use crate::io::sys::os_path::get_os_path;
+use crate::io::sys::{AsFile, AsRawFile, FromRawFile, IntoRawFile, RawFile};
+use crate::io::{AsyncRead, AsyncWrite};
 use crate::runtime::local_executor;
 use std::io::{Error, Result};
 use std::mem::ManuallyDrop;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::{io, mem};
 
@@ -36,27 +36,10 @@ use std::{io, mem};
 /// # }
 /// ```
 pub struct File {
-    fd: RawFd,
+    raw_file: RawFile,
 }
 
 impl File {
-    /// Returns the file descriptor [`RawFd`] of the [`File`].
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::fs::{File, OpenOptions};
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let file = File::open("foo.txt", &OpenOptions::new()).await?;
-    /// let fd = file.fd();
-    /// # Ok(())
-    /// # }
-    #[inline(always)]
-    pub fn fd(&self) -> RawFd {
-        self.fd
-    }
-
     /// Opens a file at the given path with the specified options.
     ///
     /// This function takes an asynchronous approach to file opening.
@@ -83,18 +66,12 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn open<P: AsRef<Path> + Send>(
-        as_path: P,
-        open_options: &OpenOptions,
-    ) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
         }
-        let os_path = match OsPath::new(path.as_os_str().as_bytes()) {
-            Ok(path) => path,
-            Err(err) => return Err(Error::new(io::ErrorKind::InvalidInput, err)),
-        };
+        let os_path = get_os_path(path)?;
         let os_open_options = open_options.into_os_options()?;
 
         match Open::new(os_path, os_open_options).await {
@@ -171,7 +148,7 @@ impl File {
     #[inline(always)]
     pub fn with_std_file<Ret, F: FnOnce(&std::fs::File) -> Ret>(&self, f: F) -> Ret {
         unsafe {
-            let std_file = std::fs::File::from_raw_fd(self.fd);
+            let std_file = std::fs::File::from_raw_file(self.raw_file);
             let ret = f(&std_file);
             mem::forget(std_file);
 
@@ -185,7 +162,7 @@ impl File {
     #[inline(always)]
     pub fn with_std_mut_file<Ret, F: FnOnce(&mut std::fs::File) -> Ret>(&mut self, f: F) -> Ret {
         unsafe {
-            let mut std_file = std::fs::File::from_raw_fd(self.fd);
+            let mut std_file = std::fs::File::from_raw_file(self.raw_file);
             let ret = f(&mut std_file);
             mem::forget(std_file);
 
@@ -196,29 +173,83 @@ impl File {
 
 impl From<File> for std::fs::File {
     fn from(file: File) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(file).fd) }
+        unsafe { Self::from_raw_file(ManuallyDrop::new(file).raw_file) }
     }
 }
 
 impl From<std::fs::File> for File {
     fn from(file: std::fs::File) -> Self {
         Self {
-            fd: file.into_raw_fd(),
+            raw_file: file.into_raw_file(),
         }
     }
 }
 
-impl FromRawFd for File {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for File {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_file
     }
 }
 
-impl AsRawFd for File {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawHandle for File {
+    fn into_raw_handle(self) -> RawFile {
+        ManuallyDrop::new(self).raw_file
     }
 }
+
+impl IntoRawFile for File {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for File {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_file
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawHandle for File {
+    fn as_raw_handle(&self) -> RawFile {
+        self.raw_file
+    }
+}
+
+impl AsRawFile for File {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for File {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_file) }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsHandle for File {
+    fn as_handle(&self) -> std::os::windows::io::BorrowedHandle {
+        unsafe { std::os::windows::io::BorrowedHandle::borrow_raw(self.raw_file) }
+    }
+}
+
+impl AsFile for File {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for File {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_file: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawHandle for File {
+    unsafe fn from_raw_handle(raw_handle: RawFile) -> Self {
+        Self {
+            raw_file: raw_handle,
+        }
+    }
+}
+
+impl FromRawFile for File {}
 
 impl AsyncFallocate for File {}
 
@@ -230,7 +261,7 @@ impl AsyncRead for File {}
 
 impl AsyncWrite for File {}
 
-impl AsyncClose for File {}
+impl AsyncFileClose for File {}
 
 impl Drop for File {
     fn drop(&mut self) {

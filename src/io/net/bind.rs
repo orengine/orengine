@@ -1,5 +1,5 @@
 use crate::each_addr;
-use crate::io::sys::{BorrowedFd, FromRawFd, RawFd};
+use crate::io::sys::{BorrowedSocket, FromRawSocket, RawSocket};
 use crate::net::{BindConfig, ReusePort};
 use socket2::SockRef;
 use std::io::Result;
@@ -38,7 +38,7 @@ use std::ptr::addr_of;
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncBind: Sized + FromRawFd {
+pub trait AsyncBind: Sized + FromRawSocket {
     /// Creates a new socket that can be bound to the specified address.
     ///
     /// This method is responsible for creating a raw file descriptor (socket) and returning the
@@ -55,13 +55,13 @@ pub trait AsyncBind: Sized + FromRawFd {
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    /// let fd = TcpListener::new_socket(&addr).await?;
+    /// let raw_fd = TcpListener::new_socket(&addr).await?;
     ///
-    /// // set the fd up here and bind it
+    /// // set the raw_fd up here and bind it
     /// # Ok(())
     /// # }
     /// ```
-    async fn new_socket(addr: &SocketAddr) -> Result<RawFd>;
+    async fn new_socket(addr: &SocketAddr) -> Result<RawSocket>;
 
     /// Binds the socket and listens on the provided address if needed, applying the provided
     /// configuration from [`BindConfig`].
@@ -80,17 +80,16 @@ pub trait AsyncBind: Sized + FromRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use std::os::fd::BorrowedFd;
     /// use orengine::net::{BindConfig, TcpListener};
     /// use orengine::socket2::SockRef;
-    /// use orengine::io::AsyncBind;
+    /// use orengine::io::{AsyncBind, sys::BorrowedSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let config = BindConfig::default();
     /// let addr = "127.0.0.1:8080".parse().unwrap();
-    /// let fd = TcpListener::new_socket(&addr).await?;
-    /// let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-    /// let sock_ref = SockRef::from(&borrowed_fd);
+    /// let raw_socket = TcpListener::new_socket(&addr).await?;
+    /// let borrowed_raw_fd = unsafe { BorrowedSocket::borrow_raw(raw_socket) };
+    /// let sock_ref = SockRef::from(&borrowed_raw_fd);
     ///
     /// TcpListener::bind_and_listen_if_needed(sock_ref, addr, &config)?;
     /// # Ok(())
@@ -121,9 +120,9 @@ pub trait AsyncBind: Sized + FromRawFd {
     /// ```
     async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
         each_addr!(&addrs, move |addr| async move {
-            let fd = Self::new_socket(&addr).await?;
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_fd);
+            let raw_fd = Self::new_socket(&addr).await?;
+            let borrowed_raw_fd = unsafe { BorrowedSocket::borrow_raw(raw_fd) };
+            let socket_ref = socket2::SockRef::from(&borrowed_raw_fd);
 
             if config.only_v6 {
                 socket_ref.set_only_v6(true)?;
@@ -181,7 +180,7 @@ pub trait AsyncBind: Sized + FromRawFd {
                         )]
                         let res = unsafe {
                             libc::setsockopt(
-                                fd as _,
+                                raw_fd as _,
                                 libc::SOL_SOCKET,
                                 libc::SO_ATTACH_REUSEPORT_CBPF,
                                 addr_of!(p).cast(),
@@ -195,7 +194,7 @@ pub trait AsyncBind: Sized + FromRawFd {
                 }
             }
 
-            Ok(unsafe { Self::from_raw_fd(fd) })
+            Ok(unsafe { Self::from_raw_socket(raw_fd) })
         })
     }
 

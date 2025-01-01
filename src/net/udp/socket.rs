@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 
 use socket2::{SockAddr, SockRef};
 
-use crate::io::recv_from::AsyncRecvFrom;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
-    AsyncBind, AsyncClose, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncSendTo,
+    AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncRecvFrom, AsyncSendTo,
+    AsyncSocketClose,
 };
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
@@ -74,62 +74,89 @@ use crate::runtime::local_executor;
 /// # }
 /// ```
 pub struct UdpSocket {
-    fd: RawFd,
+    raw_socket: RawSocket,
 }
 
 impl From<UdpSocket> for std::net::UdpSocket {
     fn from(socket: UdpSocket) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(socket).fd) }
+        unsafe { Self::from_raw_socket(ManuallyDrop::new(socket).raw_socket) }
     }
 }
 
 impl From<std::net::UdpSocket> for UdpSocket {
     fn from(stream: std::net::UdpSocket) -> Self {
         Self {
-            fd: stream.into_raw_fd(),
+            raw_socket: stream.into_raw_socket(),
         }
     }
 }
 
-impl IntoRawFd for UdpSocket {
-    fn into_raw_fd(self) -> RawFd {
-        ManuallyDrop::new(self).fd
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for UdpSocket {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl FromRawFd for UdpSocket {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawSocket for UdpSocket {
+    fn into_raw_socket(self) -> RawSocket {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsFd for UdpSocket {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+impl IntoRawSocket for UdpSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for UdpSocket {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_socket
     }
 }
 
-impl AsRawFd for UdpSocket {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for UdpSocket {
+    fn as_raw_socket(&self) -> RawSocket {
+        self.raw_socket
     }
 }
 
-impl From<OwnedFd> for UdpSocket {
-    fn from(fd: OwnedFd) -> Self {
-        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+impl AsRawSocket for UdpSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for UdpSocket {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
     }
 }
 
-impl From<UdpSocket> for OwnedFd {
-    fn from(socket: UdpSocket) -> Self {
-        unsafe { Self::from_raw_fd(socket.into_raw_fd()) }
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for UdpSocket {
+    fn as_socket(&self) -> BorrowedSocket {
+        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
     }
 }
+
+impl AsSocket for UdpSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for UdpSocket {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_socket: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for UdpSocket {
+    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
+        Self { raw_socket }
+    }
+}
+
+impl FromRawSocket for UdpSocket {}
 
 impl AsyncBind for UdpSocket {
-    async fn new_socket(addr: &SocketAddr) -> Result<RawFd> {
+    async fn new_socket(addr: &SocketAddr) -> Result<RawSocket> {
         new_udp_socket(addr).await
     }
 
@@ -152,7 +179,7 @@ impl AsyncPeekFrom for UdpSocket {}
 
 impl AsyncSendTo for UdpSocket {}
 
-impl AsyncClose for UdpSocket {}
+impl AsyncSocketClose for UdpSocket {}
 
 impl Socket for UdpSocket {}
 
@@ -168,8 +195,7 @@ impl Debug for UdpSocket {
             res.field("local addr", &addr);
         }
 
-        let name = if cfg!(windows) { "socket" } else { "fd" };
-        res.field(name, &self.as_raw_fd()).finish()
+        res.field("raw_socket", &self.as_raw_socket()).finish()
     }
 }
 

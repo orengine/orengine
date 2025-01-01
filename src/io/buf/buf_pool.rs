@@ -165,7 +165,7 @@ impl BufPool {
         }
     }
 
-    /// Deallocates the `BufPool` and unregisters __fixed__ buffers.
+    /// Deallocates the `BufPool` and deregisters __fixed__ buffers.
     fn deallocate_buffers(&mut self) {
         #[cfg(not(target_os = "linux"))]
         {
@@ -188,7 +188,7 @@ impl BufPool {
                 buf.deallocate();
             }
 
-            local_worker().unregister_buffers();
+            local_worker().deregister_buffers();
 
             for buf in &mut self.fixed_buffers {
                 unsafe { drop(Box::from_raw(std::ptr::from_mut::<[u8]>(buf.as_mut()))) };

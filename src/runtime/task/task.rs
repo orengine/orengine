@@ -63,7 +63,7 @@ impl Task {
     /// Checks if the task is safe to be executed.
     /// It checks `ref_count` and `executor_id` with locality.
     ///
-    /// It is zero cost because it can be called only in debug mode.
+    /// It is zero cost because it can be called only with `debug_assertions`.
     #[cfg(debug_assertions)]
     pub(crate) fn check_safety(&mut self) {
         if unsafe {
@@ -93,7 +93,7 @@ unsafe impl Send for Task {}
 impl UnwindSafe for Task {}
 impl RefUnwindSafe for Task {}
 
-/// In `debug` mode checks if the [`Task`] is safe to be executed.
+/// With `debug_assertions` checks if the [`Task`] is safe to be executed.
 ///
 /// It compares an id of the [`Executor`](crate::Executor) of the current thread with an id of the executor of
 /// the [`Task`], if the [`Task`] is `local`.

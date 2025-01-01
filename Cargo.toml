@@ -23,6 +23,8 @@ smallvec = "2.0.0-alpha.7"
 ahash = "0.8.11"
 fastrand = "2.1.1"
 crossbeam = "0.8.4"
+# TODO only in fallback
+mio = { version = "1.0.3", features = ["net", "os-ext", "os-poll", "default"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7.0"

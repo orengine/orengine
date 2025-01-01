@@ -1,6 +1,7 @@
 use crate::runtime::Task;
 use crate::utils::SpinLock;
 use std::collections::VecDeque;
+use std::ptr;
 
 /// `SyncTaskList` is a list of tasks that can be shared between threads.
 ///
@@ -24,11 +25,23 @@ impl SyncTaskList {
     ///
     /// # Safety
     ///
-    /// If called not in [`Future::poll`](std::future::Future::poll).
+    /// - Provided task must be `shared`.
+    ///
+    /// - If called not in [`Future::poll`](std::future::Future::poll).
     ///
     /// In [`Future::poll`](std::future::Future::poll) [`call`](crate::Executor::invoke_call)
     /// [`PushCurrentTaskTo`](crate::runtime::call::Call::PushCurrentTaskTo) instead.
+    ///
+    /// # Panics
+    ///
+    /// If provided task is `local` with `debug_assertions`,
+    /// else it is an undefined behavior.
     pub unsafe fn push(&self, task: Task) {
+        #[cfg(debug_assertions)]
+        {
+            assert!(!task.is_local());
+        }
+
         self.inner.lock().push(task);
     }
 
@@ -45,15 +58,15 @@ impl SyncTaskList {
         tasks.append(&mut guard);
     }
 
-    /// Takes a batch of tasks from the list. It never takes more than `limit`.
+    /// Pops all tasks from the list and appends them to provided [`VecDeque`].
     #[inline(always)]
-    pub(crate) fn take_batch(&self, other_list: &mut VecDeque<Task>, limit: usize) {
+    pub fn pop_all_in_deque(&self, other_list: &mut VecDeque<Task>) {
         let mut guard = self.inner.lock();
 
-        let number_of_elems = guard.len().min(limit);
-        for elem in guard.drain(..number_of_elems) {
-            other_list.push_back(elem);
+        for elem in guard.iter() {
+            other_list.push_back(unsafe { ptr::read(elem) });
         }
+        unsafe { guard.set_len(0) };
     }
 }
 
