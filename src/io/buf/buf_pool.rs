@@ -339,7 +339,7 @@ pub(crate) async fn get_full_fixed_buffer() -> Buffer {
 
         while !buf.is_fixed() {
             crate::yield_now().await;
-            buf = buffer();
+            buf = full_buffer();
         }
 
         buf
@@ -347,6 +347,6 @@ pub(crate) async fn get_full_fixed_buffer() -> Buffer {
 
     #[cfg(not(target_os = "linux"))]
     {
-        buffer()
+        full_buffer()
     }
 }
