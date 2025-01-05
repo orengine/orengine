@@ -1,4 +1,6 @@
 use crate::io::io_request_data::IoRequestData;
+#[cfg(not(target_os = "linux"))]
+use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use std::borrow::Borrow;
 use std::time::Instant;
 
@@ -10,6 +12,8 @@ pub(crate) struct TimeBoundedIoTask {
     user_data: u64,
     #[cfg(not(target_os = "linux"))]
     raw_socket: crate::io::sys::RawSocket,
+    #[cfg(not(target_os = "linux"))]
+    slot_ptr: *mut (IoCall, *mut IoRequestData),
 }
 
 impl TimeBoundedIoTask {
@@ -30,11 +34,13 @@ impl TimeBoundedIoTask {
         io_request_data: &IoRequestData,
         deadline: Instant,
         raw_socket: crate::io::sys::RawSocket,
+        slot_ptr: *mut (IoCall, *mut IoRequestData),
     ) -> Self {
         Self {
             deadline,
             user_data: std::ptr::from_ref(io_request_data) as u64,
             raw_socket,
+            slot_ptr,
         }
     }
 
@@ -55,6 +61,13 @@ impl TimeBoundedIoTask {
     #[cfg(not(target_os = "linux"))]
     pub(crate) fn raw_socket(&self) -> crate::io::sys::RawSocket {
         self.raw_socket
+    }
+
+    /// Returns the slot pointer.
+    #[inline(always)]
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn slot_ptr(&self) -> *mut (IoCall, *mut IoRequestData) {
+        self.slot_ptr
     }
 }
 

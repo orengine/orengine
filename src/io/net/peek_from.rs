@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::Result;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -17,8 +18,9 @@ use crate::BUG_MESSAGE;
 /// `peek_from` io operation.
 pub struct PeekFrom<'fut> {
     raw_socket: RawSocket,
-    msg_header: MessageRecvHeader<'fut>,
+    msg_header: MessageRecvHeader,
     io_request_data: Option<IoRequestData>,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> PeekFrom<'fut> {
@@ -28,6 +30,7 @@ impl<'fut> PeekFrom<'fut> {
             raw_socket,
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
             io_request_data: None,
+            phantom_data: PhantomData,
         }
     }
 }
@@ -57,9 +60,10 @@ unsafe impl Send for PeekFrom<'_> {}
 /// `peek_from` io operation with deadline.
 pub struct PeekFromWithDeadline<'fut> {
     raw_socket: RawSocket,
-    msg_header: MessageRecvHeader<'fut>,
+    msg_header: MessageRecvHeader,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> PeekFromWithDeadline<'fut> {
@@ -75,6 +79,7 @@ impl<'fut> PeekFromWithDeadline<'fut> {
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
             io_request_data: None,
             deadline,
+            phantom_data: PhantomData,
         }
     }
 }
@@ -116,7 +121,7 @@ unsafe impl Send for PeekFromWithDeadline<'_> {}
 /// # Example
 ///
 /// ```rust
-/// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollSocket};
 /// use orengine::net::UdpSocket;
 ///
 /// async fn foo() -> std::io::Result<()> {
@@ -136,7 +141,7 @@ pub trait AsyncPeekFrom: AsRawSocket {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -172,7 +177,7 @@ pub trait AsyncPeekFrom: AsRawSocket {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     /// use std::time::{Duration, Instant};
     ///
@@ -215,7 +220,7 @@ pub trait AsyncPeekFrom: AsRawSocket {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     /// use std::time::Duration;
     ///

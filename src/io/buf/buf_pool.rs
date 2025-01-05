@@ -1,7 +1,7 @@
 use crate::io::worker::local_worker;
 use crate::io::{Buffer, FixedBuffer};
 use crate::utils::assert_hint;
-use nix::libc;
+use libc;
 use std::cell::UnsafeCell;
 use std::io::IoSliceMut;
 
@@ -70,7 +70,7 @@ pub fn buffer() -> Buffer {
 ///
 /// ```rust
 /// use orengine::io::full_buffer;
-/// use orengine::io::{AsyncPollFd, AsyncRecv};
+/// use orengine::io::{AsyncPollSocket, AsyncRecv};
 /// use orengine::net::TcpStream;
 ///
 /// async fn handle_connection(mut stream: TcpStream) {

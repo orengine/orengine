@@ -8,7 +8,7 @@ use std::mem::ManuallyDrop;
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
-    AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncSocketClose,
+    AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
 };
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
@@ -148,7 +148,7 @@ impl AsyncConnectStream for TcpStream {
     }
 }
 
-impl AsyncPollFd for TcpStream {}
+impl AsyncPollSocket for TcpStream {}
 
 impl AsyncSend for TcpStream {}
 
@@ -194,7 +194,7 @@ mod tests {
     use crate as orengine;
     use crate::io::{
         buffer, get_fixed_buffer, AsyncAccept, AsyncBind, AsyncConnectStream, AsyncPeek,
-        AsyncPollFd, AsyncRecv, AsyncSend, FixedBuffer,
+        AsyncPollSocket, AsyncRecv, AsyncSend, FixedBuffer,
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};

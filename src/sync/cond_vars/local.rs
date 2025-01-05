@@ -136,7 +136,7 @@ where
 pub struct LocalCondVar {
     wait_queue: UnsafeCell<Vec<Task>>,
     // impl !Send
-    no_send_marker: std::marker::PhantomData<*const ()>,
+    no_send_marker: PhantomData<*const ()>,
 }
 
 impl LocalCondVar {

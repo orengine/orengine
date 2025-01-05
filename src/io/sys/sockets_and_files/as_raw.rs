@@ -1,25 +1,25 @@
-/// `RawSocket` is a synonym for [`RawFd`](std::os::fd::RawFd) on `unix`
+/// `RawSocket` is a synonym for `RawFd` (`std::os::fd::RawFd`) on `unix`
 /// or [`RawSocket`](std::os::windows::io::RawSocket) on `windows`.
 #[cfg(windows)]
 pub type RawSocket = std::os::windows::io::RawSocket;
 
 /// `RawSocket` is a synonym for [`RawFd`](std::os::fd::RawFd) on `unix`
-/// or [`RawSocket`](std::os::windows::io::RawSocket) on `windows`.
+/// or `RawSocket` (`std::os::windows::io::RawSocket`) on `windows`.
 #[cfg(unix)]
 pub type RawSocket = std::os::fd::RawFd;
 
-/// `RawFile` is a synonym for [`RawFd`](std::os::fd::RawFd) on `unix`
+/// `RawFile` is a synonym for `RawFd` (`std::os::fd::RawFd`) on `unix`
 /// or [`RawHandle`](std::os::windows::io::RawHandle) on `windows`.
 #[cfg(windows)]
 pub type RawFile = std::os::windows::io::RawHandle;
 
 /// `RawFile`is a synonym for [`RawFd`](std::os::fd::RawFd) on `unix`
-/// or [`RawHandle`](std::os::windows::io::RawHandle) on `windows`.
+/// or `RawHandle` (`std::os::windows::io::RawHandle`) on `windows`.
 #[cfg(unix)]
 pub type RawFile = std::os::fd::RawFd;
 
 /// `AsRawSocket` is a synonym for [`AsRawFd`](std::os::fd::AsRawFd) on `unix` or for
-/// [`AsRawSocket`](std::os::windows::io::AsRawSocket) on `windows`.
+/// `AsRawSocket` (`std::os::windows::io::AsRawSocket`) on `windows`.
 #[cfg(unix)]
 pub trait AsRawSocket: std::os::fd::AsRawFd {
     /// Returns [`RawSocket`] for this socket.
@@ -29,7 +29,7 @@ pub trait AsRawSocket: std::os::fd::AsRawFd {
     }
 }
 
-/// `AsRawSocket` is a synonym for [`AsRawFd`](std::os::fd::AsRawFd) on `unix` or for
+/// `AsRawSocket` is a synonym for `AsRawFd` (`std::os::fd::AsRawFd`) on `unix` or for
 /// [`AsRawSocket`](std::os::windows::io::AsRawSocket) on `windows`.
 #[cfg(windows)]
 pub trait AsRawSocket: std::os::windows::io::AsRawSocket {
@@ -41,7 +41,7 @@ pub trait AsRawSocket: std::os::windows::io::AsRawSocket {
 }
 
 /// `AsRawSocket` is a synonym for [`AsRawFd`](std::os::fd::AsRawFd) on `unix` or for
-/// [`AsRawSocket`](std::os::windows::io::AsRawSocket) on `windows`.
+/// `AsRawSocket` (`std::os::windows::io::AsRawSocket`) on `windows`.
 #[cfg(unix)]
 pub trait AsRawFile: std::os::fd::AsRawFd {
     /// Returns [`RawFile`] for this socket.
@@ -51,7 +51,7 @@ pub trait AsRawFile: std::os::fd::AsRawFd {
     }
 }
 
-/// `AsRawFile` is a synonym for [`AsRawFd`](std::os::fd::AsRawFd) on `unix` or for
+/// `AsRawFile` is a synonym for `AsRawFd` (`std::os::fd::AsRawFd`) on `unix` or for
 /// [`AsRawHandle`](std::os::windows::io::AsRawHandle) on `windows`.
 #[cfg(windows)]
 pub trait AsRawFile: std::os::windows::io::AsRawHandle {

@@ -1,17 +1,15 @@
 use crate::io::io_request_data::IoRequestData;
+use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::RawSocket;
-use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use mio::event::Source;
 use mio::{Events, Interest, Poll, Token};
-use std::collections::BTreeSet;
-use std::time::Instant;
 use std::{io, ptr};
 
 /// `MioPoller` is a wrapper around `mio::Poll` that is used to poll for events and poll-timeouts.
 pub(crate) struct MioPoller {
     poll: Poll,
     events: Events,
-    time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
+    request_slots: Vec<*mut (IoCall, *mut IoRequestData)>,
 }
 
 impl MioPoller {
@@ -20,26 +18,54 @@ impl MioPoller {
         Ok(Self {
             poll: Poll::new()?,
             events: Events::with_capacity(128),
-            time_bounded_io_task_queue: BTreeSet::new(),
+            request_slots: Vec::new(),
         })
     }
 
+    /// Allocates a request's slot or gets it from the pool, writes the request to the slot and returns the pointer.
+    fn write_request_and_get_ptr(
+        &mut self,
+        request: (IoCall, *mut IoRequestData),
+    ) -> *mut (IoCall, *mut IoRequestData) {
+        if let Some(slot) = self.request_slots.pop() {
+            unsafe { ptr::write(slot, request) };
+            slot
+        } else {
+            Box::into_raw(Box::new(request))
+        }
+    }
+
+    /// Releases a request's slot and returns an associated request via reading.
+    fn release_request_slot(
+        &mut self,
+        request_ptr: *mut (IoCall, *mut IoRequestData),
+    ) -> (IoCall, *mut IoRequestData) {
+        self.request_slots.push(request_ptr);
+
+        unsafe { ptr::read(request_ptr) }
+    }
+
     /// Registers a new interest (read/write) for a given socket and associates it with a payload.
+    ///
+    /// Returns a slot pointer that is used to deregister.
     pub(crate) fn register(
         &mut self,
-        raw_socket: RawSocket,
         interest: Interest,
-        request_ptr: *mut IoRequestData,
-    ) -> io::Result<()> {
+        request: (IoCall, *mut IoRequestData),
+    ) -> *mut (IoCall, *mut IoRequestData) {
         let registry = self.poll.registry();
+        let raw_socket = request.0.raw_socket().unwrap();
+        let request_ptr = self.write_request_and_get_ptr(request);
 
         #[cfg(unix)]
         {
-            registry.register(
-                &mut mio::unix::SourceFd(&raw_socket),
-                Token(request_ptr as usize),
-                interest,
-            )
+            registry
+                .register(
+                    &mut mio::unix::SourceFd(&raw_socket),
+                    Token(request_ptr as usize),
+                    interest,
+                )
+                .unwrap();
         }
 
         #[cfg(windows)]
@@ -47,15 +73,32 @@ impl MioPoller {
             use std::os::windows::io::FromRawSocket;
 
             let mut mio_stream = unsafe { mio::net::TcpStream::from_raw_socket(raw_socket) }; // It can be not only stream
-            registry.register(&mut mio_stream, Token(request_ptr as usize), interest)?;
-            std::mem::forget(mio_stream);
 
-            Ok(())
+            registry
+                .register(&mut mio_stream, Token(request_ptr as usize), interest)
+                .unwrap();
+
+            std::mem::forget(mio_stream);
         }
+
+        request_ptr
+    }
+
+    /// Deregister a socket from the poller. Slot will be released.
+    pub(crate) fn deregister(
+        &mut self,
+        raw_socket: RawSocket,
+        slot: *mut (IoCall, *mut IoRequestData),
+    ) -> io::Result<()> {
+        self.release_request_slot(slot);
+
+        self.deregister_(raw_socket)
     }
 
     /// Deregister a socket from the poller.
-    pub(crate) fn deregister(&mut self, raw_socket: RawSocket) -> io::Result<()> {
+    fn deregister_(&mut self, raw_socket: RawSocket) -> io::Result<()> {
+        // Here not slot's leaks, because it called after slot's release
+
         let registry = self.poll.registry();
 
         #[cfg(unix)]
@@ -75,48 +118,25 @@ impl MioPoller {
         }
     }
 
-    /// Checks for timed out requests and removes them from the queue.
-    ///
-    /// It saves the timed out requests to the provided vector.
-    pub(crate) fn check_deadlines(&mut self, timed_out_requests: &mut Vec<IoRequestData>) {
-        if self.time_bounded_io_task_queue.is_empty() {
-            return;
-        }
-
-        let now = Instant::now();
-
-        while let Some(time_bounded_io_task) = self.time_bounded_io_task_queue.pop_first() {
-            if time_bounded_io_task.deadline() <= now {
-                self.deregister(time_bounded_io_task.raw_socket()).unwrap();
-                let io_request_ptr = time_bounded_io_task.user_data() as *mut IoRequestData;
-                timed_out_requests.push(unsafe { ptr::read(io_request_ptr) });
-            } else {
-                self.time_bounded_io_task_queue.insert(time_bounded_io_task);
-
-                break;
-            }
-        }
-    }
-
     /// Polls for events and invokes the provided callback for each event.
     pub(crate) fn poll<F>(
         &mut self,
         timeout: Option<std::time::Duration>,
-        requests: &mut Vec<Result<IoRequestData, IoRequestData>>,
+        requests: &mut Vec<Result<(IoCall, *mut IoRequestData), *mut IoRequestData>>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
 
         for event in &self.events {
-            let io_request_ptr = event.token().0 as *mut IoRequestData;
-            let io_request = unsafe { &mut *io_request_ptr };
+            let io_request_ptr = event.token().0 as *mut (IoCall, *mut IoRequestData);
+            let io_request = self.release_request_slot(io_request_ptr);
 
-            self.deregister(io_request.raw_socket())?;
+            self.deregister_(io_request.0.raw_socket().unwrap())?;
 
             requests.push(
                 if event.is_error() || (!event.is_readable() && !event.is_writable()) {
-                    Err(unsafe { ptr::read(io_request) })
+                    Err(io_request.1)
                 } else {
-                    Ok(unsafe { ptr::read(io_request) })
+                    Ok(io_request)
                 },
             );
         }

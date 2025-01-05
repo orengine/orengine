@@ -1,24 +1,24 @@
-/// `BorrowedSocket` is a synonym for [`BorrowedFd`](std::os::fd::BorrowedFd) on `unix`
+/// `BorrowedSocket` is a synonym for `BorrowedFd` (`std::os::fd::BorrowedFd`) on `unix`
 /// or [`BorrowedSocket`](std::os::windows::io::BorrowedSocket) on `windows`.
 #[cfg(windows)]
 pub type BorrowedSocket<'socket> = std::os::windows::io::BorrowedSocket<'socket>;
 
 /// `BorrowedSocket` is a synonym for [`BorrowedFd`](std::os::fd::BorrowedFd) on `unix`
-/// or [`BorrowedSocket`](std::os::windows::io::BorrowedSocket) on `windows`.
+/// or `BorrowedSocket` (`std::os::windows::io::BorrowedSocket`) on `windows`.
 #[cfg(unix)]
 pub type BorrowedSocket<'socket> = std::os::fd::BorrowedFd<'socket>;
 
-/// `BorrowedFile` is a synonym for [`BorrowedFd`](std::os::fd::BorrowedFd) on `unix`
+/// `BorrowedFile` is a synonym for `BorrowedFd` (`std::os::fd::BorrowedFd`) on `unix`
 /// or [`BorrowedHandle`](std::os::windows::io::BorrowedHandle) on `windows`.
 #[cfg(windows)]
 pub type BorrowedFile<'file> = std::os::windows::io::BorrowedHandle<'file>;
 
 /// `BorrowedFile` is a synonym for [`BorrowedFd`](std::os::fd::BorrowedFd) on `unix`
-/// or [`BorrowedHandle`](std::os::windows::io::BorrowedHandle) on `windows`.
+/// or `BorrowedHandle` (`std::os::windows::io::BorrowedHandle`) on `windows`.
 #[cfg(unix)]
 pub type BorrowedFile<'file> = std::os::fd::BorrowedFd<'file>;
 
-/// `AsSocket` is as synonyms for [`AsFd`](std::os::fd::AsFd) on `unix` or for
+/// `AsSocket` is as synonyms for `AsFd` (`std::os::fd::AsFd`) on `unix` or for
 /// [`AsSocket`](std::os::windows::io::AsSocket) on `windows`.
 #[cfg(windows)]
 pub trait AsSocket: std::os::windows::io::AsSocket {
@@ -30,7 +30,7 @@ pub trait AsSocket: std::os::windows::io::AsSocket {
 }
 
 /// `AsSocket` is a synonym for [`AsFd`](std::os::fd::AsFd) on `unix` or for
-/// [`AsSocket`](std::os::windows::io::AsSocket) on `windows`.
+/// `AsSocket` (`std::os::windows::io::AsSocket`) on `windows`.
 #[cfg(unix)]
 pub trait AsSocket: std::os::fd::AsFd {
     /// Returns a [`BorrowedSocket`] for this socket.
@@ -40,7 +40,7 @@ pub trait AsSocket: std::os::fd::AsFd {
     }
 }
 
-/// `AsFile` is a synonym for [`AsFd`](std::os::fd::AsFd) on `unix` or for
+/// `AsFile` is a synonym for `AsFd`] (`std::os::fd::AsFd`) on `unix` or for
 /// [`AsHandle`](std::os::windows::io::AsHandle) on `windows`.
 #[cfg(windows)]
 pub trait AsFile: std::os::windows::io::AsHandle {
@@ -52,7 +52,7 @@ pub trait AsFile: std::os::windows::io::AsHandle {
 }
 
 /// `AsFile` is a synonym for [`AsFd`](std::os::fd::AsFd) on `unix` or for
-/// [`AsHandle`](std::os::windows::io::AsHandle) on `windows`.
+/// `AsHandle` (`std::os::windows::io::AsHandle`) on `windows`.
 #[cfg(unix)]
 pub trait AsFile: std::os::fd::AsFd {
     /// Returns a [`BorrowedFile`] for this file.

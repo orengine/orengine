@@ -1,5 +1,5 @@
 use crate::io::create_dir::CreateDir;
-use crate::io::sys::os_path::get_os_path;
+use crate::io::sys::get_os_path;
 use smallvec::SmallVec;
 use std::ffi::OsStr;
 use std::io;

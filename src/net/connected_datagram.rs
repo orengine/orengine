@@ -13,12 +13,12 @@ use std::net::SocketAddr;
 /// # Implemented Traits
 ///
 /// - [`Socket`]
-/// - [`AsyncPollFd`](crate::io::AsyncPollFd)
+/// - [`AsyncPollSocket`](crate::io::AsyncPollSocket)
 /// - [`AsyncClose`](crate::io::AsyncSocketClose)
-/// - [`IntoRawFd`](crate::io::sys::IntoRawFd)
-/// - [`FromRawFd`](crate::io::sys::FromRawFd)
-/// - [`AsFd`](crate::io::sys::AsFd)
-/// - [`AsRawFd`](crate::io::sys::AsRawFd)
+/// - [`IntoRawSocket`](crate::io::sys::IntoRawSocket)
+/// - [`FromRawSocket`](crate::io::sys::FromRawSocket)
+/// - [`AsSocket`](crate::io::sys::AsSocket)
+/// - [`AsRawSocket`](crate::io::sys::AsRawSocket)
 /// - [`AsyncRecv`]
 /// - [`AsyncPeek`]
 /// - [`AsyncSend`]

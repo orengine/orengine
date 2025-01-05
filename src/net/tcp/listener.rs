@@ -43,6 +43,7 @@ impl From<TcpListener> for std::net::TcpListener {
     }
 }
 
+#[allow(clippy::fallible_impl_from, reason = "std::net::TcpListener is valid.")]
 impl From<std::net::TcpListener> for TcpListener {
     fn from(listener: std::net::TcpListener) -> Self {
         Self {

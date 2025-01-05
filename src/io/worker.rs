@@ -1,9 +1,11 @@
 use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{MessageRecvHeader, OpenHow, OsMessageHeader, RawFile, RawSocket, WorkerSys};
+use crate::io::sys;
+use crate::io::sys::{
+    os_sockaddr, MessageRecvHeader, OsMessageHeader, OsOpenOptions, OsPathPtr, RawFile, RawSocket,
+    WorkerSys,
+};
 use crate::BUG_MESSAGE;
-use nix::libc;
-use nix::libc::sockaddr;
 use std::cell::UnsafeCell;
 use std::net::Shutdown;
 use std::time::{Duration, Instant};
@@ -56,20 +58,12 @@ pub(crate) fn local_worker() -> &'static mut WorkerSys {
 pub(crate) trait IoWorker {
     /// Creates a new worker.
     fn new(config: IoWorkerConfig) -> Self;
-    /// Registers a new time-bounded io task. It will be cancelled if the deadline is reached.
-    ///
-    /// It takes `&mut Instant` as a deadline because it increments the deadline by 1 nanosecond
-    /// if it is not unique.
-    fn register_time_bounded_io_task(
-        &mut self,
-        io_request_data: &IoRequestData,
-        deadline: &mut Instant,
-    );
     /// Deregisters a time-bounded io task.
     /// It is used to say [`IoWorker`] to not cancel the task.
     ///
     /// Deadline is always unique, therefore we can use it as a key.
     fn deregister_time_bounded_io_task(&mut self, deadline: &Instant);
+
     /// Returns whether `worker` has work to do.
     fn has_work(&self) -> bool;
     /// Submits an accumulated tasks to the kernel and polls it for completion if needed.
@@ -88,69 +82,57 @@ pub(crate) trait IoWorker {
     fn accept(
         &mut self,
         raw_socket: RawSocket,
-        addr: *mut sockaddr,
-        addrlen: *mut libc::socklen_t,
+        addr_ptr: *mut os_sockaddr,
+        addr_len: *mut sys::socklen_t,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `accept` io operation with deadline.
     fn accept_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        addr: *mut sockaddr,
-        addrlen: *mut libc::socklen_t,
+        addr_ptr: *mut os_sockaddr,
+        addr_len: *mut sys::socklen_t,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.accept(raw_socket, addr, addrlen, request_ptr);
-    }
+    );
     /// Registers a new `connect` io operation.
     fn connect(
         &mut self,
         raw_socket: RawSocket,
-        addr_ptr: *const sockaddr,
-        addr_len: libc::socklen_t,
+        addr_ptr: *const os_sockaddr,
+        addr_len: sys::socklen_t,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `connect` io operation with deadline.
     fn connect_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        addr_ptr: *const sockaddr,
-        addr_len: libc::socklen_t,
+        addr_ptr: *const os_sockaddr,
+        addr_len: sys::socklen_t,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.connect(raw_socket, addr_ptr, addr_len, request_ptr);
-    }
+    );
 
     // region poll raw_socket
 
     /// Registers a new `poll` for readable io operation.
     fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
     /// Registers a new `poll` for readable io operation with deadline.
-    fn poll_raw_socket_read_with_deadline(
+    fn poll_socket_read_with_deadline(
         &mut self,
         raw_socket: RawSocket,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.poll_socket_read(raw_socket, request_ptr);
-    }
+    );
     /// Registers a new `poll` for writable io operation.
     fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
     /// Registers a new `poll` for writable io operation with deadline.
-    fn poll_raw_socket_write_with_deadline(
+    fn poll_socket_write_with_deadline(
         &mut self,
         raw_socket: RawSocket,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.poll_socket_write(raw_socket, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -182,10 +164,7 @@ pub(crate) trait IoWorker {
         len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.recv(raw_socket, ptr, len, request_ptr);
-    }
+    );
 
     /// Registers a new `recv` io operation with deadline with __fixed__ buffer.
     fn recv_fixed_with_deadline(
@@ -196,10 +175,7 @@ pub(crate) trait IoWorker {
         buf_index: u16,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.recv_fixed(raw_socket, ptr, len, buf_index, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -221,10 +197,7 @@ pub(crate) trait IoWorker {
         msg_header: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.recv_from(raw_socket, msg_header, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -256,10 +229,7 @@ pub(crate) trait IoWorker {
         len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.send(raw_socket, ptr, len, request_ptr);
-    }
+    );
 
     /// Registers a new `send` io operation with deadline with __fixed__ buffer.
     fn send_fixed_with_deadline(
@@ -270,10 +240,7 @@ pub(crate) trait IoWorker {
         buf_index: u16,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.send_fixed(raw_socket, ptr, len, buf_index, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -294,10 +261,7 @@ pub(crate) trait IoWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.send_to(raw_socket, msg_header, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -329,10 +293,7 @@ pub(crate) trait IoWorker {
         len: u32,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.peek(raw_socket, ptr, len, request_ptr);
-    }
+    );
 
     /// Registers a new `peek` io operation with deadline with __fixed__ buffer.
     fn peek_fixed_with_deadline(
@@ -343,10 +304,7 @@ pub(crate) trait IoWorker {
         buf_index: u16,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.peek_fixed(raw_socket, ptr, len, buf_index, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -367,10 +325,7 @@ pub(crate) trait IoWorker {
         msg: &mut MessageRecvHeader,
         request_ptr: *mut IoRequestData,
         deadline: &mut Instant,
-    ) {
-        self.register_time_bounded_io_task(unsafe { &*request_ptr } as _, deadline);
-        self.peek_from(raw_socket, msg, request_ptr);
-    }
+    );
 
     // endregion
 
@@ -379,8 +334,8 @@ pub(crate) trait IoWorker {
     /// Registers a new `open` io operation.
     fn open(
         &mut self,
-        path: *const libc::c_char,
-        open_how: *const OpenHow,
+        path: OsPathPtr,
+        open_how: *const OsOpenOptions,
         request_ptr: *mut IoRequestData,
     );
     /// Registers a new `fallocate` io operation if the kernel supports it.
@@ -478,16 +433,11 @@ pub(crate) trait IoWorker {
     /// Registers a new `close` io operation for a provided socket.
     fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
     /// Registers a new `rename` io operation.
-    fn rename(
-        &mut self,
-        old_path: *const libc::c_char,
-        new_path: *const libc::c_char,
-        request_ptr: *mut IoRequestData,
-    );
+    fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: *mut IoRequestData);
     /// Registers a new `mkdir` io operation.
-    fn create_dir(&mut self, path: *const libc::c_char, mode: u32, request_ptr: *mut IoRequestData);
+    fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: *mut IoRequestData);
     /// Registers a new `unlink` io operation.
-    fn remove_file(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequestData);
+    fn remove_file(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData);
     /// Registers a new `rmdir` io operation.
-    fn remove_dir(&mut self, path: *const libc::c_char, request_ptr: *mut IoRequestData);
+    fn remove_dir(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData);
 }

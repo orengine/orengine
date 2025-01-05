@@ -466,7 +466,7 @@ impl PartialEq<&[u8]> for Buffer {
 }
 
 impl Debug for Buffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.as_ref())
     }
 }

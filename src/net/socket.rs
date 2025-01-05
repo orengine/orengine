@@ -1,5 +1,5 @@
 use crate::io::sys::{AsSocket, FromRawSocket, IntoRawSocket};
-use crate::io::{AsyncPollFd, AsyncSocketClose};
+use crate::io::{AsyncPollSocket, AsyncSocketClose};
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
@@ -13,14 +13,14 @@ use std::net::SocketAddr;
 ///
 /// # Implemented traits
 ///
-/// - [`AsyncPollFd`]
+/// - [`AsyncPollSocket`]
 /// - [`AsyncSocketClose`]
 /// - [`IntoRawSocket`]
 /// - [`FromRawSocket`]
 /// - [`AsSocket`]
-/// - [`AsyncPollFd`]
+/// - [`AsyncPollSocket`]
 pub trait Socket:
-    IntoRawSocket + FromRawSocket + AsSocket + AsyncPollFd + AsyncSocketClose
+    IntoRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
 {
     /// Returns the local socket address that the socket is bound to.
     ///

@@ -32,10 +32,11 @@ impl Fallocate {
 }
 
 impl Future for Fallocate {
-    type Output = Result<usize>;
+    type Output = Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
+        #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_io_request!((
@@ -46,7 +47,7 @@ impl Future for Fallocate {
                 this.flags,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
             ),
-            ret
+            ()
         ));
     }
 }
@@ -58,13 +59,32 @@ unsafe impl Send for Fallocate {}
 ///
 /// Call [`fallocate`](AsyncFallocate::fallocate) to allocate len bytes on the disk.
 pub trait AsyncFallocate: AsRawFile {
+    /// Allocate space in a file from a given offset.
+    ///
+    /// The manipulated range starts at the `offset` and continues for `len` bytes.
+    ///
+    /// The specific actions with the allocated disk space are specified by
+    /// the `flags`, read `fallocate(2)` man page for more details.
+    ///
+    /// Not all OS and not all file systems support this operation. If the operation is not supported,
+    /// it does nothing and returns `Ok(())`.  
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use orengine::fs::{File, OpenOptions};
+    /// use orengine::io::AsyncFallocate;
+    ///
+    /// async fn foo() {
+    /// let f = File::open("foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
+    ///
+    /// // Allocate a 1024 byte file without filling it, like Vec::reserve
+    /// #[cfg(unix)]
+    /// f.fallocate(0, 1024, libc::FALLOC_FL_KEEP_SIZE).await.unwrap();
+    /// # }
+    /// ```
     #[inline(always)]
-    fn fallocate(
-        &self,
-        offset: usize,
-        len: usize,
-        flags: i32,
-    ) -> impl Future<Output = Result<usize>> {
+    fn fallocate(&self, offset: usize, len: usize, flags: i32) -> impl Future<Output = Result<()>> {
         Fallocate::new(self.as_raw_file(), offset, len, flags)
     }
 }

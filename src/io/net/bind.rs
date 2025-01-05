@@ -145,7 +145,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
 
                     if cfg!(target_os = "linux") {
-                        use nix::libc::{
+                        use libc::{
                             self, __u32, BPF_ABS, BPF_LD, BPF_RET, BPF_W, SKF_AD_CPU, SKF_AD_OFF,
                         };
                         const BPF_A: __u32 = 0x10;

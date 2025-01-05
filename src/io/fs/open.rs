@@ -1,8 +1,7 @@
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::os_path::OsPath;
-use crate::io::sys::unix::OsOpenOptions;
-use crate::io::sys::{FromRawFile, RawFile};
+use crate::io::sys::{get_os_path_ptr, OsPath};
+use crate::io::sys::{FromRawFile, OsOpenOptions, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
@@ -39,7 +38,7 @@ impl<F: FromRawFile> Future for Open<F> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().open(this.path.as_ptr(), &this.os_open_options, unsafe {
+            local_worker().open(get_os_path_ptr(&this.path), &this.os_open_options, unsafe {
                 this.io_request_data.as_mut().unwrap_unchecked()
             }),
             unsafe { F::from_raw_file(ret as RawFile) }

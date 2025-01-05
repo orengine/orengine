@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+#[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
@@ -17,9 +18,11 @@ pub(crate) fn is_exists<S: AsRef<OsStr>>(path: S) -> bool {
 pub(crate) fn create_test_dir_if_not_exist() {
     if !is_exists(TEST_DIR_PATH) {
         // here we use std, because we are in tests, so we can't be sure that crate::fs::create_dir_all works correctly
-        std::fs::DirBuilder::new()
-            .mode(0o777)
-            .recursive(true)
+        let mut dir_builder = std::fs::DirBuilder::new();
+        let dir_builder_ref = dir_builder.recursive(true);
+        #[cfg(unix)]
+        let dir_builder_ref = dir_builder_ref.mode(0o777);
+        dir_builder_ref
             .create(TEST_DIR_PATH)
             .expect("can't create test dir");
     }

@@ -6,7 +6,7 @@ use crate::io::remove::Remove;
 use crate::io::rename::Rename;
 use crate::io::sync_all::AsyncSyncAll;
 use crate::io::sync_data::AsyncSyncData;
-use crate::io::sys::os_path::get_os_path;
+use crate::io::sys::get_os_path;
 use crate::io::sys::{AsFile, AsRawFile, FromRawFile, IntoRawFile, RawFile};
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::runtime::local_executor;
@@ -66,7 +66,10 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn open<P: AsRef<Path>>(as_path: P, open_options: &OpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path> + Send>(
+        as_path: P,
+        open_options: &OpenOptions,
+    ) -> Result<Self> {
         let path = as_path.as_ref();
         if path == Path::new("") {
             return Err(Error::new(io::ErrorKind::InvalidInput, "path is empty"));
@@ -479,8 +482,6 @@ mod tests {
 
     #[orengine::test::test_local]
     fn test_file_unpositional_read_write_with_fixed() {
-        create_test_dir_if_not_exist();
-
         let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/unpositional_file/");
 
         create_test_dir_if_not_exist();

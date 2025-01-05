@@ -1,4 +1,9 @@
-use nix::libc;
+use crate as orengine;
+use crate::io::io_request_data::IoRequestData;
+use crate::io::sys;
+use crate::io::sys::{os_sockaddr, AsRawSocket, FromRawSocket, RawSocket};
+use crate::io::worker::{local_worker, IoWorker};
+use crate::BUG_MESSAGE;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 use std::future::Future;
@@ -10,16 +15,36 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawSocket, FromRawSocket, RawSocket};
-use crate::io::worker::{local_worker, IoWorker};
-use crate::BUG_MESSAGE;
+/// The same as [`SockAddr`] but in this crate we can use private fields.
+struct SockAddrRaw {
+    storage: sys::sockaddr_storage,
+    len: sys::socklen_t,
+}
+
+impl SockAddrRaw {
+    /// Creates a new empty `SockAddrRaw`.
+    fn empty() -> Self {
+        Self {
+            storage: unsafe { mem::zeroed() },
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "size of SockAddr is less than u32::MAX"
+            )]
+            len: size_of::<SockAddr>() as _,
+        }
+    }
+
+    /// Converts `SockAddrRaw` to [`SockAddr`].
+    #[inline(always)]
+    fn as_sock_addr(&self) -> SockAddr {
+        unsafe { SockAddr::new(self.storage, self.len) }
+    }
+}
 
 /// `accept` io operation.
 pub struct Accept<S: FromRawSocket> {
     raw_socket: RawSocket,
-    addr: (SockAddr, libc::socklen_t),
+    addr: SockAddrRaw,
     io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<S>,
 }
@@ -33,7 +58,7 @@ impl<S: FromRawSocket> Accept<S> {
                 clippy::cast_possible_truncation,
                 reason = "size of SockAddr is less than u32::MAX"
             )]
-            addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
+            addr: SockAddrRaw::empty(),
             io_request_data: None,
             phantom_data: PhantomData,
         }
@@ -50,11 +75,16 @@ impl<S: FromRawSocket> Future for Accept<S> {
         poll_for_io_request!((
             local_worker().accept(
                 this.raw_socket,
-                this.addr.0.as_ptr().cast_mut(),
-                &mut this.addr.1,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                (&raw mut this.addr.storage).cast::<os_sockaddr>(),
+                &raw mut this.addr.len,
+                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
             ),
-            unsafe { (S::from_raw_socket(ret as RawSocket), this.addr.0.clone(),) }
+            unsafe {
+                (
+                    S::from_raw_socket(ret as RawSocket),
+                    this.addr.as_sock_addr(),
+                )
+            }
         ));
     }
 }
@@ -64,7 +94,7 @@ unsafe impl<S: FromRawSocket> Send for Accept<S> {}
 /// `accept` io operation with deadline.
 pub struct AcceptWithDeadline<S: FromRawSocket> {
     raw_socket: RawSocket,
-    addr: (SockAddr, libc::socklen_t),
+    addr: SockAddrRaw,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
     pin: PhantomData<S>,
@@ -79,7 +109,7 @@ impl<S: FromRawSocket> AcceptWithDeadline<S> {
                 clippy::cast_possible_truncation,
                 reason = "size of SockAddr is less than u32::MAX"
             )]
-            addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
+            addr: SockAddrRaw::empty(),
             io_request_data: None,
             deadline,
             pin: PhantomData,
@@ -98,12 +128,17 @@ impl<S: FromRawSocket> Future for AcceptWithDeadline<S> {
         poll_for_time_bounded_io_request!((
             worker.accept_with_deadline(
                 this.raw_socket,
-                this.addr.0.as_ptr().cast_mut(),
-                &mut this.addr.1,
+                (&raw mut this.addr.storage).cast::<os_sockaddr>(),
+                &raw mut this.addr.len,
                 unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
                 &mut this.deadline
             ),
-            unsafe { (S::from_raw_socket(ret as RawSocket), this.addr.0.clone(),) }
+            unsafe {
+                (
+                    S::from_raw_socket(ret as RawSocket),
+                    this.addr.as_sock_addr(),
+                )
+            }
         ));
     }
 }

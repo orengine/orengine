@@ -1,13 +1,13 @@
+use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
+use socket2::SockAddr;
 use std::future::Future;
 use std::io::{ErrorKind, Result};
+use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use std::{io, ptr};
-
-use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
-use socket2::SockAddr;
 
 use crate as orengine;
 use crate::io::io_request_data::IoRequestData;
@@ -17,10 +17,11 @@ use crate::io::worker::{local_worker, IoWorker};
 /// `send_to` io operation.
 pub struct SendTo<'fut> {
     raw_socket: RawSocket,
-    message_header: MessageSendHeader<'fut>,
+    message_header: MessageSendHeader,
     buf: &'fut [u8],
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> SendTo<'fut> {
@@ -32,6 +33,7 @@ impl<'fut> SendTo<'fut> {
             buf,
             addr,
             io_request_data: None,
+            phantom_data: PhantomData,
         }
     }
 }
@@ -64,11 +66,12 @@ unsafe impl Send for SendTo<'_> {}
 /// `send_to` io operation with deadline.
 pub struct SendToWithDeadline<'fut> {
     raw_socket: RawSocket,
-    message_header: MessageSendHeader<'fut>,
+    message_header: MessageSendHeader,
     buf: &'fut [u8],
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> SendToWithDeadline<'fut> {
@@ -86,6 +89,7 @@ impl<'fut> SendToWithDeadline<'fut> {
             addr,
             io_request_data: None,
             deadline,
+            phantom_data: PhantomData,
         }
     }
 }

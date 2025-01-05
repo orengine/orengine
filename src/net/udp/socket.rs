@@ -7,7 +7,7 @@ use socket2::{SockAddr, SockRef};
 
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
-    AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollFd, AsyncRecvFrom, AsyncSendTo,
+    AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollSocket, AsyncRecvFrom, AsyncSendTo,
     AsyncSocketClose,
 };
 use crate::net::creators_of_sockets::new_udp_socket;
@@ -35,7 +35,7 @@ use crate::runtime::local_executor;
 ///
 /// ```rust
 /// use orengine::net::UdpSocket;
-/// use orengine::io::{full_buffer, AsyncBind, AsyncPollFd, AsyncRecvFrom, AsyncSendTo};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPollSocket, AsyncRecvFrom, AsyncSendTo};
 ///
 /// # async fn foo() {
 /// let mut socket = UdpSocket::bind("127.0.0.1:8081").await.unwrap();
@@ -55,7 +55,7 @@ use crate::runtime::local_executor;
 /// ## Usage with [`connect`](AsyncConnectDatagram)
 ///
 /// ```rust
-/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
 ///
 /// # async fn foo() {
@@ -171,7 +171,7 @@ impl AsyncBind for UdpSocket {
 
 impl AsyncConnectDatagram<UdpConnectedSocket> for UdpSocket {}
 
-impl AsyncPollFd for UdpSocket {}
+impl AsyncPollSocket for UdpSocket {}
 
 impl AsyncRecvFrom for UdpSocket {}
 

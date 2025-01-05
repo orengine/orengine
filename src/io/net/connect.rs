@@ -291,7 +291,7 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
@@ -329,7 +329,7 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -373,7 +373,7 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {

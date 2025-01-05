@@ -78,10 +78,10 @@ impl Task {
             );
         }
 
-        if self.is_local() && self.executor_id != crate::local_executor().id() {
+        if self.is_local() && self.executor_id != local_executor().id() {
             if cfg!(test) && self.executor_id == usize::MAX {
                 // All is ok
-                self.executor_id = crate::local_executor().id();
+                self.executor_id = local_executor().id();
             } else {
                 panic!("Local task has been moved to another executor!");
             }

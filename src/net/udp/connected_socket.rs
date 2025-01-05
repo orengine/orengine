@@ -1,5 +1,7 @@
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
-use crate::io::{AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncShutdown, AsyncSocketClose};
+use crate::io::{
+    AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncShutdown, AsyncSocketClose,
+};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 use std::fmt::{Debug, Formatter};
@@ -17,7 +19,7 @@ use std::mem::ManuallyDrop;
 /// # Example
 ///
 /// ```rust
-/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
 ///
 /// # async fn foo() {
@@ -117,7 +119,7 @@ impl std::os::windows::io::FromRawSocket for UdpConnectedSocket {
 
 impl FromRawSocket for UdpConnectedSocket {}
 
-impl AsyncPollFd for UdpConnectedSocket {}
+impl AsyncPollSocket for UdpConnectedSocket {}
 
 impl AsyncRecv for UdpConnectedSocket {}
 

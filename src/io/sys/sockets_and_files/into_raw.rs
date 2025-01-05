@@ -1,6 +1,6 @@
 use crate::io::sys::{RawFile, RawSocket};
 
-/// `IntoRawSocket` is a synonym for [`IntoRawFd`](std::os::fd::IntoRawFd) on `unix` or for
+/// `IntoRawSocket` is a synonym for `IntoRawFd` (`std::os::fd::IntoRawFd`) on `unix` or for
 /// [`IntoRawSocket`](std::os::windows::io::IntoRawSocket) on `windows`.
 #[cfg(windows)]
 pub trait IntoRawSocket: std::os::windows::io::IntoRawSocket + Sized {
@@ -10,7 +10,7 @@ pub trait IntoRawSocket: std::os::windows::io::IntoRawSocket + Sized {
 }
 
 /// `IntoRawSocket` is a synonym for [`IntoRawFd`](std::os::fd::IntoRawFd) on `unix` or for
-/// [`IntoRawSocket`](std::os::windows::io::IntoRawSocket) on `windows`.
+/// `IntoRawSocket` (`std::os::windows::io::IntoRawSocket`) on `windows`.
 #[cfg(unix)]
 pub trait IntoRawSocket: std::os::fd::IntoRawFd + Sized {
     /// Consumes this object, returning the [`raw underlying socket`](std::os::fd::RawFd).
@@ -39,7 +39,7 @@ pub trait IntoRawFile: std::os::windows::io::IntoRawHandle + Sized {
 }
 
 /// `IntoRawFile` is a synonym for [`IntoRawFd`](std::os::fd::IntoRawFd) on `unix` or for
-/// [`IntoRawHandle`](std::os::windows::io::IntoRawHandle) on `windows`.
+/// `IntoRawHandle` (`std::os::windows::io::IntoRawHandle`) on `windows`.
 #[cfg(unix)]
 pub trait IntoRawFile: std::os::fd::IntoRawFd + Sized {
     fn into_raw_file(self) -> RawFile {

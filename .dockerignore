@@ -27,7 +27,7 @@
 **/secrets.dev.yaml
 **/values.dev.yaml
 /bin
-/orengine-macros
+/orengine-macros/target
 /dev
 /benchmarks
 /examples

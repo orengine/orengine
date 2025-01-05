@@ -91,16 +91,16 @@ generate_poll!(
     PollRecv,
     PollRecvWithDeadline,
     poll_socket_read,
-    poll_raw_socket_read_with_deadline
+    poll_socket_read_with_deadline
 );
 generate_poll!(
     PollSend,
     PollSendWithDeadline,
     poll_socket_write,
-    poll_raw_socket_write_with_deadline
+    poll_socket_write_with_deadline
 );
 
-/// The `AsyncPollFd` trait provides non-blocking polling methods for readiness in receiving
+/// The `AsyncPollSocket` trait provides non-blocking polling methods for readiness in receiving
 /// and sending data on file descriptors.
 ///
 /// It enables polling with deadlines, timeouts,
@@ -108,7 +108,7 @@ generate_poll!(
 ///
 /// This trait can be implemented for any writable and readable structs
 /// that supports the [`AsRawSocket`] trait.
-pub trait AsyncPollFd: AsRawSocket {
+pub trait AsyncPollSocket: AsRawSocket {
     /// Returns future that will be resolved when the file descriptor
     /// becomes readable or an error occurs.
     ///
@@ -124,7 +124,7 @@ pub trait AsyncPollFd: AsRawSocket {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -160,7 +160,7 @@ pub trait AsyncPollFd: AsRawSocket {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -199,7 +199,7 @@ pub trait AsyncPollFd: AsRawSocket {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {

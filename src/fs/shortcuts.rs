@@ -1,6 +1,6 @@
 use crate::fs::{DirBuilder, File, OpenOptions};
 use crate::io::remove_dir::RemoveDir;
-use crate::io::sys::os_path::get_os_path;
+use crate::io::sys::get_os_path;
 use std::io::Result;
 use std::path::Path;
 
