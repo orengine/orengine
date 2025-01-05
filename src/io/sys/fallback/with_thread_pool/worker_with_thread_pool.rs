@@ -275,7 +275,7 @@ impl IoWorker for FallbackWorker {
             } else {
                 self.number_of_active_tasks -= 1;
                 let io_request_data_ptr = poll_result.err().unwrap();
-                let io_request_data = unsafe { &mut *io_request_data_ptr };
+                let io_request_data = io_request_data_ptr.get_mut();
                 let task = unsafe { io_request_data.task() };
 
                 io_request_data.set_ret(Err(io::Error::from(io::ErrorKind::Other)));

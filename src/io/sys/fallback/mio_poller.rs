@@ -2,12 +2,13 @@ use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::RawSocket;
 use mio::{Events, Interest, Poll, Token};
+use std::cell::UnsafeCell;
 use std::{io, ptr};
 
 /// `MioPoller` is a wrapper around `mio::Poll` that is used to poll for events and poll-timeouts.
 pub(crate) struct MioPoller {
     poll: Poll,
-    events: Events,
+    events: UnsafeCell<Events>,
     request_slots: Vec<*mut (IoCall, IoRequestDataPtr)>,
 }
 
@@ -16,9 +17,15 @@ impl MioPoller {
     pub(crate) fn new() -> io::Result<Self> {
         Ok(Self {
             poll: Poll::new()?,
-            events: Events::with_capacity(128),
+            events: UnsafeCell::new(Events::with_capacity(128)),
             request_slots: Vec::new(),
         })
+    }
+
+    /// Returns [`Events`] for the current thread.
+    #[allow(clippy::mut_from_ref, reason = "False positive.")]
+    pub(crate) fn events(&self) -> &mut Events {
+        unsafe { &mut *self.events.get() }
     }
 
     /// Allocates a request's slot or gets it from the pool, writes the request to the slot and returns the pointer.
@@ -123,9 +130,9 @@ impl MioPoller {
         timeout: Option<std::time::Duration>,
         requests: &mut Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
     ) -> io::Result<()> {
-        self.poll.poll(&mut self.events, timeout)?;
+        self.poll.poll(self.events(), timeout)?;
 
-        for event in &self.events {
+        for event in self.events().iter() {
             let io_request_ptr = event.token().0 as *mut (IoCall, IoRequestDataPtr);
             let io_request = self.release_request_slot(io_request_ptr);
 
