@@ -334,7 +334,8 @@ mod tests {
         }
 
         buf.clear();
-        unsafe { buf.set_len(b"Hello, great World!".len()) };
+        buf.extend(b"Hello, great World!");
+
         match file.pread_bytes_exact(buf.as_mut(), 0).await {
             Ok(()) => assert_eq!(buf, b"Hello, great World!"),
             Err(err) => panic!("Can't read file: {err}"),

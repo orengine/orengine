@@ -151,11 +151,15 @@ impl DirBuilder {
                         tmp_mode = mode;
                         tmp_path = path;
                         path_stack.clear();
+
                         continue;
                     }
                     path_stack.pop();
                     unsafe {
-                        tmp_path = Path::new(path_string.get_unchecked(..path_stack.len() - 1));
+                        tmp_path = Path::new(
+                            path_string
+                                .get_unchecked(..*path_stack.get_unchecked(path_stack.len() - 1)),
+                        );
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
@@ -193,44 +197,53 @@ impl Default for DirBuilder {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::fs::test_helper::{create_test_dir_if_not_exist, is_exists, TEST_DIR_PATH};
+    use std::path::PathBuf;
 
-    // #[orengine::test::test_local]
-    // fn test_dir_builder() {
-    //     let dir_builder = DirBuilder::new();
-    //     assert_eq!(dir_builder.mode, 0o666);
-    //     assert!(!dir_builder.recursive);
-    //
-    //     let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
-    //     assert_eq!(dir_builder.mode, 0o777);
-    //     assert!(dir_builder.recursive);
-    // }
-    //
-    // #[orengine::test::test_local]
-    // fn test_dir_builder_create() {
-    //     create_test_dir_if_not_exist();
-    //
-    //     let dir_builder = DirBuilder::new().mode(0o777).recursive(false);
-    //     let mut path = PathBuf::from(TEST_DIR_PATH);
-    //     path.push("test_dir");
-    //     match dir_builder.create(path.clone()).await {
-    //         Ok(()) => assert!(is_exists(path)),
-    //         Err(err) => panic!("Can't create dir: {err}"),
-    //     }
-    //
-    //     let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
-    //     let mut path = PathBuf::from(TEST_DIR_PATH);
-    //     path.push("test_dir");
-    //     path.push("test_dir2");
-    //     path.push("test_dir3");
-    //     path.push("test_dir4");
-    //     path.push("test_dir5");
-    //     match dir_builder.create(path.clone()).await {
-    //         Ok(()) => assert!(is_exists(path)),
-    //         Err(err) => panic!("Can't create dir all: {err}"),
-    //     }
-    //
-    //     let mut path = PathBuf::from(TEST_DIR_PATH);
-    //     path.push("test_dir");
-    //     std::fs::remove_dir_all(path.clone()).unwrap();
-    // }
+    #[orengine::test::test_local]
+    fn test_dir_builder() {
+        let dir_builder = DirBuilder::new();
+        assert_eq!(dir_builder.mode, 0o666);
+        assert!(!dir_builder.recursive);
+
+        let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
+        assert_eq!(dir_builder.mode, 0o777);
+        assert!(dir_builder.recursive);
+    }
+
+    #[orengine::test::test_local]
+    fn test_dir_builder_create() {
+        create_test_dir_if_not_exist();
+
+        let dir_builder = DirBuilder::new().mode(0o777).recursive(false);
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("test_dir");
+        match dir_builder.create(path.clone()).await {
+            Ok(()) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir: {err}"),
+        }
+
+        let dir_builder = DirBuilder::new().mode(0o777).recursive(true);
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("test_dir");
+        path.push("test_dir2");
+        path.push("test_dir3");
+        path.push("test_dir4");
+        path.push("test_dir5");
+
+        if is_exists(&path) {
+            std::fs::remove_dir_all(&path).unwrap();
+        }
+
+        match dir_builder.create(&path).await {
+            Ok(()) => assert!(is_exists(path)),
+            Err(err) => panic!("Can't create dir all: {err}"),
+        }
+
+        let mut path = PathBuf::from(TEST_DIR_PATH);
+        path.push("test_dir");
+        std::fs::remove_dir_all(path.clone()).unwrap();
+    }
 }
