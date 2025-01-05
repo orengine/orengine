@@ -22,12 +22,6 @@ impl MioPoller {
         })
     }
 
-    /// Returns [`Events`] for the current thread.
-    #[allow(clippy::mut_from_ref, reason = "False positive.")]
-    pub(crate) fn events(&self) -> &mut Events {
-        unsafe { &mut *self.events.get() }
-    }
-
     /// Allocates a request's slot or gets it from the pool, writes the request to the slot and returns the pointer.
     fn write_request_and_get_ptr(
         &mut self,
@@ -130,9 +124,11 @@ impl MioPoller {
         timeout: Option<std::time::Duration>,
         requests: &mut Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
     ) -> io::Result<()> {
-        self.poll.poll(self.events(), timeout)?;
+        let events = unsafe { &mut *self.events.get() };
 
-        for event in self.events().iter() {
+        self.poll.poll(events, timeout)?;
+
+        for event in events.iter() {
             let io_request_ptr = event.token().0 as *mut (IoCall, IoRequestDataPtr);
             let io_request = self.release_request_slot(io_request_ptr);
 
