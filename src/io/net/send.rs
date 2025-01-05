@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
@@ -47,7 +47,7 @@ impl Future for SendBytes<'_> {
                 this.raw_socket,
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -97,7 +97,7 @@ impl Future for SendFixed<'_> {
                 this.ptr,
                 this.len,
                 this.fixed_index,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret as u32
         ));
@@ -143,7 +143,7 @@ impl Future for SendBytesWithDeadline<'_> {
                 this.raw_socket,
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret
@@ -203,7 +203,7 @@ impl Future for SendFixedWithDeadline<'_> {
                 this.ptr,
                 this.len,
                 this.fixed_index,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret as u32

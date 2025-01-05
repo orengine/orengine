@@ -1,5 +1,5 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::poll_for_io_request;
@@ -37,7 +37,7 @@ impl Future for Shutdown {
 
         poll_for_io_request!((
             local_worker().shutdown(this.raw_socket, this.how, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ()
         ));

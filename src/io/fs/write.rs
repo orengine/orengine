@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
@@ -45,7 +45,7 @@ impl Future for WriteBytes<'_> {
                 this.raw_file,
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -95,7 +95,7 @@ impl Future for WriteFixed<'_> {
                 this.ptr,
                 this.len,
                 this.fixed_index,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret as u32
         ));
@@ -141,7 +141,7 @@ impl Future for PositionedWriteBytes<'_> {
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
                 this.offset,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -200,7 +200,7 @@ impl Future for PositionedWriteFixed<'_> {
                 this.len,
                 this.fixed_index,
                 this.offset,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret as u32
         ));

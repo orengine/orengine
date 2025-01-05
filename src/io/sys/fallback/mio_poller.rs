@@ -1,4 +1,3 @@
-use crate::io::io_request_data::IoRequestData;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::RawSocket;
 use mio::event::Source;
@@ -9,7 +8,7 @@ use std::{io, ptr};
 pub(crate) struct MioPoller {
     poll: Poll,
     events: Events,
-    request_slots: Vec<*mut (IoCall, *mut IoRequestData)>,
+    request_slots: Vec<*mut (IoCall, IoRequestDataPtr)>,
 }
 
 impl MioPoller {
@@ -25,8 +24,8 @@ impl MioPoller {
     /// Allocates a request's slot or gets it from the pool, writes the request to the slot and returns the pointer.
     fn write_request_and_get_ptr(
         &mut self,
-        request: (IoCall, *mut IoRequestData),
-    ) -> *mut (IoCall, *mut IoRequestData) {
+        request: (IoCall, IoRequestDataPtr),
+    ) -> *mut (IoCall, IoRequestDataPtr) {
         if let Some(slot) = self.request_slots.pop() {
             unsafe { ptr::write(slot, request) };
             slot
@@ -38,8 +37,8 @@ impl MioPoller {
     /// Releases a request's slot and returns an associated request via reading.
     fn release_request_slot(
         &mut self,
-        request_ptr: *mut (IoCall, *mut IoRequestData),
-    ) -> (IoCall, *mut IoRequestData) {
+        request_ptr: *mut (IoCall, IoRequestDataPtr),
+    ) -> (IoCall, IoRequestDataPtr) {
         self.request_slots.push(request_ptr);
 
         unsafe { ptr::read(request_ptr) }
@@ -51,8 +50,8 @@ impl MioPoller {
     pub(crate) fn register(
         &mut self,
         interest: Interest,
-        request: (IoCall, *mut IoRequestData),
-    ) -> *mut (IoCall, *mut IoRequestData) {
+        request: (IoCall, IoRequestDataPtr),
+    ) -> *mut (IoCall, IoRequestDataPtr) {
         let registry = self.poll.registry();
         let raw_socket = request.0.raw_socket().unwrap();
         let request_ptr = self.write_request_and_get_ptr(request);
@@ -88,7 +87,7 @@ impl MioPoller {
     pub(crate) fn deregister(
         &mut self,
         raw_socket: RawSocket,
-        slot: *mut (IoCall, *mut IoRequestData),
+        slot: *mut (IoCall, IoRequestDataPtr),
     ) -> io::Result<()> {
         self.release_request_slot(slot);
 
@@ -122,12 +121,12 @@ impl MioPoller {
     pub(crate) fn poll<F>(
         &mut self,
         timeout: Option<std::time::Duration>,
-        requests: &mut Vec<Result<(IoCall, *mut IoRequestData), *mut IoRequestData>>,
+        requests: &mut Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
 
         for event in &self.events {
-            let io_request_ptr = event.token().0 as *mut (IoCall, *mut IoRequestData);
+            let io_request_ptr = event.token().0 as *mut (IoCall, IoRequestDataPtr);
             let io_request = self.release_request_slot(io_request_ptr);
 
             self.deregister_(io_request.0.raw_socket().unwrap())?;

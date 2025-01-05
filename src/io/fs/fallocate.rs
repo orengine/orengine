@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
@@ -45,7 +45,7 @@ impl Future for Fallocate {
                 this.offset as u64,
                 this.len as u64,
                 this.flags,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ()
         ));
@@ -79,7 +79,7 @@ pub trait AsyncFallocate: AsRawFile {
     /// let f = File::open("foo.txt", &OpenOptions::new().write(true).create(true)).await.unwrap();
     ///
     /// // Allocate a 1024 byte file without filling it, like Vec::reserve
-    /// #[cfg(unix)]
+    /// #[cfg(target_os = "linux")]
     /// f.fallocate(0, 1024, libc::FALLOC_FL_KEEP_SIZE).await.unwrap();
     /// # }
     /// ```

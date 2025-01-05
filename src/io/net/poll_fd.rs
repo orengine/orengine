@@ -1,5 +1,5 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
@@ -36,7 +36,7 @@ macro_rules! generate_poll {
 
                 poll_for_io_request!((
                     local_worker().$method(this.raw_socket, unsafe {
-                        this.io_request_data.as_mut().unwrap_unchecked()
+                        IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
                     }),
                     ()
                 ));
@@ -75,7 +75,9 @@ macro_rules! generate_poll {
                 poll_for_time_bounded_io_request!((
                     worker.$method_with_deadline(
                         this.raw_socket,
-                        unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                        unsafe {
+                            IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
+                        },
                         &mut this.deadline
                     ),
                     ()

@@ -1,5 +1,5 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{get_os_path_ptr, OsPath};
 use crate::io::sys::{FromRawFile, OsOpenOptions, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
@@ -39,7 +39,7 @@ impl<F: FromRawFile> Future for Open<F> {
 
         poll_for_io_request!((
             local_worker().open(get_os_path_ptr(&this.path), &this.os_open_options, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             unsafe { F::from_raw_file(ret as RawFile) }
         ));

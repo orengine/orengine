@@ -13,7 +13,7 @@ pub(crate) struct TimeBoundedIoTask {
     #[cfg(not(target_os = "linux"))]
     raw_socket: crate::io::sys::RawSocket,
     #[cfg(not(target_os = "linux"))]
-    slot_ptr: *mut (IoCall, *mut IoRequestData),
+    slot_ptr: *mut (IoCall, IoRequestDataPtr),
 }
 
 impl TimeBoundedIoTask {
@@ -34,7 +34,7 @@ impl TimeBoundedIoTask {
         io_request_data: &IoRequestData,
         deadline: Instant,
         raw_socket: crate::io::sys::RawSocket,
-        slot_ptr: *mut (IoCall, *mut IoRequestData),
+        slot_ptr: *mut (IoCall, IoRequestDataPtr),
     ) -> Self {
         Self {
             deadline,
@@ -66,7 +66,7 @@ impl TimeBoundedIoTask {
     /// Returns the slot pointer.
     #[inline(always)]
     #[cfg(not(target_os = "linux"))]
-    pub(crate) fn slot_ptr(&self) -> *mut (IoCall, *mut IoRequestData) {
+    pub(crate) fn slot_ptr(&self) -> *mut (IoCall, IoRequestDataPtr) {
         self.slot_ptr
     }
 }

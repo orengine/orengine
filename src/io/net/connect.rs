@@ -10,7 +10,8 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys;
 use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 
@@ -41,9 +42,12 @@ impl Future for Connect<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().connect(this.raw_fd, this.addr.as_ptr(), this.addr.len(), unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().connect(
+                this.raw_fd,
+                this.addr.as_ptr().cast::<sys::os_sockaddr>(),
+                this.addr.len(),
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ()
         ));
     }
@@ -83,9 +87,9 @@ impl Future for ConnectWithDeadline<'_> {
         poll_for_time_bounded_io_request!((
             worker.connect_with_deadline(
                 this.raw_fd,
-                this.addr.as_ptr(),
+                this.addr.as_ptr().cast::<sys::os_sockaddr>(),
                 this.addr.len(),
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ()

@@ -1,5 +1,5 @@
 use crate::io::config::IoWorkerConfig;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys;
 use crate::io::sys::{
     os_sockaddr, MessageRecvHeader, OsMessageHeader, OsOpenOptions, OsPathPtr, RawFile, RawSocket,
@@ -76,7 +76,7 @@ pub(crate) trait IoWorker {
         domain: socket2::Domain,
         sock_type: socket2::Type,
         protocol: socket2::Protocol,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `accept` io operation.
     fn accept(
@@ -84,7 +84,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         addr_ptr: *mut os_sockaddr,
         addr_len: *mut sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `accept` io operation with deadline.
     fn accept_with_deadline(
@@ -92,7 +92,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         addr_ptr: *mut os_sockaddr,
         addr_len: *mut sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
     /// Registers a new `connect` io operation.
@@ -101,7 +101,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         addr_ptr: *const os_sockaddr,
         addr_len: sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `connect` io operation with deadline.
     fn connect_with_deadline(
@@ -109,28 +109,28 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         addr_ptr: *const os_sockaddr,
         addr_len: sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
     // region poll raw_socket
 
     /// Registers a new `poll` for readable io operation.
-    fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
+    fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr);
     /// Registers a new `poll` for readable io operation with deadline.
     fn poll_socket_read_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
     /// Registers a new `poll` for writable io operation.
-    fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
+    fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr);
     /// Registers a new `poll` for writable io operation with deadline.
     fn poll_socket_write_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -144,7 +144,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `recv` io operation with __fixed__ buffer.
     fn recv_fixed(
@@ -153,7 +153,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     /// Registers a new `recv` io operation with deadline.
@@ -162,7 +162,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -173,7 +173,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -187,7 +187,7 @@ pub(crate) trait IoWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     /// Registers a new `recv_from` io operation with deadline.
@@ -195,7 +195,7 @@ pub(crate) trait IoWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -209,7 +209,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *const u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `send` io operation with __fixed__ buffer.
     fn send_fixed(
@@ -218,7 +218,7 @@ pub(crate) trait IoWorker {
         ptr: *const u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     /// Registers a new `send` io operation with deadline.
@@ -227,7 +227,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *const u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -238,7 +238,7 @@ pub(crate) trait IoWorker {
         ptr: *const u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -252,14 +252,14 @@ pub(crate) trait IoWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: *const OsMessageHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `send_to` io operation with deadline.
     fn send_to_with_deadline(
         &mut self,
         raw_socket: RawSocket,
         msg_header: *const OsMessageHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -273,7 +273,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `peek` io operation with __fixed__ buffer.
     fn peek_fixed(
@@ -282,7 +282,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     /// Registers a new `peek` io operation with deadline.
@@ -291,7 +291,7 @@ pub(crate) trait IoWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -302,7 +302,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
@@ -316,27 +316,27 @@ pub(crate) trait IoWorker {
         &mut self,
         raw_socket: RawSocket,
         msg: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `peek_from` io operation with deadline.
     fn peek_from_with_deadline(
         &mut self,
         raw_socket: RawSocket,
         msg: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     );
 
     // endregion
 
     /// Registers a new `shutdown` io operation.
-    fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: *mut IoRequestData);
+    fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr);
     /// Registers a new `open` io operation.
     fn open(
         &mut self,
         path: OsPathPtr,
         open_how: *const OsOpenOptions,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `fallocate` io operation if the kernel supports it.
     fn fallocate(
@@ -345,17 +345,17 @@ pub(crate) trait IoWorker {
         offset: u64,
         len: u64,
         flags: i32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `sync_all` io operation.
-    fn sync_all(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData);
+    fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr);
     /// Registers a new `sync_data` io operation.
-    fn sync_data(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData);
+    fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr);
 
     // region read
 
     /// Registers a new `read` io operation.
-    fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData);
+    fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr);
     /// Registers a new `read` io operation with __fixed__ buffer.
     fn read_fixed(
         &mut self,
@@ -363,7 +363,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `pread` io operation.
     fn pread(
@@ -372,7 +372,7 @@ pub(crate) trait IoWorker {
         ptr: *mut u8,
         len: u32,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `pread` io operation with __fixed__ buffer.
     fn pread_fixed(
@@ -382,7 +382,7 @@ pub(crate) trait IoWorker {
         len: u32,
         buf_index: u16,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     // endregion
@@ -390,13 +390,7 @@ pub(crate) trait IoWorker {
     // region write
 
     /// Registers a new `write` io operation.
-    fn write(
-        &mut self,
-        raw_file: RawFile,
-        ptr: *const u8,
-        len: u32,
-        request_ptr: *mut IoRequestData,
-    );
+    fn write(&mut self, raw_file: RawFile, ptr: *const u8, len: u32, request_ptr: IoRequestDataPtr);
     /// Registers a new `write` io operation with __fixed__ buffer.
     fn write_fixed(
         &mut self,
@@ -404,7 +398,7 @@ pub(crate) trait IoWorker {
         ptr: *const u8,
         len: u32,
         buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `pwrite` io operation.
     fn pwrite(
@@ -413,7 +407,7 @@ pub(crate) trait IoWorker {
         ptr: *const u8,
         len: u32,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
     /// Registers a new `pwrite` io operation with __fixed__ buffer.
     fn pwrite_fixed(
@@ -423,21 +417,21 @@ pub(crate) trait IoWorker {
         len: u32,
         buf_index: u16,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     );
 
     // endregion
 
     /// Registers a new `close` io operation for a provided file.
-    fn close_file(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData);
+    fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr);
     /// Registers a new `close` io operation for a provided socket.
-    fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData);
+    fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr);
     /// Registers a new `rename` io operation.
-    fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: *mut IoRequestData);
+    fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr);
     /// Registers a new `mkdir` io operation.
-    fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: *mut IoRequestData);
+    fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr);
     /// Registers a new `unlink` io operation.
-    fn remove_file(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData);
+    fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr);
     /// Registers a new `rmdir` io operation.
-    fn remove_dir(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData);
+    fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr);
 }

@@ -1,5 +1,4 @@
 use crate::io::sys::OsOpenOptions;
-use libc::{self};
 use std::fmt::Debug;
 use std::io;
 
@@ -266,6 +265,8 @@ impl OpenOptions {
     #[cfg(target_os = "linux")]
     /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
     pub(crate) fn into_os_options(mut self) -> io::Result<OsOpenOptions> {
+        use libc;
+
         let access_mode = match (self.read, self.write, self.append) {
             (true, false, false) => libc::O_RDONLY,
             (false, true, false) => libc::O_WRONLY,

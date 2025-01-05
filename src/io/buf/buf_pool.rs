@@ -1,8 +1,12 @@
+#[cfg(target_os = "linux")]
 use crate::io::worker::local_worker;
-use crate::io::{Buffer, FixedBuffer};
+use crate::io::Buffer;
+#[cfg(target_os = "linux")]
+use crate::io::FixedBuffer;
 use crate::utils::assert_hint;
 use libc;
 use std::cell::UnsafeCell;
+#[cfg(target_os = "linux")]
 use std::io::IoSliceMut;
 
 thread_local! {
@@ -18,8 +22,7 @@ pub(crate) fn init_local_buf_pool(number_of_fixed_buffers: u16, default_buffer_c
         let buf_pool_ = unsafe { &mut *buf_pool_static.get() };
         assert!(buf_pool_.is_none(), "BufPool is already initialized.");
 
-        let buf_pool = BufPool::new(number_of_fixed_buffers, default_buffer_cap);
-        *buf_pool_ = Some(buf_pool);
+        *buf_pool_ = Some(BufPool::new(number_of_fixed_buffers, default_buffer_cap));
     });
 }
 
@@ -275,11 +278,11 @@ impl BufPool {
                 unsafe {
                     self.pool.push(buf);
                 }
+
+                return;
             }
 
             buf.deallocate();
-
-            return;
         }
 
         #[cfg(target_os = "linux")]

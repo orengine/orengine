@@ -61,7 +61,7 @@ pub(crate) fn accept_op(
     with_socket(raw_listener, |listener| {
         listener.accept().map(|(socket, addr)| {
             unsafe {
-                ptr::copy_nonoverlapping(addr.as_ptr(), sockaddr_ptr, 1);
+                ptr::copy_nonoverlapping(addr.as_ptr().cast::<sys::os_sockaddr>(), sockaddr_ptr, 1);
                 ptr::write(sockaddr_len_ptr, addr.len());
             }
 
@@ -177,27 +177,6 @@ pub(crate) fn open_op(path_ptr: OsPathPtr, open_how: *const OsOpenOptions) -> io
         .map(|file| file.into_raw_file() as usize)
 }
 
-/// Allocates space in a file from a given offset .
-pub(crate) fn fallocate_op(
-    raw_file: RawFile,
-    offset: u64,
-    len: u64,
-    flags: i32,
-) -> io::Result<usize> {
-    #[cfg(unix)]
-    {
-        let ret = libc::fallocate(raw_file, flags, offset as _, len as _);
-        if ret < 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(0)
-        }
-    }
-
-    #[cfg(not(unix))]
-    Ok(0)
-}
-
 /// Syncs a file to disk.
 pub(crate) fn fsync_op(raw_file: RawFile) -> io::Result<usize> {
     with_file(raw_file, |file| file.sync_all().map(|_| 0))
@@ -281,6 +260,7 @@ pub(crate) fn rename_op(old_path_ptr: OsPathPtr, new_path_ptr: OsPathPtr) -> io:
 }
 
 /// Creates a directory.
+#[allow(unused_variables, reason = "We use #[cfg] here.")]
 pub(crate) fn mkdir_op(path_ptr: OsPathPtr, mode: u32) -> io::Result<usize> {
     let path = unsafe { &*path_ptr };
     let mut dir_builder = std::fs::DirBuilder::new();

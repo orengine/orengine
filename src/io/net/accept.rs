@@ -1,5 +1,5 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{os_sockaddr, AsRawSocket, FromRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
@@ -77,7 +77,7 @@ impl<S: FromRawSocket> Future for Accept<S> {
                 this.raw_socket,
                 (&raw mut this.addr.storage).cast::<os_sockaddr>(),
                 &raw mut this.addr.len,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
             ),
             unsafe {
                 (
@@ -130,7 +130,7 @@ impl<S: FromRawSocket> Future for AcceptWithDeadline<S> {
                 this.raw_socket,
                 (&raw mut this.addr.storage).cast::<os_sockaddr>(),
                 &raw mut this.addr.len,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             unsafe {

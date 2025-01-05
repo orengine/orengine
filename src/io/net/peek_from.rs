@@ -10,7 +10,7 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, MessageRecvHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
@@ -44,7 +44,7 @@ impl Future for PeekFrom<'_> {
 
         poll_for_io_request!((
             local_worker().peek_from(this.raw_socket, &mut this.msg_header, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ret
         ));
@@ -96,7 +96,7 @@ impl Future for PeekFromWithDeadline<'_> {
             worker.peek_from_with_deadline(
                 this.raw_socket,
                 &mut this.msg_header,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret

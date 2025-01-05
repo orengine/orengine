@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use std::{io, ptr};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, MessageSendHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 
@@ -50,7 +50,7 @@ impl Future for SendTo<'_> {
                 this.raw_socket,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -108,7 +108,7 @@ impl Future for SendToWithDeadline<'_> {
                 this.raw_socket,
                 this.message_header
                     .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret

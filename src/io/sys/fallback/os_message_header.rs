@@ -1,7 +1,5 @@
-use std::ptr;
-
-use libc;
 use socket2::SockAddr;
+use std::ptr;
 
 /// Synonymous with os message header.
 pub(crate) type OsMessageHeader = (*mut *mut [u8], *mut SockAddr);

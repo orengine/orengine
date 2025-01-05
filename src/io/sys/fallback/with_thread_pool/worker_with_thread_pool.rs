@@ -1,4 +1,4 @@
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::fallback::mio_poller::MioPoller;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::fallback::with_thread_pool::worker_with_thread_pool::WorkerResult::{
@@ -23,13 +23,13 @@ use std::{io, thread};
 
 enum WorkerResult {
     Done(Task),
-    MustPoll(IoCall, *mut IoRequestData),
+    MustPoll(IoCall, IoRequestDataPtr),
 }
 
 type SyncWorkerResultList = std::sync::Mutex<Vec<WorkerResult>>;
 
 struct ThreadWorker {
-    task_channel: crossbeam::channel::Receiver<(IoCall, *mut IoRequestData)>,
+    task_channel: crossbeam::channel::Receiver<(IoCall, IoRequestDataPtr)>,
     completions: Arc<SyncWorkerResultList>,
 }
 
@@ -37,10 +37,7 @@ impl ThreadWorker {
     /// Creates a new instance of `ThreadWorker`.
     pub(crate) fn new(
         completions: Arc<SyncWorkerResultList>,
-    ) -> (
-        Self,
-        crossbeam::channel::Sender<(IoCall, *mut IoRequestData)>,
-    ) {
+    ) -> (Self, crossbeam::channel::Sender<(IoCall, IoRequestDataPtr)>) {
         let (sender, receiver) = crossbeam::channel::unbounded();
         (
             Self {
@@ -92,12 +89,12 @@ impl ThreadWorker {
 /// A fallback implementation of [`IoWorker`] that uses a thread pool.
 pub(crate) struct FallbackWorker {
     number_of_active_tasks: usize,
-    workers: Box<[crossbeam::channel::Sender<(IoCall, *mut IoRequestData)>]>,
+    workers: Box<[crossbeam::channel::Sender<(IoCall, IoRequestDataPtr)>]>,
     completions: Arc<SyncWorkerResultList>,
     poller: MioPoller,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
     last_gotten_time: Instant,
-    polled_requests: Vec<Result<(IoCall, *mut IoRequestData), *mut IoRequestData>>,
+    polled_requests: Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
 }
 
 macro_rules! check_deadline_and {
@@ -130,7 +127,7 @@ impl FallbackWorker {
     pub(crate) fn push_to_worker_pool(
         &mut self,
         io_call: IoCall,
-        io_request_data: *mut IoRequestData,
+        io_request_data: IoRequestDataPtr,
     ) {
         let worker = &self.workers[self.number_of_active_tasks % self.workers.len()];
         worker.send((io_call, io_request_data)).expect(
@@ -145,7 +142,7 @@ impl FallbackWorker {
     pub(crate) fn push_to_worker_pool_with_deadline(
         &mut self,
         io_call: IoCall,
-        io_request_data: *mut IoRequestData,
+        io_request_data: IoRequestDataPtr,
     ) {
         debug_assert!(io_call.deadline().is_some());
 
@@ -172,7 +169,7 @@ impl FallbackWorker {
         io_request_data: &IoRequestData,
         deadline: &mut Instant,
         raw_socket: RawSocket,
-        slot_ptr: *mut (IoCall, *mut IoRequestData),
+        slot_ptr: *mut (IoCall, IoRequestDataPtr),
     ) {
         let mut time_bounded_io_task =
             TimeBoundedIoTask::new(io_request_data, *deadline, raw_socket, slot_ptr);
@@ -200,7 +197,7 @@ impl FallbackWorker {
                     )
                     .unwrap();
 
-                let io_request_ptr = time_bounded_io_task.user_data() as *mut IoRequestData;
+                let io_request_ptr = IoRequestDataPtr::from_u64(time_bounded_io_task.user_data());
                 let io_request_data = unsafe { &mut *io_request_ptr };
                 let task = unsafe { io_request_data.task() };
 
@@ -259,9 +256,9 @@ impl IoWorker for FallbackWorker {
     }
 
     #[inline(always)]
-    fn must_poll(&mut self, mut timeout_option: Option<Duration>) -> bool {
+    fn must_poll(&mut self, mut timeout_option: Option<Duration>) {
         if self.number_of_active_tasks == 0 {
-            return false;
+            return;
         }
 
         if timeout_option.is_none() {
@@ -325,7 +322,7 @@ impl IoWorker for FallbackWorker {
                         };
 
                         self.register_deadline(
-                            unsafe { &*io_request_data },
+                            io_request_data.get_mut(),
                             deadline,
                             raw_socket,
                             slot_ptr,
@@ -342,8 +339,6 @@ impl IoWorker for FallbackWorker {
                 }
             }
         }
-
-        true
     }
 
     fn socket(
@@ -351,7 +346,7 @@ impl IoWorker for FallbackWorker {
         domain: Domain,
         sock_type: Type,
         protocol: Protocol,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Socket(domain, sock_type, protocol), request_ptr)
     }
@@ -362,7 +357,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         addr_ptr: *mut sys::os_sockaddr,
         addr_len: *mut sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Accept(raw_socket, addr_ptr, addr_len), request_ptr)
     }
@@ -372,7 +367,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         addr_ptr: *mut sys::os_sockaddr,
         addr_len: *mut sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -387,7 +382,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         addr_ptr: *const sys::os_sockaddr,
         addr_len: sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Connect(raw_socket, addr_ptr, addr_len), request_ptr)
     }
@@ -397,7 +392,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         addr_ptr: *const sys::os_sockaddr,
         addr_len: sys::socklen_t,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -407,7 +402,7 @@ impl IoWorker for FallbackWorker {
     }
 
     #[inline(always)]
-    fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
+    fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.poller.register(
             Interest::READABLE,
             (IoCall::PollRecv(raw_socket), request_ptr),
@@ -417,7 +412,7 @@ impl IoWorker for FallbackWorker {
     fn poll_socket_read_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         check_deadline_and!(self, deadline, request_ptr, {
@@ -425,12 +420,12 @@ impl IoWorker for FallbackWorker {
                 Interest::READABLE,
                 (IoCall::PollRecv(raw_socket), request_ptr),
             );
-            self.register_deadline(unsafe { &*request_ptr }, deadline, raw_socket, slot_ptr);
+            self.register_deadline(request_ptr.get_mut(), deadline, raw_socket, slot_ptr);
         });
     }
 
     #[inline(always)]
-    fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
+    fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.poller.register(
             Interest::WRITABLE,
             (IoCall::PollSend(raw_socket), request_ptr),
@@ -440,7 +435,7 @@ impl IoWorker for FallbackWorker {
     fn poll_socket_write_with_deadline(
         &mut self,
         raw_socket: RawSocket,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         check_deadline_and!(self, deadline, request_ptr, {
@@ -448,7 +443,7 @@ impl IoWorker for FallbackWorker {
                 Interest::WRITABLE,
                 (IoCall::PollSend(raw_socket), request_ptr),
             );
-            self.register_deadline(unsafe { &*request_ptr }, deadline, raw_socket, slot_ptr);
+            self.register_deadline(request_ptr.get_mut(), deadline, raw_socket, slot_ptr);
         });
     }
 
@@ -458,7 +453,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr)
     }
@@ -470,7 +465,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr)
     }
@@ -480,7 +475,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -495,7 +490,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -509,7 +504,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::RecvFrom(raw_socket, msg_header), request_ptr)
     }
@@ -518,7 +513,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -533,7 +528,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *const u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr)
     }
@@ -545,7 +540,7 @@ impl IoWorker for FallbackWorker {
         ptr: *const u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr)
     }
@@ -555,7 +550,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *const u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -570,7 +565,7 @@ impl IoWorker for FallbackWorker {
         ptr: *const u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -584,7 +579,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: *const OsMessageHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::SendTo(raw_socket, msg_header), request_ptr)
     }
@@ -593,7 +588,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg_header: *const OsMessageHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -608,7 +603,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr)
     }
@@ -620,7 +615,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr)
     }
@@ -630,7 +625,7 @@ impl IoWorker for FallbackWorker {
         raw_socket: RawSocket,
         ptr: *mut u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -645,7 +640,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -659,7 +654,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::PeekFrom(raw_socket, msg), request_ptr)
     }
@@ -668,7 +663,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         raw_socket: RawSocket,
         msg: &mut MessageRecvHeader,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         self.push_to_worker_pool_with_deadline(
@@ -678,7 +673,7 @@ impl IoWorker for FallbackWorker {
     }
 
     #[inline(always)]
-    fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: *mut IoRequestData) {
+    fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::Shutdown(raw_socket, how), request_ptr)
     }
 
@@ -687,7 +682,7 @@ impl IoWorker for FallbackWorker {
         &mut self,
         path: OsPathPtr,
         open_how: *const OsOpenOptions,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Open(path, open_how), request_ptr)
     }
@@ -699,23 +694,23 @@ impl IoWorker for FallbackWorker {
         offset: u64,
         len: u64,
         flags: i32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Fallocate(raw_file, offset, len, flags), request_ptr)
     }
 
     #[inline(always)]
-    fn sync_all(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
+    fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::FAllSync(raw_file), request_ptr)
     }
 
     #[inline(always)]
-    fn sync_data(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
+    fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::FDataSync(raw_file), request_ptr)
     }
 
     #[inline(always)]
-    fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: *mut IoRequestData) {
+    fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr)
     }
 
@@ -726,7 +721,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr)
     }
@@ -738,7 +733,7 @@ impl IoWorker for FallbackWorker {
         ptr: *mut u8,
         len: u32,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(
             IoCall::PRead(raw_file, ptr, len, offset as u64),
@@ -754,7 +749,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         _buf_index: u16,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(
             IoCall::PRead(raw_file, ptr, len, offset as u64),
@@ -768,7 +763,7 @@ impl IoWorker for FallbackWorker {
         raw_file: RawFile,
         ptr: *const u8,
         len: u32,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr)
     }
@@ -780,7 +775,7 @@ impl IoWorker for FallbackWorker {
         ptr: *const u8,
         len: u32,
         _buf_index: u16,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr)
     }
@@ -792,7 +787,7 @@ impl IoWorker for FallbackWorker {
         ptr: *const u8,
         len: u32,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(
             IoCall::PWrite(raw_file, ptr, len, offset as u64),
@@ -808,7 +803,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         _buf_index: u16,
         offset: usize,
-        request_ptr: *mut IoRequestData,
+        request_ptr: IoRequestDataPtr,
     ) {
         self.push_to_worker_pool(
             IoCall::PWrite(raw_file, ptr, len, offset as u64),
@@ -817,37 +812,32 @@ impl IoWorker for FallbackWorker {
     }
 
     #[inline(always)]
-    fn close_file(&mut self, raw_file: RawFile, request_ptr: *mut IoRequestData) {
+    fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::CloseFile(raw_file), request_ptr)
     }
 
     #[inline(always)]
-    fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: *mut IoRequestData) {
+    fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::CloseSocket(raw_socket), request_ptr)
     }
 
     #[inline(always)]
-    fn rename(
-        &mut self,
-        old_path: OsPathPtr,
-        new_path: OsPathPtr,
-        request_ptr: *mut IoRequestData,
-    ) {
+    fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::Rename(old_path, new_path), request_ptr)
     }
 
     #[inline(always)]
-    fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: *mut IoRequestData) {
+    fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::CreateDir(path, mode), request_ptr)
     }
 
     #[inline(always)]
-    fn remove_file(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData) {
+    fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::RemoveFile(path), request_ptr)
     }
 
     #[inline(always)]
-    fn remove_dir(&mut self, path: OsPathPtr, request_ptr: *mut IoRequestData) {
+    fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.push_to_worker_pool(IoCall::RemoveDir(path), request_ptr)
     }
 }

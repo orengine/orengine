@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
@@ -34,7 +34,7 @@ impl Future for SyncAll {
 
         poll_for_io_request!((
             local_worker().sync_all(this.raw_file, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ret
         ));
