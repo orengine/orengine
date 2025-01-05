@@ -121,7 +121,7 @@ impl IoCall {
 
             IoCall::Open(path_ptr, options) => open_op(path_ptr, options),
 
-            IoCall::Fallocate() => Ok(0),
+            IoCall::Fallocate => Ok(0),
 
             IoCall::FAllSync(file) => fsync_op(file),
 
