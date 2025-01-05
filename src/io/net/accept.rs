@@ -201,7 +201,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// ```
     #[inline(always)]
     async fn accept(&mut self) -> Result<(S, SocketAddr)> {
-        let (stream, sock_addr) = Accept::<S>::new(sys::AsRawSocket::as_raw_socket(self)).await?;
+        let (stream, sock_addr) = Accept::<S>::new(AsRawSocket::as_raw_socket(self)).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 

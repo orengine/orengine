@@ -317,7 +317,7 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     /// ```
     #[inline(always)]
     async fn connect<A: ToSocketAddrs>(self, addr: A) -> Result<S> {
-        let new_datagram_socket_raw_fd = self.into_raw_socket();
+        let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
         each_addr!(&addr, move |addr: SocketAddr| async move {
             Connect::new(new_datagram_socket_raw_fd, &SockAddr::from(addr)).await?;
             Ok(unsafe { S::from_raw_socket(new_datagram_socket_raw_fd) })
@@ -360,7 +360,7 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
         addr: A,
         deadline: Instant,
     ) -> Result<S> {
-        let new_datagram_socket_raw_fd = self.into_raw_socket();
+        let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
         each_addr!(&addr, move |addr: SocketAddr| async move {
             ConnectWithDeadline::new(new_datagram_socket_raw_fd, &SockAddr::from(addr), deadline)
                 .await?;

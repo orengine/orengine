@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::net::SocketAddr;
 
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
-use crate::io::{AsyncAccept, AsyncBind, AsyncSocketClose};
+use crate::io::{sys, AsyncAccept, AsyncBind, AsyncSocketClose};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::tcp::TcpStream;
 use crate::net::{BindConfig, Listener};
@@ -47,7 +47,7 @@ impl From<TcpListener> for std::net::TcpListener {
 impl From<std::net::TcpListener> for TcpListener {
     fn from(listener: std::net::TcpListener) -> Self {
         Self {
-            raw_socket: listener.into_raw_socket(),
+            raw_socket: sys::IntoRawSocket::into_raw_socket(listener),
         }
     }
 }

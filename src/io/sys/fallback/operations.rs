@@ -20,7 +20,7 @@ pub(crate) fn socket_op(
     socket2::Socket::new(domain, socket_type, Some(protocol)).map(|socket| {
         socket.set_nonblocking(true).unwrap();
 
-        socket.into_raw_socket() as usize
+        IntoRawSocket::into_raw_socket(socket) as usize
     })
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn accept_op(
                 ptr::write(sockaddr_len_ptr, addr.len());
             }
 
-            socket.into_raw_socket() as usize
+            IntoRawSocket::into_raw_socket(socket) as usize
         })
     })
 }

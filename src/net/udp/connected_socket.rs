@@ -48,9 +48,9 @@ impl From<UdpConnectedSocket> for std::net::UdpSocket {
 }
 
 impl From<std::net::UdpSocket> for UdpConnectedSocket {
-    fn from(stream: std::net::UdpSocket) -> Self {
+    fn from(connected_socket: std::net::UdpSocket) -> Self {
         Self {
-            raw_socket: stream.into_raw_socket(),
+            raw_socket: IntoRawSocket::into_raw_socket(connected_socket),
         }
     }
 }

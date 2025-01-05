@@ -56,7 +56,7 @@ pub trait Listener:
     /// ```
     #[inline(always)]
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        let borrow_socket = self.as_socket();
+        let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref
             .local_addr()?
@@ -83,7 +83,7 @@ pub trait Listener:
     /// ```
     #[inline(always)]
     fn set_ttl(&self, ttl: u32) -> io::Result<()> {
-        let borrow_socket = self.as_socket();
+        let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_ttl(ttl)
     }
@@ -108,7 +108,7 @@ pub trait Listener:
     /// ```
     #[inline(always)]
     fn ttl(&self) -> io::Result<u32> {
-        let borrow_socket = self.as_socket();
+        let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.ttl()
     }
@@ -134,7 +134,7 @@ pub trait Listener:
     /// ```
     #[inline(always)]
     fn take_error(&self) -> io::Result<Option<Error>> {
-        let borrow_socket = self.as_socket();
+        let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.take_error()
     }

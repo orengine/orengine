@@ -278,7 +278,7 @@ impl IoWorker for IOUringWorker {
             clippy::cast_sign_loss,
             reason = "the sing was checked by map() method"
         )]
-        request.set_ret(socket_.map(|s| s.into_raw_socket() as usize));
+        request.set_ret(socket_.map(|s| sys::IntoRawSocket::into_raw_socket(s) as usize));
 
         local_executor().spawn_local_task(unsafe { request.task() });
     }

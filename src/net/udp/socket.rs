@@ -7,8 +7,8 @@ use socket2::{SockAddr, SockRef};
 
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
-    AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollSocket, AsyncRecvFrom, AsyncSendTo,
-    AsyncSocketClose,
+    sys, AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncPollSocket, AsyncRecvFrom,
+    AsyncSendTo, AsyncSocketClose,
 };
 use crate::net::creators_of_sockets::new_udp_socket;
 use crate::net::udp::connected_socket::UdpConnectedSocket;
@@ -84,9 +84,9 @@ impl From<UdpSocket> for std::net::UdpSocket {
 }
 
 impl From<std::net::UdpSocket> for UdpSocket {
-    fn from(stream: std::net::UdpSocket) -> Self {
+    fn from(socket: std::net::UdpSocket) -> Self {
         Self {
-            raw_socket: stream.into_raw_socket(),
+            raw_socket: sys::IntoRawSocket::into_raw_socket(socket),
         }
     }
 }

@@ -8,7 +8,7 @@ use std::mem::ManuallyDrop;
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
-    AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
+    sys, AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
 };
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
@@ -129,7 +129,7 @@ impl From<TcpStream> for std::net::TcpStream {
 impl From<std::net::TcpStream> for TcpStream {
     fn from(stream: std::net::TcpStream) -> Self {
         Self {
-            raw_socket: stream.into_raw_socket(),
+            raw_socket: sys::IntoRawSocket::into_raw_socket(stream),
         }
     }
 }

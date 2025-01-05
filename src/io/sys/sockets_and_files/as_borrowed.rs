@@ -25,7 +25,7 @@ pub trait AsSocket: std::os::windows::io::AsSocket {
     /// Returns a [`BorrowedSocket`] for this socket.
     #[inline(always)]
     fn as_socket(&self) -> BorrowedSocket {
-        socket.as_socket()
+        std::os::windows::io::AsSocket::as_socket(self)
     }
 }
 

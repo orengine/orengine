@@ -61,7 +61,7 @@ pub trait ConnectedDatagram: Socket + AsyncRecv + AsyncPeek + AsyncSend {
     /// ```
     #[inline(always)]
     fn peer_addr(&self) -> io::Result<SocketAddr> {
-        let borrow_socket = self.as_socket();
+        let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref
             .peer_addr()?
