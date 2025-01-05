@@ -52,7 +52,7 @@ impl ThreadWorker {
     pub(crate) fn run(&mut self) -> Result<(), crossbeam::channel::RecvError> {
         loop {
             let (call, data_ptr) = self.task_channel.recv()?;
-            let data = unsafe { &mut *data_ptr };
+            let data = data_ptr.get_mut();
 
             loop {
                 // loop for handle interrupted error
@@ -65,7 +65,7 @@ impl ThreadWorker {
                         Done(unsafe { data.task() })
                     }
 
-                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => MustPoll(call, data),
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => MustPoll(call, data_ptr),
 
                     Err(err) if err.kind() == io::ErrorKind::Interrupted => {
                         continue;
@@ -102,7 +102,7 @@ macro_rules! check_deadline_and {
         if $worker.last_gotten_time < *$deadline_ref {
             $op
         } else {
-            let io_request_data = unsafe { &mut *$request_ptr };
+            let io_request_data = $request_ptr.get_mut();
             io_request_data.set_ret(Err(io::Error::from(io::ErrorKind::TimedOut)));
 
             let task = unsafe { io_request_data.task() };
@@ -198,7 +198,7 @@ impl FallbackWorker {
                     .unwrap();
 
                 let io_request_ptr = IoRequestDataPtr::from_u64(time_bounded_io_task.user_data());
-                let io_request_data = unsafe { &mut *io_request_ptr };
+                let io_request_data = io_request_ptr.get_mut();
                 let task = unsafe { io_request_data.task() };
 
                 io_request_data.set_ret(Err(io::Error::from(io::ErrorKind::TimedOut)));

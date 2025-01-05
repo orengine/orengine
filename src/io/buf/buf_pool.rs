@@ -4,6 +4,7 @@ use crate::io::Buffer;
 #[cfg(target_os = "linux")]
 use crate::io::FixedBuffer;
 use crate::utils::assert_hint;
+#[cfg(target_os = "linux")]
 use libc;
 use std::cell::UnsafeCell;
 #[cfg(target_os = "linux")]
@@ -275,9 +276,7 @@ impl BufPool {
         #[cfg(not(target_os = "linux"))]
         {
             if buf.capacity() == self.default_buffer_cap {
-                unsafe {
-                    self.pool.push(buf);
-                }
+                self.pool.push(buf);
 
                 return;
             }
@@ -308,7 +307,8 @@ impl Drop for BufPool {
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_fixed_buffer() -> Buffer {
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    {
         let mut buf = buffer();
 
         while !buf.is_fixed() {
@@ -317,7 +317,10 @@ pub(crate) async fn get_fixed_buffer() -> Buffer {
         }
 
         buf
-    } else {
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
         panic!("get_fixed is not supported on this OS.");
     }
 }
@@ -326,7 +329,8 @@ pub(crate) async fn get_fixed_buffer() -> Buffer {
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_full_fixed_buffer() -> Buffer {
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    {
         let mut buf = full_buffer();
 
         while !buf.is_fixed() {
@@ -335,7 +339,10 @@ pub(crate) async fn get_full_fixed_buffer() -> Buffer {
         }
 
         buf
-    } else {
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
         panic!("get_fixed is not supported on this OS.");
     }
 }

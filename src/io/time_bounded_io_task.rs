@@ -1,5 +1,7 @@
 use crate::io::io_request_data::IoRequestData;
 #[cfg(not(target_os = "linux"))]
+use crate::io::io_request_data::IoRequestDataPtr;
+#[cfg(not(target_os = "linux"))]
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use std::borrow::Borrow;
 use std::time::Instant;

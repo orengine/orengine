@@ -1,5 +1,7 @@
+use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::RawSocket;
+#[cfg(unix)]
 use mio::event::Source;
 use mio::{Events, Interest, Poll, Token};
 use std::{io, ptr};

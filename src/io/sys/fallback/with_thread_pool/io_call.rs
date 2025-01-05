@@ -1,8 +1,7 @@
 use crate::io::sys::fallback::operations::{
-    accept_op, close_file_op, close_socket_op, connect_op, fallocate_op, fsync_data_op, fsync_op,
-    mkdir_op, open_op, peek_from_op, peek_op, read_at_op, read_op, recv_from_op, recv_op,
-    rename_op, rmdir_op, send_op, send_to_op, shutdown_op, socket_op, unlink_op, write_at_op,
-    write_op,
+    accept_op, close_file_op, close_socket_op, connect_op, fsync_data_op, fsync_op, mkdir_op,
+    open_op, peek_from_op, peek_op, read_at_op, read_op, recv_from_op, recv_op, rename_op,
+    rmdir_op, send_op, send_to_op, shutdown_op, socket_op, unlink_op, write_at_op, write_op,
 };
 use crate::io::sys::{
     self, os_sockaddr, MessageRecvHeader, OsMessageHeader, OsOpenOptions, OsPathPtr, RawFile,
@@ -228,3 +227,5 @@ impl IoCall {
         }
     }
 }
+
+unsafe impl Send for IoCall {}
