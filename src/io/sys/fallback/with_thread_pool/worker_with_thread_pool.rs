@@ -17,9 +17,10 @@ use mio::Interest;
 use socket2::{Domain, Protocol, Type};
 use std::collections::BTreeSet;
 use std::net::Shutdown;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{io, thread};
+use std::{io, mem, thread};
 
 enum WorkerResult {
     Done(Task),
@@ -301,11 +302,11 @@ impl IoWorker for FallbackWorker {
                 .completions
                 .lock()
                 .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
-            let completions_copy = completions.clone();
+            let mut new_completions = Vec::with_capacity(completions.capacity());
 
-            completions.clear();
+            mem::swap(completions.deref_mut(), &mut new_completions);
 
-            completions_copy
+            new_completions
         };
 
         self.number_of_active_tasks -= completions.len();
