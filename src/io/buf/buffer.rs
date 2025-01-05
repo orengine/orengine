@@ -1,4 +1,5 @@
 use crate::io::buf_pool::{buf_pool, buffer, BufPool};
+#[cfg(target_os = "linux")]
 use crate::io::linux::linux_buffer::LinuxBuffer;
 use crate::io::slice::{Slice, SliceMut};
 use crate::io::{FixedBuffer, FixedBufferMut};
@@ -153,13 +154,13 @@ impl Buffer {
     /// Returns a real capacity of the buffer.
     #[inline(always)]
     pub fn capacity(&self) -> u32 {
-        self.os_buffer.capacity()
+        self.os_buffer.capacity() as _
     }
 
     /// Sets [`len`](#field.len) to [`real_cap`](#method.real_cap).
     #[inline(always)]
     pub fn set_len_to_capacity(&mut self) {
-        let cap = self.capacity();
+        let cap = self.capacity() as _;
 
         unsafe {
             self.os_buffer.set_len(cap);

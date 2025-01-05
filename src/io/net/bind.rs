@@ -4,7 +4,6 @@ use crate::net::{BindConfig, ReusePort};
 use socket2::SockRef;
 use std::io::Result;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::ptr::addr_of;
 
 /// The `AsyncBind` trait provides asynchronous methods for creating, binding, and configuring
 /// sockets.
@@ -137,14 +136,39 @@ pub trait AsyncBind: Sized + FromRawSocket {
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
                 }
                 ReusePort::Default => {
-                    socket_ref.set_reuse_port(true)?;
+                    #[cfg(unix)]
+                    {
+                        socket_ref.set_reuse_port(true)?;
+                    }
+
+                    #[cfg(windows)]
+                    {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "CPU reuse is not supported on windows",
+                        ));
+                    }
+
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
                 }
                 ReusePort::CPU => {
-                    socket_ref.set_reuse_port(true)?;
+                    #[cfg(unix)]
+                    {
+                        socket_ref.set_reuse_port(true)?;
+                    }
+
+                    #[cfg(windows)]
+                    {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "CPU reuse is not supported on windows",
+                        ));
+                    }
+
                     Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
 
-                    if cfg!(target_os = "linux") {
+                    #[cfg(target_os = "linux")]
+                    {
                         use libc::{
                             self, __u32, BPF_ABS, BPF_LD, BPF_RET, BPF_W, SKF_AD_CPU, SKF_AD_OFF,
                         };
@@ -183,7 +207,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
                                 raw_fd as _,
                                 libc::SOL_SOCKET,
                                 libc::SO_ATTACH_REUSEPORT_CBPF,
-                                addr_of!(p).cast(),
+                                std::ptr::from_ref(&p).cast(),
                                 size_of::<libc::sock_fprog>() as _,
                             )
                         };
