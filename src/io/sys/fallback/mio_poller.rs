@@ -119,7 +119,7 @@ impl MioPoller {
     }
 
     /// Polls for events and invokes the provided callback for each event.
-    pub(crate) fn poll<F>(
+    pub(crate) fn poll(
         &mut self,
         timeout: Option<std::time::Duration>,
         requests: &mut Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
