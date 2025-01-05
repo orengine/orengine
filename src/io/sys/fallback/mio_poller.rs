@@ -1,8 +1,6 @@
 use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
 use crate::io::sys::RawSocket;
-#[cfg(unix)]
-use mio::event::Source;
 use mio::{Events, Interest, Poll, Token};
 use std::{io, ptr};
 
@@ -54,9 +52,9 @@ impl MioPoller {
         interest: Interest,
         request: (IoCall, IoRequestDataPtr),
     ) -> *mut (IoCall, IoRequestDataPtr) {
-        let registry = self.poll.registry();
         let raw_socket = request.0.raw_socket().unwrap();
         let request_ptr = self.write_request_and_get_ptr(request);
+        let registry = self.poll.registry();
 
         #[cfg(unix)]
         {
