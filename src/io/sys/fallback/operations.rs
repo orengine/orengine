@@ -11,19 +11,6 @@ use std::net::Shutdown;
 use std::os::unix::fs::DirBuilderExt;
 use std::{io, mem, ptr};
 
-/// Creates a new socket and returns its file descriptor.
-pub(crate) fn socket_op(
-    domain: Domain,
-    socket_type: Type,
-    protocol: Protocol,
-) -> io::Result<usize> {
-    socket2::Socket::new(domain, socket_type, Some(protocol)).map(|socket| {
-        socket.set_nonblocking(true).unwrap();
-
-        IntoRawSocket::into_raw_socket(socket) as usize
-    })
-}
-
 /// Performs provided `FnOnce` on a created from a provided [`RawSocket`]
 /// [`socket2::Socket`](socket2::Socket), and forgets it.
 fn with_socket<F: FnOnce(&mut socket2::Socket) -> io::Result<usize>>(
@@ -52,6 +39,19 @@ fn with_file<F: FnOnce(&mut std::fs::File) -> io::Result<usize>>(
     res
 }
 
+/// Creates a new socket and returns its file descriptor.
+pub(crate) fn socket_op(
+    domain: Domain,
+    socket_type: Type,
+    protocol: Protocol,
+) -> io::Result<usize> {
+    socket2::Socket::new(domain, socket_type, Some(protocol)).map(|socket| {
+        socket.set_nonblocking(true).unwrap();
+
+        IntoRawSocket::into_raw_socket(socket) as usize
+    })
+}
+
 /// Accepts a connection on the socket.
 pub(crate) fn accept_op(
     raw_listener: RawSocket,
@@ -60,6 +60,8 @@ pub(crate) fn accept_op(
 ) -> io::Result<usize> {
     with_socket(raw_listener, |listener| {
         listener.accept().map(|(socket, addr)| {
+            socket.set_nonblocking(true).unwrap();
+
             unsafe {
                 ptr::copy_nonoverlapping(addr.as_ptr().cast::<sys::os_sockaddr>(), sockaddr_ptr, 1);
                 ptr::write(sockaddr_len_ptr, addr.len());

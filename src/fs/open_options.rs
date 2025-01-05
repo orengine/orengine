@@ -354,15 +354,31 @@ impl Default for OpenOptions {
 
 impl Debug for OpenOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenOptions")
+        let mut debug_struct = f.debug_struct("OpenOptions");
+
+        debug_struct
             .field("read", &self.read)
             .field("write", &self.write)
             .field("append", &self.append)
             .field("truncate", &self.truncate)
             .field("create", &self.create)
             .field("create_new", &self.create_new)
-            .field("custom_flags", &self.custom_flags)
-            .field("mode", &self.mode)
-            .finish()
+            .field("custom_flags", &self.custom_flags);
+
+        #[cfg(unix)]
+        {
+            debug_struct.field("mode", &self.mode);
+        }
+
+        #[cfg(windows)]
+        {
+            debug_struct
+                .field("access_mode", &self.access_mode)
+                .field("share_mode", &self.share_mode)
+                .field("security_qos_flags", &self.security_qos_flags)
+                .field("attributes", &self.attributes);
+        }
+
+        debug_struct.finish()
     }
 }

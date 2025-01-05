@@ -310,7 +310,7 @@ impl IoWorker for FallbackWorker {
             mem::swap(completions.deref_mut(), self.synced_completions.get_mut());
         };
 
-        let mut completions = unsafe { &mut *self.synced_completions.get() };
+        let completions = unsafe { &mut *self.synced_completions.get() };
 
         self.number_of_active_tasks -= completions.len();
 

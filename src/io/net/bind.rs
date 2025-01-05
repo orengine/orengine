@@ -139,6 +139,8 @@ pub trait AsyncBind: Sized + FromRawSocket {
                     #[cfg(unix)]
                     {
                         socket_ref.set_reuse_port(true)?;
+
+                        Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
                     }
 
                     #[cfg(windows)]
@@ -148,8 +150,6 @@ pub trait AsyncBind: Sized + FromRawSocket {
                             "CPU reuse is not supported on windows",
                         ));
                     }
-
-                    Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
                 }
                 ReusePort::CPU => {
                     #[cfg(unix)]
@@ -165,10 +165,10 @@ pub trait AsyncBind: Sized + FromRawSocket {
                         ));
                     }
 
-                    Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
-
                     #[cfg(target_os = "linux")]
                     {
+                        Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
+
                         use libc::{
                             self, __u32, BPF_ABS, BPF_LD, BPF_RET, BPF_W, SKF_AD_CPU, SKF_AD_OFF,
                         };

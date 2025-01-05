@@ -81,7 +81,7 @@ impl<S: FromRawSocket> Future for Accept<S> {
             ),
             unsafe {
                 (
-                    S::from_raw_socket(ret as RawSocket),
+                    <S as FromRawSocket>::from_raw_socket(ret as RawSocket),
                     this.addr.as_sock_addr(),
                 )
             }
@@ -135,7 +135,7 @@ impl<S: FromRawSocket> Future for AcceptWithDeadline<S> {
             ),
             unsafe {
                 (
-                    S::from_raw_socket(ret as RawSocket),
+                    <S as FromRawSocket>::from_raw_socket(ret as RawSocket),
                     this.addr.as_sock_addr(),
                 )
             }

@@ -278,7 +278,7 @@ pub trait AsyncRead: AsRawFile {
     /// ```
     #[inline(always)]
     fn read_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
-        ReadBytes::new(self.as_raw_fd(), buf)
+        ReadBytes::new(self.as_raw_file(), buf)
     }
 
     /// Asynchronously reads data from the reader into the provided [`Buffer`].
@@ -309,7 +309,7 @@ pub trait AsyncRead: AsRawFile {
     async fn read(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             ReadFixed::new(
-                self.as_raw_fd(),
+                self.as_raw_file(),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -320,7 +320,7 @@ pub trait AsyncRead: AsRawFile {
                 clippy::cast_possible_truncation,
                 reason = "It never read more than u32::MAX bytes"
             )]
-            ReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+            ReadBytes::new(self.as_raw_file(), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
         }
@@ -355,7 +355,7 @@ pub trait AsyncRead: AsRawFile {
         buf: &mut [u8],
         offset: usize,
     ) -> impl Future<Output = Result<usize>> {
-        PositionedReadBytes::new(self.as_raw_fd(), buf, offset)
+        PositionedReadBytes::new(self.as_raw_file(), buf, offset)
     }
 
     /// Asynchronously performs a positioned read, reading from the file at the specified offset.
@@ -385,7 +385,7 @@ pub trait AsyncRead: AsRawFile {
     async fn pread(&mut self, buf: &mut impl FixedBufferMut, offset: usize) -> Result<u32> {
         if buf.is_fixed() {
             PositionedReadFixed::new(
-                self.as_raw_fd(),
+                self.as_raw_file(),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -397,7 +397,7 @@ pub trait AsyncRead: AsRawFile {
                 clippy::cast_possible_truncation,
                 reason = "It never read more than u32::MAX bytes"
             )]
-            PositionedReadBytes::new(self.as_raw_fd(), buf.as_bytes_mut(), offset)
+            PositionedReadBytes::new(self.as_raw_file(), buf.as_bytes_mut(), offset)
                 .await
                 .map(|ret| ret as u32)
         }
@@ -471,7 +471,7 @@ pub trait AsyncRead: AsRawFile {
             )]
             while read < buf.len_u32() {
                 read += ReadFixed::new(
-                    self.as_raw_fd(),
+                    self.as_raw_file(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
                     buf.len_u32() - read,
                     buf.fixed_index(),
@@ -561,7 +561,7 @@ pub trait AsyncRead: AsRawFile {
             )]
             while read < buf.len_u32() {
                 read += PositionedReadFixed::new(
-                    self.as_raw_fd(),
+                    self.as_raw_file(),
                     unsafe { buf.as_mut_ptr().offset(read as isize) },
                     buf.len_u32() - read,
                     buf.fixed_index(),

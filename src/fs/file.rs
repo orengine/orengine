@@ -410,7 +410,6 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    #[cfg(target_os = "linux")]
     fn test_file_create_write_read_pread_pwrite_remove_close_with_fixed() {
         const MSG: &[u8] = b"Hello, world!";
 
@@ -483,7 +482,6 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    #[cfg(target_os = "linux")]
     fn test_file_unpositional_read_write_with_fixed() {
         let test_file_dir_path: &str = &(TEST_DIR_PATH.to_string() + "/unpositional_file/");
 
