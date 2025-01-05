@@ -218,7 +218,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
                 }
             }
 
-            Ok(unsafe { Self::from_raw_socket(raw_fd) })
+            Ok(unsafe { <Self as FromRawSocket>::from_raw_socket(raw_fd) })
         })
     }
 
