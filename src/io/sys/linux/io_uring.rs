@@ -2,7 +2,7 @@ use crate::io::config::IoWorkerConfig;
 use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{
-    os_sockaddr, IntoRawSocket, MessageRecvHeader, OsMessageHeader, OsPathPtr, RawFile, RawSocket,
+    os_sockaddr, MessageRecvHeader, OsMessageHeader, OsPathPtr, RawFile, RawSocket,
 };
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;

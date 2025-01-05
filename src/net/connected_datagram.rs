@@ -1,4 +1,4 @@
-use crate::io::{AsyncPeek, AsyncRecv, AsyncSend};
+use crate::io::{sys, AsyncPeek, AsyncRecv, AsyncSend};
 use crate::net::Socket;
 use std::io;
 use std::io::Error;
