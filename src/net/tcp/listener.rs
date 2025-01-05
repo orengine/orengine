@@ -93,7 +93,7 @@ impl std::os::fd::AsFd for TcpListener {
 
 #[cfg(windows)]
 impl std::os::windows::io::AsSocket for TcpListener {
-    fn as_socket(&self) -> BorrowedSocket {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket {
         unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
     }
 }

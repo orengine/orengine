@@ -206,7 +206,11 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
         each_addr!(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
-            Connect::new(stream.as_raw_fd(), &SockAddr::from(addr)).await?;
+            Connect::new(
+                <Self as AsRawSocket>::as_raw_socket(&stream),
+                &SockAddr::from(addr),
+            )
+            .await?;
 
             Ok(stream)
         })
@@ -234,7 +238,12 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     async fn connect_with_deadline<A: ToSocketAddrs>(addr: A, deadline: Instant) -> Result<Self> {
         each_addr!(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
-            ConnectWithDeadline::new(stream.as_raw_fd(), &SockAddr::from(addr), deadline).await?;
+            ConnectWithDeadline::new(
+                <Self as AsRawSocket>::as_raw_socket(&stream),
+                &SockAddr::from(addr),
+                deadline,
+            )
+            .await?;
 
             Ok(stream)
         })

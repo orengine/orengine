@@ -12,7 +12,7 @@ pub trait FromRawSocket: std::os::windows::io::FromRawSocket + Sized {
     /// in particular, it must be open.
     #[inline(always)]
     unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
-        std::os::windows::io::FromRawSocket::from_raw_socket(raw_socket)
+        <Self as std::os::windows::io::FromRawSocket>::from_raw_socket(raw_socket)
     }
 }
 

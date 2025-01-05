@@ -17,9 +17,9 @@ pub use libc::sockaddr_storage;
 pub use libc::socklen_t;
 
 #[cfg(windows)]
-pub use windows_sys::Win32::Networking::WinSock as sockaddr_storage;
-#[cfg(windows)]
 pub use windows_sys::Win32::Networking::WinSock::socklen_t;
+#[cfg(windows)]
+pub use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE as sockaddr_storage;
 
 #[cfg(target_os = "linux")]
 pub(crate) use libc::sockaddr as os_sockaddr;

@@ -57,7 +57,7 @@ pub trait AsyncSocketClose: AsRawSocket {
     ///
     /// So, before call [`close`](Self::close) you should check if the struct implements auto-closing.
     fn close(&mut self) -> impl Future<Output = Result<()>> {
-        CloseSocket::new(self.as_raw_fd())
+        CloseSocket::new(<Self as AsRawSocket>::as_raw_socket(self))
     }
 }
 
@@ -109,6 +109,6 @@ pub trait AsyncFileClose: AsRawFile {
     ///
     /// So, before call [`close`](Self::close) you should check if the struct implements auto-closing.
     fn close(&mut self) -> impl Future<Output = Result<()>> {
-        CloseFile::new(self.as_raw_fd())
+        CloseFile::new(<Self as AsRawFile>::as_raw_file(self))
     }
 }
