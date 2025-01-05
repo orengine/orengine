@@ -185,8 +185,10 @@ impl IoCall {
         }
     }
 
-    /// Returns a deadline of the I/O call represented by this `IoCall` if it has one.
-    pub(crate) const fn deadline(&self) -> Option<&mut Instant> {
+    /// Returns a mutable reference to a deadline of the I/O call represented by this `IoCall`
+    /// if it has one.
+    #[allow(clippy::mut_from_ref, reason = "False positive.")]
+    pub(crate) const fn deadline_mut(&self) -> Option<&mut Instant> {
         unsafe {
             match self {
                 IoCall::AcceptWithDeadline(_, _, _, deadline) => Some(&mut **deadline),
@@ -200,6 +202,11 @@ impl IoCall {
                 _ => None,
             }
         }
+    }
+
+    /// Returns a deadline of the I/O call represented by this `IoCall` if it has one.
+    pub(crate) const fn deadline(&self) -> Option<Instant> {
+        self.deadline_mut().copied()
     }
 
     /// Returns an associated raw socket of the I/O call represented by this `IoCall` if it has one.

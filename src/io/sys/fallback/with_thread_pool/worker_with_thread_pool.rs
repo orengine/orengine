@@ -98,8 +98,8 @@ pub(crate) struct FallbackWorker {
 }
 
 macro_rules! check_deadline_and {
-    ($worker:expr, $deadline_ref:expr, $request_ptr:expr, $op:block) => {
-        if $worker.last_gotten_time < *$deadline_ref {
+    ($worker:expr, $deadline:expr, $request_ptr:expr, $op:block) => {
+        if $worker.last_gotten_time < $deadline {
             $op
         } else {
             let io_request_data = $request_ptr.get_mut();
@@ -269,7 +269,9 @@ impl IoWorker for FallbackWorker {
             .poll(timeout_option, &mut self.polled_requests)
             .unwrap();
 
-        for poll_result in self.polled_requests.drain(..) {
+        let polled_requests_len = self.polled_requests.len();
+        for i in 0..polled_requests_len {
+            let poll_result = unsafe { std::ptr::read(self.polled_requests.get_unchecked(i)) };
             if let Ok((io_call, io_request_data_ptr)) = poll_result {
                 self.push_to_worker_pool(io_call, io_request_data_ptr);
             } else {
@@ -288,12 +290,24 @@ impl IoWorker for FallbackWorker {
             }
         }
 
+        unsafe {
+            self.polled_requests.set_len(0);
+        }
+
         self.check_deadlines();
 
-        let mut completions = self
-            .completions
-            .lock()
-            .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
+        let mut completions = {
+            let mut completions = self
+                .completions
+                .lock()
+                .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
+            let completions_copy = completions.clone();
+
+            completions.clear();
+
+            completions_copy
+        };
+
         self.number_of_active_tasks -= completions.len();
 
         for result in completions.drain(..) {
@@ -310,7 +324,7 @@ impl IoWorker for FallbackWorker {
 
                     self.number_of_active_tasks += 1;
 
-                    if let Some(deadline) = io_call.deadline() {
+                    if io_call.deadline().is_some() {
                         let raw_socket = io_call.raw_socket().unwrap();
 
                         let slot_ptr = if io_call.is_recv_pollable() {
@@ -321,9 +335,11 @@ impl IoWorker for FallbackWorker {
                                 .register(Interest::WRITABLE, (io_call, io_request_data))
                         };
 
+                        let deadline_ref = unsafe { &mut *slot_ptr }.0.deadline_mut().unwrap();
+
                         self.register_deadline(
                             io_request_data.get_mut(),
-                            deadline,
+                            deadline_ref,
                             raw_socket,
                             slot_ptr,
                         );
@@ -415,7 +431,7 @@ impl IoWorker for FallbackWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        check_deadline_and!(self, deadline, request_ptr, {
+        check_deadline_and!(self, *deadline, request_ptr, {
             let slot_ptr = self.poller.register(
                 Interest::READABLE,
                 (IoCall::PollRecv(raw_socket), request_ptr),
@@ -438,7 +454,7 @@ impl IoWorker for FallbackWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        check_deadline_and!(self, deadline, request_ptr, {
+        check_deadline_and!(self, *deadline, request_ptr, {
             let slot_ptr = self.poller.register(
                 Interest::WRITABLE,
                 (IoCall::PollSend(raw_socket), request_ptr),
