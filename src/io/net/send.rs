@@ -260,7 +260,7 @@ pub trait AsyncSend: AsRawSocket {
     /// ```
     #[inline(always)]
     fn send_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
-        SendBytes::new(self.as_raw_socket(), buf)
+        SendBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
 
     /// Asynchronously sends the provided [`Buffer`]. Returns the number of bytes sent.
@@ -291,7 +291,7 @@ pub trait AsyncSend: AsRawSocket {
     async fn send(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             SendFixed::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -302,7 +302,7 @@ pub trait AsyncSend: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never send more than u32::MAX bytes"
             )]
-            SendBytes::new(self.as_raw_socket(), buf.as_bytes())
+            SendBytes::new(AsRawSocket::as_raw_socket(self), buf.as_bytes())
                 .await
                 .map(|r| r as u32)
         }
@@ -340,7 +340,7 @@ pub trait AsyncSend: AsRawSocket {
         buf: &[u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        SendBytesWithDeadline::new(self.as_raw_socket(), buf, deadline)
+        SendBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, deadline)
     }
 
     /// Asynchronously sends the provided [`Buffer`] with a specified deadline.
@@ -382,7 +382,7 @@ pub trait AsyncSend: AsRawSocket {
     ) -> Result<u32> {
         if buf.is_fixed() {
             SendFixedWithDeadline::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -394,7 +394,7 @@ pub trait AsyncSend: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never send more than u32::MAX bytes"
             )]
-            SendBytesWithDeadline::new(self.as_raw_socket(), buf.as_bytes(), deadline)
+            SendBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf.as_bytes(), deadline)
                 .await
                 .map(|r| r as u32)
         }
@@ -432,7 +432,11 @@ pub trait AsyncSend: AsRawSocket {
         buf: &[u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        SendBytesWithDeadline::new(self.as_raw_socket(), buf, Instant::now() + timeout)
+        SendBytesWithDeadline::new(
+            AsRawSocket::as_raw_socket(self),
+            buf,
+            Instant::now() + timeout,
+        )
     }
 
     /// Asynchronously sends the provided [`Buffer`] with a specified timeout.
@@ -541,7 +545,7 @@ pub trait AsyncSend: AsRawSocket {
             )]
             while sent < buf.len_u32() {
                 sent += SendFixed::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_ptr().offset(sent as isize) },
                     buf.len_u32() - sent,
                     buf.fixed_index(),
@@ -643,7 +647,7 @@ pub trait AsyncSend: AsRawSocket {
             )]
             while sent < buf.len_u32() {
                 sent += SendFixedWithDeadline::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_ptr().offset(sent as isize) },
                     buf.len_u32() - sent,
                     buf.fixed_index(),

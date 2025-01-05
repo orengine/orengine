@@ -92,6 +92,6 @@ pub trait AsyncShutdown: AsRawSocket {
     /// # }
     /// ```
     fn shutdown(&mut self, how: ShutdownHow) -> impl Future<Output = Result<()>> {
-        Shutdown::new(self.as_raw_socket(), how)
+        Shutdown::new(AsRawSocket::as_raw_socket(self), how)
     }
 }

@@ -87,6 +87,7 @@ impl IoRequestDataPtr {
 
     /// Returns `u64` of the pointer.
     #[inline(always)]
+    #[cfg(target_os = "linux")]
     pub(crate) fn as_u64(&self) -> u64 {
         self.0 as u64
     }

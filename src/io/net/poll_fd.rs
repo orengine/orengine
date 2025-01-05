@@ -138,7 +138,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// ```
     #[inline(always)]
     fn poll_recv(&self) -> PollRecv {
-        PollRecv::new(self.as_raw_socket())
+        PollRecv::new(AsRawSocket::as_raw_socket(self))
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -177,7 +177,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// ```
     #[inline(always)]
     fn poll_recv_with_deadline(&self, deadline: Instant) -> PollRecvWithDeadline {
-        PollRecvWithDeadline::new(self.as_raw_socket(), deadline)
+        PollRecvWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -230,7 +230,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// on productivity and efficiency.
     #[inline(always)]
     fn poll_send(&self) -> PollSend {
-        PollSend::new(self.as_raw_socket())
+        PollSend::new(AsRawSocket::as_raw_socket(self))
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -247,7 +247,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// on productivity and efficiency.
     #[inline(always)]
     fn poll_send_with_deadline(&self, deadline: Instant) -> PollSendWithDeadline {
-        PollSendWithDeadline::new(self.as_raw_socket(), deadline)
+        PollSendWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
 
     /// Returns future that will be resolved when the file descriptor

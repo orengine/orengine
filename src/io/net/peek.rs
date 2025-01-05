@@ -261,7 +261,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// ```
     #[inline(always)]
     fn peek_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
-        PeekBytes::new(self.as_raw_socket(), buf)
+        PeekBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -291,7 +291,7 @@ pub trait AsyncPeek: AsRawSocket {
     async fn peek(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixed::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -302,7 +302,7 @@ pub trait AsyncPeek: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never peek more than u32::MAX"
             )]
-            PeekBytes::new(self.as_raw_socket(), buf.as_bytes_mut())
+            PeekBytes::new(AsRawSocket::as_raw_socket(self), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
         }
@@ -343,7 +343,7 @@ pub trait AsyncPeek: AsRawSocket {
         buf: &mut [u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        PeekBytesWithDeadline::new(self.as_raw_socket(), buf, deadline)
+        PeekBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, deadline)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -383,7 +383,7 @@ pub trait AsyncPeek: AsRawSocket {
     ) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixedWithDeadline::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -395,9 +395,13 @@ pub trait AsyncPeek: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never peek more than u32::MAX"
             )]
-            PeekBytesWithDeadline::new(self.as_raw_socket(), buf.as_bytes_mut(), deadline)
-                .await
-                .map(|r| r as u32)
+            PeekBytesWithDeadline::new(
+                AsRawSocket::as_raw_socket(self),
+                buf.as_bytes_mut(),
+                deadline,
+            )
+            .await
+            .map(|r| r as u32)
         }
     }
 
@@ -544,7 +548,7 @@ pub trait AsyncPeek: AsRawSocket {
             )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixed::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(peeked as isize) },
                     buf.len_u32() - peeked,
                     buf.fixed_index(),
@@ -654,7 +658,7 @@ pub trait AsyncPeek: AsRawSocket {
             )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixedWithDeadline::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(peeked as isize) },
                     buf.len_u32() - peeked,
                     buf.fixed_index(),

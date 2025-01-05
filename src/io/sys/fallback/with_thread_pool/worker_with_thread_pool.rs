@@ -707,13 +707,13 @@ impl IoWorker for FallbackWorker {
     #[inline(always)]
     fn fallocate(
         &mut self,
-        raw_file: RawFile,
-        offset: u64,
-        len: u64,
-        flags: i32,
+        _raw_file: RawFile,
+        _offset: u64,
+        _len: u64,
+        _flags: i32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Fallocate(raw_file, offset, len, flags), request_ptr)
+        self.push_to_worker_pool(IoCall::Fallocate, request_ptr)
     }
 
     #[inline(always)]

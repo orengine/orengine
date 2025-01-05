@@ -181,7 +181,7 @@ pub trait AsyncSendTo: AsRawSocket {
     #[inline(always)]
     async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
         SendTo::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             buf,
             &sock_addr_from_to_socket_addr(addr)?,
         )
@@ -219,7 +219,7 @@ pub trait AsyncSendTo: AsRawSocket {
         deadline: Instant,
     ) -> Result<usize> {
         SendToWithDeadline::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             buf,
             &sock_addr_from_to_socket_addr(addr)?,
             deadline,
@@ -258,7 +258,7 @@ pub trait AsyncSendTo: AsRawSocket {
         timeout: Duration,
     ) -> Result<usize> {
         SendToWithDeadline::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             buf,
             &sock_addr_from_to_socket_addr(addr)?,
             Instant::now() + timeout,
@@ -291,7 +291,7 @@ pub trait AsyncSendTo: AsRawSocket {
         let addr = sock_addr_from_to_socket_addr(addr)?;
 
         while sent < buf.len() {
-            sent += SendTo::new(self.as_raw_socket(), buf, &addr).await?;
+            sent += SendTo::new(AsRawSocket::as_raw_socket(self), buf, &addr).await?;
         }
 
         Ok(sent)
@@ -332,7 +332,8 @@ pub trait AsyncSendTo: AsRawSocket {
         let addr = sock_addr_from_to_socket_addr(addr)?;
 
         while sent < buf.len() {
-            sent += SendToWithDeadline::new(self.as_raw_socket(), buf, &addr, deadline).await?;
+            sent += SendToWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, &addr, deadline)
+                .await?;
         }
 
         Ok(sent)

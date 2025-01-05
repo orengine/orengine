@@ -63,16 +63,16 @@ pub trait Datagram:
     /// the socket can send packets to the broadcast address.
     #[inline(always)]
     fn set_broadcast(&self, broadcast: bool) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_broadcast(broadcast)
     }
 
     /// Returns whether the broadcast option is enabled for the socket.
     #[inline(always)]
     fn broadcast(&self) -> std::io::Result<bool> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.broadcast()
     }
 
@@ -80,32 +80,32 @@ pub trait Datagram:
     /// (`true`), the socket will receive multicast packets that it sends.
     #[inline(always)]
     fn set_multicast_loop_v4(&self, multicast_loop_v4: bool) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_multicast_loop_v4(multicast_loop_v4)
     }
 
     /// Returns whether IPv4 multicast loopback is enabled.
     #[inline(always)]
     fn multicast_loop_v4(&self) -> std::io::Result<bool> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.multicast_loop_v4()
     }
 
     /// Sets the TTL (time-to-live) value for IPv4 multicast packets.
     #[inline(always)]
     fn set_multicast_ttl_v4(&self, multicast_ttl_v4: u32) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_multicast_ttl_v4(multicast_ttl_v4)
     }
 
     /// Returns the current TTL value for IPv4 multicast packets.
     #[inline(always)]
     fn multicast_ttl_v4(&self) -> std::io::Result<u32> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.multicast_ttl_v4()
     }
 
@@ -113,16 +113,16 @@ pub trait Datagram:
     /// (`true`), the socket will receive multicast packets that it sends.
     #[inline(always)]
     fn set_multicast_loop_v6(&self, multicast_loop_v6: bool) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_multicast_loop_v6(multicast_loop_v6)
     }
 
     /// Returns whether IPv6 multicast loopback is enabled.
     #[inline(always)]
     fn multicast_loop_v6(&self) -> std::io::Result<bool> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.multicast_loop_v6()
     }
 
@@ -145,8 +145,8 @@ pub trait Datagram:
     /// ```
     #[inline(always)]
     fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.join_multicast_v4(multiaddr, interface)
     }
 
@@ -154,8 +154,8 @@ pub trait Datagram:
     /// The `interface` is the index of the network interface.
     #[inline(always)]
     fn join_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.join_multicast_v6(multiaddr, interface)
     }
 
@@ -166,16 +166,16 @@ pub trait Datagram:
         multiaddr: &Ipv4Addr,
         interface: &Ipv4Addr,
     ) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.leave_multicast_v4(multiaddr, interface)
     }
 
     /// Leaves the IPv6 multicast group that the socket had joined.
     #[inline(always)]
     fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> std::io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = self.as_socket();
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.leave_multicast_v6(multiaddr, interface)
     }
 }

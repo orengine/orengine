@@ -176,7 +176,8 @@ impl Debug for TcpStream {
             res.field("peer", &peer);
         }
 
-        res.field("raw_socket", &self.as_raw_socket()).finish()
+        res.field("raw_socket", &AsRawSocket::as_raw_socket(self))
+            .finish()
     }
 }
 

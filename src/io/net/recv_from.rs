@@ -160,7 +160,7 @@ pub trait AsyncRecvFrom: AsRawSocket {
     async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFrom::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
         )
@@ -202,7 +202,7 @@ pub trait AsyncRecvFrom: AsRawSocket {
     ) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
         let n = RecvFromWithDeadline::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
             deadline,

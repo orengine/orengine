@@ -201,7 +201,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// ```
     #[inline(always)]
     async fn accept(&mut self) -> Result<(S, SocketAddr)> {
-        let (stream, sock_addr) = Accept::<S>::new(self.as_raw_socket()).await?;
+        let (stream, sock_addr) = Accept::<S>::new(sys::AsRawSocket::as_raw_socket(self)).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
@@ -236,7 +236,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     #[inline(always)]
     async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, SocketAddr)> {
         let (stream, sock_addr) =
-            AcceptWithDeadline::<S>::new(self.as_raw_socket(), deadline).await?;
+            AcceptWithDeadline::<S>::new(sys::AsRawSocket::as_raw_socket(self), deadline).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
@@ -277,7 +277,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
 // pub(crate) trait AsyncAcceptUnix<S: FromRawSocket>: AsRawSocket {
 //     #[inline(always)]
 //     async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = Accept::<S>::new(self.as_raw_socket()).await?;
+//         let (stream, addr) = Accept::<S>::new(sys::AsRawSocket::as_raw_socket(self)).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
 //
@@ -286,7 +286,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
 //         &mut self,
 //         deadline: Instant
 //     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = AcceptWithDeadline::<S>::new(self.as_raw_socket(), deadline).await?;
+//         let (stream, addr) = AcceptWithDeadline::<S>::new(sys::AsRawSocket::as_raw_socket(self), deadline).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
 //

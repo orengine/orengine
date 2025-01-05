@@ -263,7 +263,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// ```
     #[inline(always)]
     fn recv_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
-        RecvBytes::new(self.as_raw_socket(), buf)
+        RecvBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -294,7 +294,7 @@ pub trait AsyncRecv: AsRawSocket {
     async fn recv(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixed::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -305,7 +305,7 @@ pub trait AsyncRecv: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never receive more than u32::MAX bytes"
             )]
-            RecvBytes::new(self.as_raw_socket(), buf.as_bytes_mut())
+            RecvBytes::new(AsRawSocket::as_raw_socket(self), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
         }
@@ -346,7 +346,7 @@ pub trait AsyncRecv: AsRawSocket {
         buf: &mut [u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        RecvBytesWithDeadline::new(self.as_raw_socket(), buf, deadline)
+        RecvBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, deadline)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -386,7 +386,7 @@ pub trait AsyncRecv: AsRawSocket {
     ) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixedWithDeadline::new(
-                self.as_raw_socket(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -398,9 +398,13 @@ pub trait AsyncRecv: AsRawSocket {
                 clippy::cast_possible_truncation,
                 reason = "It never receive more than u32::MAX bytes"
             )]
-            RecvBytesWithDeadline::new(self.as_raw_socket(), buf.as_bytes_mut(), deadline)
-                .await
-                .map(|r| r as u32)
+            RecvBytesWithDeadline::new(
+                AsRawSocket::as_raw_socket(self),
+                buf.as_bytes_mut(),
+                deadline,
+            )
+            .await
+            .map(|r| r as u32)
         }
     }
 
@@ -547,7 +551,7 @@ pub trait AsyncRecv: AsRawSocket {
             )]
             while received < buf.len_u32() {
                 received += RecvFixed::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(received as isize) },
                     buf.len_u32() - received,
                     buf.fixed_index(),
@@ -657,7 +661,7 @@ pub trait AsyncRecv: AsRawSocket {
             )]
             while received < buf.len_u32() {
                 received += RecvFixedWithDeadline::new(
-                    self.as_raw_socket(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(received as isize) },
                     buf.len_u32() - received,
                     buf.fixed_index(),

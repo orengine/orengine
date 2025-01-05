@@ -40,7 +40,7 @@ pub(crate) enum IoCall {
     PeekFromWithDeadline(RawSocket, *mut MessageRecvHeader, *mut Instant),
     Shutdown(RawSocket, Shutdown),
     Open(OsPathPtr, *const OsOpenOptions),
-    Fallocate(RawFile, u64, u64, i32),
+    Fallocate,
     FAllSync(RawFile),
     FDataSync(RawFile),
     Read(RawFile, *mut u8, u32),
@@ -121,7 +121,7 @@ impl IoCall {
 
             IoCall::Open(path_ptr, options) => open_op(path_ptr, options),
 
-            IoCall::Fallocate(..) => Ok(0),
+            IoCall::Fallocate() => Ok(0),
 
             IoCall::FAllSync(file) => fsync_op(file),
 

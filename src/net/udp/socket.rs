@@ -195,7 +195,8 @@ impl Debug for UdpSocket {
             res.field("local addr", &addr);
         }
 
-        res.field("raw_socket", &self.as_raw_socket()).finish()
+        res.field("raw_socket", &AsRawSocket::as_raw_socket(self))
+            .finish()
     }
 }
 

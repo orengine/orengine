@@ -158,7 +158,7 @@ pub trait AsyncPeekFrom: AsRawSocket {
     async fn peek_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFrom::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
         )
@@ -200,7 +200,7 @@ pub trait AsyncPeekFrom: AsRawSocket {
     ) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFromWithDeadline::new(
-            self.as_raw_socket(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
             deadline,
