@@ -304,6 +304,8 @@ impl Drop for BufPool {
 }
 
 /// Returns __fixed__ buffer from the pool. It used only in tests.
+///
+/// On non-Linux platforms it returns non-fixed buffers always.
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_fixed_buffer() -> Buffer {
@@ -321,11 +323,13 @@ pub(crate) async fn get_fixed_buffer() -> Buffer {
 
     #[cfg(not(target_os = "linux"))]
     {
-        panic!("get_fixed is not supported on this OS.");
+        buffer()
     }
 }
 
 /// Returns full (len == capacity) __fixed__ buffer from the pool. It used only in tests.
+///
+/// On non-Linux platforms it returns non-fixed buffers always.
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_full_fixed_buffer() -> Buffer {
@@ -343,6 +347,6 @@ pub(crate) async fn get_full_fixed_buffer() -> Buffer {
 
     #[cfg(not(target_os = "linux"))]
     {
-        panic!("get_fixed is not supported on this OS.");
+        buffer()
     }
 }

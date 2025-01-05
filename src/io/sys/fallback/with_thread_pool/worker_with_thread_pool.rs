@@ -15,6 +15,7 @@ use crate::runtime::call::Call;
 use crate::runtime::Task;
 use mio::Interest;
 use socket2::{Domain, Protocol, Type};
+use std::cell::UnsafeCell;
 use std::collections::BTreeSet;
 use std::net::Shutdown;
 use std::ops::DerefMut;
@@ -92,6 +93,8 @@ pub(crate) struct FallbackWorker {
     number_of_active_tasks: usize,
     workers: Box<[crossbeam::channel::Sender<(IoCall, IoRequestDataPtr)>]>,
     completions: Arc<SyncWorkerResultList>,
+    /// Vec to swap with mutex-protected `completions`
+    synced_completions: UnsafeCell<Vec<WorkerResult>>,
     poller: MioPoller,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
     last_gotten_time: Instant,
@@ -239,6 +242,7 @@ impl IoWorker for FallbackWorker {
             number_of_active_tasks: 0,
             workers: workers.into_boxed_slice(),
             completions,
+            synced_completions: UnsafeCell::new(Vec::new()),
             poller: MioPoller::new().expect("Failed to create mio Poll instance."),
             time_bounded_io_task_queue: BTreeSet::new(),
             last_gotten_time: Instant::now(),
@@ -297,17 +301,16 @@ impl IoWorker for FallbackWorker {
 
         self.check_deadlines();
 
-        let mut completions = {
+        {
             let mut completions = self
                 .completions
                 .lock()
                 .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
-            let mut new_completions = Vec::with_capacity(completions.capacity());
 
-            mem::swap(completions.deref_mut(), &mut new_completions);
-
-            new_completions
+            mem::swap(completions.deref_mut(), self.synced_completions.get_mut());
         };
+
+        let mut completions = unsafe { &mut *self.synced_completions.get() };
 
         self.number_of_active_tasks -= completions.len();
 
