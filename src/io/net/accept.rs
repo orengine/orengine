@@ -30,6 +30,10 @@ impl SockAddrRaw {
                 clippy::cast_possible_truncation,
                 reason = "size of SockAddr is less than u32::MAX"
             )]
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "size of SockAddr don't wrap i32 (on windows)"
+            )]
             len: size_of::<SockAddr>() as _,
         }
     }
@@ -236,7 +240,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     #[inline(always)]
     async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, SocketAddr)> {
         let (stream, sock_addr) =
-            AcceptWithDeadline::<S>::new(sys::AsRawSocket::as_raw_socket(self), deadline).await?;
+            AcceptWithDeadline::<S>::new(AsRawSocket::as_raw_socket(self), deadline).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 

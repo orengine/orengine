@@ -266,6 +266,8 @@ impl AsyncWrite for File {}
 
 impl AsyncFileClose for File {}
 
+unsafe impl Send for File {}
+
 impl Drop for File {
     fn drop(&mut self) {
         let close_future = self.close();
@@ -386,7 +388,7 @@ mod tests {
 
         file.write_all_bytes(write_buf.as_ref()).await.unwrap();
 
-        let mut read_buf = [0; 10];
+        let mut read_buf = [0; 256];
         let mut read = 0usize;
         let mut read_file = File::open(&file_path, &OpenOptions::new().read(true))
             .await
@@ -406,6 +408,7 @@ mod tests {
             .read_bytes_exact(&mut large_big_buff[..write_buf.capacity()])
             .await
             .unwrap();
+
         assert_eq!(large_big_buff.as_ref(), write_buf);
     }
 
@@ -511,7 +514,7 @@ mod tests {
         file.write_all(&write_buf).await.unwrap();
 
         let mut read_buf = get_fixed_buffer().await;
-        read_buf.set_len(10).unwrap();
+        read_buf.set_len(256).unwrap();
         let mut read = 0;
         let mut read_file = File::open(&file_path, &OpenOptions::new().read(true))
             .await
@@ -535,6 +538,7 @@ mod tests {
             .read_bytes_exact(&mut large_big_buff[..write_buf.capacity() as usize])
             .await
             .unwrap();
+
         assert_eq!(large_big_buff.as_ref(), write_buf.as_ref());
     }
 }

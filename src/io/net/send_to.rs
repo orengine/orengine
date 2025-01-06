@@ -1,3 +1,7 @@
+use crate as orengine;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawSocket, MessageSendHeader, RawSocket};
+use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 use std::future::Future;
@@ -9,16 +13,11 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use std::{io, ptr};
 
-use crate as orengine;
-use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
-use crate::io::sys::{AsRawSocket, MessageSendHeader, RawSocket};
-use crate::io::worker::{local_worker, IoWorker};
-
 /// `send_to` io operation.
 pub struct SendTo<'fut> {
     raw_socket: RawSocket,
     message_header: MessageSendHeader,
-    buf: &'fut [u8],
+    buf: &'fut *const [u8],
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
     phantom_data: PhantomData<&'fut [u8]>,
@@ -26,7 +25,7 @@ pub struct SendTo<'fut> {
 
 impl<'fut> SendTo<'fut> {
     /// Creates a new `send_to` io operation.
-    pub fn new(raw_socket: RawSocket, buf: &'fut [u8], addr: &'fut SockAddr) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'fut *const [u8], addr: &'fut SockAddr) -> Self {
         Self {
             raw_socket,
             message_header: MessageSendHeader::new(),
@@ -45,13 +44,14 @@ impl Future for SendTo<'_> {
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
+        let os_message_header_ptr = this
+            .message_header
+            .get_os_message_header_ptr(this.addr, ptr::from_ref(this.buf).cast_mut());
+
         poll_for_io_request!((
-            local_worker().send_to(
-                this.raw_socket,
-                this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
-                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
-            ),
+            local_worker().send_to(this.raw_socket, os_message_header_ptr, unsafe {
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
+            }),
             ret
         ));
     }
@@ -67,7 +67,7 @@ unsafe impl Send for SendTo<'_> {}
 pub struct SendToWithDeadline<'fut> {
     raw_socket: RawSocket,
     message_header: MessageSendHeader,
-    buf: &'fut [u8],
+    buf: &'fut *const [u8],
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -78,7 +78,7 @@ impl<'fut> SendToWithDeadline<'fut> {
     /// Creates a new `send_to` io operation with deadline.
     pub fn new(
         raw_socket: RawSocket,
-        buf: &'fut [u8],
+        buf: &'fut *const [u8],
         addr: &'fut SockAddr,
         deadline: Instant,
     ) -> Self {
@@ -103,11 +103,14 @@ impl Future for SendToWithDeadline<'_> {
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
+        let os_message_header_ptr = this
+            .message_header
+            .get_os_message_header_ptr(this.addr, ptr::from_ref(this.buf).cast_mut());
+
         poll_for_time_bounded_io_request!((
             worker.send_to_with_deadline(
                 this.raw_socket,
-                this.message_header
-                    .get_os_message_header_ptr(this.addr, &mut ptr::from_ref::<[u8]>(this.buf)),
+                os_message_header_ptr,
                 unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
@@ -180,9 +183,11 @@ pub trait AsyncSendTo: AsRawSocket {
     /// ```
     #[inline(always)]
     async fn send_to<A: ToSocketAddrs>(&mut self, buf: &[u8], addr: A) -> Result<usize> {
+        let buf_ptr = &ptr::from_ref(buf);
+
         SendTo::new(
             AsRawSocket::as_raw_socket(self),
-            buf,
+            buf_ptr,
             &sock_addr_from_to_socket_addr(addr)?,
         )
         .await
@@ -218,9 +223,11 @@ pub trait AsyncSendTo: AsRawSocket {
         addr: A,
         deadline: Instant,
     ) -> Result<usize> {
+        let buf_ptr = &ptr::from_ref(buf);
+
         SendToWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
-            buf,
+            buf_ptr,
             &sock_addr_from_to_socket_addr(addr)?,
             deadline,
         )
@@ -257,9 +264,11 @@ pub trait AsyncSendTo: AsRawSocket {
         addr: A,
         timeout: Duration,
     ) -> Result<usize> {
+        let buf_ptr = &ptr::from_ref(buf);
+
         SendToWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
-            buf,
+            buf_ptr,
             &sock_addr_from_to_socket_addr(addr)?,
             Instant::now() + timeout,
         )
@@ -291,7 +300,9 @@ pub trait AsyncSendTo: AsRawSocket {
         let addr = sock_addr_from_to_socket_addr(addr)?;
 
         while sent < buf.len() {
-            sent += SendTo::new(AsRawSocket::as_raw_socket(self), buf, &addr).await?;
+            let buf_ptr = &ptr::from_ref(&buf[sent..]);
+
+            sent += SendTo::new(AsRawSocket::as_raw_socket(self), buf_ptr, &addr).await?;
         }
 
         Ok(sent)
@@ -332,8 +343,11 @@ pub trait AsyncSendTo: AsRawSocket {
         let addr = sock_addr_from_to_socket_addr(addr)?;
 
         while sent < buf.len() {
-            sent += SendToWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, &addr, deadline)
-                .await?;
+            let buf_ptr = &ptr::from_ref(&buf[sent..]);
+
+            sent +=
+                SendToWithDeadline::new(AsRawSocket::as_raw_socket(self), buf_ptr, &addr, deadline)
+                    .await?;
         }
 
         Ok(sent)

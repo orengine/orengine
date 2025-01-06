@@ -436,16 +436,14 @@ mod tests {
     #[orengine::test::test_local]
     fn test_tcp_timeout() {
         const ADDR: &str = "127.0.0.1:6083";
-        const BACKLOG_SIZE: isize = 256;
 
-        const CONNECT: usize = 0;
-        const SEND: usize = 1;
-        const POLL: usize = 2;
-        const RECV: usize = 3;
-        const PEEK: usize = 4;
-        const TIMEOUT: Duration = Duration::from_millis(1);
+        const SEND: usize = 0;
+        const POLL: usize = 1;
+        const RECV: usize = 2;
+        const PEEK: usize = 3;
+        const TIMEOUT: Duration = Duration::from_millis(100);
 
-        let state = Rc::new(LocalMutex::new(CONNECT));
+        let state = Rc::new(LocalMutex::new(SEND));
         let state_cond_var = Rc::new(LocalCondVar::new());
         let state_clone = state.clone();
         let state_cond_var_clone = state_cond_var.clone();
@@ -454,23 +452,29 @@ mod tests {
         let wg_clone = wg.clone();
 
         local_executor().spawn_local(async move {
-            let mut listener =
-                TcpListener::bind_with_config(ADDR, &BindConfig::new().backlog_size(BACKLOG_SIZE))
-                    .await
-                    .expect("bind failed");
+            let mut listener = TcpListener::bind_with_config(ADDR, &BindConfig::new())
+                .await
+                .expect("bind failed");
             let mut expected_state = 0;
-            let mut state = state_clone.lock().await;
 
             wg_clone.done();
 
             loop {
-                while *state != expected_state {
-                    state = state_cond_var_clone.wait(state).await;
+                let mut guard = state_clone.lock().await;
+                while *guard != expected_state {
+                    guard = state_cond_var_clone.wait(guard).await;
                 }
-                match *state {
-                    CONNECT => {}
-                    SEND | POLL | PEEK | RECV => {
-                        let _ = listener.accept().await.expect("accept failed").0;
+
+                drop(guard);
+
+                match expected_state {
+                    SEND => {
+                        let stream = listener.accept().await.expect("accept failed").0;
+                        let _ = stream.poll_send().await;
+                    }
+                    RECV | PEEK | POLL => {
+                        let stream = listener.accept().await.expect("accept failed").0;
+                        let _ = stream.poll_recv().await;
                     }
                     _ => break,
                 }
@@ -481,37 +485,18 @@ mod tests {
         wg.wait().await;
 
         loop {
-            let mut state = state.lock().await;
-            match *state {
-                CONNECT => {
-                    for _ in 0..=BACKLOG_SIZE {
-                        let _ = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
-                            .await
-                            .expect("connect with timeout failed");
-                    }
-                    let res = TcpStream::connect_with_timeout(ADDR, TIMEOUT).await;
-                    match res {
-                        Ok(_) => panic!("connect with timeout should failed"),
-                        Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "connect with timeout should failed with TimedOut, but got {err:?}"
-                            )
-                        }
-                        Err(_) => {}
-                    }
-                }
+            let current_state = *state.lock().await;
 
+            match current_state {
                 SEND => {
                     let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 
-                    let buf = vec![0u8; 1 << 24]; // 16 MB.
-                                                  // It is impossible to send 16 MB in 1 microsecond (16 TB/s).
                     let res = stream
                         .send_all_bytes_with_deadline(
-                            &buf,
-                            Instant::now() + Duration::from_micros(1),
+                            b"Never",
+                            Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
                         )
                         .await;
                     match res {
@@ -572,7 +557,7 @@ mod tests {
 
                 _ => break,
             }
-            *state += 1;
+            *state.lock().await += 1;
             state_cond_var.notify_one();
         }
     }

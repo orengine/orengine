@@ -249,7 +249,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// ## Correct Usage
 ///
-/// ```rust
+/// ```no_run
 /// use orengine::{Executor, stop_executor, sleep};
 /// use std::time::Duration;
 ///
@@ -270,7 +270,7 @@ pub(crate) fn register_local_executor() {
 /// You need to save an id when the executor starts because else the task can be moved
 /// (if it is shared) to another executor, but it needs to stop the parent executor.
 ///
-/// ```rust
+/// ```no_run
 /// use orengine::{Executor, stop_executor, sleep, local_executor};
 /// use std::time::Duration;
 ///
@@ -278,7 +278,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// executor.spawn_shared(async move {
 ///     sleep(Duration::from_secs(3)).await;
-///     stop_executor(local_executor().id()); // Undefined behavior: stops an unknown executor
+///     stop_executor(local_executor().id()); // Undefined behavior: stop an unknown executor
 /// });
 /// executor.run();
 ///

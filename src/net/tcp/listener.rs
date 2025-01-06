@@ -199,7 +199,7 @@ mod tests {
             .await
             .expect("bind call failed");
         match listener.accept_with_timeout(Duration::from_micros(1)).await {
-            Ok(_) => panic!("accept_with_timeout call failed"),
+            Ok(_) => panic!("accept_with_timeout call should failed"),
             Err(err) => {
                 assert_eq!(err.kind(), io::ErrorKind::TimedOut);
             }
@@ -222,7 +222,9 @@ mod tests {
     fn test_accept() {
         let config = BindConfig::default();
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Disabled), 4063).await;
+        #[cfg(target_os = "linux")]
         test_listener_accept_with_config(&config.reuse_port(ReusePort::Default), 4062).await;
+        #[cfg(target_os = "linux")]
         test_listener_accept_with_config(&config.reuse_port(ReusePort::CPU), 4061).await;
     }
 }

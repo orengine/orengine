@@ -1,14 +1,16 @@
 use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
-use crate::io::sys::RawSocket;
+use crate::io::sys::{FromRawSocket, RawSocket};
+use ahash::AHashMap;
 use mio::{Events, Interest, Poll, Token};
 use std::cell::UnsafeCell;
-use std::{io, ptr};
+use std::{io, mem, ptr};
 
 /// `MioPoller` is a wrapper around `mio::Poll` that is used to poll for events and poll-timeouts.
 pub(crate) struct MioPoller {
     poll: Poll,
     events: UnsafeCell<Events>,
+    registered_sockets: AHashMap<RawSocket, mio::net::UdpSocket>, // it can be any mio socket, the choice doesn't matter
     request_slots: Vec<*mut (IoCall, IoRequestDataPtr)>,
 }
 
@@ -18,6 +20,7 @@ impl MioPoller {
         Ok(Self {
             poll: Poll::new()?,
             events: UnsafeCell::new(Events::with_capacity(128)),
+            registered_sockets: AHashMap::new(),
             request_slots: Vec::new(),
         })
     }
@@ -56,30 +59,15 @@ impl MioPoller {
         let raw_socket = request.0.raw_socket().unwrap();
         let request_ptr = self.write_request_and_get_ptr(request);
         let registry = self.poll.registry();
+        let mut socket = unsafe {
+            mio::net::UdpSocket::from_std(std::net::UdpSocket::from_raw_socket(raw_socket))
+        };
 
-        #[cfg(unix)]
-        {
-            registry
-                .register(
-                    &mut mio::unix::SourceFd(&raw_socket),
-                    Token(request_ptr as usize),
-                    interest,
-                )
-                .unwrap();
-        }
+        registry
+            .register(&mut socket, Token(request_ptr as usize), interest)
+            .unwrap();
 
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::FromRawSocket;
-
-            let mut mio_stream = unsafe { mio::net::TcpStream::from_raw_socket(raw_socket) }; // It can be not only stream
-
-            registry
-                .register(&mut mio_stream, Token(request_ptr as usize), interest)
-                .unwrap();
-
-            std::mem::forget(mio_stream);
-        }
+        self.registered_sockets.insert(raw_socket, socket);
 
         request_ptr
     }
@@ -100,29 +88,20 @@ impl MioPoller {
         // Here not slot's leaks, because it called after slot's release
 
         let registry = self.poll.registry();
+        let mut socket = self.registered_sockets.remove(&raw_socket).unwrap();
 
-        #[cfg(unix)]
-        {
-            registry.deregister(&mut mio::unix::SourceFd(&raw_socket))
-        }
+        registry.deregister(&mut socket)?;
 
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::FromRawSocket;
+        mem::forget(socket);
 
-            let mut mio_stream = unsafe { mio::net::TcpStream::from_raw_socket(raw_socket) }; // It can be not only stream
-            registry.deregister(&mut mio_stream)?;
-            std::mem::forget(mio_stream);
-
-            Ok(())
-        }
+        Ok(())
     }
 
     /// Polls for events and invokes the provided callback for each event.
     pub(crate) fn poll(
         &mut self,
         timeout: Option<std::time::Duration>,
-        requests: &mut Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
+        requests: &mut Vec<(Result<(), ()>, IoCall, IoRequestDataPtr)>,
     ) -> io::Result<()> {
         let events = unsafe { &mut *self.events.get() };
 
@@ -136,9 +115,9 @@ impl MioPoller {
 
             requests.push(
                 if event.is_error() || (!event.is_readable() && !event.is_writable()) {
-                    Err(io_request.1)
+                    (Err(()), io_request.0, io_request.1)
                 } else {
-                    Ok(io_request)
+                    (Ok(()), io_request.0, io_request.1)
                 },
             );
         }

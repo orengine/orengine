@@ -368,6 +368,7 @@ mod tests {
     }
 
     #[orengine::test::test_local]
+    #[cfg(target_os = "linux")]
     fn test_server_with_default_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(
@@ -379,6 +380,7 @@ mod tests {
     }
 
     #[orengine::test::test_local]
+    #[cfg(target_os = "linux")]
     fn test_server_with_cpu_reuse_port() {
         let config = BindConfig::default();
         test_server_with_config(

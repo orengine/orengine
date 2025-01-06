@@ -40,7 +40,7 @@ pub trait FromRawFile: std::os::windows::io::FromRawHandle + Sized {
     ///
     /// # Safety
     ///
-    /// The fd passed in must be an [owned file](std::os::windows::io::OwnedFile);
+    /// The fd passed in must be an [owned file](std::os::windows::io::OwnedHandle);
     /// in particular, it must be open.
     #[inline(always)]
     unsafe fn from_raw_file(raw_file: RawFile) -> Self {

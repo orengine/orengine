@@ -24,7 +24,7 @@ pub trait IntoRawSocket: std::os::fd::IntoRawFd + Sized {
     }
 }
 
-/// `IntoRawFile` is a synonym for [`IntoRawFd`](std::os::fd::IntoRawFd) on `unix` or for
+/// `IntoRawFile` is a synonym for `IntoRawFd` (`std::os::fd::IntoRawFd`) on `unix` or for
 /// [`IntoRawHandle`](std::os::windows::io::IntoRawHandle) on `windows`.
 #[cfg(windows)]
 pub trait IntoRawFile: std::os::windows::io::IntoRawHandle + Sized {

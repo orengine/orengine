@@ -301,8 +301,9 @@ impl OpenOptions {
             .mode(self.mode.into()))
     }
 
-    #[cfg(not(target_os = "linux"))]
     /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
+    #[cfg(not(target_os = "linux"))]
+    #[allow(clippy::unnecessary_wraps, reason = "It is an accepted signature.")]
     pub(crate) fn into_os_options(self) -> io::Result<OsOpenOptions> {
         Ok(std::fs::OpenOptions::from(self))
     }
@@ -331,6 +332,7 @@ impl From<OpenOptions> for std::fs::OpenOptions {
         {
             use std::os::windows::fs::OpenOptionsExt;
 
+            #[allow(clippy::cast_sign_loss, reason = "Flags don't have signs.")]
             open_options.custom_flags(options.custom_flags as u32);
 
             if let Some(access_mode) = options.access_mode {

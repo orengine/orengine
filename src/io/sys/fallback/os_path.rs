@@ -9,6 +9,7 @@ pub(crate) type OsPathPtr = *const PathBuf;
 
 /// Get os path from path.
 #[inline(always)]
+#[allow(clippy::unnecessary_wraps, reason = "It is an accepted signature.")]
 pub(crate) fn get_os_path(path: &Path) -> io::Result<OsPath> {
     Ok(path.to_path_buf())
 }

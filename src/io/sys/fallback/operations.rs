@@ -40,6 +40,10 @@ fn with_file<F: FnOnce(&mut std::fs::File) -> io::Result<usize>>(
 }
 
 /// Creates a new socket and returns its file descriptor.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "RawSocket never exceeds u32"
+)]
 pub(crate) fn socket_op(
     domain: Domain,
     socket_type: Type,
@@ -53,6 +57,10 @@ pub(crate) fn socket_op(
 }
 
 /// Accepts a connection on the socket.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "RawSocket never exceeds u32"
+)]
 pub(crate) fn accept_op(
     raw_listener: RawSocket,
     sockaddr_ptr: *mut sys::os_sockaddr,
@@ -62,6 +70,10 @@ pub(crate) fn accept_op(
         listener.accept().map(|(socket, addr)| {
             socket.set_nonblocking(true).unwrap();
 
+            #[allow(
+                clippy::cast_ptr_alignment,
+                reason = "sys::os_sockaddr is aligned rightly"
+            )]
             unsafe {
                 ptr::copy_nonoverlapping(addr.as_ptr().cast::<sys::os_sockaddr>(), sockaddr_ptr, 1);
                 ptr::write(sockaddr_len_ptr, addr.len());
@@ -80,7 +92,8 @@ pub(crate) fn connect_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let addr = unsafe { SockAddr::new(ptr::read(addr_ptr.cast()), addr_len) };
-        socket.connect(&addr).map(|_| 0)
+
+        socket.connect(&addr).map(|()| 0)
     })
 }
 
@@ -166,7 +179,7 @@ pub(crate) fn peek_from_op(
 
 /// Shuts down the socket.
 pub(crate) fn shutdown_op(raw_socket: RawSocket, how: Shutdown) -> io::Result<usize> {
-    with_socket(raw_socket, |socket| socket.shutdown(how).map(|_| 0))
+    with_socket(raw_socket, |socket| socket.shutdown(how).map(|()| 0))
 }
 
 /// Opens a file.
@@ -181,12 +194,12 @@ pub(crate) fn open_op(path_ptr: OsPathPtr, open_how: *const OsOpenOptions) -> io
 
 /// Syncs a file to disk.
 pub(crate) fn fsync_op(raw_file: RawFile) -> io::Result<usize> {
-    with_file(raw_file, |file| file.sync_all().map(|_| 0))
+    with_file(raw_file, |file| file.sync_all().map(|()| 0))
 }
 
 /// Syncs a file data to disk.
 pub(crate) fn fsync_data_op(raw_file: RawFile) -> io::Result<usize> {
-    with_file(raw_file, |file| file.sync_data().map(|_| 0))
+    with_file(raw_file, |file| file.sync_data().map(|()| 0))
 }
 
 /// Reads data from a file.
@@ -236,21 +249,13 @@ pub(crate) fn write_at_op(
 }
 
 /// Closes a file.
-pub(crate) fn close_file_op(raw_file: RawFile) -> io::Result<usize> {
-    if unsafe { libc::close(raw_file as _) } == 0 {
-        Ok(0)
-    } else {
-        Err(io::Error::last_os_error())
-    }
+pub(crate) fn close_file_op(raw_file: RawFile) {
+    drop(unsafe { std::fs::File::from_raw_file(raw_file) });
 }
 
 /// Closes a socket.
-pub(crate) fn close_socket_op(raw_socket: RawSocket) -> io::Result<usize> {
-    if unsafe { libc::close(raw_socket as _) } == 0 {
-        Ok(0)
-    } else {
-        Err(io::Error::last_os_error())
-    }
+pub(crate) fn close_socket_op(raw_socket: RawSocket) {
+    drop(unsafe { std::net::UdpSocket::from_raw_socket(raw_socket) });
 }
 
 /// Renames a file.
@@ -258,7 +263,7 @@ pub(crate) fn rename_op(old_path_ptr: OsPathPtr, new_path_ptr: OsPathPtr) -> io:
     let old_path = unsafe { &*old_path_ptr };
     let new_path = unsafe { &*new_path_ptr };
 
-    std::fs::rename(old_path, new_path).map(|_| 0)
+    std::fs::rename(old_path, new_path).map(|()| 0)
 }
 
 /// Creates a directory.
@@ -271,19 +276,19 @@ pub(crate) fn mkdir_op(path_ptr: OsPathPtr, mode: u32) -> io::Result<usize> {
     #[cfg(unix)]
     let dir_builder_ref = dir_builder_ref.mode(0o777);
 
-    dir_builder_ref.create(path).map(|_| 0)
+    dir_builder_ref.create(path).map(|()| 0)
 }
 
 /// Removes a directory.
 pub(crate) fn rmdir_op(path_ptr: OsPathPtr) -> io::Result<usize> {
     let path = unsafe { &*path_ptr };
 
-    std::fs::remove_dir(path).map(|_| 0)
+    std::fs::remove_dir(path).map(|()| 0)
 }
 
 /// Removes a file.
 pub(crate) fn unlink_op(path_ptr: OsPathPtr) -> io::Result<usize> {
     let path = unsafe { &*path_ptr };
 
-    std::fs::remove_file(path).map(|_| 0)
+    std::fs::remove_file(path).map(|()| 0)
 }

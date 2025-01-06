@@ -18,7 +18,6 @@ use socket2::{Domain, Protocol, Type};
 use std::cell::UnsafeCell;
 use std::collections::BTreeSet;
 use std::net::Shutdown;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{io, mem, thread};
@@ -51,18 +50,18 @@ impl ThreadWorker {
     }
 
     /// Runs the worker until the channel is closed.
-    pub(crate) fn run(&mut self) -> Result<(), crossbeam::channel::RecvError> {
+    pub(crate) fn run(&self) -> Result<(), crossbeam::channel::RecvError> {
         loop {
             let (call, data_ptr) = self.task_channel.recv()?;
             let data = data_ptr.get_mut();
 
             loop {
                 // loop for handle interrupted error
-                let res = call.do_io_work();
+                let res_ = call.do_io_work();
 
-                let completion = match res {
-                    Ok(ret) => {
-                        data.set_ret(Ok(ret));
+                let completion = match res_ {
+                    Ok(res) => {
+                        data.set_ret(Ok(res));
 
                         Done(unsafe { data.task() })
                     }
@@ -115,7 +114,7 @@ pub(crate) struct FallbackWorker {
     poller: MioPoller,
     time_bounded_io_task_queue: BTreeSet<TimeBoundedIoTask>,
     last_gotten_time: Instant,
-    polled_requests: Vec<Result<(IoCall, IoRequestDataPtr), IoRequestDataPtr>>,
+    polled_requests: Vec<(Result<(), ()>, IoCall, IoRequestDataPtr)>,
 }
 
 macro_rules! check_deadline_and {
@@ -182,7 +181,7 @@ impl FallbackWorker {
     /// 5. if not would block, return the result
     /// 6. else register deadline and register the socket to the poller
     /// 7. when the deadline expires, the socket will be deregistered from the poller
-    ///    and ErrorKind::TimedOut will be returned
+    ///    and `ErrorKind::TimedOut` will be returned
     /// 8. else if the socket is ready before the deadline expires, the operation will be executed
     ///    the result will be returned and the deadline will be deregistered
     pub(crate) fn register_deadline(
@@ -238,6 +237,180 @@ impl FallbackWorker {
             }
         }
     }
+
+    /// Schedules a non-retriable IO call. It also decreases the number of active tasks.
+    #[allow(unused_variables, reason = "We use #[cfg(debug_assertions)] here.")]
+    fn schedule_io_call_that_not_retriable(
+        &mut self,
+        io_call: &IoCall,
+        io_request_data_ptr: IoRequestDataPtr,
+    ) {
+        debug_assert!(!io_call.must_retry());
+
+        self.number_of_active_tasks -= 1;
+
+        let io_request_data = io_request_data_ptr.get_mut();
+        let task = unsafe { io_request_data.task() };
+
+        io_request_data.set_ret(Ok(0)); // This IO-Call is just a poll. So, it don't depend on the return value.
+
+        if task.is_local() {
+            local_executor().exec_task(task);
+        } else {
+            local_executor().spawn_shared_task(task);
+        }
+    }
+
+    /// Sync `completions` and returns a mutable reference to it.
+    fn synced_completions(&mut self) -> &'static mut Vec<WorkerResult> {
+        {
+            let mut completions = self
+                .completions
+                .lock()
+                .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
+
+            mem::swap(&mut *completions, self.synced_completions.get_mut());
+        };
+
+        unsafe { &mut *self.synced_completions.get() }
+    }
+
+    /// Polls and processes all the polled requests. Returns if this function have done io work.  
+    fn poll_and_process(&mut self, timeout: Duration) -> bool {
+        let mut have_done = false;
+
+        self.poller
+            .poll(Some(timeout), &mut self.polled_requests)
+            .unwrap();
+
+        let polled_requests_len = self.polled_requests.len();
+        for i in 0..polled_requests_len {
+            let (result, io_call, io_request_data_ptr) =
+                unsafe { std::ptr::read(self.polled_requests.get_unchecked(i)) };
+            if result.is_ok() {
+                if let Some(deadline) = io_call.deadline() {
+                    assert!(
+                        self.time_bounded_io_task_queue.remove(&deadline),
+                        "Failed to remove time bounded io task."
+                    );
+
+                    check_deadline_and!(self, deadline, io_request_data_ptr, {
+                        if io_call.must_retry() {
+                            self.push_to_worker_pool(io_call, io_request_data_ptr);
+                        } else {
+                            have_done = true;
+                            self.schedule_io_call_that_not_retriable(&io_call, io_request_data_ptr);
+                        }
+                    });
+                } else if io_call.must_retry() {
+                    self.push_to_worker_pool(io_call, io_request_data_ptr);
+                } else {
+                    have_done = true;
+                    self.schedule_io_call_that_not_retriable(&io_call, io_request_data_ptr);
+                }
+            } else {
+                if let Some(deadline) = io_call.deadline() {
+                    assert!(
+                        self.time_bounded_io_task_queue.remove(&deadline),
+                        "Failed to remove time bounded io task in an error case."
+                    );
+                }
+
+                have_done = true;
+                self.number_of_active_tasks -= 1;
+
+                let io_request_data = io_request_data_ptr.get_mut();
+                let task = unsafe { io_request_data.task() };
+
+                io_request_data.set_ret(Err(io::Error::from(io::ErrorKind::Other)));
+
+                if task.is_local() {
+                    local_executor().exec_task(task);
+                } else {
+                    local_executor().spawn_shared_task(task);
+                }
+            }
+        }
+
+        unsafe {
+            self.polled_requests.set_len(0);
+        }
+
+        have_done
+    }
+
+    /// Returns if this function have done io work.
+    #[must_use]
+    fn must_poll_(&mut self, timeout: Duration) -> bool {
+        let mut have_done = self.poll_and_process(timeout);
+
+        self.check_deadlines();
+
+        let completions = self.synced_completions();
+
+        self.number_of_active_tasks -= completions.len();
+
+        for result in completions.drain(..) {
+            match result {
+                Done(task) => {
+                    have_done = true;
+
+                    if task.is_local() {
+                        local_executor().exec_task(task);
+                    } else {
+                        local_executor().spawn_shared_task(task);
+                    }
+                }
+                MustPoll(io_call, io_request_data) => {
+                    debug_assert!(
+                        io_call.is_recv_pollable()
+                            || io_call.is_send_pollable() | io_call.is_both_pollable()
+                    );
+
+                    self.number_of_active_tasks += 1;
+
+                    if io_call.deadline().is_some() {
+                        let raw_socket = io_call.raw_socket().unwrap();
+
+                        let slot_ptr = if io_call.is_recv_pollable() {
+                            self.poller
+                                .register(Interest::READABLE, (io_call, io_request_data))
+                        } else if io_call.is_send_pollable() {
+                            self.poller
+                                .register(Interest::WRITABLE, (io_call, io_request_data))
+                        } else {
+                            self.poller.register(
+                                Interest::READABLE | Interest::WRITABLE,
+                                (io_call, io_request_data),
+                            )
+                        };
+
+                        let deadline_ref = unsafe { &mut *slot_ptr }.0.deadline_mut().unwrap();
+
+                        self.register_deadline(
+                            io_request_data.get_mut(),
+                            deadline_ref,
+                            raw_socket,
+                            slot_ptr,
+                        );
+                    } else if io_call.is_recv_pollable() {
+                        self.poller
+                            .register(Interest::READABLE, (io_call, io_request_data));
+                    } else if io_call.is_send_pollable() {
+                        self.poller
+                            .register(Interest::WRITABLE, (io_call, io_request_data));
+                    } else {
+                        self.poller.register(
+                            Interest::WRITABLE | Interest::READABLE,
+                            (io_call, io_request_data),
+                        );
+                    }
+                }
+            }
+        }
+
+        have_done
+    }
 }
 
 impl IoWorker for FallbackWorker {
@@ -246,7 +419,7 @@ impl IoWorker for FallbackWorker {
             Vec::with_capacity(config.fallback.number_of_threads_per_executor as usize);
         let completions = Arc::new(SyncWorkerResultList::new(Vec::with_capacity(16)));
         for _ in 0..config.fallback.number_of_threads_per_executor {
-            let (mut worker, sender) = ThreadWorker::new(completions.clone());
+            let (worker, sender) = ThreadWorker::new(completions.clone());
 
             thread::spawn(move || {
                 let _ = worker.run(); // RecvError means that FallbackWorker is stopped. It is fine.
@@ -287,92 +460,21 @@ impl IoWorker for FallbackWorker {
             timeout_option = Some(Duration::from_nanos(0));
         }
 
-        self.poller
-            .poll(timeout_option, &mut self.polled_requests)
-            .unwrap();
+        let mut timeout = timeout_option.unwrap();
+        let mut diff = Duration::from_micros(16);
 
-        let polled_requests_len = self.polled_requests.len();
-        for i in 0..polled_requests_len {
-            let poll_result = unsafe { std::ptr::read(self.polled_requests.get_unchecked(i)) };
-            if let Ok((io_call, io_request_data_ptr)) = poll_result {
-                self.push_to_worker_pool(io_call, io_request_data_ptr);
-            } else {
-                self.number_of_active_tasks -= 1;
-                let io_request_data_ptr = poll_result.err().unwrap();
-                let io_request_data = io_request_data_ptr.get_mut();
-                let task = unsafe { io_request_data.task() };
+        if !self.must_poll_(timeout.min(diff)) {
+            timeout = timeout.checked_sub(diff).unwrap_or(Duration::from_nanos(0));
 
-                io_request_data.set_ret(Err(io::Error::from(io::ErrorKind::Other)));
-
-                if task.is_local() {
-                    local_executor().exec_task(task);
-                } else {
-                    local_executor().spawn_shared_task(task);
+            while timeout > Duration::from_nanos(0) {
+                if self.must_poll_(timeout.min(diff)) {
+                    break;
                 }
-            }
-        }
 
-        unsafe {
-            self.polled_requests.set_len(0);
-        }
-
-        self.check_deadlines();
-
-        {
-            let mut completions = self
-                .completions
-                .lock()
-                .expect("Failed to lock completions. Maybe Orengine doesn't support current OS.");
-
-            mem::swap(completions.deref_mut(), self.synced_completions.get_mut());
-        };
-
-        let completions = unsafe { &mut *self.synced_completions.get() };
-
-        self.number_of_active_tasks -= completions.len();
-
-        for result in completions.drain(..) {
-            match result {
-                Done(task) => {
-                    if task.is_local() {
-                        local_executor().exec_task(task);
-                    } else {
-                        local_executor().spawn_shared_task(task);
-                    }
-                }
-                MustPoll(io_call, io_request_data) => {
-                    debug_assert!(io_call.is_recv_pollable() || io_call.is_send_pollable());
-
-                    self.number_of_active_tasks += 1;
-
-                    if io_call.deadline().is_some() {
-                        let raw_socket = io_call.raw_socket().unwrap();
-
-                        let slot_ptr = if io_call.is_recv_pollable() {
-                            self.poller
-                                .register(Interest::READABLE, (io_call, io_request_data))
-                        } else {
-                            self.poller
-                                .register(Interest::WRITABLE, (io_call, io_request_data))
-                        };
-
-                        let deadline_ref = unsafe { &mut *slot_ptr }.0.deadline_mut().unwrap();
-
-                        self.register_deadline(
-                            io_request_data.get_mut(),
-                            deadline_ref,
-                            raw_socket,
-                            slot_ptr,
-                        );
-                    } else {
-                        if io_call.is_recv_pollable() {
-                            self.poller
-                                .register(Interest::READABLE, (io_call, io_request_data));
-                        } else {
-                            self.poller
-                                .register(Interest::WRITABLE, (io_call, io_request_data));
-                        }
-                    }
+                timeout = timeout.checked_sub(diff).unwrap_or(Duration::from_nanos(0));
+                diff *= 2;
+                if diff > Duration::from_millis(10) {
+                    diff = Duration::from_millis(10);
                 }
             }
         }
@@ -385,7 +487,7 @@ impl IoWorker for FallbackWorker {
         protocol: Protocol,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Socket(domain, sock_type, protocol), request_ptr)
+        self.push_to_worker_pool(IoCall::Socket(domain, sock_type, protocol), request_ptr);
     }
 
     #[inline(always)]
@@ -396,7 +498,7 @@ impl IoWorker for FallbackWorker {
         addr_len: *mut sys::socklen_t,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Accept(raw_socket, addr_ptr, addr_len), request_ptr)
+        self.push_to_worker_pool(IoCall::Accept(raw_socket, addr_ptr, addr_len), request_ptr);
     }
 
     fn accept_with_deadline(
@@ -410,7 +512,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::AcceptWithDeadline(raw_socket, addr_ptr, addr_len, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -421,7 +523,7 @@ impl IoWorker for FallbackWorker {
         addr_len: sys::socklen_t,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Connect(raw_socket, addr_ptr, addr_len), request_ptr)
+        self.push_to_worker_pool(IoCall::Connect(raw_socket, addr_ptr, addr_len), request_ptr);
     }
 
     fn connect_with_deadline(
@@ -435,11 +537,12 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::ConnectWithDeadline(raw_socket, addr_ptr, addr_len, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
     fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
+        self.number_of_active_tasks += 1;
         self.poller.register(
             Interest::READABLE,
             (IoCall::PollRecv(raw_socket), request_ptr),
@@ -453,6 +556,7 @@ impl IoWorker for FallbackWorker {
         deadline: &mut Instant,
     ) {
         check_deadline_and!(self, *deadline, request_ptr, {
+            self.number_of_active_tasks += 1;
             let slot_ptr = self.poller.register(
                 Interest::READABLE,
                 (IoCall::PollRecv(raw_socket), request_ptr),
@@ -463,6 +567,7 @@ impl IoWorker for FallbackWorker {
 
     #[inline(always)]
     fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
+        self.number_of_active_tasks += 1;
         self.poller.register(
             Interest::WRITABLE,
             (IoCall::PollSend(raw_socket), request_ptr),
@@ -476,6 +581,7 @@ impl IoWorker for FallbackWorker {
         deadline: &mut Instant,
     ) {
         check_deadline_and!(self, *deadline, request_ptr, {
+            self.number_of_active_tasks += 1;
             let slot_ptr = self.poller.register(
                 Interest::WRITABLE,
                 (IoCall::PollSend(raw_socket), request_ptr),
@@ -492,7 +598,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -504,7 +610,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Recv(raw_socket, ptr, len), request_ptr);
     }
 
     fn recv_with_deadline(
@@ -518,7 +624,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::RecvWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     fn recv_fixed_with_deadline(
@@ -533,7 +639,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::RecvWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -543,7 +649,7 @@ impl IoWorker for FallbackWorker {
         msg_header: &mut MessageRecvHeader,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::RecvFrom(raw_socket, msg_header), request_ptr)
+        self.push_to_worker_pool(IoCall::RecvFrom(raw_socket, msg_header), request_ptr);
     }
 
     fn recv_from_with_deadline(
@@ -556,7 +662,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::RecvFromWithDeadline(raw_socket, msg_header, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -567,7 +673,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -579,7 +685,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Send(raw_socket, ptr, len), request_ptr);
     }
 
     fn send_with_deadline(
@@ -593,7 +699,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::SendWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     fn send_fixed_with_deadline(
@@ -608,7 +714,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::SendWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -618,7 +724,7 @@ impl IoWorker for FallbackWorker {
         msg_header: *const OsMessageHeader,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::SendTo(raw_socket, msg_header), request_ptr)
+        self.push_to_worker_pool(IoCall::SendTo(raw_socket, msg_header), request_ptr);
     }
 
     fn send_to_with_deadline(
@@ -631,7 +737,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::SendToWithDeadline(raw_socket, msg_header, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -642,7 +748,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -654,7 +760,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Peek(raw_socket, ptr, len), request_ptr);
     }
 
     fn peek_with_deadline(
@@ -668,7 +774,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::PeekWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     fn peek_fixed_with_deadline(
@@ -683,7 +789,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::PeekWithDeadline(raw_socket, ptr, len, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -693,7 +799,7 @@ impl IoWorker for FallbackWorker {
         msg: &mut MessageRecvHeader,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::PeekFrom(raw_socket, msg), request_ptr)
+        self.push_to_worker_pool(IoCall::PeekFrom(raw_socket, msg), request_ptr);
     }
 
     fn peek_from_with_deadline(
@@ -706,12 +812,12 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool_with_deadline(
             IoCall::PeekFromWithDeadline(raw_socket, msg, deadline),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
     fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::Shutdown(raw_socket, how), request_ptr)
+        self.push_to_worker_pool(IoCall::Shutdown(raw_socket, how), request_ptr);
     }
 
     #[inline(always)]
@@ -721,7 +827,7 @@ impl IoWorker for FallbackWorker {
         open_how: *const OsOpenOptions,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Open(path, open_how), request_ptr)
+        self.push_to_worker_pool(IoCall::Open(path, open_how), request_ptr);
     }
 
     #[inline(always)]
@@ -733,22 +839,22 @@ impl IoWorker for FallbackWorker {
         _flags: i32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Fallocate, request_ptr)
+        self.push_to_worker_pool(IoCall::Fallocate, request_ptr);
     }
 
     #[inline(always)]
     fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::FAllSync(raw_file), request_ptr)
+        self.push_to_worker_pool(IoCall::FAllSync(raw_file), request_ptr);
     }
 
     #[inline(always)]
     fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::FDataSync(raw_file), request_ptr)
+        self.push_to_worker_pool(IoCall::FDataSync(raw_file), request_ptr);
     }
 
     #[inline(always)]
     fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -760,7 +866,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Read(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -775,7 +881,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool(
             IoCall::PRead(raw_file, ptr, len, offset as u64),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -791,7 +897,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool(
             IoCall::PRead(raw_file, ptr, len, offset as u64),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -802,7 +908,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -814,7 +920,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr)
+        self.push_to_worker_pool(IoCall::Write(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -829,7 +935,7 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool(
             IoCall::PWrite(raw_file, ptr, len, offset as u64),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
@@ -845,36 +951,36 @@ impl IoWorker for FallbackWorker {
         self.push_to_worker_pool(
             IoCall::PWrite(raw_file, ptr, len, offset as u64),
             request_ptr,
-        )
+        );
     }
 
     #[inline(always)]
     fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::CloseFile(raw_file), request_ptr)
+        self.push_to_worker_pool(IoCall::CloseFile(raw_file), request_ptr);
     }
 
     #[inline(always)]
     fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::CloseSocket(raw_socket), request_ptr)
+        self.push_to_worker_pool(IoCall::CloseSocket(raw_socket), request_ptr);
     }
 
     #[inline(always)]
     fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::Rename(old_path, new_path), request_ptr)
+        self.push_to_worker_pool(IoCall::Rename(old_path, new_path), request_ptr);
     }
 
     #[inline(always)]
     fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::CreateDir(path, mode), request_ptr)
+        self.push_to_worker_pool(IoCall::CreateDir(path, mode), request_ptr);
     }
 
     #[inline(always)]
     fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::RemoveFile(path), request_ptr)
+        self.push_to_worker_pool(IoCall::RemoveFile(path), request_ptr);
     }
 
     #[inline(always)]
     fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.push_to_worker_pool(IoCall::RemoveDir(path), request_ptr)
+        self.push_to_worker_pool(IoCall::RemoveDir(path), request_ptr);
     }
 }

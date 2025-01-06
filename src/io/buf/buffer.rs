@@ -153,6 +153,10 @@ impl Buffer {
 
     /// Returns a real capacity of the buffer.
     #[inline(always)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Buffer capacity is less than u32::MAX"
+    )]
     pub fn capacity(&self) -> u32 {
         self.os_buffer.capacity() as _
     }
@@ -363,8 +367,12 @@ impl FixedBuffer for Buffer {
     #[inline(always)]
     fn len_u32(&self) -> u32 {
         #[cfg(not(target_os = "linux"))]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "Buffer capacity is less than u32::MAX"
+        )]
         {
-            return self.as_ref().len() as u32;
+            self.as_ref().len() as u32
         }
 
         #[cfg(target_os = "linux")]
@@ -377,7 +385,7 @@ impl FixedBuffer for Buffer {
     fn fixed_index(&self) -> u16 {
         #[cfg(not(target_os = "linux"))]
         {
-            return u16::MAX;
+            u16::MAX
         }
 
         #[cfg(target_os = "linux")]
@@ -393,7 +401,7 @@ impl FixedBuffer for Buffer {
     fn is_fixed(&self) -> bool {
         #[cfg(not(target_os = "linux"))]
         {
-            return false;
+            false
         }
 
         #[cfg(target_os = "linux")]
