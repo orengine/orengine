@@ -33,7 +33,7 @@ jobs:
   cross-platform-tests:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -41,12 +41,12 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Run Tests
-        run: cargo test --verbose -- --nocapture
+        run: cargo test --verbose -- --nocapture --test-threads=1 # TODO remove --test-threads=1 after tests are passed
 
   cross-platform-tests_release:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -54,7 +54,7 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Run Tests
-        run: cargo test --release --verbose -- --nocapture
+        run: cargo test --release --verbose -- --nocapture --test-threads=1 # TODO remove --test-threads=1 after tests are passed
 
   rustfmt:
     runs-on: ubuntu-latest

@@ -74,9 +74,26 @@ impl ThreadWorker {
                     }
 
                     Err(err) => {
-                        data.set_ret(Err(err));
+                        #[cfg(unix)]
+                        {
+                            if err
+                                .raw_os_error()
+                                .is_some_and(|code| code == libc::EINPROGRESS)
+                            {
+                                MustPoll(call, data_ptr)
+                            } else {
+                                data.set_ret(Err(err));
 
-                        Done(unsafe { data.task() })
+                                Done(unsafe { data.task() })
+                            }
+                        }
+
+                        #[cfg(not(unix))]
+                        {
+                            data.set_ret(Err(err));
+
+                            crate::io::sys::fallback::with_thread_pool::worker_with_thread_pool::WorkerResult::Done(unsafe { data.task() })
+                        }
                     }
                 };
 
