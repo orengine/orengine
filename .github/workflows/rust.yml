@@ -30,11 +30,8 @@ jobs:
       - name: Run Tests Release
         run: cargo test --release --verbose -- --nocapture
 
-  cross-platform-tests:
-    strategy:
-      matrix:
-        os: [ macos-latest, windows-latest ]
-    runs-on: ${{ matrix.os }}
+  cross-platform-tests-macos:
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -43,11 +40,28 @@ jobs:
       - name: Run Tests
         run: cargo test --verbose -- --nocapture --test-threads=1 # TODO remove --test-threads=1 after tests are passed
 
-  cross-platform-tests_release:
-    strategy:
-      matrix:
-        os: [ macos-latest, windows-latest ]
-    runs-on: ${{ matrix.os }}
+  cross-platform-tests-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --verbose -- --nocapture --test-threads=1 # TODO remove --test-threads=1 after tests are passed
+
+  cross-platform-tests-macos-release:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --release --verbose -- --nocapture --test-threads=1 # TODO remove --test-threads=1 after tests are passed
+
+  cross-platform-tests-windows-release:
+    runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
