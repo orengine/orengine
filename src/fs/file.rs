@@ -527,6 +527,7 @@ mod tests {
         }
 
         let mut large_big_buff = full_buffer();
+        assert_eq!(large_big_buff.len(), write_buf.capacity() as usize);
         read_file
             .with_std_mut_file(|file| file.seek(SeekFrom::Start(0)))
             .unwrap();
