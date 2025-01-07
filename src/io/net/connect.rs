@@ -10,22 +10,23 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys;
+use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `connect` io operation.
 pub struct Connect<'fut> {
-    fd: RawFd,
+    raw_fd: RawSocket,
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'fut> Connect<'fut> {
     /// Creates a new `connect` io operation.
-    pub fn new(fd: RawFd, addr: &'fut SockAddr) -> Self {
+    pub fn new(raw_fd: RawSocket, addr: &'fut SockAddr) -> Self {
         Self {
-            fd,
+            raw_fd,
             addr,
             io_request_data: None,
         }
@@ -35,15 +36,22 @@ impl<'fut> Connect<'fut> {
 impl Future for Connect<'_> {
     type Output = Result<()>;
 
+    #[allow(
+        clippy::cast_ptr_alignment,
+        reason = "sys::os_sockaddr is aligned rightly"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
         poll_for_io_request!((
-            local_worker().connect(this.fd, this.addr.as_ptr(), this.addr.len(), unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().connect(
+                this.raw_fd,
+                this.addr.as_ptr().cast::<sys::os_sockaddr>(),
+                this.addr.len(),
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ()
         ));
     }
@@ -53,7 +61,7 @@ unsafe impl Send for Connect<'_> {}
 
 /// `connect` io operation with deadline.
 pub struct ConnectWithDeadline<'fut> {
-    fd: RawFd,
+    raw_fd: RawSocket,
     addr: &'fut SockAddr,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -61,9 +69,9 @@ pub struct ConnectWithDeadline<'fut> {
 
 impl<'fut> ConnectWithDeadline<'fut> {
     /// Creates a new `connect` io operation with deadline.
-    pub fn new(fd: RawFd, addr: &'fut SockAddr, deadline: Instant) -> Self {
+    pub fn new(raw_fd: RawSocket, addr: &'fut SockAddr, deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_fd,
             addr,
             io_request_data: None,
             deadline,
@@ -74,6 +82,10 @@ impl<'fut> ConnectWithDeadline<'fut> {
 impl Future for ConnectWithDeadline<'_> {
     type Output = Result<()>;
 
+    #[allow(
+        clippy::cast_ptr_alignment,
+        reason = "sys::os_sockaddr is aligned rightly"
+    )]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         let worker = local_worker();
@@ -82,10 +94,10 @@ impl Future for ConnectWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.connect_with_deadline(
-                this.fd,
-                this.addr.as_ptr(),
+                this.raw_fd,
+                this.addr.as_ptr().cast::<sys::os_sockaddr>(),
                 this.addr.len(),
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ()
@@ -119,7 +131,7 @@ unsafe impl Send for ConnectWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectStream: Sized + AsRawFd {
+pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// Creates a new IPv4 socket for stream-based communication.
     ///
     /// # Warning
@@ -202,7 +214,11 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
         each_addr!(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
-            Connect::new(stream.as_raw_fd(), &SockAddr::from(addr)).await?;
+            Connect::new(
+                <Self as AsRawSocket>::as_raw_socket(&stream),
+                &SockAddr::from(addr),
+            )
+            .await?;
 
             Ok(stream)
         })
@@ -230,7 +246,12 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
     async fn connect_with_deadline<A: ToSocketAddrs>(addr: A, deadline: Instant) -> Result<Self> {
         each_addr!(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
-            ConnectWithDeadline::new(stream.as_raw_fd(), &SockAddr::from(addr), deadline).await?;
+            ConnectWithDeadline::new(
+                <Self as AsRawSocket>::as_raw_socket(&stream),
+                &SockAddr::from(addr),
+                deadline,
+            )
+            .await?;
 
             Ok(stream)
         })
@@ -284,14 +305,14 @@ pub trait AsyncConnectStream: Sized + AsRawFd {
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
+pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized {
     /// Asynchronously connects a datagram socket to the specified address.
     ///
     /// # Example
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let socket = UdpSocket::bind("127.0.0.1:8081").await?;
@@ -313,10 +334,10 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     /// ```
     #[inline(always)]
     async fn connect<A: ToSocketAddrs>(self, addr: A) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
+        let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
         each_addr!(&addr, move |addr: SocketAddr| async move {
-            Connect::new(new_datagram_socket_fd, &SockAddr::from(addr)).await?;
-            Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
+            Connect::new(new_datagram_socket_raw_fd, &SockAddr::from(addr)).await?;
+            Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
     }
 
@@ -329,7 +350,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -356,11 +377,11 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
         addr: A,
         deadline: Instant,
     ) -> Result<S> {
-        let new_datagram_socket_fd = self.into_raw_fd();
+        let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
         each_addr!(&addr, move |addr: SocketAddr| async move {
-            ConnectWithDeadline::new(new_datagram_socket_fd, &SockAddr::from(addr), deadline)
+            ConnectWithDeadline::new(new_datagram_socket_raw_fd, &SockAddr::from(addr), deadline)
                 .await?;
-            Ok(unsafe { S::from_raw_fd(new_datagram_socket_fd) })
+            Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
     }
 
@@ -373,7 +394,7 @@ pub trait AsyncConnectDatagram<S: FromRawFd + Sized>: IntoRawFd + Sized {
     ///
     /// ```rust
     /// use orengine::net::UdpSocket;
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {

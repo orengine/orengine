@@ -508,12 +508,12 @@ pub struct LocalChannel<T> {
 }
 
 impl<T> AsyncChannel<T> for LocalChannel<T> {
-    type Receiver<'channel>
-        = LocalReceiver<'channel, T>
-    where
-        Self: 'channel;
     type Sender<'channel>
         = LocalSender<'channel, T>
+    where
+        Self: 'channel;
+    type Receiver<'channel>
+        = LocalReceiver<'channel, T>
     where
         Self: 'channel;
 

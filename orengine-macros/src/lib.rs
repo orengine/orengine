@@ -39,12 +39,11 @@ pub fn poll_for_io_request(input: TokenStream) -> TokenStream {
             match io_request_data.ret() {
                 Ok(io_request_data_ret) => {
                     ret = io_request_data_ret;
+
                     return Poll::Ready(Ok(#ret_statement));
                 }
                 Err(err) => {
-                    unsafe {
-                        return Poll::Ready(Err(err));
-                    }
+                    return Poll::Ready(Err(err));
                 }
             }
         }

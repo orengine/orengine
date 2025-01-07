@@ -1,8 +1,6 @@
-use io_uring::types::OpenHow;
-use nix::libc::{self};
+use crate::io::sys::OsOpenOptions;
 use std::fmt::Debug;
 use std::io;
-use std::io::Error;
 
 /// Options and flags which can be used to configure how a file is opened.
 #[derive(Copy, Clone)]
@@ -43,7 +41,16 @@ pub struct OpenOptions {
     /// For more information, see [`OpenOptions::custom_flags`](OpenOptions::custom_flags).
     custom_flags: i32,
     /// The permissions to apply to the new file.
+    #[cfg(unix)]
     mode: u32,
+    #[cfg(windows)]
+    access_mode: Option<u32>,
+    #[cfg(windows)]
+    share_mode: u32,
+    #[cfg(windows)]
+    attributes: u32,
+    #[cfg(windows)]
+    security_qos_flags: u32,
 }
 
 impl OpenOptions {
@@ -59,7 +66,16 @@ impl OpenOptions {
             create: false,
             create_new: false,
             custom_flags: 0,
+            #[cfg(unix)]
             mode: 0o666,
+            #[cfg(windows)]
+            access_mode: None,
+            #[cfg(windows)]
+            share_mode: 1u32 | 2u32 | 4u32,
+            #[cfg(windows)]
+            attributes: 0,
+            #[cfg(windows)]
+            security_qos_flags: 0,
         }
     }
 
@@ -150,22 +166,114 @@ impl OpenOptions {
     }
 
     /// Sets the permissions to apply to the new file.
+    ///
+    /// # Platform-specific behavior
+    ///
+    /// It has an effect only on unix-like platforms. In other platforms, it does nothing.
     #[must_use]
+    #[allow(unused, reason = "We use #[cfg] here.")]
     pub fn mode(mut self, mode: u32) -> Self {
-        self.mode = mode;
+        #[cfg(unix)]
+        {
+            self.mode = mode;
+        }
+
         self
     }
 
-    #[cfg(unix)]
+    /// Overrides the `dwDesiredAccess` argument to the call to [`CreateFile`]
+    /// with the specified value.
+    ///
+    /// This will override the `read`, `write`, and `append` flags on the
+    /// `OpenOptions` structure. This method provides fine-grained control over
+    /// the permissions to read, write and append data, attributes (like hidden
+    /// and system), and extended attributes.
+    ///
+    /// # Platform-specific behavior
+    ///
+    /// It has an effect only on windows. In other platforms, it does nothing.
+    ///
+    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+    #[must_use]
+    #[allow(unused, reason = "We use #[cfg] here.")]
+    pub fn access_mode(mut self, access_mode: u32) -> Self {
+        #[cfg(windows)]
+        {
+            self.access_mode = Some(access_mode);
+        }
+
+        self
+    }
+
+    /// Overrides the `dwShareMode` argument to the call to [`CreateFile`] with
+    /// the specified value.
+    ///
+    /// By default, `share_mode` is set to
+    /// `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`. This allows
+    /// other processes to read, write, and delete/rename the same file
+    /// while it is open. Removing any of the flags will prevent other
+    /// processes from performing the corresponding operation until the file
+    /// handle is closed.
+    ///
+    /// # Platform-specific behavior
+    ///
+    /// It has an effect only on windows. In other platforms, it does nothing.
+    ///
+    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+    #[must_use]
+    #[allow(unused, reason = "We use #[cfg] here.")]
+    pub fn share_mode(mut self, share_mode: u32) -> Self {
+        #[cfg(windows)]
+        {
+            self.share_mode = share_mode;
+        }
+
+        self
+    }
+    /// Sets the `dwFileAttributes` argument to the call to [`CreateFile2`] to
+    /// the specified value (or combines it with `custom_flags` and
+    /// `security_qos_flags` to set the `dwFlagsAndAttributes` for
+    /// [`CreateFile`]).
+    ///
+    /// If a _new_ file is created because it does not yet exist and
+    /// `.create(true)` or `.create_new(true)` are specified, the new file is
+    /// given the attributes declared with `.attributes()`.
+    ///
+    /// If an _existing_ file is opened with `.create(true).truncate(true)`, its
+    /// existing attributes are preserved and combined with the ones declared
+    /// with `.attributes()`.
+    ///
+    /// In all other cases the attributes get ignored.
+    ///
+    /// # Platform-specific behavior
+    ///
+    /// It has an effect only on windows. In other platforms, it does nothing.
+    ///
+    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+    /// [`CreateFile2`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfile2
+    #[must_use]
+    #[allow(unused, reason = "We use #[cfg] here.")]
+    pub fn attributes(mut self, attrs: u32) -> Self {
+        #[cfg(windows)]
+        {
+            self.attributes = attrs;
+        }
+
+        self
+    }
+
+    #[cfg(target_os = "linux")]
     /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
-    pub(crate) fn into_os_options(mut self) -> io::Result<OpenHow> {
+    pub(crate) fn into_os_options(mut self) -> io::Result<OsOpenOptions> {
+        use libc;
+
         let access_mode = match (self.read, self.write, self.append) {
             (true, false, false) => libc::O_RDONLY,
             (false, true, false) => libc::O_WRONLY,
             (true, true, false) => libc::O_RDWR,
             (false, _, true) => libc::O_WRONLY | libc::O_APPEND,
             (true, _, true) => libc::O_RDWR | libc::O_APPEND,
-            (false, false, false) => return Err(Error::from_raw_os_error(libc::EINVAL)),
+            (false, false, false) => return Err(io::Error::from_raw_os_error(libc::EINVAL)),
         };
 
         let creation_flags = match (self.create, self.truncate, self.create_new) {
@@ -183,7 +291,7 @@ impl OpenOptions {
         };
 
         #[allow(clippy::cast_sign_loss, reason = "Flags don't have signs.")]
-        Ok(OpenHow::new()
+        Ok(OsOpenOptions::new()
             .flags(
                 (libc::O_CLOEXEC
                     | access_mode
@@ -191,6 +299,52 @@ impl OpenOptions {
                     | (self.custom_flags & !libc::O_ACCMODE)) as u64,
             )
             .mode(self.mode.into()))
+    }
+
+    /// Converts the `OpenOptions` into the argument to `open()` provided by the os.
+    #[cfg(not(target_os = "linux"))]
+    #[allow(clippy::unnecessary_wraps, reason = "It is an accepted signature.")]
+    pub(crate) fn into_os_options(self) -> io::Result<OsOpenOptions> {
+        Ok(std::fs::OpenOptions::from(self))
+    }
+}
+
+impl From<OpenOptions> for std::fs::OpenOptions {
+    fn from(options: OpenOptions) -> Self {
+        let mut open_options = Self::new();
+
+        open_options.read(options.read);
+        open_options.write(options.write);
+        open_options.append(options.append);
+        open_options.truncate(options.truncate);
+        open_options.create(options.create);
+        open_options.create_new(options.create_new);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+
+            open_options.mode(options.mode);
+            open_options.custom_flags(options.custom_flags);
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+
+            #[allow(clippy::cast_sign_loss, reason = "Flags don't have signs.")]
+            open_options.custom_flags(options.custom_flags as u32);
+
+            if let Some(access_mode) = options.access_mode {
+                open_options.access_mode(access_mode);
+            }
+
+            open_options.share_mode(options.share_mode);
+            open_options.attributes(options.attributes);
+            open_options.security_qos_flags(options.security_qos_flags);
+        }
+
+        open_options
     }
 }
 
@@ -202,15 +356,31 @@ impl Default for OpenOptions {
 
 impl Debug for OpenOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenOptions")
+        let mut debug_struct = f.debug_struct("OpenOptions");
+
+        debug_struct
             .field("read", &self.read)
             .field("write", &self.write)
             .field("append", &self.append)
             .field("truncate", &self.truncate)
             .field("create", &self.create)
             .field("create_new", &self.create_new)
-            .field("custom_flags", &self.custom_flags)
-            .field("mode", &self.mode)
-            .finish()
+            .field("custom_flags", &self.custom_flags);
+
+        #[cfg(unix)]
+        {
+            debug_struct.field("mode", &self.mode);
+        }
+
+        #[cfg(windows)]
+        {
+            debug_struct
+                .field("access_mode", &self.access_mode)
+                .field("share_mode", &self.share_mode)
+                .field("security_qos_flags", &self.security_qos_flags)
+                .field("attributes", &self.attributes);
+        }
+
+        debug_struct.finish()
     }
 }

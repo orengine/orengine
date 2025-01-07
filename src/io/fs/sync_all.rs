@@ -5,21 +5,21 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `sync_all` io operation.
 pub struct SyncAll {
-    fd: RawFd,
+    raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
 }
 
 impl SyncAll {
     /// Creates a new `sync_all` io operation.
-    pub fn new(fd: RawFd) -> Self {
+    pub fn new(raw_file: RawFile) -> Self {
         Self {
-            fd,
+            raw_file,
             io_request_data: None,
         }
     }
@@ -33,8 +33,8 @@ impl Future for SyncAll {
         let ret;
 
         poll_for_io_request!((
-            local_worker().sync_all(this.fd, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+            local_worker().sync_all(this.raw_file, unsafe {
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ret
         ));
@@ -47,7 +47,7 @@ unsafe impl Send for SyncAll {}
 /// to synchronize the data and metadata of a file with the underlying storage device.
 ///
 /// For more details, see [`sync_all`](AsyncSyncAll::sync_all).
-pub trait AsyncSyncAll: AsRawFd {
+pub trait AsyncSyncAll: AsRawFile {
     /// Attempts to sync all OS-internal file content and metadata to disk.
     ///
     /// This function will attempt to ensure that all in-memory data reaches
@@ -82,6 +82,6 @@ pub trait AsyncSyncAll: AsRawFd {
     /// ```
     #[inline(always)]
     fn sync_all(&self) -> SyncAll {
-        SyncAll::new(self.as_raw_fd())
+        SyncAll::new(self.as_raw_file())
     }
 }

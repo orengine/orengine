@@ -61,3 +61,36 @@ impl IoRequestData {
         unsafe { ptr::read(&self.task) }
     }
 }
+
+/// `IoRequestDataPtr` is a mutable pointer to [`IoRequestData`] that implements [`Send`].
+#[derive(Copy, Clone)]
+pub(crate) struct IoRequestDataPtr(*mut IoRequestData);
+
+impl IoRequestDataPtr {
+    /// Creates a new [`IoRequestDataPtr`].
+    pub(crate) fn new(ptr: &mut IoRequestData) -> Self {
+        Self(ptr)
+    }
+
+    /// Creates a new [`IoRequestDataPtr`] from `u64`.
+    #[inline(always)]
+    pub(crate) fn from_u64(ptr: u64) -> Self {
+        Self(ptr as *mut IoRequestData)
+    }
+
+    /// Returns a mutable reference to [`IoRequestData`].
+    #[inline(always)]
+    #[allow(clippy::mut_from_ref, reason = "It is a pointer.")]
+    pub(crate) fn get_mut(&self) -> &mut IoRequestData {
+        unsafe { &mut *self.0 }
+    }
+
+    /// Returns `u64` of the pointer.
+    #[inline(always)]
+    #[cfg(target_os = "linux")]
+    pub(crate) fn as_u64(&self) -> u64 {
+        self.0 as u64
+    }
+}
+
+unsafe impl Send for IoRequestDataPtr {}

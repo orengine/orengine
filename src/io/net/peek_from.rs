@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::Result;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -9,25 +10,27 @@ use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, MessageRecvHeader, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawSocket, MessageRecvHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::BUG_MESSAGE;
 
 /// `peek_from` io operation.
 pub struct PeekFrom<'fut> {
-    fd: RawFd,
-    msg_header: MessageRecvHeader<'fut>,
+    raw_socket: RawSocket,
+    msg_header: MessageRecvHeader,
     io_request_data: Option<IoRequestData>,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> PeekFrom<'fut> {
     /// Creates a new `peek_from` io operation.
-    pub fn new(fd: RawFd, buf_ptr: *mut *mut [u8], addr: &'fut mut SockAddr) -> Self {
+    pub fn new(raw_socket: RawSocket, buf_ptr: *mut *mut [u8], addr: &'fut mut SockAddr) -> Self {
         Self {
-            fd,
+            raw_socket,
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
             io_request_data: None,
+            phantom_data: PhantomData,
         }
     }
 }
@@ -40,8 +43,8 @@ impl Future for PeekFrom<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().peek_from(this.fd, &mut this.msg_header, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+            local_worker().peek_from(this.raw_socket, &mut this.msg_header, unsafe {
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ret
         ));
@@ -56,25 +59,27 @@ unsafe impl Send for PeekFrom<'_> {}
 
 /// `peek_from` io operation with deadline.
 pub struct PeekFromWithDeadline<'fut> {
-    fd: RawFd,
-    msg_header: MessageRecvHeader<'fut>,
+    raw_socket: RawSocket,
+    msg_header: MessageRecvHeader,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
+    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> PeekFromWithDeadline<'fut> {
     /// Creates a new `peek_from` io operation with deadline.
     pub fn new(
-        fd: RawFd,
+        raw_socket: RawSocket,
         buf_ptr: *mut *mut [u8],
         addr: &'fut mut SockAddr,
         deadline: Instant,
     ) -> Self {
         Self {
-            fd,
+            raw_socket,
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
             io_request_data: None,
             deadline,
+            phantom_data: PhantomData,
         }
     }
 }
@@ -89,9 +94,9 @@ impl Future for PeekFromWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.peek_from_with_deadline(
-                this.fd,
+                this.raw_socket,
                 &mut this.msg_header,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret
@@ -111,12 +116,12 @@ unsafe impl Send for PeekFromWithDeadline<'_> {}
 /// It returns [`SocketAddr`] of the sender and offers options to peek with deadlines,
 /// timeouts, and to ensure reading an exact number of bytes.
 ///
-/// This trait can be implemented for datagram-oriented sockets that supports the `AsRawFd`.
+/// This trait can be implemented for datagram-oriented sockets that supports the `AsRawSocket`.
 ///
 /// # Example
 ///
 /// ```rust
-/// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollSocket};
 /// use orengine::net::UdpSocket;
 ///
 /// async fn foo() -> std::io::Result<()> {
@@ -129,14 +134,14 @@ unsafe impl Send for PeekFromWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncPeekFrom: AsRawFd {
+pub trait AsyncPeekFrom: AsRawSocket {
     /// Asynchronously peeks into the incoming datagram without consuming it, filling the buffer
     /// with available data and returning the number of bytes peeked and the sender's address.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -153,7 +158,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     async fn peek_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFrom::new(
-            self.as_raw_fd(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
         )
@@ -172,7 +177,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     /// use std::time::{Duration, Instant};
     ///
@@ -195,7 +200,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     ) -> Result<(usize, SocketAddr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
         let n = PeekFromWithDeadline::new(
-            self.as_raw_fd(),
+            AsRawSocket::as_raw_socket(self),
             &mut std::ptr::from_mut::<[u8]>(buf),
             &mut sock_addr,
             deadline,
@@ -215,7 +220,7 @@ pub trait AsyncPeekFrom: AsRawFd {
     /// # Example
     ///
     /// ```rust
-    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
     /// use orengine::net::UdpSocket;
     /// use std::time::Duration;
     ///

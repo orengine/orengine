@@ -1,4 +1,9 @@
-use nix::libc;
+use crate as orengine;
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys;
+use crate::io::sys::{os_sockaddr, AsRawSocket, FromRawSocket, RawSocket};
+use crate::io::worker::{local_worker, IoWorker};
+use crate::BUG_MESSAGE;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 use std::future::Future;
@@ -10,37 +15,61 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, FromRawFd, RawFd};
-use crate::io::worker::{local_worker, IoWorker};
-use crate::BUG_MESSAGE;
-
-/// `accept` io operation.
-pub struct Accept<S: FromRawFd> {
-    fd: RawFd,
-    addr: (SockAddr, libc::socklen_t),
-    io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<S>,
+/// The same as [`SockAddr`] but in this crate we can use private fields.
+struct SockAddrRaw {
+    storage: sys::sockaddr_storage,
+    len: sys::socklen_t,
 }
 
-impl<S: FromRawFd> Accept<S> {
-    /// Creates a new `accept` io operation.
-    pub fn new(fd: RawFd) -> Self {
+impl SockAddrRaw {
+    /// Creates a new empty `SockAddrRaw`.
+    fn empty() -> Self {
         Self {
-            fd,
+            storage: unsafe { mem::zeroed() },
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "size of SockAddr is less than u32::MAX"
             )]
-            addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "size of SockAddr don't wrap i32 (on windows)"
+            )]
+            len: size_of::<SockAddr>() as _,
+        }
+    }
+
+    /// Converts `SockAddrRaw` to [`SockAddr`].
+    #[inline(always)]
+    fn as_sock_addr(&self) -> SockAddr {
+        unsafe { SockAddr::new(self.storage, self.len) }
+    }
+}
+
+/// `accept` io operation.
+pub struct Accept<S: FromRawSocket> {
+    raw_socket: RawSocket,
+    addr: SockAddrRaw,
+    io_request_data: Option<IoRequestData>,
+    phantom_data: PhantomData<S>,
+}
+
+impl<S: FromRawSocket> Accept<S> {
+    /// Creates a new `accept` io operation.
+    pub fn new(raw_socket: RawSocket) -> Self {
+        Self {
+            raw_socket,
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "size of SockAddr is less than u32::MAX"
+            )]
+            addr: SockAddrRaw::empty(),
             io_request_data: None,
             phantom_data: PhantomData,
         }
     }
 }
 
-impl<S: FromRawFd> Future for Accept<S> {
+impl<S: FromRawSocket> Future for Accept<S> {
     type Output = Result<(S, SockAddr)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -49,37 +78,42 @@ impl<S: FromRawFd> Future for Accept<S> {
 
         poll_for_io_request!((
             local_worker().accept(
-                this.fd,
-                this.addr.0.as_ptr().cast_mut(),
-                &mut this.addr.1,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                this.raw_socket,
+                (&raw mut this.addr.storage).cast::<os_sockaddr>(),
+                &raw mut this.addr.len,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
             ),
-            unsafe { (S::from_raw_fd(ret as RawFd), this.addr.0.clone()) }
+            unsafe {
+                (
+                    <S as FromRawSocket>::from_raw_socket(ret as RawSocket),
+                    this.addr.as_sock_addr(),
+                )
+            }
         ));
     }
 }
 
-unsafe impl<S: FromRawFd> Send for Accept<S> {}
+unsafe impl<S: FromRawSocket> Send for Accept<S> {}
 
 /// `accept` io operation with deadline.
-pub struct AcceptWithDeadline<S: FromRawFd> {
-    fd: RawFd,
-    addr: (SockAddr, libc::socklen_t),
+pub struct AcceptWithDeadline<S: FromRawSocket> {
+    raw_socket: RawSocket,
+    addr: SockAddrRaw,
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
     pin: PhantomData<S>,
 }
 
-impl<S: FromRawFd> AcceptWithDeadline<S> {
+impl<S: FromRawSocket> AcceptWithDeadline<S> {
     /// Creates a new `accept` io operation with deadline.
-    pub fn new(fd: RawFd, deadline: Instant) -> Self {
+    pub fn new(raw_socket: RawSocket, deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_socket,
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "size of SockAddr is less than u32::MAX"
             )]
-            addr: (unsafe { mem::zeroed() }, size_of::<SockAddr>() as _),
+            addr: SockAddrRaw::empty(),
             io_request_data: None,
             deadline,
             pin: PhantomData,
@@ -87,7 +121,7 @@ impl<S: FromRawFd> AcceptWithDeadline<S> {
     }
 }
 
-impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
+impl<S: FromRawSocket> Future for AcceptWithDeadline<S> {
     type Output = Result<(S, SockAddr)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -97,22 +131,27 @@ impl<S: FromRawFd> Future for AcceptWithDeadline<S> {
 
         poll_for_time_bounded_io_request!((
             worker.accept_with_deadline(
-                this.fd,
-                this.addr.0.as_ptr().cast_mut(),
-                &mut this.addr.1,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                this.raw_socket,
+                (&raw mut this.addr.storage).cast::<os_sockaddr>(),
+                &raw mut this.addr.len,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
-            unsafe { (S::from_raw_fd(ret as RawFd), this.addr.0.clone()) }
+            unsafe {
+                (
+                    <S as FromRawSocket>::from_raw_socket(ret as RawSocket),
+                    this.addr.as_sock_addr(),
+                )
+            }
         ));
     }
 }
 
-unsafe impl<S: FromRawFd> Send for AcceptWithDeadline<S> {}
+unsafe impl<S: FromRawSocket> Send for AcceptWithDeadline<S> {}
 
 /// The `AsyncAccept` trait provides asynchronous methods for accepting new incoming connections.
 ///
-/// It is implemented for types that can be represented as raw file descriptors (via [`AsRawFd`]).
+/// It is implemented for types that can be represented as raw file descriptors (via [`AsRawSocket`]).
 ///
 /// This trait allows the server-side of a socket to accept new connections either indefinitely or
 /// with a specified timeout or deadline.
@@ -139,7 +178,7 @@ unsafe impl<S: FromRawFd> Send for AcceptWithDeadline<S> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
+pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// Asynchronously accepts a new incoming connection.
     ///
     /// This method listens for and accepts a new connection from a remote client. It returns the
@@ -166,7 +205,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     /// ```
     #[inline(always)]
     async fn accept(&mut self) -> Result<(S, SocketAddr)> {
-        let (stream, sock_addr) = Accept::<S>::new(self.as_raw_fd()).await?;
+        let (stream, sock_addr) = Accept::<S>::new(AsRawSocket::as_raw_socket(self)).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
@@ -200,7 +239,8 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
     /// ```
     #[inline(always)]
     async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, SocketAddr)> {
-        let (stream, sock_addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
+        let (stream, sock_addr) =
+            AcceptWithDeadline::<S>::new(AsRawSocket::as_raw_socket(self), deadline).await?;
         Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
     }
 
@@ -238,10 +278,10 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
 }
 
 // TODO unix
-// pub(crate) trait AsyncAcceptUnix<S: FromRawFd>: AsRawFd {
+// pub(crate) trait AsyncAcceptUnix<S: FromRawSocket>: AsRawSocket {
 //     #[inline(always)]
 //     async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = Accept::<S>::new(self.as_raw_fd()).await?;
+//         let (stream, addr) = Accept::<S>::new(sys::AsRawSocket::as_raw_socket(self)).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
 //
@@ -250,7 +290,7 @@ pub trait AsyncAccept<S: FromRawFd>: AsRawFd {
 //         &mut self,
 //         deadline: Instant
 //     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = AcceptWithDeadline::<S>::new(self.as_raw_fd(), deadline).await?;
+//         let (stream, addr) = AcceptWithDeadline::<S>::new(sys::AsRawSocket::as_raw_socket(self), deadline).await?;
 //         Ok((stream, addr.as_unix().expect(BUG)))
 //     }
 //

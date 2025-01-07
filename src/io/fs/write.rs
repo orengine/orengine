@@ -6,23 +6,23 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
 
 /// `write` io operation.
 pub struct WriteBytes<'buf> {
-    fd: RawFd,
+    raw_file: RawFile,
     buf: &'buf [u8],
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> WriteBytes<'buf> {
     /// Creates a new `write` io operation.
-    pub fn new(fd: RawFd, buf: &'buf [u8]) -> Self {
+    pub fn new(raw_file: RawFile, buf: &'buf [u8]) -> Self {
         Self {
-            fd,
+            raw_file,
             buf,
             io_request_data: None,
         }
@@ -41,9 +41,12 @@ impl Future for WriteBytes<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().write(this.fd, this.buf.as_ptr(), this.buf.len() as u32, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().write(
+                this.raw_file,
+                this.buf.as_ptr(),
+                this.buf.len() as u32,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ret
         ));
     }
@@ -53,7 +56,7 @@ unsafe impl Send for WriteBytes<'_> {}
 
 /// `write` io operation with __fixed__ [`Buffer`].
 pub struct WriteFixed<'buf> {
-    fd: RawFd,
+    raw_file: RawFile,
     ptr: *const u8,
     len: u32,
     fixed_index: u16,
@@ -63,9 +66,9 @@ pub struct WriteFixed<'buf> {
 
 impl WriteFixed<'_> {
     /// Creates a new `write` io operation with __fixed__ [`Buffer`].
-    pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
+    pub fn new(raw_file: RawFile, ptr: *const u8, len: u32, fixed_index: u16) -> Self {
         Self {
-            fd,
+            raw_file,
             ptr,
             len,
             fixed_index,
@@ -87,9 +90,13 @@ impl Future for WriteFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().write_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().write_fixed(
+                this.raw_file,
+                this.ptr,
+                this.len,
+                this.fixed_index,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ret as u32
         ));
     }
@@ -99,7 +106,7 @@ unsafe impl Send for WriteFixed<'_> {}
 
 /// `pwrite` io operation.
 pub struct PositionedWriteBytes<'buf> {
-    fd: RawFd,
+    raw_file: RawFile,
     buf: &'buf [u8],
     offset: usize,
     io_request_data: Option<IoRequestData>,
@@ -107,9 +114,9 @@ pub struct PositionedWriteBytes<'buf> {
 
 impl<'buf> PositionedWriteBytes<'buf> {
     /// Creates a new `pwrite` io operation.
-    pub fn new(fd: RawFd, buf: &'buf [u8], offset: usize) -> Self {
+    pub fn new(raw_file: RawFile, buf: &'buf [u8], offset: usize) -> Self {
         Self {
-            fd,
+            raw_file,
             buf,
             offset,
             io_request_data: None,
@@ -130,11 +137,11 @@ impl Future for PositionedWriteBytes<'_> {
 
         poll_for_io_request!((
             local_worker().pwrite(
-                this.fd,
+                this.raw_file,
                 this.buf.as_ptr(),
                 this.buf.len() as u32,
                 this.offset,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -145,7 +152,7 @@ unsafe impl Send for PositionedWriteBytes<'_> {}
 
 /// `pwrite` io operation with __fixed__ [`Buffer`].
 pub struct PositionedWriteFixed<'buf> {
-    fd: RawFd,
+    raw_file: RawFile,
     ptr: *const u8,
     len: u32,
     fixed_index: u16,
@@ -156,9 +163,15 @@ pub struct PositionedWriteFixed<'buf> {
 
 impl PositionedWriteFixed<'_> {
     /// Creates a new `pwrite` io operation with __fixed__ [`Buffer`].
-    pub fn new(fd: RawFd, ptr: *const u8, len: u32, fixed_index: u16, offset: usize) -> Self {
+    pub fn new(
+        raw_file: RawFile,
+        ptr: *const u8,
+        len: u32,
+        fixed_index: u16,
+        offset: usize,
+    ) -> Self {
         Self {
-            fd,
+            raw_file,
             ptr,
             len,
             fixed_index,
@@ -182,12 +195,12 @@ impl Future for PositionedWriteFixed<'_> {
 
         poll_for_io_request!((
             local_worker().pwrite_fixed(
-                this.fd,
+                this.raw_file,
                 this.ptr,
                 this.len,
                 this.fixed_index,
                 this.offset,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret as u32
         ));
@@ -199,7 +212,7 @@ unsafe impl Send for PositionedWriteFixed<'_> {}
 /// The `AsyncWrite` trait provides asynchronous methods for writing to a file descriptor.
 ///
 /// This trait is implemented for types that can be represented
-/// as raw file descriptors (via [`AsRawFd`]). It includes basic asynchronous write operations,
+/// as raw file descriptors (via [`AsRawFile`]). It includes basic asynchronous write operations,
 /// as well as methods for performing positioned writes.
 ///
 /// # Example
@@ -223,7 +236,7 @@ unsafe impl Send for PositionedWriteFixed<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncWrite: AsRawFd {
+pub trait AsyncWrite: AsRawFile {
     /// Asynchronously writes data from the provided byte slice to the file descriptor.
     ///
     /// This method write some bytes from the byte slice to the file descriptor.
@@ -250,7 +263,7 @@ pub trait AsyncWrite: AsRawFd {
     /// ```
     #[inline(always)]
     fn write_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
-        WriteBytes::new(self.as_raw_fd(), buf)
+        WriteBytes::new(self.as_raw_file(), buf)
     }
 
     /// Asynchronously writes data from the provided [`Buffer`] to the file descriptor.
@@ -286,7 +299,7 @@ pub trait AsyncWrite: AsRawFd {
     async fn write(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             WriteFixed::new(
-                self.as_raw_fd(),
+                self.as_raw_file(),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -297,7 +310,7 @@ pub trait AsyncWrite: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never write more than u32::MAX bytes"
             )]
-            WriteBytes::new(self.as_raw_fd(), buf.as_bytes())
+            WriteBytes::new(self.as_raw_file(), buf.as_bytes())
                 .await
                 .map(|r| r as u32)
         }
@@ -330,7 +343,7 @@ pub trait AsyncWrite: AsRawFd {
     /// ```
     #[inline(always)]
     fn pwrite_bytes(&mut self, buf: &[u8], offset: usize) -> impl Future<Output = Result<usize>> {
-        PositionedWriteBytes::new(self.as_raw_fd(), buf, offset)
+        PositionedWriteBytes::new(self.as_raw_file(), buf, offset)
     }
 
     /// Asynchronously performs a positioned write, writing the provided [`Buffer`]
@@ -367,7 +380,7 @@ pub trait AsyncWrite: AsRawFd {
     async fn pwrite(&mut self, buf: &impl FixedBuffer, offset: usize) -> Result<u32> {
         if buf.is_fixed() {
             PositionedWriteFixed::new(
-                self.as_raw_fd(),
+                self.as_raw_file(),
                 buf.as_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -379,7 +392,7 @@ pub trait AsyncWrite: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never write more than u32::MAX bytes"
             )]
-            PositionedWriteBytes::new(self.as_raw_fd(), buf.as_bytes(), offset)
+            PositionedWriteBytes::new(self.as_raw_file(), buf.as_bytes(), offset)
                 .await
                 .map(|r| r as u32)
         }
@@ -460,7 +473,7 @@ pub trait AsyncWrite: AsRawFd {
             )]
             while written < buf.len_u32() {
                 written += WriteFixed::new(
-                    self.as_raw_fd(),
+                    self.as_raw_file(),
                     unsafe { buf.as_ptr().offset(written as isize) },
                     buf.len_u32() - written,
                     buf.fixed_index(),
@@ -555,7 +568,7 @@ pub trait AsyncWrite: AsRawFd {
             )]
             while written < buf.len_u32() {
                 written += PositionedWriteFixed::new(
-                    self.as_raw_fd(),
+                    self.as_raw_file(),
                     unsafe { buf.as_ptr().offset(written as isize) },
                     buf.len_u32() - written,
                     buf.fixed_index(),

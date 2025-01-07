@@ -8,23 +8,23 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
 
 /// `recv` io operation.
 pub struct RecvBytes<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> RecvBytes<'buf> {
     /// Creates a new `recv` io operation.
-    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf mut [u8]) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
         }
@@ -44,10 +44,10 @@ impl Future for RecvBytes<'_> {
 
         poll_for_io_request!((
             local_worker().recv(
-                this.fd,
+                this.raw_socket,
                 this.buf.as_mut_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -58,7 +58,7 @@ unsafe impl Send for RecvBytes<'_> {}
 
 /// `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
 pub struct RecvFixed<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *mut u8,
     len: u32,
     fixed_index: u16,
@@ -68,9 +68,9 @@ pub struct RecvFixed<'buf> {
 
 impl RecvFixed<'_> {
     /// Creates a new `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
+    pub fn new(raw_socket: RawSocket, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -92,9 +92,13 @@ impl Future for RecvFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().recv_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().recv_fixed(
+                this.raw_socket,
+                this.ptr,
+                this.len,
+                this.fixed_index,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ret as u32
         ));
     }
@@ -104,7 +108,7 @@ unsafe impl Send for RecvFixed<'_> {}
 
 /// `recv` io operation with deadline.
 pub struct RecvBytesWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -112,9 +116,9 @@ pub struct RecvBytesWithDeadline<'buf> {
 
 impl<'buf> RecvBytesWithDeadline<'buf> {
     /// Creates a new `recv` io operation with deadline.
-    pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
             deadline,
@@ -136,10 +140,10 @@ impl Future for RecvBytesWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.recv_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.buf.as_mut_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret
@@ -151,7 +155,7 @@ unsafe impl Send for RecvBytesWithDeadline<'_> {}
 
 /// `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
 pub struct RecvFixedWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *mut u8,
     len: u32,
     fixed_index: u16,
@@ -162,9 +166,15 @@ pub struct RecvFixedWithDeadline<'buf> {
 
 impl RecvFixedWithDeadline<'_> {
     /// Creates a new `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
+    pub fn new(
+        raw_socket: RawSocket,
+        ptr: *mut u8,
+        len: u32,
+        fixed_index: u16,
+        deadline: Instant,
+    ) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -189,11 +199,11 @@ impl Future for RecvFixedWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.recv_fixed_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.ptr,
                 this.len,
                 this.fixed_index,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret as u32
@@ -209,13 +219,13 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// It offers options to recv with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawFd` and can be connected.
+/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
 ///
 /// # Example
 ///
 /// ```rust
 /// use orengine::net::TcpStream;
-/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -226,7 +236,7 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncRecv: AsRawFd {
+pub trait AsyncRecv: AsRawSocket {
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
     /// filling the buffer with available data. Returns the number of bytes received.
     ///
@@ -239,7 +249,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -253,7 +263,7 @@ pub trait AsyncRecv: AsRawFd {
     /// ```
     #[inline(always)]
     fn recv_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
-        RecvBytes::new(self.as_raw_fd(), buf)
+        RecvBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -268,7 +278,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -284,7 +294,7 @@ pub trait AsyncRecv: AsRawFd {
     async fn recv(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixed::new(
-                self.as_raw_fd(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -295,7 +305,7 @@ pub trait AsyncRecv: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never receive more than u32::MAX bytes"
             )]
-            RecvBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+            RecvBytes::new(AsRawSocket::as_raw_socket(self), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
         }
@@ -316,7 +326,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -336,7 +346,7 @@ pub trait AsyncRecv: AsRawFd {
         buf: &mut [u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        RecvBytesWithDeadline::new(self.as_raw_fd(), buf, deadline)
+        RecvBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, deadline)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -354,7 +364,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -376,7 +386,7 @@ pub trait AsyncRecv: AsRawFd {
     ) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixedWithDeadline::new(
-                self.as_raw_fd(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -388,9 +398,13 @@ pub trait AsyncRecv: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never receive more than u32::MAX bytes"
             )]
-            RecvBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
-                .await
-                .map(|r| r as u32)
+            RecvBytesWithDeadline::new(
+                AsRawSocket::as_raw_socket(self),
+                buf.as_bytes_mut(),
+                deadline,
+            )
+            .await
+            .map(|r| r as u32)
         }
     }
 
@@ -409,7 +423,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -447,7 +461,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -481,7 +495,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -514,7 +528,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -537,7 +551,7 @@ pub trait AsyncRecv: AsRawFd {
             )]
             while received < buf.len_u32() {
                 received += RecvFixed::new(
-                    self.as_raw_fd(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(received as isize) },
                     buf.len_u32() - received,
                     buf.fixed_index(),
@@ -571,7 +585,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -617,7 +631,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -647,7 +661,7 @@ pub trait AsyncRecv: AsRawFd {
             )]
             while received < buf.len_u32() {
                 received += RecvFixedWithDeadline::new(
-                    self.as_raw_fd(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(received as isize) },
                     buf.len_u32() - received,
                     buf.fixed_index(),
@@ -684,7 +698,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -723,7 +737,7 @@ pub trait AsyncRecv: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncRecv, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {

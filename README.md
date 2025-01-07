@@ -13,8 +13,7 @@ Wait for `v1.0.0` and media posts.
 
 # Before release
 
-- add more docs;
-- add fallback to `asyncify` for non-Linux OS.
+- add more docs.
 
 # Why Orengine?
 

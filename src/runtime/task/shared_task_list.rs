@@ -2,6 +2,7 @@ use crate::runtime::Task;
 use crate::utils::never_wait_lock::NeverWaitLock;
 use crate::utils::SpinLockGuard;
 use std::collections::VecDeque;
+use std::ptr;
 
 /// `SharedExecutorTaskList` is a list of tasks that can be shared between executors.
 ///
@@ -37,9 +38,14 @@ impl ExecutorSharedTaskList {
     pub(crate) fn take_batch(&self, other_list: &mut VecDeque<Task>, limit: usize) {
         if let Some(mut guard) = self.list.try_lock() {
             let number_of_elems = guard.len().min(limit);
-            for _ in 0..number_of_elems {
-                other_list.push_back(unsafe { guard.pop().unwrap_unchecked() });
+            let new_len = guard.len() - number_of_elems;
+            let mut first_index = new_len;
+
+            while first_index != guard.len() {
+                other_list.push_back(unsafe { ptr::read(guard.get_unchecked(first_index)) });
+                first_index += 1;
             }
+            unsafe { guard.set_len(new_len) };
         }
     }
 }

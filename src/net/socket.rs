@@ -1,5 +1,5 @@
-use crate::io::sys::{AsFd, AsRawFd, FromRawFd, IntoRawFd};
-use crate::io::{AsyncClose, AsyncPollFd};
+use crate::io::sys::{AsSocket, FromRawSocket, IntoRawSocket};
+use crate::io::{AsyncPollSocket, AsyncSocketClose};
 use std::io;
 use std::io::Error;
 use std::net::SocketAddr;
@@ -13,13 +13,15 @@ use std::net::SocketAddr;
 ///
 /// # Implemented traits
 ///
-/// - [`AsyncPollFd`]
-/// - [`AsyncClose`]
-/// - [`IntoRawFd`]
-/// - [`FromRawFd`]
-/// - [`AsFd`]
-/// - [`AsRawFd`]
-pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncClose {
+/// - [`AsyncPollSocket`]
+/// - [`AsyncSocketClose`]
+/// - [`IntoRawSocket`]
+/// - [`FromRawSocket`]
+/// - [`AsSocket`]
+/// - [`AsyncPollSocket`]
+pub trait Socket:
+    IntoRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
+{
     /// Returns the local socket address that the socket is bound to.
     ///
     /// # Example
@@ -36,8 +38,8 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncCl
     /// ```
     #[inline(always)]
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref
             .local_addr()?
             .as_socket()
@@ -49,16 +51,16 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncCl
     /// before being discarded.
     #[inline(always)]
     fn set_ttl(&self, ttl: u32) -> io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_ttl(ttl)
     }
 
     /// Returns the current TTL value for outgoing packets.
     #[inline(always)]
     fn ttl(&self) -> io::Result<u32> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.ttl()
     }
 
@@ -67,8 +69,8 @@ pub trait Socket: IntoRawFd + FromRawFd + AsFd + AsRawFd + AsyncPollFd + AsyncCl
     /// performing operations like sending or receiving data.
     #[inline(always)]
     fn take_error(&self) -> io::Result<Option<Error>> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.take_error()
     }
 }

@@ -1,9 +1,7 @@
 use crate::io::create_dir::CreateDir;
-use crate::io::sys::OsPath::get_os_path;
+use crate::io::sys::get_os_path;
 use smallvec::SmallVec;
-use std::ffi::OsStr;
 use std::io;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -82,8 +80,7 @@ impl DirBuilder {
         if self.recursive {
             Self::create_dir_all(path, self.mode).await
         } else {
-            let path = get_os_path(path)?;
-            CreateDir::new(path, self.mode).await
+            CreateDir::new(get_os_path(path)?, self.mode).await
         }
     }
 
@@ -139,6 +136,7 @@ impl DirBuilder {
             return Ok(());
         }
 
+        let path_string = path.to_string_lossy();
         let mut tmp_path = path;
         let mut tmp_mode = mode;
         let mut path_stack = SmallVec::<usize, 4>::new();
@@ -153,24 +151,23 @@ impl DirBuilder {
                         tmp_mode = mode;
                         tmp_path = path;
                         path_stack.clear();
+
                         continue;
                     }
                     path_stack.pop();
                     unsafe {
-                        tmp_path = Path::new(OsStr::from_bytes(
-                            &path.as_os_str().as_encoded_bytes()
-                                [..*path_stack.get_unchecked(path_stack.len() - 1)],
-                        ));
+                        tmp_path = Path::new(
+                            path_string
+                                .get_unchecked(..*path_stack.get_unchecked(path_stack.len() - 1)),
+                        );
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
                     match get_offset(&mut path_stack, path) {
-                        Ok(offset) => {
-                            tmp_path = Path::new(OsStr::from_bytes(
-                                &path.as_os_str().as_encoded_bytes()[..offset],
-                            ));
+                        Ok(offset) => unsafe {
+                            tmp_path = Path::new(path_string.get_unchecked(..offset));
                             tmp_mode = 0o777;
-                        }
+                        },
                         Err(()) => {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
@@ -235,7 +232,12 @@ mod tests {
         path.push("test_dir3");
         path.push("test_dir4");
         path.push("test_dir5");
-        match dir_builder.create(path.clone()).await {
+
+        if is_exists(&path) {
+            std::fs::remove_dir_all(&path).unwrap();
+        }
+
+        match dir_builder.create(&path).await {
             Ok(()) => assert!(is_exists(path)),
             Err(err) => panic!("Can't create dir all: {err}"),
         }

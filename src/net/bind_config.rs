@@ -13,17 +13,25 @@
 /// on which the connection was handled, improving CPU locality.
 /// On non-Linux platforms, this option falls back to the Default behavior,
 /// where connections are balanced using a hash function.
+///
+/// # Windows
+///
+/// On windows, only the `Disabled` variant is supported and will not cause an error.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ReusePort {
     /// Port reuse is disabled. The socket will bind exclusively to the specified port.
     Disabled,
     /// Enables port reuse using a hash-based mechanism to balance incoming connections
     /// across sockets that are bound to the same port.
+    ///
+    /// On Windows, this option is not supported and will cause an error.
     Default,
     /// `CPU`: On Linux, this option attaches the socket to the CPU
     /// on which the connection was handled, improving CPU locality.
     /// On non-Linux platforms, this option falls back to the Default behavior,
     /// where connections are balanced using a hash function.
+    ///
+    /// On windows, this option is not supported and will cause an error.
     CPU,
 }
 
@@ -46,7 +54,10 @@ impl BindConfig {
             backlog_size: 1024,
             only_v6: false,
             reuse_address: true,
+            #[cfg(unix)]
             reuse_port: ReusePort::Default,
+            #[cfg(windows)]
+            reuse_port: ReusePort::Disabled,
         }
     }
 
@@ -73,6 +84,8 @@ impl BindConfig {
 
     /// Sets the [`reuse_port`](ReusePort) behavior to [`Disabled`](ReusePort::Disabled),
     /// [`Default`](ReusePort::Default), or [`CPU`](ReusePort::CPU).
+    ///
+    /// On windows, only the `Disabled` variant is supported and will not cause an error.
     #[must_use]
     pub fn reuse_port(mut self, reuse_port: ReusePort) -> Self {
         self.reuse_port = reuse_port;

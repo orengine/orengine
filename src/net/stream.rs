@@ -1,4 +1,4 @@
-use crate::io::{AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
+use crate::io::{sys, AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
 use crate::net::Socket;
 use std::io;
 use std::io::Error;
@@ -15,12 +15,12 @@ use std::time::Duration;
 /// # Implemented Traits
 ///
 /// - [`Socket`]
-/// - [`AsyncPollFd`](crate::io::AsyncPollFd)
-/// - [`AsyncClose`](crate::io::AsyncClose)
-/// - [`IntoRawFd`](crate::io::sys::IntoRawFd)
-/// - [`FromRawFd`](crate::io::sys::FromRawFd)
-/// - [`AsFd`](crate::io::sys::AsFd)
-/// - [`AsRawFd`](crate::io::sys::AsRawFd)
+/// - [`AsyncPollSocket`](crate::io::AsyncPollSocket)
+/// - [`AsyncClose`](crate::io::AsyncSocketClose)
+/// - [`IntoRawSocket`](crate::io::sys::IntoRawSocket)
+/// - [`FromRawSocket`](crate::io::sys::FromRawSocket)
+/// - [`AsSocket`](crate::io::sys::AsSocket)
+/// - [`AsRawSocket`](crate::io::sys::AsRawSocket)
 /// - [`AsyncConnectStream`]
 /// - [`AsyncRecv`]
 /// - [`AsyncPeek`]
@@ -72,8 +72,8 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn set_linger(&self, linger: Option<Duration>) -> io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_linger(linger)
     }
 
@@ -96,8 +96,8 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn linger(&self) -> io::Result<Option<Duration>> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.linger()
     }
 
@@ -119,8 +119,8 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_nodelay(nodelay)
     }
 
@@ -140,8 +140,8 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn nodelay(&self) -> io::Result<bool> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.nodelay()
     }
 
@@ -165,8 +165,8 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn peer_addr(&self) -> io::Result<SocketAddr> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref
             .peer_addr()?
             .as_socket()

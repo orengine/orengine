@@ -3,8 +3,7 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
-/// `BorrowingState` used to represent the borrowing state of a resource in a
-/// debug build configuration.
+/// `BorrowingState` used to represent the borrowing state of a resource in with `debug_assertions`.
 ///
 /// This enum is enabled only when debug assertions are active (i.e., in non-release builds)
 /// due to the use of the `#[cfg(debug_assertions)]` attribute.
@@ -23,7 +22,7 @@ use std::ops::{Deref, DerefMut};
 ///
 /// # Purpose
 ///
-/// [`BorrowingState`] is intended for use in debug builds to aid in verifying or enforcing
+/// [`BorrowingState`] is intended for use with `debug_assertions` to aid in verifying or enforcing
 /// borrowing rules at runtime.
 /// It can help identify invalid access patterns or ensure proper borrowing
 /// behavior during development.
@@ -57,10 +56,10 @@ struct Inner<T> {
 
 /// A reference to a value stored in a [`Local`] struct.
 ///
-/// In `debug` mode, this struct provides additional checks to ensure that the user does not
+/// With `debug_assertions` this struct provides additional checks to ensure that the user does not
 /// create shared and exclusive references at the same time.
 ///
-/// In `release` mode it is simply a reference to the value stored in the [`Local`] struct.
+/// Else, it is simply a reference to the value stored in the [`Local`] struct.
 pub struct LocalRef<'borrow, T> {
     #[cfg(debug_assertions)]
     inner: Ptr<Inner<T>>,
@@ -129,7 +128,7 @@ impl<T> Drop for LocalRef<'_, T> {
 
 /// A mutable reference to a value stored in a [`Local`] struct.
 ///
-/// In `debug` mode, this struct provides additional checks to ensure that the user does not
+/// With `debug_assertions` this struct provides additional checks to ensure that the user does not
 /// create shared and exclusive references or multiple mutable references at the same time.
 ///
 /// In `release` mode it is simply a mutable reference to the value stored in the [`Local`] struct.
@@ -246,7 +245,7 @@ impl<T> Drop for LocalRefMut<'_, T> {
 /// - Before every `await` operation, [`LocalRef`] and [`LocalRefMut`] need to be dropped, if
 ///   other task can mutate the value and.
 ///
-/// It is checked in `debug` mode. If you cannot guarantee compliance with the above rules
+/// It is checked with `debug_assertions`. If you cannot guarantee compliance with the above rules
 /// you should use [`LocalMutex`](crate::sync::LocalMutex) or
 /// [`LocalRWLock`](crate::sync::LocalRWLock) instead. Local synchronization-primitives have
 /// almost the same performance as `Local` or `Rc<RefCell>` and can be used in single-threaded
@@ -292,7 +291,7 @@ pub struct Local<T> {
     no_send_marker: std::marker::PhantomData<*const ()>,
 }
 
-/// In `debug` mode, checks whether the parent executor ID matches the executor ID of the current thread.
+/// With `debug_assertions` checks whether the parent executor ID matches the executor ID of the current thread.
 macro_rules! debug_check_parent_executor_id {
     ($local:expr) => {
         #[cfg(debug_assertions)]
@@ -359,7 +358,7 @@ impl<T> Local<T> {
     ///
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     pub fn borrow(&self) -> LocalRef<T> {
         debug_check_parent_executor_id!(self);
@@ -390,7 +389,7 @@ impl<T> Local<T> {
     ///
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     pub fn borrow_mut(&self) -> LocalRefMut<T> {
         debug_check_parent_executor_id!(self);
@@ -419,7 +418,7 @@ impl<T> Local<T> {
 impl<T: Default> Default for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn default() -> Self {
@@ -430,7 +429,7 @@ impl<T: Default> Default for Local<T> {
 impl<T: Debug> Debug for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -443,7 +442,7 @@ impl<T: Debug> Debug for Local<T> {
 impl<T: Display> Display for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -456,7 +455,7 @@ impl<T: Display> Display for Local<T> {
 impl<T: PartialEq> PartialEq for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
@@ -471,7 +470,7 @@ impl<T: Eq> Eq for Local<T> {}
 impl<T: PartialOrd> PartialOrd for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -482,7 +481,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
 
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn lt(&self, other: &Self) -> bool {
@@ -491,7 +490,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
 
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn le(&self, other: &Self) -> bool {
@@ -500,7 +499,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
 
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn gt(&self, other: &Self) -> bool {
@@ -509,7 +508,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
 
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     #[inline(always)]
     fn ge(&self, other: &Self) -> bool {
@@ -520,7 +519,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
 impl<T: Ord> Ord for Local<T> {
     /// # Panics
     ///
-    /// Panics in `debug` mode if the value in either `Local` is currently mutably borrowed or if
+    /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
     fn cmp(&self, other: &Self) -> Ordering {
         debug_check_parent_executor_id!(self);

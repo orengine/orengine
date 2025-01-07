@@ -4,42 +4,49 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::thread;
 
+/// This structure represents a `worker task` that is sent
+/// to the [`thread pool`](LocalThreadWorkerPool).
 pub(crate) struct ThreadWorkerTask {
+    /// Associated [`Task`].
     task: Task,
+    /// The function to execute.
     job: *mut dyn Fn(),
 }
 
 unsafe impl Send for ThreadWorkerTask {}
 
 impl ThreadWorkerTask {
+    /// Creates a new instance of `ThreadWorkerTask`.
     pub(crate) fn new(task: Task, job: *mut dyn Fn()) -> Self {
         Self { task, job }
     }
 }
 
+/// This structure represents a worker in the [`thread pool`](LocalThreadWorkerPool).
 struct ThreadWorker {
-    task_list: crossbeam::channel::Receiver<ThreadWorkerTask>,
+    task_channel: crossbeam::channel::Receiver<ThreadWorkerTask>,
     result_list: Arc<SyncTaskList>,
 }
 
 impl ThreadWorker {
+    /// Creates a new instance of `ThreadWorker`.
     pub(crate) fn new(
         result_list: Arc<SyncTaskList>,
     ) -> (Self, crossbeam::channel::Sender<ThreadWorkerTask>) {
         let (sender, receiver) = crossbeam::channel::unbounded();
         (
             Self {
-                task_list: receiver,
+                task_channel: receiver,
                 result_list,
             },
             sender,
         )
     }
 
-    #[inline(always)]
+    /// Runs the worker until the channel is closed.
     pub(crate) fn run(&mut self) {
         loop {
-            match self.task_list.recv() {
+            match self.task_channel.recv() {
                 Ok(worker_task) => {
                     unsafe {
                         (*worker_task.job)();
@@ -52,13 +59,15 @@ impl ThreadWorker {
     }
 }
 
+/// This structure represents a pool of worker threads.
 pub(crate) struct LocalThreadWorkerPool {
     wait: usize,
-    workers: Vec<crossbeam::channel::Sender<ThreadWorkerTask>>,
+    workers: Box<[crossbeam::channel::Sender<ThreadWorkerTask>]>,
     result_list: Arc<SyncTaskList>,
 }
 
 impl LocalThreadWorkerPool {
+    /// Creates a new instance of `LocalThreadWorkerPool`.
     pub(crate) fn new(number_of_workers: usize) -> Self {
         let mut workers = Vec::with_capacity(number_of_workers);
         let result_list = Arc::new(SyncTaskList::new());
@@ -74,25 +83,24 @@ impl LocalThreadWorkerPool {
 
         Self {
             wait: 0,
-            workers,
+            workers: workers.into_boxed_slice(),
             result_list,
         }
     }
 
+    /// Pushes a task to the [`pool`](LocalThreadWorkerPool).
     #[inline(always)]
     pub(crate) fn push(&mut self, task: Task, job: *mut dyn Fn()) {
-        let worker = self.workers[self.wait % self.workers.len()].clone();
-        let send_res = worker.send(ThreadWorkerTask::new(task, job));
-
-        assert!(
-            send_res.is_ok(),
-            "ThreadWorker is disconnected. It is only possible if the thread has panicked."
+        let worker = &self.workers[self.wait % self.workers.len()];
+        worker.send(ThreadWorkerTask::new(task, job)).expect(
+            "ThreadWorker is disconnected. It is only possible if the thread has panicked.",
         );
 
         self.wait += 1;
     }
 
-    /// Returns whether the [`LocalThreadWorkerPool`] has work to do.
+    /// Polls the [`pool`](LocalThreadWorkerPool) and returns whether
+    /// the [`pool`](LocalThreadWorkerPool) has work to do.
     #[inline(always)]
     pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) -> bool {
         if self.wait == 0 {
@@ -100,7 +108,7 @@ impl LocalThreadWorkerPool {
         }
 
         let prev_len = other_list.len();
-        self.result_list.take_batch(other_list, usize::MAX);
+        self.result_list.pop_all_in_deque(other_list);
         self.wait -= other_list.len() - prev_len;
 
         true

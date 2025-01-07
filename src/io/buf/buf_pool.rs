@@ -1,8 +1,13 @@
+#[cfg(target_os = "linux")]
 use crate::io::worker::local_worker;
-use crate::io::{Buffer, FixedBuffer};
+use crate::io::Buffer;
+#[cfg(target_os = "linux")]
+use crate::io::FixedBuffer;
 use crate::utils::assert_hint;
-use nix::libc;
+#[cfg(target_os = "linux")]
+use libc;
 use std::cell::UnsafeCell;
+#[cfg(target_os = "linux")]
 use std::io::IoSliceMut;
 
 thread_local! {
@@ -18,8 +23,7 @@ pub(crate) fn init_local_buf_pool(number_of_fixed_buffers: u16, default_buffer_c
         let buf_pool_ = unsafe { &mut *buf_pool_static.get() };
         assert!(buf_pool_.is_none(), "BufPool is already initialized.");
 
-        let buf_pool = BufPool::new(number_of_fixed_buffers, default_buffer_cap);
-        *buf_pool_ = Some(buf_pool);
+        *buf_pool_ = Some(BufPool::new(number_of_fixed_buffers, default_buffer_cap));
     });
 }
 
@@ -70,7 +74,7 @@ pub fn buffer() -> Buffer {
 ///
 /// ```rust
 /// use orengine::io::full_buffer;
-/// use orengine::io::{AsyncPollFd, AsyncRecv};
+/// use orengine::io::{AsyncPollSocket, AsyncRecv};
 /// use orengine::net::TcpStream;
 ///
 /// async fn handle_connection(mut stream: TcpStream) {
@@ -165,7 +169,7 @@ impl BufPool {
         }
     }
 
-    /// Deallocates the `BufPool` and unregisters __fixed__ buffers.
+    /// Deallocates the `BufPool` and deregisters __fixed__ buffers.
     fn deallocate_buffers(&mut self) {
         #[cfg(not(target_os = "linux"))]
         {
@@ -188,7 +192,7 @@ impl BufPool {
                 buf.deallocate();
             }
 
-            local_worker().unregister_buffers();
+            local_worker().deregister_buffers();
 
             for buf in &mut self.fixed_buffers {
                 unsafe { drop(Box::from_raw(std::ptr::from_mut::<[u8]>(buf.as_mut()))) };
@@ -272,14 +276,12 @@ impl BufPool {
         #[cfg(not(target_os = "linux"))]
         {
             if buf.capacity() == self.default_buffer_cap {
-                unsafe {
-                    self.pool.push(buf);
-                }
+                self.pool.push(buf);
+
+                return;
             }
 
             buf.deallocate();
-
-            return;
         }
 
         #[cfg(target_os = "linux")]
@@ -302,10 +304,13 @@ impl Drop for BufPool {
 }
 
 /// Returns __fixed__ buffer from the pool. It used only in tests.
+///
+/// On non-Linux platforms it returns non-fixed buffers always.
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_fixed_buffer() -> Buffer {
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    {
         let mut buf = buffer();
 
         while !buf.is_fixed() {
@@ -314,25 +319,34 @@ pub(crate) async fn get_fixed_buffer() -> Buffer {
         }
 
         buf
-    } else {
-        panic!("get_fixed is not supported on this OS.");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        buffer()
     }
 }
 
 /// Returns full (len == capacity) __fixed__ buffer from the pool. It used only in tests.
+///
+/// On non-Linux platforms it returns non-fixed buffers always.
 #[allow(clippy::future_not_send, reason = "It is a test.")]
 #[cfg(test)]
 pub(crate) async fn get_full_fixed_buffer() -> Buffer {
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    {
         let mut buf = full_buffer();
 
         while !buf.is_fixed() {
             crate::yield_now().await;
-            buf = buffer();
+            buf = full_buffer();
         }
 
         buf
-    } else {
-        panic!("get_fixed is not supported on this OS.");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        full_buffer()
     }
 }

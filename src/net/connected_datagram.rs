@@ -1,4 +1,4 @@
-use crate::io::{AsyncPeek, AsyncRecv, AsyncSend};
+use crate::io::{sys, AsyncPeek, AsyncRecv, AsyncSend};
 use crate::net::Socket;
 use std::io;
 use std::io::Error;
@@ -13,12 +13,12 @@ use std::net::SocketAddr;
 /// # Implemented Traits
 ///
 /// - [`Socket`]
-/// - [`AsyncPollFd`](crate::io::AsyncPollFd)
-/// - [`AsyncClose`](crate::io::AsyncClose)
-/// - [`IntoRawFd`](crate::io::sys::IntoRawFd)
-/// - [`FromRawFd`](crate::io::sys::FromRawFd)
-/// - [`AsFd`](crate::io::sys::AsFd)
-/// - [`AsRawFd`](crate::io::sys::AsRawFd)
+/// - [`AsyncPollSocket`](crate::io::AsyncPollSocket)
+/// - [`AsyncClose`](crate::io::AsyncSocketClose)
+/// - [`IntoRawSocket`](crate::io::sys::IntoRawSocket)
+/// - [`FromRawSocket`](crate::io::sys::FromRawSocket)
+/// - [`AsSocket`](crate::io::sys::AsSocket)
+/// - [`AsRawSocket`](crate::io::sys::AsRawSocket)
 /// - [`AsyncRecv`]
 /// - [`AsyncPeek`]
 /// - [`AsyncSend`]
@@ -61,8 +61,8 @@ pub trait ConnectedDatagram: Socket + AsyncRecv + AsyncPeek + AsyncSend {
     /// ```
     #[inline(always)]
     fn peer_addr(&self) -> io::Result<SocketAddr> {
-        let borrow_fd = self.as_fd();
-        let socket_ref = socket2::SockRef::from(&borrow_fd);
+        let borrow_socket = sys::AsSocket::as_socket(self);
+        let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref
             .peer_addr()?
             .as_socket()

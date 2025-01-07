@@ -1,4 +1,5 @@
 use crate::io::buf_pool::{buf_pool, buffer, BufPool};
+#[cfg(target_os = "linux")]
 use crate::io::linux::linux_buffer::LinuxBuffer;
 use crate::io::slice::{Slice, SliceMut};
 use crate::io::{FixedBuffer, FixedBufferMut};
@@ -152,14 +153,18 @@ impl Buffer {
 
     /// Returns a real capacity of the buffer.
     #[inline(always)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Buffer capacity is less than u32::MAX"
+    )]
     pub fn capacity(&self) -> u32 {
-        self.os_buffer.capacity()
+        self.os_buffer.capacity() as _
     }
 
     /// Sets [`len`](#field.len) to [`real_cap`](#method.real_cap).
     #[inline(always)]
     pub fn set_len_to_capacity(&mut self) {
-        let cap = self.capacity();
+        let cap = self.capacity() as _;
 
         unsafe {
             self.os_buffer.set_len(cap);
@@ -362,8 +367,12 @@ impl FixedBuffer for Buffer {
     #[inline(always)]
     fn len_u32(&self) -> u32 {
         #[cfg(not(target_os = "linux"))]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "Buffer capacity is less than u32::MAX"
+        )]
         {
-            return self.as_ref().len() as u32;
+            self.as_ref().len() as u32
         }
 
         #[cfg(target_os = "linux")]
@@ -376,7 +385,7 @@ impl FixedBuffer for Buffer {
     fn fixed_index(&self) -> u16 {
         #[cfg(not(target_os = "linux"))]
         {
-            return u16::MAX;
+            u16::MAX
         }
 
         #[cfg(target_os = "linux")]
@@ -392,7 +401,7 @@ impl FixedBuffer for Buffer {
     fn is_fixed(&self) -> bool {
         #[cfg(not(target_os = "linux"))]
         {
-            return false;
+            false
         }
 
         #[cfg(target_os = "linux")]
@@ -466,7 +475,7 @@ impl PartialEq<&[u8]> for Buffer {
 }
 
 impl Debug for Buffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.as_ref())
     }
 }

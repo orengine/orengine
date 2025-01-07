@@ -34,7 +34,7 @@ pub mod sync_all;
 pub mod sync_data;
 
 pub use create_dir::CreateDir;
-pub use fallocate::Fallocate;
+pub use fallocate::{AsyncFallocate, Fallocate};
 pub use open::Open;
 pub use read::AsyncRead;
 pub use remove::Remove;

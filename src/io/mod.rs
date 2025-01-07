@@ -11,7 +11,7 @@ pub(crate) mod time_bounded_io_task;
 pub(crate) mod worker;
 
 pub use buf::*;
-pub use close::AsyncClose;
+pub use close::AsyncSocketClose;
 pub use config::IoWorkerConfig;
 pub use fs::*;
 pub use net::*;

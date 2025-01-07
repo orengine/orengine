@@ -1,6 +1,6 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
@@ -10,15 +10,15 @@ use std::task::{Context, Poll};
 
 /// `sync_data` io operation.
 pub struct SyncData {
-    fd: RawFd,
+    raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
 }
 
 impl SyncData {
     /// Creates a new `sync_data` io operation.
-    pub fn new(fd: RawFd) -> Self {
+    pub fn new(raw_file: RawFile) -> Self {
         Self {
-            fd,
+            raw_file,
             io_request_data: None,
         }
     }
@@ -32,8 +32,8 @@ impl Future for SyncData {
         let ret;
 
         poll_for_io_request!((
-            local_worker().sync_data(this.fd, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
+            local_worker().sync_data(this.raw_file, unsafe {
+                IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
             ret
         ));
@@ -47,7 +47,7 @@ unsafe impl Send for SyncData {}
 /// file with the underlying storage device.
 ///
 /// For more details, see [`sync_data`](AsyncSyncData::sync_data).
-pub trait AsyncSyncData: AsRawFd {
+pub trait AsyncSyncData: AsRawFile {
     /// This function is similar to [`sync_all`](crate::io::AsyncSyncAll::sync_all),
     /// except that it might not synchronize file metadata to the filesystem.
     ///
@@ -76,7 +76,7 @@ pub trait AsyncSyncData: AsRawFd {
     /// # }
     /// ```
     #[inline(always)]
-    fn sync_data(&self) -> SyncData {
-        SyncData::new(self.as_raw_fd())
+    fn sync_data(&self) -> impl Future<Output = Result<usize>> {
+        SyncData::new(self.as_raw_file())
     }
 }

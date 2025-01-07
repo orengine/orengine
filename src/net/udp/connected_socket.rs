@@ -1,5 +1,7 @@
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use crate::io::{AsyncClose, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend, AsyncShutdown};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use crate::io::{
+    AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncShutdown, AsyncSocketClose,
+};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 use std::fmt::{Debug, Formatter};
@@ -17,7 +19,7 @@ use std::mem::ManuallyDrop;
 /// # Example
 ///
 /// ```rust
-/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollFd, AsyncRecv, AsyncSend};
+/// use orengine::io::{full_buffer, AsyncBind, AsyncConnectDatagram, AsyncPollSocket, AsyncRecv, AsyncSend};
 /// use orengine::net::UdpSocket;
 ///
 /// # async fn foo() {
@@ -36,61 +38,88 @@ use std::mem::ManuallyDrop;
 /// # }
 /// ```
 pub struct UdpConnectedSocket {
-    fd: RawFd,
+    raw_socket: RawSocket,
 }
 
 impl From<UdpConnectedSocket> for std::net::UdpSocket {
     fn from(connected_socket: UdpConnectedSocket) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(connected_socket).fd) }
+        unsafe { Self::from_raw_socket(ManuallyDrop::new(connected_socket).raw_socket) }
     }
 }
 
 impl From<std::net::UdpSocket> for UdpConnectedSocket {
-    fn from(stream: std::net::UdpSocket) -> Self {
+    fn from(connected_socket: std::net::UdpSocket) -> Self {
         Self {
-            fd: stream.into_raw_fd(),
+            raw_socket: IntoRawSocket::into_raw_socket(connected_socket),
         }
     }
 }
 
-impl IntoRawFd for UdpConnectedSocket {
-    fn into_raw_fd(self) -> RawFd {
-        ManuallyDrop::new(self).fd
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for UdpConnectedSocket {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl FromRawFd for UdpConnectedSocket {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawSocket for UdpConnectedSocket {
+    fn into_raw_socket(self) -> RawSocket {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsRawFd for UdpConnectedSocket {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+impl IntoRawSocket for UdpConnectedSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for UdpConnectedSocket {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_socket
     }
 }
 
-impl AsFd for UdpConnectedSocket {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for UdpConnectedSocket {
+    fn as_raw_socket(&self) -> RawSocket {
+        self.raw_socket
     }
 }
 
-impl From<OwnedFd> for UdpConnectedSocket {
-    fn from(fd: OwnedFd) -> Self {
-        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
+impl AsRawSocket for UdpConnectedSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for UdpConnectedSocket {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
     }
 }
 
-impl From<UdpConnectedSocket> for OwnedFd {
-    fn from(connected_socket: UdpConnectedSocket) -> Self {
-        unsafe { Self::from_raw_fd(connected_socket.into_raw_fd()) }
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for UdpConnectedSocket {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket {
+        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
     }
 }
 
-impl AsyncPollFd for UdpConnectedSocket {}
+impl AsSocket for UdpConnectedSocket {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for UdpConnectedSocket {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_socket: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for UdpConnectedSocket {
+    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
+        Self { raw_socket }
+    }
+}
+
+impl FromRawSocket for UdpConnectedSocket {}
+
+impl AsyncPollSocket for UdpConnectedSocket {}
 
 impl AsyncRecv for UdpConnectedSocket {}
 
@@ -100,7 +129,7 @@ impl AsyncSend for UdpConnectedSocket {}
 
 impl AsyncShutdown for UdpConnectedSocket {}
 
-impl AsyncClose for UdpConnectedSocket {}
+impl AsyncSocketClose for UdpConnectedSocket {}
 
 impl Socket for UdpConnectedSocket {}
 
@@ -118,8 +147,8 @@ impl Debug for UdpConnectedSocket {
             res.field("peer", &peer);
         }
 
-        let name = if cfg!(windows) { "socket" } else { "fd" };
-        res.field(name, &self.as_raw_fd()).finish()
+        res.field("raw_socket", &AsRawSocket::as_raw_socket(self))
+            .finish()
     }
 }
 

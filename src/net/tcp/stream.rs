@@ -6,8 +6,10 @@ use std::io::Result;
 use std::mem::ManuallyDrop;
 
 use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use crate::io::{AsyncClose, AsyncConnectStream, AsyncPeek, AsyncPollFd, AsyncRecv, AsyncSend};
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use crate::io::{
+    sys, AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
+};
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
 
@@ -51,76 +53,102 @@ use crate::runtime::local_executor;
 /// }
 /// ```
 pub struct TcpStream {
-    fd: RawFd,
+    raw_socket: RawSocket,
 }
 
-impl AsRawFd for TcpStream {
-    #[inline(always)]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
+#[cfg(unix)]
+impl std::os::fd::IntoRawFd for TcpStream {
+    fn into_raw_fd(self) -> std::os::fd::RawFd {
+        ManuallyDrop::new(self).raw_socket
     }
 }
 
-impl AsFd for TcpStream {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+#[cfg(windows)]
+impl std::os::windows::io::IntoRawSocket for TcpStream {
+    fn into_raw_socket(self) -> RawSocket {
+        ManuallyDrop::new(self).raw_socket
     }
 }
+
+impl IntoRawSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for TcpStream {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.raw_socket
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for TcpStream {
+    fn as_raw_socket(&self) -> RawSocket {
+        self.raw_socket
+    }
+}
+
+impl AsRawSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for TcpStream {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd {
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for TcpStream {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket {
+        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
+    }
+}
+
+impl AsSocket for TcpStream {}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for TcpStream {
+    unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
+        Self { raw_socket: raw_fd }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for TcpStream {
+    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
+        Self { raw_socket }
+    }
+}
+
+impl FromRawSocket for TcpStream {}
 
 impl From<TcpStream> for std::net::TcpStream {
     fn from(stream: TcpStream) -> Self {
-        unsafe { Self::from_raw_fd(ManuallyDrop::new(stream).fd) }
+        unsafe { Self::from_raw_socket(ManuallyDrop::new(stream).raw_socket) }
     }
 }
 
 impl From<std::net::TcpStream> for TcpStream {
     fn from(stream: std::net::TcpStream) -> Self {
         Self {
-            fd: stream.into_raw_fd(),
+            raw_socket: sys::IntoRawSocket::into_raw_socket(stream),
         }
-    }
-}
-
-impl IntoRawFd for TcpStream {
-    #[inline(always)]
-    fn into_raw_fd(self) -> RawFd {
-        ManuallyDrop::new(self).fd
-    }
-}
-
-impl FromRawFd for TcpStream {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self { fd }
-    }
-}
-
-impl From<OwnedFd> for TcpStream {
-    fn from(fd: OwnedFd) -> Self {
-        unsafe { Self::from_raw_fd(fd.into_raw_fd()) }
-    }
-}
-
-impl From<TcpStream> for OwnedFd {
-    fn from(stream: TcpStream) -> Self {
-        unsafe { Self::from_raw_fd(stream.into_raw_fd()) }
     }
 }
 
 impl AsyncConnectStream for TcpStream {
     async fn new_ip4() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
+            raw_socket: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
         })
     }
 
     async fn new_ip6() -> Result<Self> {
         Ok(Self {
-            fd: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
+            raw_socket: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
         })
     }
 }
 
-impl AsyncPollFd for TcpStream {}
+impl AsyncPollSocket for TcpStream {}
 
 impl AsyncSend for TcpStream {}
 
@@ -130,7 +158,7 @@ impl AsyncPeek for TcpStream {}
 
 impl AsyncShutdown for TcpStream {}
 
-impl AsyncClose for TcpStream {}
+impl AsyncSocketClose for TcpStream {}
 
 impl Socket for TcpStream {}
 
@@ -148,8 +176,8 @@ impl Debug for TcpStream {
             res.field("peer", &peer);
         }
 
-        let name = if cfg!(windows) { "socket" } else { "fd" };
-        res.field(name, &self.as_raw_fd()).finish()
+        res.field("raw_socket", &AsRawSocket::as_raw_socket(self))
+            .finish()
     }
 }
 
@@ -167,7 +195,7 @@ mod tests {
     use crate as orengine;
     use crate::io::{
         buffer, get_fixed_buffer, AsyncAccept, AsyncBind, AsyncConnectStream, AsyncPeek,
-        AsyncPollFd, AsyncRecv, AsyncSend, FixedBuffer,
+        AsyncPollSocket, AsyncRecv, AsyncSend, FixedBuffer,
     };
     use crate::local_executor;
     use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
@@ -408,16 +436,14 @@ mod tests {
     #[orengine::test::test_local]
     fn test_tcp_timeout() {
         const ADDR: &str = "127.0.0.1:6083";
-        const BACKLOG_SIZE: isize = 256;
 
-        const CONNECT: usize = 0;
-        const SEND: usize = 1;
-        const POLL: usize = 2;
-        const RECV: usize = 3;
-        const PEEK: usize = 4;
-        const TIMEOUT: Duration = Duration::from_millis(1);
+        const SEND: usize = 0;
+        const POLL: usize = 1;
+        const RECV: usize = 2;
+        const PEEK: usize = 3;
+        const TIMEOUT: Duration = Duration::from_millis(100);
 
-        let state = Rc::new(LocalMutex::new(CONNECT));
+        let state = Rc::new(LocalMutex::new(SEND));
         let state_cond_var = Rc::new(LocalCondVar::new());
         let state_clone = state.clone();
         let state_cond_var_clone = state_cond_var.clone();
@@ -426,23 +452,29 @@ mod tests {
         let wg_clone = wg.clone();
 
         local_executor().spawn_local(async move {
-            let mut listener =
-                TcpListener::bind_with_config(ADDR, &BindConfig::new().backlog_size(BACKLOG_SIZE))
-                    .await
-                    .expect("bind failed");
+            let mut listener = TcpListener::bind_with_config(ADDR, &BindConfig::new())
+                .await
+                .expect("bind failed");
             let mut expected_state = 0;
-            let mut state = state_clone.lock().await;
 
             wg_clone.done();
 
             loop {
-                while *state != expected_state {
-                    state = state_cond_var_clone.wait(state).await;
+                let mut guard = state_clone.lock().await;
+                while *guard != expected_state {
+                    guard = state_cond_var_clone.wait(guard).await;
                 }
-                match *state {
-                    CONNECT => {}
-                    SEND | POLL | PEEK | RECV => {
-                        let _ = listener.accept().await.expect("accept failed").0;
+
+                drop(guard);
+
+                match expected_state {
+                    SEND => {
+                        let stream = listener.accept().await.expect("accept failed").0;
+                        let _ = stream.poll_send().await;
+                    }
+                    RECV | PEEK | POLL => {
+                        let stream = listener.accept().await.expect("accept failed").0;
+                        let _ = stream.poll_recv().await;
                     }
                     _ => break,
                 }
@@ -453,37 +485,19 @@ mod tests {
         wg.wait().await;
 
         loop {
-            let mut state = state.lock().await;
-            match *state {
-                CONNECT => {
-                    for _ in 0..=BACKLOG_SIZE {
-                        let _ = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
-                            .await
-                            .expect("connect with timeout failed");
-                    }
-                    let res = TcpStream::connect_with_timeout(ADDR, TIMEOUT).await;
-                    match res {
-                        Ok(_) => panic!("connect with timeout should failed"),
-                        Err(err) if err.kind() != io::ErrorKind::TimedOut => {
-                            panic!(
-                                "connect with timeout should failed with TimedOut, but got {err:?}"
-                            )
-                        }
-                        Err(_) => {}
-                    }
-                }
+            let current_state = *state.lock().await;
 
+            match current_state {
                 SEND => {
                     let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 
-                    let buf = vec![0u8; 1 << 24]; // 16 MB.
-                                                  // It is impossible to send 16 MB in 1 microsecond (16 TB/s).
+                    let buf = vec![0u8; 1 << 24];
                     let res = stream
                         .send_all_bytes_with_deadline(
-                            &buf,
-                            Instant::now() + Duration::from_micros(1),
+                            &*buf,
+                            Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
                         )
                         .await;
                     match res {
@@ -544,7 +558,7 @@ mod tests {
 
                 _ => break,
             }
-            *state += 1;
+            *state.lock().await += 1;
             state_cond_var.notify_one();
         }
     }

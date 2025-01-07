@@ -18,7 +18,7 @@ use std::future::Future;
 ///
 /// # Panics
 ///
-/// If the spawned future is moved to another thread in `debug` mode. In release mode
+/// If the spawned future is moved to another thread with `debug_assertions`. In release mode
 /// it causes undefined behavior.
 ///
 /// # Example
@@ -76,7 +76,7 @@ where
 ///
 /// # Panics
 ///
-/// If the spawned future is moved to another thread in `debug` mode. In release mode
+/// If the spawned future is moved to another thread with `debug_assertions`. In release mode
 /// it causes undefined behavior.
 ///
 /// # Example
@@ -134,7 +134,7 @@ where
 ///
 /// # Panics
 ///
-/// If the spawned future is moved to another thread in `debug` mode. In release mode
+/// If the spawned future is moved to another thread with `debug_assertions`. In release mode
 /// it causes undefined behavior.
 ///
 /// # Example

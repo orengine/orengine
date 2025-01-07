@@ -10,14 +10,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-debug:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Debug
-        run: cargo build --verbose
-
   test-debug:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -28,14 +20,6 @@ jobs:
       - name: Run Tests Debug
         run: cargo test --verbose -- --nocapture
 
-  build-release:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Release
-        run: cargo build --release --verbose
-
   test-release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -45,6 +29,56 @@ jobs:
         run: cargo build --release --verbose
       - name: Run Tests Release
         run: cargo test --release --verbose -- --nocapture
+
+  cross-platform-tests-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --verbose -- --nocapture
+
+  cross-platform-tests-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --verbose -- --nocapture --test-threads=1
+
+  cross-platform-tests-macos-release:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --release --verbose -- --nocapture --test-threads=1
+
+  cross-platform-tests-windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --release --verbose -- --nocapture
+
+  cross-platform-tests-windows-release_with_thread_pool:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --all-features --release --verbose -- --nocapture
 
   rustfmt:
     runs-on: ubuntu-latest
@@ -68,6 +102,36 @@ jobs:
 
   docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: docs
+        run: cargo doc
+
+  rustfmt-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+  clippy-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: clippy
+        run: cargo clippy
+
+  docs-windows:
+    runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

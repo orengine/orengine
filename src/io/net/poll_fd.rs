@@ -1,6 +1,6 @@
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use std::future::Future;
@@ -10,17 +10,17 @@ use std::time::{Duration, Instant};
 
 macro_rules! generate_poll {
     ($name:ident, $name_with_deadline:ident, $method:expr, $method_with_deadline:expr) => {
-        /// `poll_fd` io operation.
+        /// `poll_raw_socket` io operation.
         pub struct $name {
-            fd: RawFd,
+            raw_socket: RawSocket,
             io_request_data: Option<IoRequestData>,
         }
 
         impl $name {
-            /// Creates a new `poll_fd` io operation.
-            pub fn new(fd: RawFd) -> Self {
+            /// Creates a new `poll_raw_socket` io operation.
+            pub fn new(raw_socket: RawSocket) -> Self {
                 Self {
-                    fd,
+                    raw_socket,
                     io_request_data: None,
                 }
             }
@@ -35,8 +35,8 @@ macro_rules! generate_poll {
                 let ret;
 
                 poll_for_io_request!((
-                    local_worker().$method(this.fd, unsafe {
-                        this.io_request_data.as_mut().unwrap_unchecked()
+                    local_worker().$method(this.raw_socket, unsafe {
+                        IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
                     }),
                     ()
                 ));
@@ -45,18 +45,18 @@ macro_rules! generate_poll {
 
         unsafe impl Send for $name {}
 
-        /// `poll_fd` io operation with deadline.
+        /// `poll_raw_socket` io operation with deadline.
         pub struct $name_with_deadline {
-            fd: RawFd,
+            raw_socket: RawSocket,
             io_request_data: Option<IoRequestData>,
             deadline: Instant,
         }
 
         impl $name_with_deadline {
-            /// Creates a new `poll_fd` io operation with deadline.
-            pub fn new(fd: RawFd, deadline: Instant) -> Self {
+            /// Creates a new `poll_raw_socket` io operation with deadline.
+            pub fn new(raw_socket: RawSocket, deadline: Instant) -> Self {
                 Self {
-                    fd,
+                    raw_socket,
                     io_request_data: None,
                     deadline,
                 }
@@ -74,8 +74,10 @@ macro_rules! generate_poll {
 
                 poll_for_time_bounded_io_request!((
                     worker.$method_with_deadline(
-                        this.fd,
-                        unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                        this.raw_socket,
+                        unsafe {
+                            IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
+                        },
                         &mut this.deadline
                     ),
                     ()
@@ -90,25 +92,25 @@ macro_rules! generate_poll {
 generate_poll!(
     PollRecv,
     PollRecvWithDeadline,
-    poll_fd_read,
-    poll_fd_read_with_deadline
+    poll_socket_read,
+    poll_socket_read_with_deadline
 );
 generate_poll!(
     PollSend,
     PollSendWithDeadline,
-    poll_fd_write,
-    poll_fd_write_with_deadline
+    poll_socket_write,
+    poll_socket_write_with_deadline
 );
 
-/// The `AsyncPollFd` trait provides non-blocking polling methods for readiness in receiving
+/// The `AsyncPollSocket` trait provides non-blocking polling methods for readiness in receiving
 /// and sending data on file descriptors.
 ///
 /// It enables polling with deadlines, timeouts,
 /// and simple polling for both read and write readiness.
 ///
 /// This trait can be implemented for any writable and readable structs
-/// that supports the [`AsRawFd`] trait.
-pub trait AsyncPollFd: AsRawFd {
+/// that supports the [`AsRawSocket`] trait.
+pub trait AsyncPollSocket: AsRawSocket {
     /// Returns future that will be resolved when the file descriptor
     /// becomes readable or an error occurs.
     ///
@@ -124,7 +126,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -136,7 +138,7 @@ pub trait AsyncPollFd: AsRawFd {
     /// ```
     #[inline(always)]
     fn poll_recv(&self) -> PollRecv {
-        PollRecv::new(self.as_raw_fd())
+        PollRecv::new(AsRawSocket::as_raw_socket(self))
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -160,7 +162,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -175,7 +177,7 @@ pub trait AsyncPollFd: AsRawFd {
     /// ```
     #[inline(always)]
     fn poll_recv_with_deadline(&self, deadline: Instant) -> PollRecvWithDeadline {
-        PollRecvWithDeadline::new(self.as_raw_fd(), deadline)
+        PollRecvWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -199,7 +201,7 @@ pub trait AsyncPollFd: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -228,7 +230,7 @@ pub trait AsyncPollFd: AsRawFd {
     /// on productivity and efficiency.
     #[inline(always)]
     fn poll_send(&self) -> PollSend {
-        PollSend::new(self.as_raw_fd())
+        PollSend::new(AsRawSocket::as_raw_socket(self))
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -245,7 +247,7 @@ pub trait AsyncPollFd: AsRawFd {
     /// on productivity and efficiency.
     #[inline(always)]
     fn poll_send_with_deadline(&self, deadline: Instant) -> PollSendWithDeadline {
-        PollSendWithDeadline::new(self.as_raw_fd(), deadline)
+        PollSendWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
 
     /// Returns future that will be resolved when the file descriptor

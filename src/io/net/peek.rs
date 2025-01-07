@@ -7,23 +7,23 @@ use std::time::{Duration, Instant};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 
 use crate as orengine;
-use crate::io::io_request_data::IoRequestData;
-use crate::io::sys::{AsRawFd, RawFd};
+use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBufferMut};
 
 /// `peek` io operation.
 pub struct PeekBytes<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
 }
 
 impl<'buf> PeekBytes<'buf> {
     /// Creates a new `peek` io operation.
-    pub fn new(fd: RawFd, buf: &'buf mut [u8]) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf mut [u8]) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
         }
@@ -43,10 +43,10 @@ impl Future for PeekBytes<'_> {
 
         poll_for_io_request!((
             local_worker().peek(
-                this.fd,
+                this.raw_socket,
                 this.buf.as_mut_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() }
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
             ),
             ret
         ));
@@ -57,7 +57,7 @@ unsafe impl Send for PeekBytes<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`].
 pub struct PeekFixed<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *mut u8,
     len: u32,
     fixed_index: u16,
@@ -67,9 +67,9 @@ pub struct PeekFixed<'buf> {
 
 impl PeekFixed<'_> {
     /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
+    pub fn new(raw_socket: RawSocket, ptr: *mut u8, len: u32, fixed_index: u16) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -91,9 +91,13 @@ impl Future for PeekFixed<'_> {
         let ret;
 
         poll_for_io_request!((
-            local_worker().peek_fixed(this.fd, this.ptr, this.len, this.fixed_index, unsafe {
-                this.io_request_data.as_mut().unwrap_unchecked()
-            }),
+            local_worker().peek_fixed(
+                this.raw_socket,
+                this.ptr,
+                this.len,
+                this.fixed_index,
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) }
+            ),
             ret as u32
         ));
     }
@@ -103,7 +107,7 @@ unsafe impl Send for PeekFixed<'_> {}
 
 /// `peek` io operation with deadline.
 pub struct PeekBytesWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     buf: &'buf mut [u8],
     io_request_data: Option<IoRequestData>,
     deadline: Instant,
@@ -111,9 +115,9 @@ pub struct PeekBytesWithDeadline<'buf> {
 
 impl<'buf> PeekBytesWithDeadline<'buf> {
     /// Creates a new `peek` io operation.
-    pub fn new(fd: RawFd, buf: &'buf mut [u8], deadline: Instant) -> Self {
+    pub fn new(raw_socket: RawSocket, buf: &'buf mut [u8], deadline: Instant) -> Self {
         Self {
-            fd,
+            raw_socket,
             buf,
             io_request_data: None,
             deadline,
@@ -135,10 +139,10 @@ impl Future for PeekBytesWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.peek_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.buf.as_mut_ptr(),
                 this.buf.len() as u32,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret
@@ -150,7 +154,7 @@ unsafe impl Send for PeekBytesWithDeadline<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`] with deadline.
 pub struct PeekFixedWithDeadline<'buf> {
-    fd: RawFd,
+    raw_socket: RawSocket,
     ptr: *mut u8,
     len: u32,
     fixed_index: u16,
@@ -161,9 +165,15 @@ pub struct PeekFixedWithDeadline<'buf> {
 
 impl PeekFixedWithDeadline<'_> {
     /// Creates a new `peek` io operation with __fixed__ [`Buffer`].
-    pub fn new(fd: RawFd, ptr: *mut u8, len: u32, fixed_index: u16, deadline: Instant) -> Self {
+    pub fn new(
+        raw_socket: RawSocket,
+        ptr: *mut u8,
+        len: u32,
+        fixed_index: u16,
+        deadline: Instant,
+    ) -> Self {
         Self {
-            fd,
+            raw_socket,
             ptr,
             len,
             fixed_index,
@@ -188,11 +198,11 @@ impl Future for PeekFixedWithDeadline<'_> {
 
         poll_for_time_bounded_io_request!((
             worker.peek_fixed_with_deadline(
-                this.fd,
+                this.raw_socket,
                 this.ptr,
                 this.len,
                 this.fixed_index,
-                unsafe { this.io_request_data.as_mut().unwrap_unchecked() },
+                unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
             ret as u32
@@ -208,13 +218,13 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawFd` and can be connected.
+/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
 ///
 /// # Example
 ///
 /// ```rust
 /// use orengine::net::TcpStream;
-/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+/// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
 ///
 /// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -225,7 +235,7 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncPeek: AsRawFd {
+pub trait AsyncPeek: AsRawSocket {
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
     /// filling the buffer with available data. Returns the number of bytes peeked.
     ///
@@ -237,7 +247,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -251,7 +261,7 @@ pub trait AsyncPeek: AsRawFd {
     /// ```
     #[inline(always)]
     fn peek_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
-        PeekBytes::new(self.as_raw_fd(), buf)
+        PeekBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -265,7 +275,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -281,7 +291,7 @@ pub trait AsyncPeek: AsRawFd {
     async fn peek(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixed::new(
-                self.as_raw_fd(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -292,7 +302,7 @@ pub trait AsyncPeek: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never peek more than u32::MAX"
             )]
-            PeekBytes::new(self.as_raw_fd(), buf.as_bytes_mut())
+            PeekBytes::new(AsRawSocket::as_raw_socket(self), buf.as_bytes_mut())
                 .await
                 .map(|r| r as u32)
         }
@@ -313,7 +323,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -333,7 +343,7 @@ pub trait AsyncPeek: AsRawFd {
         buf: &mut [u8],
         deadline: Instant,
     ) -> impl Future<Output = Result<usize>> {
-        PeekBytesWithDeadline::new(self.as_raw_fd(), buf, deadline)
+        PeekBytesWithDeadline::new(AsRawSocket::as_raw_socket(self), buf, deadline)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -351,7 +361,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::{Duration, Instant};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -373,7 +383,7 @@ pub trait AsyncPeek: AsRawFd {
     ) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixedWithDeadline::new(
-                self.as_raw_fd(),
+                AsRawSocket::as_raw_socket(self),
                 buf.as_mut_ptr(),
                 buf.len_u32(),
                 buf.fixed_index(),
@@ -385,9 +395,13 @@ pub trait AsyncPeek: AsRawFd {
                 clippy::cast_possible_truncation,
                 reason = "It never peek more than u32::MAX"
             )]
-            PeekBytesWithDeadline::new(self.as_raw_fd(), buf.as_bytes_mut(), deadline)
-                .await
-                .map(|r| r as u32)
+            PeekBytesWithDeadline::new(
+                AsRawSocket::as_raw_socket(self),
+                buf.as_bytes_mut(),
+                deadline,
+            )
+            .await
+            .map(|r| r as u32)
         }
     }
 
@@ -406,7 +420,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -444,7 +458,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -478,7 +492,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -511,7 +525,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     ///
     /// # async fn foo() -> std::io::Result<()> {
     /// let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
@@ -534,7 +548,7 @@ pub trait AsyncPeek: AsRawFd {
             )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixed::new(
-                    self.as_raw_fd(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(peeked as isize) },
                     buf.len_u32() - peeked,
                     buf.fixed_index(),
@@ -568,7 +582,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -614,7 +628,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::{Instant, Duration};
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -644,7 +658,7 @@ pub trait AsyncPeek: AsRawFd {
             )]
             while peeked < buf.len_u32() {
                 peeked += PeekFixedWithDeadline::new(
-                    self.as_raw_fd(),
+                    AsRawSocket::as_raw_socket(self),
                     unsafe { buf.as_mut_ptr().offset(peeked as isize) },
                     buf.len_u32() - peeked,
                     buf.fixed_index(),
@@ -681,7 +695,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
@@ -720,7 +734,7 @@ pub trait AsyncPeek: AsRawFd {
     ///
     /// ```rust
     /// use orengine::net::TcpStream;
-    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollFd};
+    /// use orengine::io::{full_buffer, AsyncConnectStream, AsyncPeek, AsyncPollSocket};
     /// use std::time::Duration;
     ///
     /// async fn foo() -> std::io::Result<()> {
