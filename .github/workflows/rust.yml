@@ -70,6 +70,16 @@ jobs:
       - name: Run Tests
         run: cargo test --release --verbose -- --nocapture
 
+  cross-platform-tests-windows-release_with_thread_pool:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Run Tests
+        run: cargo test --release --all_features --verbose -- --nocapture
+
   rustfmt:
     runs-on: ubuntu-latest
     timeout-minutes: 10
