@@ -78,7 +78,7 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Run Tests
-        run: cargo test --release --verbose -- --nocapture --all_features
+        run: cargo test --all-features --release --verbose -- --nocapture
 
   rustfmt:
     runs-on: ubuntu-latest
