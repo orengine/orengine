@@ -432,9 +432,6 @@ pub trait AsyncRead: AsRawFile {
 
         while read < buf.len() {
             read += self.read_bytes(&mut buf[read..]).await?;
-
-            // TODO: remove
-            debug_assert!(read > 0);
         }
 
         Ok(())

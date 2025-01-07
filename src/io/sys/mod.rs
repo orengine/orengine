@@ -39,6 +39,6 @@ pub(crate) use fallback::os_message_header::*;
 #[cfg(not(target_os = "linux"))]
 pub(crate) use fallback::os_path::{get_os_path, get_os_path_ptr, OsPath, OsPathPtr};
 #[cfg(not(target_os = "linux"))]
-pub(crate) use fallback::with_thread_pool::FallbackWorker as WorkerSys;
+pub(crate) use fallback::FallbackWorker as WorkerSys;
 #[cfg(not(target_os = "linux"))]
 pub(crate) use sockaddr_storage as os_sockaddr;

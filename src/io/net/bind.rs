@@ -167,12 +167,12 @@ pub trait AsyncBind: Sized + FromRawSocket {
 
                     #[cfg(target_os = "linux")]
                     {
-                        Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
-
                         use libc::{
                             self, __u32, BPF_ABS, BPF_LD, BPF_RET, BPF_W, SKF_AD_CPU, SKF_AD_OFF,
                         };
                         const BPF_A: __u32 = 0x10;
+
+                        Self::bind_and_listen_if_needed(socket_ref, addr, config)?;
 
                         // [
                         //     {BPF_LD | BPF_W | BPF_ABS, 0, 0, SKF_AD_OFF + SKF_AD_CPU},

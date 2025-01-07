@@ -1,5 +1,5 @@
 use crate::io::io_request_data::IoRequestDataPtr;
-use crate::io::sys::fallback::with_thread_pool::io_call::IoCall;
+use crate::io::sys::fallback::io_call::IoCall;
 use crate::io::sys::{FromRawSocket, RawSocket};
 use ahash::AHashMap;
 use mio::{Events, Interest, Poll, Token};

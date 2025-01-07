@@ -31,9 +31,33 @@ use crate::runtime::Config;
 use crate::{local_executor, yield_now, Executor};
 use std::future::Future;
 
+/// Prints the first test message. It contains an information about build configuration.
+fn print_first_test_message() {
+    #[cfg(target_os = "linux")]
+    {
+        println!("OS: Linux, using io-uring");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        #[cfg(feature = "fallback_thread_pool")]
+        {
+            println!("OS: Not Linux, using fallback with thread pool");
+        }
+
+        #[cfg(not(feature = "fallback_thread_pool"))]
+        {
+            println!("OS: Not Linux, using fallback without thread pool");
+        }
+    }
+}
+
 /// Initializes the local executor only if it is not initialized
 /// and returns `&'static mut Executor`.
 pub(crate) fn get_local_executor() -> &'static mut Executor {
+    static PRINTED: std::sync::Once = std::sync::Once::new();
+    PRINTED.call_once(print_first_test_message);
+
     if get_local_executor_ref().is_none() {
         let cfg = Config::default().disable_work_sharing();
         Executor::init_with_config(cfg);

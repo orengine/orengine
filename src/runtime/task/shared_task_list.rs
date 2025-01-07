@@ -40,7 +40,7 @@ impl ExecutorSharedTaskList {
             let number_of_elems = guard.len().min(limit);
             let new_len = guard.len() - number_of_elems;
             let mut first_index = new_len;
-            // TODO test it
+
             while first_index != guard.len() {
                 other_list.push_back(unsafe { ptr::read(guard.get_unchecked(first_index)) });
                 first_index += 1;
