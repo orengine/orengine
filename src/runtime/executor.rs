@@ -505,7 +505,7 @@ impl Executor {
         self.exec_task(task);
     }
 
-    /// Creates a local [`task`](Task) from a provided [`future`](Future) and enqueues it.
+    /// Creates a `local` [`task`](Task) from a provided [`future`](Future) and enqueues it.
     ///
     /// # Attention
     ///
@@ -523,7 +523,7 @@ impl Executor {
         self.spawn_local_task(task);
     }
 
-    /// Enqueues a local [`task`](Task).
+    /// Enqueues a `local` [`task`](Task).
     ///
     /// # Attention
     ///
@@ -539,7 +539,7 @@ impl Executor {
         self.local_tasks.push_back(task);
     }
 
-    /// Creates a shared [`task`](Task) from a provided [`future`](Future) and enqueues it.
+    /// Creates a `shared` [`task`](Task) from a provided [`future`](Future) and enqueues it.
     ///
     /// # Attention
     ///
@@ -557,21 +557,7 @@ impl Executor {
         self.spawn_shared_task(task);
     }
 
-    /// Calls [`spawn_local_task`](Executor::spawn_local_task)
-    /// or [`spawn_shared_task`](Executor::spawn_shared_task) depending on
-    /// the [`locality`](Locality) of the provided [`task`](Task).
-    ///
-    /// It is a little bit slower than calling them directly.
-    #[inline(always)]
-    pub fn spawn_task(&mut self, task: Task) {
-        if task.is_local() {
-            self.spawn_local_task(task);
-        } else {
-            self.spawn_shared_task(task);
-        }
-    }
-
-    /// Enqueues a shared [`task`](Task).
+    /// Enqueues a `shared` [`task`](Task).
     ///
     /// # Attention
     ///
@@ -605,6 +591,20 @@ impl Executor {
             }
         } else {
             self.shared_tasks.push_back(task);
+        }
+    }
+
+    /// Calls [`spawn_local_task`](Executor::spawn_local_task)
+    /// or [`spawn_shared_task`](Executor::spawn_shared_task) depending on
+    /// the [`locality`](Locality) of the provided [`task`](Task).
+    ///
+    /// It is a little bit slower than calling them directly.
+    #[inline(always)]
+    pub fn spawn_task(&mut self, task: Task) {
+        if task.is_local() {
+            self.spawn_local_task(task);
+        } else {
+            self.spawn_shared_task(task);
         }
     }
 
@@ -810,7 +810,7 @@ impl Executor {
     /// executor.spawn_local(async move {
     ///     println!("Hello from an async runtime!");
     ///     sleep(Duration::from_secs(3)).await;
-    ///     stop_executor(id); // stops the executor
+    ///     stop_executor(id); // stop the executor
     /// });
     /// executor.run();
     ///
