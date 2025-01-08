@@ -212,10 +212,17 @@ impl Config {
         self.number_of_thread_workers != 0
     }
 
-    /// Sets the number of thread workers to spawn. If zero is provided,
+    /// Sets the number of blocking workers to spawn. If zero is provided,
     /// the thread pool will be disabled.
+    ///
+    /// This applies only to the thread pool of each executor that is
+    /// used in [`asyncify`](crate::asyncify). This has nothing to do with
+    /// the `fallback_thread_pool` feature.
     #[must_use]
-    pub const fn set_numbers_of_thread_workers(mut self, number_of_thread_workers: usize) -> Self {
+    pub const fn set_numbers_of_blocking_workers(
+        mut self,
+        number_of_thread_workers: usize,
+    ) -> Self {
         self.number_of_thread_workers = number_of_thread_workers;
 
         self
@@ -391,7 +398,7 @@ pub(crate) mod tests {
             .set_buffer_cap(1024)
             .set_io_worker_config(None)
             .unwrap()
-            .set_numbers_of_thread_workers(0)
+            .set_numbers_of_blocking_workers(0)
             .disable_work_sharing();
 
         let config = config.validate();
@@ -469,7 +476,7 @@ pub(crate) mod tests {
         // with work sharing and without thread pool
         handle_panic_in_config_test(|| {
             let _first_config = Config::default()
-                .set_numbers_of_thread_workers(0)
+                .set_numbers_of_blocking_workers(0)
                 .enable_work_sharing()
                 .validate();
             let _second_config = Config::default().validate();
@@ -487,7 +494,7 @@ pub(crate) mod tests {
         handle_panic_in_config_test(|| {
             let _first_config = Config::default().validate();
             let _second_config = Config::default()
-                .set_numbers_of_thread_workers(0)
+                .set_numbers_of_blocking_workers(0)
                 .enable_work_sharing()
                 .validate();
         });
