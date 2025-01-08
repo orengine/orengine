@@ -1,6 +1,6 @@
-use crate::each_addr;
 use crate::io::sys::{BorrowedSocket, FromRawSocket, RawSocket};
 use crate::net::{BindConfig, ReusePort};
+use crate::utils::each_addr::each_addr;
 use socket2::SockRef;
 use std::io::Result;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -118,7 +118,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
     /// # }
     /// ```
     async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr!(&addrs, move |addr| async move {
+        each_addr(&addrs, move |addr| async move {
             let raw_fd = Self::new_socket(&addr).await?;
             let borrowed_raw_fd = unsafe { BorrowedSocket::borrow_raw(raw_fd) };
             let socket_ref = socket2::SockRef::from(&borrowed_raw_fd);
@@ -220,6 +220,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
 
             Ok(unsafe { <Self as FromRawSocket>::from_raw_socket(raw_fd) })
         })
+        .await
     }
 
     /// Asynchronously binds to a socket with default [`configuration`](BindConfig).

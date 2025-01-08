@@ -132,7 +132,7 @@ unsafe impl Sync for SubscribedState {}
 ///
 /// # Note
 ///
-/// [`GLOBAL_STATE`](GLOBAL_STATE) and [`SubscribedState`] form `Shared RWLock`.
+/// [`GLOBAL_STATE`] and [`SubscribedState`] form `Shared RWLock`.
 pub struct GlobalState {
     version: usize,
     /// 0 - id

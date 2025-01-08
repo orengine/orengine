@@ -32,6 +32,10 @@
     reason = "It is fine if a file in has the same mane as a module."
 )]
 #![allow(clippy::if_not_else, reason = "It improves readability.")]
+#![allow(
+    rustdoc::private_intra_doc_links,
+    reason = "It allows to create more readable docs."
+)]
 pub(crate) mod bug_message;
 pub mod fs;
 pub mod io;

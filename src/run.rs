@@ -12,7 +12,7 @@ use std::future::Future;
 ///
 /// # State
 ///
-/// It creates a new [`std::thread::Scope`](std::thread::Scope) and runs provided `creator` in it.
+/// It creates a new [`std::thread::Scope`] and runs provided `creator` in it.
 /// So, it keeps the state in each core.
 ///
 /// # Example
@@ -92,7 +92,7 @@ where
 ///
 /// # State
 ///
-/// It creates a new [`std::thread::Scope`](std::thread::Scope) and runs provided `creator` in it.
+/// It creates a new [`std::thread::Scope`] and runs provided `creator` in it.
 /// So, it keeps the state in each core.
 ///
 /// # Example
@@ -116,7 +116,7 @@ where
 ///
 /// # State
 ///
-/// It creates a new [`std::thread::Scope`](std::thread::Scope) and runs provided `creator` in it.
+/// It creates a new [`std::thread::Scope`] and runs provided `creator` in it.
 /// So, it keeps the state in each core.
 ///
 /// # Example
@@ -206,12 +206,12 @@ where
 ///
 /// # State
 ///
-/// It creates a new [`std::thread::Scope`](std::thread::Scope) and runs provided `creator` in it.
+/// It creates a new [`std::thread::Scope`] and runs provided `creator` in it.
 /// So, it keeps the state in each core.
 ///
 /// # Example
 ///
-/// Read an example in [`run_shared_future_on_all_cores_with_config`](run_shared_future_on_all_cores_with_config).
+/// Read an example in [`run_shared_future_on_all_cores_with_config`].
 pub fn run_shared_future_on_all_cores<'scope, Fut, F>(creator: F)
 where
     Fut: Future<Output = ()> + Send + 'scope,

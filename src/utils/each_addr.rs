@@ -1,6 +1,8 @@
+use std::future::Future;
 use std::io;
+use std::net::ToSocketAddrs;
 
-/// `EachAddrRes` is used to return results from `each_addr`.
+/// `EachAddrRes` is used to return results from [`each_addr`].
 ///
 /// When successful, it contains an `Ok(R)` variant.
 ///
@@ -13,74 +15,35 @@ pub(crate) enum EachAddrRes<R> {
     None,
 }
 
-/// `each_addr` is a macro that will iterate over the addresses in `addrs` and call `f` for each one
-/// before first successful connection or the last address.
-#[macro_export]
-macro_rules! each_addr {
-    ($addrs: expr, $f: expr) => {{
-        use $crate::utils::each_addr::EachAddrRes;
-
-        let addrs = match std::net::ToSocketAddrs::to_socket_addrs($addrs) {
-            Ok(addrs) => addrs,
-            Err(e) => return Err(e),
-        };
-
-        let mut res = EachAddrRes::None;
-        for addr in addrs {
-            match $f(addr).await {
-                Ok(connect_res) => {
-                    res = EachAddrRes::Ok(connect_res);
-                    break;
-                }
-                Err(error) => {
-                    res = EachAddrRes::Err(error);
-                }
+/// Iterate over the addresses in `addrs` and call `f` for each one
+/// before first successful result or the last address.
+pub(crate) async fn each_addr<Res, Fut, F>(addrs: impl ToSocketAddrs, f: F) -> io::Result<Res>
+where
+    Fut: Future<Output = io::Result<Res>>,
+    F: Fn(std::net::SocketAddr) -> Fut,
+{
+    let addrs = match ToSocketAddrs::to_socket_addrs(&addrs) {
+        Ok(addrs) => addrs,
+        Err(e) => return Err(e),
+    };
+    let mut res = EachAddrRes::None;
+    for addr in addrs {
+        match f(addr).await {
+            Ok(connect_res) => {
+                res = EachAddrRes::Ok(connect_res);
+                break;
+            }
+            Err(error) => {
+                res = EachAddrRes::Err(error);
             }
         }
-
-        match res {
-            EachAddrRes::Ok(res) => std::io::Result::Ok(res),
-            EachAddrRes::Err(err) => std::io::Result::Err(err),
-            EachAddrRes::None => std::io::Result::Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "could not resolve to any addresses",
-            )),
-        }
-    }};
-}
-
-/// `each_addr_sync` is a macro that will iterate over the addresses in `addrs` and call
-/// `f` for each one before first successful connection or the last address.
-#[macro_export]
-macro_rules! each_addr_sync {
-    ($addrs: expr, $f: expr) => {{
-        use $crate::utils::each_addr::EachAddrRes;
-
-        let addrs = match std::net::ToSocketAddrs::to_socket_addrs($addrs) {
-            Ok(addrs) => addrs,
-            Err(e) => return Err(e),
-        };
-
-        let mut res = EachAddrRes::None;
-        for addr in addrs {
-            match $f(addr) {
-                Ok(connect_res) => {
-                    res = EachAddrRes::Ok(connect_res);
-                    break;
-                }
-                Err(error) => {
-                    res = EachAddrRes::Err(error);
-                }
-            }
-        }
-
-        match res {
-            EachAddrRes::Ok(res) => std::io::Result::Ok(res),
-            EachAddrRes::Err(err) => std::io::Result::Err(err),
-            EachAddrRes::None => std::io::Result::Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "could not resolve to any addresses",
-            )),
-        }
-    }};
+    }
+    match res {
+        EachAddrRes::Ok(res) => Ok(res),
+        EachAddrRes::Err(err) => Err(err),
+        EachAddrRes::None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "could not resolve to any addresses",
+        )),
+    }
 }

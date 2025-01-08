@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::each_addr;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 
@@ -14,6 +13,7 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::utils::each_addr::each_addr;
 
 /// `connect` io operation.
 pub struct Connect<'fut> {
@@ -212,7 +212,7 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// ```
     #[inline(always)]
     async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
-        each_addr!(&addr, move |addr: SocketAddr| async move {
+        each_addr(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
             Connect::new(
                 <Self as AsRawSocket>::as_raw_socket(&stream),
@@ -222,6 +222,7 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
 
             Ok(stream)
         })
+        .await
     }
 
     /// Asynchronously connects a stream socket to the specified address, enforcing a deadline.
@@ -244,7 +245,7 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// ```
     #[inline(always)]
     async fn connect_with_deadline<A: ToSocketAddrs>(addr: A, deadline: Instant) -> Result<Self> {
-        each_addr!(&addr, move |addr: SocketAddr| async move {
+        each_addr(&addr, move |addr: SocketAddr| async move {
             let stream = Self::new_for_addr(&addr).await?;
             ConnectWithDeadline::new(
                 <Self as AsRawSocket>::as_raw_socket(&stream),
@@ -255,6 +256,7 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
 
             Ok(stream)
         })
+        .await
     }
 
     /// Asynchronously connects a stream socket to the specified address, enforcing a timeout.
@@ -335,10 +337,11 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     #[inline(always)]
     async fn connect<A: ToSocketAddrs>(self, addr: A) -> Result<S> {
         let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
-        each_addr!(&addr, move |addr: SocketAddr| async move {
+        each_addr(&addr, move |addr: SocketAddr| async move {
             Connect::new(new_datagram_socket_raw_fd, &SockAddr::from(addr)).await?;
             Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
+        .await
     }
 
     /// Asynchronously connects a datagram socket to the specified address, enforcing a deadline.
@@ -378,11 +381,12 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
         deadline: Instant,
     ) -> Result<S> {
         let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
-        each_addr!(&addr, move |addr: SocketAddr| async move {
+        each_addr(&addr, move |addr: SocketAddr| async move {
             ConnectWithDeadline::new(new_datagram_socket_raw_fd, &SockAddr::from(addr), deadline)
                 .await?;
             Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
+        .await
     }
 
     /// Asynchronously connects a datagram socket to the specified address, enforcing a timeout.
