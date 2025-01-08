@@ -91,7 +91,7 @@ impl SubscribedState {
             }
 
             inner.processed_version = current_version;
-            let shared_state = global_state();
+            let shared_state = lock_and_get_global_state();
             let found = shared_state
                 .states_of_alive_executors
                 .iter()
@@ -251,7 +251,7 @@ static GLOBAL_STATE: SpinLock<GlobalState> = SpinLock::new(GlobalState::new());
 ///
 /// ```no_run
 /// use orengine::{run_shared_future_on_all_cores, stop_all_executors};
-/// use orengine::runtime::global_state;
+/// use orengine::runtime::lock_and_get_global_state;
 /// use orengine::sync::{AsyncWaitGroup, WaitGroup};
 /// use orengine::utils::get_core_ids;
 ///
@@ -266,21 +266,21 @@ static GLOBAL_STATE: SpinLock<GlobalState> = SpinLock::new(GlobalState::new());
 ///     wait_group.done();
 ///     wait_group.wait().await;
 ///
-///     assert_eq!(global_state().executors_ids().len(), number_of_cores);
+///     assert_eq!(lock_and_get_global_state().executors_ids().len(), number_of_cores);
 ///
 ///     // Do some work
 ///
 ///     stop_all_executors();
 /// });
 /// ```
-pub fn global_state() -> SpinLockGuard<'static, GlobalState> {
+pub fn lock_and_get_global_state() -> SpinLockGuard<'static, GlobalState> {
     GLOBAL_STATE.lock()
 }
 
 /// Registers the executor of the current thread (by calling [`local_executor()`](local_executor))
 /// and notifies all executors.
 pub(crate) fn register_local_executor() {
-    global_state().register_local_executor();
+    lock_and_get_global_state().register_local_executor();
 }
 
 /// Stops the executor with the given id.
@@ -329,7 +329,7 @@ pub(crate) fn register_local_executor() {
 /// println!("Hello from a sync runtime after at least 3 seconds");
 /// ```
 pub fn stop_executor(executor_id: usize) {
-    global_state().stop_executor(executor_id);
+    lock_and_get_global_state().stop_executor(executor_id);
 }
 
 /// Stops all executors.
@@ -338,7 +338,7 @@ pub fn stop_executor(executor_id: usize) {
 ///
 /// Reuse [`Executor`](crate::Executor). Read about it in [`test module`](crate::test).
 pub fn stop_all_executors() {
-    global_state().stop_all_executors();
+    lock_and_get_global_state().stop_all_executors();
 }
 
 #[cfg(test)]
