@@ -212,4 +212,36 @@ mod tests {
         wait_group.wait().await;
         assert_eq!(*check_value.borrow(), 0, "not waited");
     }
+
+    #[orengine::test::test_local]
+    fn test_local_wg_as_barrier() {
+        let check_value = Local::new(0);
+        let wait_group = Rc::new(LocalWaitGroup::new());
+        wait_group.add(6);
+
+        for _ in 0..5 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+
+            local_executor().spawn_local(async move {
+                yield_now().await;
+
+                *check_value.borrow_mut() += 1;
+
+                wait_group.done();
+                wait_group.wait().await;
+
+                assert_eq!(*check_value.borrow(), 6);
+            });
+        }
+
+        yield_now().await;
+
+        *check_value.borrow_mut() += 1;
+
+        wait_group.done();
+        wait_group.wait().await;
+
+        assert_eq!(*check_value.borrow(), 6);
+    }
 }

@@ -179,6 +179,7 @@ fn test_compile_shared_wait_group() {}
 mod tests {
     use super::*;
     use crate as orengine;
+    use crate::sync::{AsyncMutex, Mutex};
     use crate::test::sched_future_to_another_thread;
     use crate::{sleep, yield_now};
     use std::sync::Arc;
@@ -247,5 +248,37 @@ mod tests {
 
         wait_group.wait().await;
         assert_eq!(*check_value.lock().unwrap(), 0, "not waited");
+    }
+
+    #[orengine::test::test_shared]
+    fn test_shared_wg_as_barrier() {
+        let check_value = Arc::new(Mutex::new(0));
+        let wait_group = Arc::new(WaitGroup::new());
+        wait_group.add(6);
+
+        for _ in 0..5 {
+            let check_value = check_value.clone();
+            let wait_group = wait_group.clone();
+
+            local_executor().spawn_shared(async move {
+                yield_now().await;
+
+                *check_value.lock().await += 1;
+
+                wait_group.done();
+                wait_group.wait().await;
+
+                assert_eq!(*check_value.lock().await, 6);
+            });
+        }
+
+        yield_now().await;
+
+        *check_value.lock().await += 1;
+
+        wait_group.done();
+        wait_group.wait().await;
+
+        assert_eq!(*check_value.lock().await, 6);
     }
 }
