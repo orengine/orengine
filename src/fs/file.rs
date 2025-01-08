@@ -50,8 +50,8 @@ impl File {
     /// # Errors
     ///
     /// This method will return an `Err` if:
-    /// - The provided path is empty.
-    /// - There is an issue converting the path to an OS-specific format.
+    /// - The provided path is empty;
+    /// - There is an issue converting the path to an OS-specific format;
     /// - The file could not be opened due to other I/O errors
     ///   (e.g., permission denied, file not found).
     ///
@@ -90,7 +90,7 @@ impl File {
     /// # Errors
     ///
     /// This function will return an `Err` if:
-    /// - Either `old_path` or `new_path` cannot be converted into an OS path.
+    /// - Either `old_path` or `new_path` cannot be converted into an OS path;
     /// - The rename operation fails due to I/O issues such as permission errors or file not found.
     ///
     /// # Example
@@ -123,7 +123,7 @@ impl File {
     /// # Errors
     ///
     /// This function will return an `Err` if:
-    /// - The provided path cannot be converted into an OS path.
+    /// - The provided path cannot be converted into an OS path;
     /// - The file removal operation fails due to I/O issues such as permission errors
     ///   or file not found.
     ///
