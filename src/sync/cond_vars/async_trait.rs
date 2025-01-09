@@ -24,7 +24,9 @@ pub trait AsyncCondVar {
 
     /// Wait for a notification.
     ///
-    /// ```rust
+    /// # Example
+    ///
+    /// ```no_run
     /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex, AsyncCondVar};
     /// use orengine::sleep;
     /// use std::time::Duration;
@@ -36,9 +38,12 @@ pub trait AsyncCondVar {
     /// local_scope(|scope| async {
     ///     scope.spawn(async {
     ///         sleep(Duration::from_secs(1)).await;
+    ///
     ///         let mut lock = is_ready.lock().await;
     ///         *lock = true;
+    ///
     ///         drop(lock);
+    ///
     ///         cvar.notify_one();
     ///     });
     ///
@@ -48,12 +53,75 @@ pub trait AsyncCondVar {
     ///     }
     /// }).await;
     /// # }
+    /// ```
     fn wait<'mutex, T>(
         &self,
         guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
     ) -> impl Future<Output = <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>>
     where
         T: ?Sized + 'mutex;
+
+    /// Blocks the current [`Task`] until the provided condition becomes false.
+    ///
+    /// `condition` is checked immediately; if not met (returns `true`), this
+    /// will [`wait`](Self::wait) for the next notification then check again. This repeats
+    /// until `condition` returns `false`, in which case this function returns.
+    ///
+    /// This function will atomically unlock the mutex specified (represented by
+    /// `guard`) and block the current [`Task`]. This means that any calls
+    /// to [`notify_one`] or [`notify_all`] which happen logically after the
+    /// mutex is unlocked are candidates to wake this [`Task`] up. When this
+    /// function call returns, the lock specified will have been re-acquired.
+    ///
+    /// [`notify_one`]: Self::notify_one
+    /// [`notify_all`]: Self::notify_all
+    /// [`Task`]: crate::runtime::Task
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use orengine::sync::{LocalCondVar, LocalMutex, local_scope, AsyncMutex, AsyncCondVar};
+    /// use orengine::sleep;
+    /// use std::time::Duration;
+    ///
+    /// # async fn test() {
+    /// let cvar = LocalCondVar::new();
+    /// let is_ready = LocalMutex::new(false);
+    ///
+    /// local_scope(|scope| async {
+    ///     scope.spawn(async {
+    ///         sleep(Duration::from_secs(1)).await;
+    ///
+    ///         let mut lock = is_ready.lock().await;
+    ///         *lock = true;
+    ///
+    ///         drop(lock);
+    ///
+    ///         cvar.notify_one();
+    ///     });
+    ///
+    ///     let mut is_ready_lock = cvar.wait_while(
+    ///         is_ready.lock().await,
+    ///         |lock| !*lock
+    ///     ).await; // wait 1 second
+    /// }).await;
+    /// # }
+    /// ```
+    async fn wait_while<'mutex, T>(
+        &self,
+        guard: <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>,
+        predicate: impl Fn(&mut T) -> bool,
+    ) -> <Self::SubscribableMutex<T> as AsyncMutex<T>>::Guard<'mutex>
+    where
+        T: ?Sized + 'mutex,
+    {
+        let mut guard = guard;
+        while predicate(&mut guard) {
+            guard = self.wait(guard).await;
+        }
+
+        guard
+    }
 
     /// Notifies one waiting task.
     ///
@@ -102,4 +170,36 @@ pub trait AsyncCondVar {
     /// }
     /// ```
     fn notify_all(&self);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate as orengine;
+    use crate::sleep;
+    use crate::sync::{local_scope, LocalCondVar, LocalMutex};
+    use std::time::Duration;
+
+    #[orengine::test::test_local]
+    fn test_cond_var_wait_while() {
+        let cvar = LocalCondVar::new();
+        let is_ready = LocalMutex::new(false);
+        local_scope(|scope| async {
+            scope.spawn(async {
+                sleep(Duration::from_secs(1)).await;
+
+                let mut lock = is_ready.lock().await;
+                *lock = true;
+
+                drop(lock);
+
+                cvar.notify_one();
+            });
+
+            let is_ready_lock = cvar.wait_while(is_ready.lock().await, |lock| !*lock).await; // wait 1 second
+
+            assert!(*is_ready_lock);
+        })
+        .await;
+    }
 }
