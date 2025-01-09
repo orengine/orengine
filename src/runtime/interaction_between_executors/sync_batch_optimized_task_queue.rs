@@ -112,8 +112,15 @@ impl SyncBatchOptimizedTaskQueue {
         shared_tasks: &mut VecDeque<Task>,
         #[cfg(debug_assertions)] executor_id: usize,
     ) -> bool {
-        self.try_to_append_local_tasks(local_tasks, executor_id)
-            && self.try_to_append_shared_tasks(shared_tasks, executor_id)
+        self.try_to_append_local_tasks(
+            local_tasks,
+            #[cfg(debug_assertions)]
+            executor_id,
+        ) && self.try_to_append_shared_tasks(
+            shared_tasks,
+            #[cfg(debug_assertions)]
+            executor_id,
+        )
     }
 
     /// Takes all `local` tasks from the `local` tasks queue if it is available.

@@ -13,6 +13,10 @@ impl<V> VecMap<V> {
     }
 
     /// Returns a mutable reference to the value associated with the key.
+    #[allow(
+        dead_code,
+        reason = "It is used when #[cfg(not(feature=disable_send_task_to))], but it is more readable when this method always exists."
+    )]
     pub(crate) fn get_mut(&mut self, key: usize) -> Option<&mut V> {
         self.inner.get_mut(key).and_then(|v| v.as_mut())
     }
@@ -43,6 +47,10 @@ impl<V> VecMap<V> {
     }
 
     /// Removes all key-value pairs from the map.
+    #[allow(
+        dead_code,
+        reason = "It is used when #[cfg(not(feature=disable_send_task_to))], but it is more readable when this method always exists."
+    )]
     pub(crate) fn clear(&mut self) {
         self.inner.clear();
     }
@@ -56,6 +64,10 @@ impl<V> VecMap<V> {
     }
 
     /// Returns a mutable iterator over the map.
+    #[allow(
+        dead_code,
+        reason = "It is used when #[cfg(not(feature=disable_send_task_to))], but it is more readable when this method always exists."
+    )]
     pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (usize, &mut V)> {
         self.inner
             .iter_mut()

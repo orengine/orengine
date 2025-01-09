@@ -1,6 +1,6 @@
 [package]
 name = "orengine"
-version = "0.8.0-alpha.1"
+version = "0.8.1-alpha.1"
 license = "MIT"
 description = """
 Optimized ring engine for Rust.
@@ -16,7 +16,9 @@ keywords = ["io", "async", "non-blocking", "shared-nothing", "high-performance"]
 edition = "2021"
 
 [features]
+default = []
 fallback_thread_pool = []
+disable_send_task_to = []
 
 [dependencies]
 orengine-macros = { version = "4.1.0", path = "./orengine-macros" }

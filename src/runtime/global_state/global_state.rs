@@ -1,10 +1,30 @@
-use crate::local_executor;
 use crate::runtime::global_state::subscribed_state::SubscribedState;
+#[cfg(not(feature = "disable_send_task_to"))]
 use crate::runtime::interaction_between_executors::SyncBatchOptimizedTaskQueue;
 use crate::runtime::ExecutorSharedTaskList;
 use crate::utils::vec_map::VecMap;
 use crate::utils::{SpinLock, SpinLockGuard};
+use crate::{local_executor, Executor};
 use std::sync::Arc;
+
+/// Contains [`SubscribedState`] and, optionally (`cfg(not(feature = "disable_send_task_to"))`),
+/// [`SyncBatchOptimizedTaskQueue`].
+pub(crate) struct StateOfAliveExecutor {
+    pub(crate) subscribed_state: Arc<SubscribedState>,
+    #[cfg(not(feature = "disable_send_task_to"))]
+    pub(crate) task_queue: Arc<SyncBatchOptimizedTaskQueue>,
+}
+
+impl StateOfAliveExecutor {
+    /// Creates a new `StateOfAliveExecutor` of the provided [`Executor`](crate::Executor).
+    fn new(executor: &Executor) -> Self {
+        Self {
+            subscribed_state: executor.subscribed_state(),
+            #[cfg(not(feature = "disable_send_task_to"))]
+            task_queue: executor.interactor().shared_task_list(),
+        }
+    }
+}
 
 /// `GlobalState` contains current version, `tasks_lists` of all alive executors with work-sharing.
 ///
@@ -15,7 +35,7 @@ use std::sync::Arc;
 /// [`GLOBAL_STATE`] and [`SubscribedState`] form `Shared RWLock`.
 pub struct GlobalState {
     version: usize,
-    states_of_alive_executors: VecMap<(Arc<SubscribedState>, Arc<SyncBatchOptimizedTaskQueue>)>,
+    states_of_alive_executors: VecMap<StateOfAliveExecutor>,
     lists: Vec<Arc<ExecutorSharedTaskList>>,
 }
 
@@ -48,19 +68,14 @@ impl GlobalState {
         }
 
         executor.subscribed_state().set_version(self.version);
-        self.states_of_alive_executors.insert(
-            executor.id(),
-            (
-                executor.subscribed_state(),
-                executor.interactor().shared_task_list(),
-            ),
-        );
+        self.states_of_alive_executors
+            .insert(executor.id(), StateOfAliveExecutor::new(executor));
 
         // It is necessary to reset the flag to false on re-initialization.
         executor.subscribed_state().set_is_stopped(false);
 
-        for (_, (state, _)) in self.states_of_alive_executors.iter() {
-            state.set_version(self.version);
+        for (_, state) in self.states_of_alive_executors.iter() {
+            state.subscribed_state.set_version(self.version);
         }
     }
 
@@ -68,8 +83,8 @@ impl GlobalState {
     pub(crate) fn stop_executor(&mut self, id: usize) {
         self.version += 1;
         self.states_of_alive_executors
-            .retain(|alive_executor_id, (state, _)| {
-                state.set_version(self.version);
+            .retain(|alive_executor_id, state| {
+                state.subscribed_state.set_version(self.version);
 
                 alive_executor_id != id
             });
@@ -79,8 +94,8 @@ impl GlobalState {
     /// Stops all executors.
     pub(crate) fn stop_all_executors(&mut self) {
         self.version += 1;
-        self.states_of_alive_executors.retain(|_, (state, _)| {
-            state.set_version(self.version);
+        self.states_of_alive_executors.retain(|_, state| {
+            state.subscribed_state.set_version(self.version);
 
             false
         });
@@ -88,9 +103,7 @@ impl GlobalState {
     }
 
     /// Returns a shared reference to all alive executors.
-    pub(crate) fn alive_executors(
-        &self,
-    ) -> &VecMap<(Arc<SubscribedState>, Arc<SyncBatchOptimizedTaskQueue>)> {
+    pub(crate) fn alive_executors(&self) -> &VecMap<StateOfAliveExecutor> {
         &self.states_of_alive_executors
     }
 
@@ -111,7 +124,7 @@ impl GlobalState {
     pub fn work_sharing_executors_ids(&self) -> Vec<usize> {
         self.states_of_alive_executors
             .iter()
-            .filter(|(_, (state, _))| state.tasks_lists().is_some())
+            .filter(|(_, state)| state.subscribed_state.tasks_lists().is_some())
             .map(|(id, _)| id)
             .collect()
     }
@@ -173,7 +186,7 @@ pub(crate) fn register_local_executor() {
 ///
 /// # Do not use it in tests!
 ///
-/// Reuse [`Executor`](crate::Executor). Read about it in [`test module`](crate::test).
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 ///
 /// # Examples
 ///
@@ -222,7 +235,7 @@ pub fn stop_executor(executor_id: usize) {
 ///
 /// # Do not use it in tests!
 ///
-/// Reuse [`Executor`](crate::Executor). Read about it in [`test module`](crate::test).
+/// Reuse [`Executor`]. Read about it in [`test module`](crate::test).
 pub fn stop_all_executors() {
     lock_and_get_global_state().stop_all_executors();
 }

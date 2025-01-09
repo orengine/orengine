@@ -11,23 +11,23 @@ pub enum SendTaskResult {
 }
 
 impl SendTaskResult {
-    /// Returns `true` if the result is [`SendTaskResult::Ok`].
+    /// Returns `true` if the result is [`Self::Ok`].
     #[inline(always)]
     pub fn is_ok(&self) -> bool {
-        matches!(self, SendTaskResult::Ok)
+        matches!(self, Self::Ok)
     }
 
-    /// If the result is [`SendTaskResult::ExecutorIsNotRegistered`],
+    /// If the result is [`Self::ExecutorIsNotRegistered`],
     /// panics with the given message.
     ///
     /// # Panics
     ///
-    /// Panics if the result is [`SendTaskResult::ExecutorIsNotRegistered`].
+    /// Panics if the result is [`Self::ExecutorIsNotRegistered`].
     pub fn expect(self, msg: &str) {
         assert!(self.is_ok(), "{}", msg);
     }
 
-    /// If the result is [`SendTaskResult::ExecutorIsNotRegistered`],
+    /// If the result is [`Self::ExecutorIsNotRegistered`],
     /// calls the given function.
     pub fn or_else(self, f: impl FnOnce() -> Self) {
         if !self.is_ok() {

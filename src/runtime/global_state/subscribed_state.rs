@@ -1,8 +1,9 @@
-use crate::runtime::interaction_between_executors::interactor::{
-    Interactor, SharedTaskListForSendTo,
+#[cfg(not(feature = "disable_send_task_to"))]
+use crate::runtime::interaction_between_executors::{
+    Interactor, SharedTaskListForSendTo, SyncBatchOptimizedTaskQueue,
 };
-use crate::runtime::interaction_between_executors::SyncBatchOptimizedTaskQueue;
 use crate::runtime::{lock_and_get_global_state, ExecutorSharedTaskList};
+#[cfg(not(feature = "disable_send_task_to"))]
 use crate::utils::vec_map::VecMap;
 use crate::BUG_MESSAGE;
 use crossbeam::utils::CachePadded;
@@ -18,6 +19,7 @@ struct Inner {
     is_stopped: bool,
     tasks_lists: Option<Vec<Arc<ExecutorSharedTaskList>>>,
     /// Used in `send_task_to`.
+    #[cfg(not(feature = "disable_send_task_to"))]
     executors_task_lists: VecMap<Arc<SyncBatchOptimizedTaskQueue>>,
 }
 
@@ -43,6 +45,7 @@ impl SubscribedState {
                 processed_version: usize::MAX,
                 is_stopped: false,
                 tasks_lists: None,
+                #[cfg(not(feature = "disable_send_task_to"))]
                 executors_task_lists: VecMap::new(),
             }),
         }
@@ -113,7 +116,7 @@ impl SubscribedState {
     pub(crate) fn check_version_and_update_if_needed(
         &self,
         executor_id: usize,
-        interactor: &mut Interactor,
+        #[cfg(not(feature = "disable_send_task_to"))] interactor: &mut Interactor,
     ) {
         self.with_inner(|inner| {
             let current_version = inner.current_version.load(Acquire);
@@ -140,27 +143,30 @@ impl SubscribedState {
             }
 
             // region update executors_task_lists and interactor.other_shared_task_lists
+            #[cfg(not(feature = "disable_send_task_to"))]
+            {
+                inner.executors_task_lists.clear();
 
-            inner.executors_task_lists.clear();
+                shared_state
+                    .alive_executors()
+                    .iter()
+                    .for_each(|(id, state)| {
+                        inner
+                            .executors_task_lists
+                            .insert(id, state.task_queue.clone());
+                    });
 
-            shared_state
-                .alive_executors()
-                .iter()
-                .for_each(|(id, (_, task_queue))| {
-                    inner.executors_task_lists.insert(id, task_queue.clone());
-                });
+                interactor.shared_task_lists_mut().clear();
 
-            interactor.shared_task_lists_mut().clear();
-
-            shared_state
-                .alive_executors()
-                .iter()
-                .for_each(|(id, (_, task_queue))| {
-                    interactor
-                        .shared_task_lists_mut()
-                        .insert(id, SharedTaskListForSendTo::new(task_queue.clone()));
-                });
-
+                shared_state
+                    .alive_executors()
+                    .iter()
+                    .for_each(|(id, state)| {
+                        interactor
+                            .shared_task_lists_mut()
+                            .insert(id, SharedTaskListForSendTo::new(state.task_queue.clone()));
+                    });
+            }
             // endregion
         });
     }

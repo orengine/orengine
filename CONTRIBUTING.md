@@ -4,7 +4,7 @@ __Before the pull request, do the following:__
 
 - Check a code quality via `cargo clippy`, `cargo doc` and `cargo fmt --all --check`;
 
-- Run `cargo test` and `cargo test --release`;
+- Run `cargo test`, `cargo test --all-features`, `cargo test --release` and `cargo test --release --all-features`;
 
 - If needed, update examples and benchmarks;
 

@@ -10,132 +10,105 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-debug:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Debug
-        run: cargo build --verbose
-      - name: Run Tests Debug
-        run: cargo test --verbose -- --nocapture
-
-  test-release:
+  test-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Release
-        run: cargo build --release --verbose
-      - name: Run Tests Release
-        run: cargo test --release --verbose -- --nocapture
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  cross-platform-tests-macos:
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Run tests
+        run: |
+          cargo test -- --nocapture
+          cargo test --all-features -- --nocapture
+          cargo test --release -- --nocapture
+          cargo test --release --all-features -- --nocapture
+
+  test-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Run tests
+        shell: cmd
+        run: |
+          cargo test -- --nocapture
+          cargo test --all-features -- --nocapture
+          cargo test --release -- --nocapture
+          cargo test --release --all-features -- --nocapture
+
+  test-macos:
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: Run Tests
-        run: cargo test --verbose -- --nocapture
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  cross-platform-tests-windows:
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: Run Tests
-        run: cargo test --verbose -- --nocapture --test-threads=1
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-  cross-platform-tests-macos-release:
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: Run Tests
-        run: cargo test --release --verbose -- --nocapture --test-threads=1
+      - name: Run tests
+        shell: cmd
+        run: |
+          cargo test -- --nocapture
+          cargo test --all-features -- --nocapture
+          cargo test --release -- --nocapture
+          cargo test --release --all-features -- --nocapture
 
-  cross-platform-tests-windows-release:
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: Run Tests
-        run: cargo test --release --verbose -- --nocapture
-
-  cross-platform-tests-windows-release_with_thread_pool:
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: Run Tests
-        run: cargo test --all-features --release --verbose -- --nocapture
-
-  rustfmt:
+  code-style-check-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: rustfmt
-        run: cargo fmt --all --check
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-  clippy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: clippy
-        run: cargo clippy
+      - name: Run tests
+        shell: cmd
+        run: |
+          cargo fmt --all --check
+          cargo clippy
+          cargo doc
 
-  docs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: docs
-        run: cargo doc
-
-  rustfmt-windows:
+  code-style-check-windows:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: rustfmt
-        run: cargo fmt --all --check
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-  clippy-windows:
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: clippy
-        run: cargo clippy
-
-  docs-windows:
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: rustup update stable
-      - name: docs
-        run: cargo doc
+      - name: Run tests
+        shell: cmd
+        run: |
+          cargo fmt --all --check
+          cargo clippy
+          cargo doc

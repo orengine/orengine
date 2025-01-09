@@ -6,8 +6,8 @@ use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::executor::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
 use crate::runtime::global_state::{register_local_executor, SubscribedState};
-use crate::runtime::interaction_between_executors::interactor::Interactor;
-use crate::runtime::interaction_between_executors::SendTaskResult;
+#[cfg(not(feature = "disable_send_task_to"))]
+use crate::runtime::interaction_between_executors::{Interactor, SendTaskResult};
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
@@ -143,6 +143,7 @@ pub struct Executor {
     local_tasks: VecDeque<Task>,
     shared_tasks: VecDeque<Task>,
     shared_tasks_list: Option<Arc<ExecutorSharedTaskList>>,
+    #[cfg(not(feature = "disable_send_task_to"))]
     interactor: Interactor,
 
     exec_series: usize,
@@ -221,6 +222,7 @@ impl Executor {
                 local_tasks: VecDeque::new(),
                 shared_tasks: VecDeque::with_capacity(shared_tasks_list_cap),
                 shared_tasks_list: shared_tasks,
+                #[cfg(not(feature = "disable_send_task_to"))]
                 interactor: Interactor::new(),
 
                 current_call: Call::default(),
@@ -318,6 +320,7 @@ impl Executor {
     }
 
     /// Returns a reference to the [`Interactor`] of the executor.
+    #[cfg(not(feature = "disable_send_task_to"))]
     pub(crate) fn interactor(&self) -> &Interactor {
         &self.interactor
     }
@@ -709,6 +712,7 @@ impl Executor {
     ///     });
     /// }
     /// ```
+    #[cfg(not(feature = "disable_send_task_to"))]
     pub unsafe fn send_task_to_executor(
         &mut self,
         task: Task,
@@ -762,6 +766,7 @@ impl Executor {
     ///         .expect("Executor with such id doesn't exist");
     /// }
     /// ```
+    #[cfg(not(feature = "disable_send_task_to"))]
     pub fn send_local_future_to_executor<Fut, F>(
         &mut self,
         creator: F,
@@ -787,6 +792,7 @@ impl Executor {
     ///
     /// And more simple example can be found in
     /// [`send_local_future_to_executor`](Self::send_local_future_to_executor).
+    #[cfg(not(feature = "disable_send_task_to"))]
     pub fn send_shared_future_to_executor<Fut, F>(
         &mut self,
         creator: F,
@@ -1000,8 +1006,11 @@ impl Executor {
         register_local_executor();
 
         loop {
-            self.subscribed_state
-                .check_version_and_update_if_needed(self.id, &mut self.interactor);
+            self.subscribed_state.check_version_and_update_if_needed(
+                self.id,
+                #[cfg(not(feature = "disable_send_task_to"))]
+                &mut self.interactor,
+            );
             if self.subscribed_state.is_stopped() {
                 break;
             }
@@ -1009,8 +1018,11 @@ impl Executor {
             self.exec_series = 0;
 
             self.exec_cpu_tasks();
-            self.interactor
-                .do_work(&mut self.local_tasks, &mut self.shared_tasks);
+            #[cfg(not(feature = "disable_send_task_to"))]
+            {
+                self.interactor
+                    .do_work(&mut self.local_tasks, &mut self.shared_tasks);
+            }
             self.take_work_if_needed();
             self.thread_pool.poll(&mut self.local_tasks);
             let nearest_timeout_option = self.check_sleeping_tasks();
@@ -1217,10 +1229,7 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::local::Local;
-    use crate::sync::{AsyncWaitGroup, WaitGroup};
-    use crate::test::sched_future_to_another_thread;
     use crate::yield_now::yield_now;
-    use std::sync::atomic::Ordering::SeqCst;
 
     #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
@@ -1262,7 +1271,12 @@ mod tests {
     }
 
     #[orengine::test::test_shared]
+    #[cfg(not(feature = "disable_send_task_to"))]
     fn test_send_task() {
+        use crate::sync::{AsyncWaitGroup, WaitGroup};
+        use crate::test::sched_future_to_another_thread;
+        use std::sync::atomic::Ordering::SeqCst;
+
         static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
 
         let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
