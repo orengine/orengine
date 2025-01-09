@@ -68,7 +68,6 @@ jobs:
           override: true
 
       - name: Run tests
-        shell: cmd
         run: |
           cargo test -- --nocapture
           cargo test --all-features -- --nocapture
@@ -79,7 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -88,7 +89,6 @@ jobs:
           override: true
 
       - name: Run tests
-        shell: cmd
         run: |
           cargo fmt --all --check
           cargo clippy
