@@ -17,6 +17,10 @@ pub(crate) enum EachAddrRes<R> {
 
 /// Iterate over the addresses in `addrs` and call `f` for each one
 /// before first successful result or the last address.
+#[allow(
+    clippy::future_not_send,
+    reason = "It is not Send only when Res or Fur or F is not Send, it is right."
+)]
 pub(crate) async fn each_addr<Res, Fut, F>(addrs: impl ToSocketAddrs, f: F) -> io::Result<Res>
 where
     Fut: Future<Output = io::Result<Res>>,

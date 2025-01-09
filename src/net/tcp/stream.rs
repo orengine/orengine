@@ -496,7 +496,7 @@ mod tests {
                     let buf = vec![0u8; 1 << 24];
                     let res = stream
                         .send_all_bytes_with_deadline(
-                            &*buf,
+                            &buf,
                             Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
                         )
                         .await;

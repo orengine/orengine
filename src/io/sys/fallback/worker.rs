@@ -124,7 +124,6 @@ impl FallbackWorker {
     /// Schedules a non-retriable IO call. It doesn't decrease the number of active tasks.
     #[allow(unused_variables, reason = "We use #[cfg(debug_assertions)] here.")]
     fn schedule_io_call_that_not_retriable(
-        &mut self,
         io_call: &IoCall,
         io_request_data_ptr: IoRequestDataPtr,
     ) {
@@ -163,13 +162,16 @@ impl FallbackWorker {
                         if io_call.must_retry() {
                             self.handle_io_call(io_call, io_request_data_ptr);
                         } else {
-                            self.schedule_io_call_that_not_retriable(&io_call, io_request_data_ptr);
+                            Self::schedule_io_call_that_not_retriable(
+                                &io_call,
+                                io_request_data_ptr,
+                            );
                         }
                     });
                 } else if io_call.must_retry() {
                     self.handle_io_call(io_call, io_request_data_ptr);
                 } else {
-                    self.schedule_io_call_that_not_retriable(&io_call, io_request_data_ptr);
+                    Self::schedule_io_call_that_not_retriable(&io_call, io_request_data_ptr);
                 }
             } else {
                 if let Some(deadline) = io_call.deadline() {
@@ -202,7 +204,7 @@ impl FallbackWorker {
     }
 
     /// Executes an IO operation and processes the result.
-    fn handle_io_operation<Op>(&self, op: Op, io_request_data_ptr: IoRequestDataPtr)
+    fn handle_io_operation<Op>(op: Op, io_request_data_ptr: IoRequestDataPtr)
     where
         Op: Fn() -> io::Result<usize>,
     {
@@ -248,7 +250,7 @@ impl FallbackWorker {
             } else {
                 // We can't spawn shared task when it is running.
                 unsafe {
-                    local_executor().invoke_call(Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue)
+                    local_executor().invoke_call(Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue);
                 }
             }
 
@@ -324,9 +326,9 @@ impl FallbackWorker {
                             );
 
                             return;
-                        } else {
-                            Err(err)
                         }
+
+                        Err(err)
                     }
 
                     #[cfg(not(unix))]
@@ -346,7 +348,7 @@ impl FallbackWorker {
             } else {
                 // We can't spawn shared task when it is running.
                 unsafe {
-                    local_executor().invoke_call(Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue)
+                    local_executor().invoke_call(Call::PushCurrentTaskAtTheStartOfLIFOSharedQueue);
                 }
             }
 
@@ -403,7 +405,7 @@ impl IoWorker for FallbackWorker {
         protocol: Protocol,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || socket_op(domain, sock_type, protocol), request_ptr);
+        Self::handle_io_operation(move || socket_op(domain, sock_type, protocol), request_ptr);
     }
 
     #[inline(always)]
@@ -774,7 +776,7 @@ impl IoWorker for FallbackWorker {
 
     #[inline(always)]
     fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || shutdown_op(raw_socket, how), request_ptr);
+        Self::handle_io_operation(move || shutdown_op(raw_socket, how), request_ptr);
     }
 
     #[inline(always)]
@@ -784,7 +786,7 @@ impl IoWorker for FallbackWorker {
         open_how: *const OsOpenOptions,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || open_op(path, open_how), request_ptr);
+        Self::handle_io_operation(move || open_op(path, open_how), request_ptr);
     }
 
     #[inline(always)]
@@ -796,22 +798,22 @@ impl IoWorker for FallbackWorker {
         _flags: i32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || Ok(0), request_ptr);
+        Self::handle_io_operation(move || Ok(0), request_ptr);
     }
 
     #[inline(always)]
     fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || fsync_op(raw_file), request_ptr);
+        Self::handle_io_operation(move || fsync_op(raw_file), request_ptr);
     }
 
     #[inline(always)]
     fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || fsync_data_op(raw_file), request_ptr);
+        Self::handle_io_operation(move || fsync_data_op(raw_file), request_ptr);
     }
 
     #[inline(always)]
     fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
+        Self::handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -823,7 +825,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
+        Self::handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -835,7 +837,7 @@ impl IoWorker for FallbackWorker {
         offset: usize,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || read_at_op(raw_file, offset as u64, ptr, len),
             request_ptr,
         );
@@ -851,7 +853,7 @@ impl IoWorker for FallbackWorker {
         offset: usize,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || read_at_op(raw_file, offset as u64, ptr, len),
             request_ptr,
         );
@@ -865,7 +867,7 @@ impl IoWorker for FallbackWorker {
         len: u32,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
+        Self::handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -877,7 +879,7 @@ impl IoWorker for FallbackWorker {
         _buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
+        Self::handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
     }
 
     #[inline(always)]
@@ -889,7 +891,7 @@ impl IoWorker for FallbackWorker {
         offset: usize,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || write_at_op(raw_file, offset as u64, ptr, len),
             request_ptr,
         );
@@ -905,7 +907,7 @@ impl IoWorker for FallbackWorker {
         offset: usize,
         request_ptr: IoRequestDataPtr,
     ) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || write_at_op(raw_file, offset as u64, ptr, len),
             request_ptr,
         );
@@ -913,7 +915,7 @@ impl IoWorker for FallbackWorker {
 
     #[inline(always)]
     fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || {
                 close_file_op(raw_file);
                 Ok(0)
@@ -924,7 +926,7 @@ impl IoWorker for FallbackWorker {
 
     #[inline(always)]
     fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(
+        Self::handle_io_operation(
             move || {
                 close_socket_op(raw_socket);
                 Ok(0)
@@ -935,21 +937,21 @@ impl IoWorker for FallbackWorker {
 
     #[inline(always)]
     fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || rename_op(old_path, new_path), request_ptr);
+        Self::handle_io_operation(move || rename_op(old_path, new_path), request_ptr);
     }
 
     #[inline(always)]
     fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || mkdir_op(path, mode), request_ptr);
+        Self::handle_io_operation(move || mkdir_op(path, mode), request_ptr);
     }
 
     #[inline(always)]
     fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || unlink_op(path), request_ptr);
+        Self::handle_io_operation(move || unlink_op(path), request_ptr);
     }
 
     #[inline(always)]
     fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
-        self.handle_io_operation(move || rmdir_op(path), request_ptr);
+        Self::handle_io_operation(move || rmdir_op(path), request_ptr);
     }
 }

@@ -15,7 +15,7 @@ static CORES_IDS_LIST: LazyLock<Mutex<VecDeque<CoreId>>> = LazyLock::new(|| {
     clippy::missing_panics_doc,
     reason = "It panics only when a bug is occurred."
 )]
-pub fn get_core_id_for_executor() -> CoreId {
+pub(crate) fn get_core_id_for_executor() -> CoreId {
     let mut table = CORES_IDS_LIST.lock().expect(BUG_MESSAGE);
     let core_id = table.pop_front().expect(BUG_MESSAGE);
     table.push_back(core_id);
