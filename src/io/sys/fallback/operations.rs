@@ -52,7 +52,10 @@ pub(crate) fn socket_op(
     socket2::Socket::new(domain, socket_type, Some(protocol)).map(|socket| {
         socket.set_nonblocking(true).unwrap();
 
-        IntoRawSocket::into_raw_socket(socket) as usize
+        #[allow(clippy::cast_sign_loss, reason = "RawSocket has no sign.")]
+        {
+            IntoRawSocket::into_raw_socket(socket) as usize
+        }
     })
 }
 
@@ -79,7 +82,10 @@ pub(crate) fn accept_op(
                 ptr::write(sockaddr_len_ptr, addr.len());
             }
 
-            IntoRawSocket::into_raw_socket(socket) as usize
+            #[allow(clippy::cast_sign_loss, reason = "RawSocket has no sign.")]
+            {
+                IntoRawSocket::into_raw_socket(socket) as usize
+            }
         })
     })
 }
@@ -187,6 +193,7 @@ pub(crate) fn open_op(path_ptr: OsPathPtr, open_how: *const OsOpenOptions) -> io
     let open_how = unsafe { &*open_how };
     let path = unsafe { &*path_ptr };
 
+    #[allow(clippy::cast_sign_loss, reason = "RawFile has no sign.")]
     open_how
         .open(path)
         .map(|file| file.into_raw_file() as usize)

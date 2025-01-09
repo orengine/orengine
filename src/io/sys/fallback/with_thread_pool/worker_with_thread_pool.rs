@@ -78,11 +78,11 @@ impl ThreadWorker {
                                 .raw_os_error()
                                 .is_some_and(|code| code == libc::EINPROGRESS)
                             {
-                                MustPoll(call, data_ptr)
+                                WorkerResult::MustPoll(call, data_ptr)
                             } else {
                                 data.set_ret(Err(err));
 
-                                Done(unsafe { data.task() })
+                                WorkerResult::Done(unsafe { data.task() })
                             }
                         }
 
