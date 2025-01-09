@@ -6,6 +6,8 @@ use crate::runtime::call::Call;
 use crate::runtime::config::{Config, ValidConfig};
 use crate::runtime::executor::end_local_thread_and_write_into_ptr::EndLocalThreadAndWriteIntoPtr;
 use crate::runtime::global_state::{register_local_executor, SubscribedState};
+use crate::runtime::interaction_between_executors::interactor::Interactor;
+use crate::runtime::interaction_between_executors::SendTaskResult;
 use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
@@ -133,7 +135,7 @@ pub fn local_executor() -> &'static mut Executor {
 /// When `Executor` has no work, it tries to take tasks from other executors.
 pub struct Executor {
     core_id: CoreId,
-    executor_id: usize,
+    id: usize,
     config: ValidConfig,
     subscribed_state: Arc<SubscribedState>,
     rng: Rng,
@@ -141,6 +143,7 @@ pub struct Executor {
     local_tasks: VecDeque<Task>,
     shared_tasks: VecDeque<Task>,
     shared_tasks_list: Option<Arc<ExecutorSharedTaskList>>,
+    interactor: Interactor,
 
     exec_series: usize,
     local_worker: &'static mut Option<WorkerSys>,
@@ -210,7 +213,7 @@ impl Executor {
 
             *get_local_executor_ref() = Some(Self {
                 core_id,
-                executor_id,
+                id: executor_id,
                 config: valid_config,
                 subscribed_state: Arc::new(SubscribedState::new()),
                 rng: Rng::new(),
@@ -218,6 +221,7 @@ impl Executor {
                 local_tasks: VecDeque::new(),
                 shared_tasks: VecDeque::with_capacity(shared_tasks_list_cap),
                 shared_tasks_list: shared_tasks,
+                interactor: Interactor::new(),
 
                 current_call: Call::default(),
                 exec_series: 0,
@@ -289,7 +293,7 @@ impl Executor {
 
     /// Returns the id of the executor.
     pub fn id(&self) -> usize {
-        self.executor_id
+        self.id
     }
 
     /// Add a task to the beginning of the local lifo queue.
@@ -313,6 +317,11 @@ impl Executor {
         self.subscribed_state.clone()
     }
 
+    /// Returns a reference to the [`Interactor`] of the executor.
+    pub(crate) fn interactor(&self) -> &Interactor {
+        &self.interactor
+    }
+
     /// Returns the core id on which the executor is running.
     pub fn core_id(&self) -> CoreId {
         self.core_id
@@ -326,6 +335,18 @@ impl Executor {
     /// Returns a reference to the shared tasks list of the executor.
     pub(crate) fn shared_task_list(&self) -> Option<&Arc<ExecutorSharedTaskList>> {
         self.shared_tasks_list.as_ref()
+    }
+
+    /// Returns a reference to the local tasks queue.
+    #[inline(always)]
+    pub fn local_queue(&mut self) -> &mut VecDeque<Task> {
+        &mut self.local_tasks
+    }
+
+    /// Returns a reference to the `sleeping_tasks`.
+    #[inline(always)]
+    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeMap<Instant, Task> {
+        &mut self.local_sleeping_tasks
     }
 
     /// Returns the number of spawned tasks (shared and local).
@@ -486,7 +507,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, Locality::local());
+        let task = unsafe { Task::from_future(future, Locality::local()) };
         self.exec_task(task);
     }
 
@@ -501,7 +522,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, Locality::shared());
+        let task = unsafe { Task::from_future(future, Locality::shared()) };
         self.exec_task(task);
     }
 
@@ -519,7 +540,7 @@ impl Executor {
     where
         F: Future<Output = ()>,
     {
-        let task = Task::from_future(future, Locality::local());
+        let task = unsafe { Task::from_future(future, Locality::local()) };
         self.spawn_local_task(task);
     }
 
@@ -553,7 +574,7 @@ impl Executor {
     where
         F: Future<Output = ()> + Send,
     {
-        let task = Task::from_future(future, Locality::shared());
+        let task = unsafe { Task::from_future(future, Locality::shared()) };
         self.spawn_shared_task(task);
     }
 
@@ -608,16 +629,176 @@ impl Executor {
         }
     }
 
-    /// Returns a reference to the local tasks queue.
-    #[inline(always)]
-    pub fn local_queue(&mut self) -> &mut VecDeque<Task> {
-        &mut self.local_tasks
+    /// Sends a [`Task`] to the executor with the given id.
+    ///
+    /// It is unsafe because we can't check if the provided [`Task`] don't reference to the
+    /// current thread non-Send data.
+    ///
+    /// If provided `executor_id` is equal to the current executor id, this function calls
+    /// [`spawn_task`](Executor::spawn_task) instead.
+    ///
+    /// # Safety
+    ///
+    /// - Provided [`Task`] must not reference to the current thread non-Send data;
+    ///
+    /// - If it is `shared`, it valid when the [`Task`] is valid;
+    ///
+    /// - If it is `local`, it valid only when the [`Task`] doesn't reference to the
+    ///   current thread non-Send data. For example, it can contain [`Local`](crate::Local)
+    ///   created in the current thread, or it can reference to some non-Send data
+    ///   if these data are used only in the thread where provided [`Task`] will be sent.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::collections::HashMap;
+    /// use orengine::net::{TcpListener, Stream};
+    /// use orengine::local_executor;
+    /// use orengine::runtime::{Task, Locality};
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncAccept};
+    /// use orengine::run_local_future_on_all_cores;
+    ///
+    /// thread_local! {
+    ///     static STORAGE_SHARD: HashMap<u32, usize> = HashMap::new();
+    /// }
+    ///
+    /// fn get_value_from_local_shard(key: u32) -> Option<usize> {
+    ///     STORAGE_SHARD.with(|shard| shard.get(&key).cloned())
+    /// }
+    ///
+    /// async fn handle_connection<S: Stream>(mut stream: S) {
+    ///     stream.poll_recv().await.unwrap();
+    ///
+    ///     let mut buffer = full_buffer();
+    ///
+    ///     stream.recv_exact(&mut buffer.slice_mut(0..8)).await.unwrap();
+    ///     let number_of_shard = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+    ///
+    ///     let key = u32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
+    ///     
+    ///     drop(buffer); // release buffer in this thread
+    ///
+    ///     let task = unsafe {
+    ///         Task::from_future(async move {
+    ///             let value = get_value_from_local_shard(key).unwrap();
+    ///             let mut buffer = orengine::io::buffer();
+    ///
+    ///             buffer.append(&value.to_be_bytes());
+    ///             stream.send_all(&buffer).await.unwrap();
+    ///         }, Locality::local())
+    ///     };
+    ///
+    ///     unsafe {
+    ///         local_executor()
+    ///             .send_task_to_executor(task, number_of_shard)
+    ///             .expect("Executor with such id doesn't exist");
+    ///     }
+    /// }
+    ///
+    /// fn main() {
+    ///     run_local_future_on_all_cores(|| async {
+    ///         let mut listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
+    ///         let executor = local_executor();        
+    ///
+    ///         loop {
+    ///             let (stream, _) = listener.accept().await.unwrap();
+    ///             executor.spawn_local(async move {
+    ///                 handle_connection(stream).await
+    ///             });
+    ///         }
+    ///     });
+    /// }
+    /// ```
+    pub unsafe fn send_task_to_executor(
+        &mut self,
+        task: Task,
+        executor_id: usize,
+    ) -> SendTaskResult {
+        if executor_id != self.id {
+            self.interactor.send_task_to_executor(task, executor_id)
+        } else {
+            self.spawn_task(task);
+
+            SendTaskResult::Ok
+        }
     }
 
-    /// Returns a reference to the `sleeping_tasks`.
-    #[inline(always)]
-    pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeMap<Instant, Task> {
-        &mut self.local_sleeping_tasks
+    /// Creates a new `local` [`Task`] and sends it to the executor with the given id.
+    ///
+    /// If provided `executor_id` is equal to the current executor id, this function calls
+    /// [`spawn_task`](Executor::spawn_task) instead.
+    ///
+    /// # Example
+    ///
+    /// Very detailed example can be found in [`send_task_to_executor`](Self::send_task_to_executor).
+    ///
+    /// ```no_run
+    /// use orengine::io::AsyncSend;
+    /// use orengine::local_executor;
+    /// use orengine::net::Stream;
+    /// # fn get_local_storage() -> &'static mut std::collections::HashMap<usize, usize> {
+    /// #     Box::leak(Box::new(std::collections::HashMap::new()))
+    /// # }
+    /// # fn get_shard_id(request: &Request<impl AsyncSend>) -> usize { 0 }
+    /// # async fn read_request<S: Stream>(mut stream: S) -> Request<S> { Request { shard_id: 0, key: 0, response_sender: stream } }
+    ///
+    /// struct Request<Sender: AsyncSend> {
+    ///     shard_id: usize,
+    ///     key: usize,
+    ///     response_sender: Sender
+    /// }
+    ///
+    /// async fn process_stream<S: Stream>(mut stream: S) {
+    ///     let mut request = read_request(stream).await;
+    ///     let shard_id = get_shard_id(&request);
+    ///
+    ///     local_executor()
+    ///         .send_local_future_to_executor(|| async {
+    ///             let mut storage = get_local_storage();
+    ///             let value = storage.get(&request.key).unwrap();
+    ///
+    ///             request.response_sender.send_all_bytes(&value.to_be_bytes()).await.unwrap();
+    ///         }, shard_id)
+    ///         .expect("Executor with such id doesn't exist");
+    /// }
+    /// ```
+    pub fn send_local_future_to_executor<Fut, F>(
+        &mut self,
+        creator: F,
+        executor_id: usize,
+    ) -> SendTaskResult
+    where
+        Fut: Future<Output = ()>,
+        F: FnOnce() -> Fut,
+    {
+        let task = unsafe { Task::from_future(creator(), Locality::local()) };
+
+        unsafe { self.send_task_to_executor(task, executor_id) }
+    }
+
+    /// Creates a new `local` [`Task`] and sends it to the executor with the given id.
+    ///
+    /// If provided `executor_id` is equal to the current executor id, this function calls
+    /// [`spawn_task`](Executor::spawn_task) instead.
+    ///
+    /// # Example
+    ///
+    /// Very detailed example can be found in [`send_task_to_executor`](Self::send_task_to_executor).
+    ///
+    /// And more simple example can be found in
+    /// [`send_local_future_to_executor`](Self::send_local_future_to_executor).
+    pub fn send_shared_future_to_executor<Fut, F>(
+        &mut self,
+        creator: F,
+        executor_id: usize,
+    ) -> SendTaskResult
+    where
+        Fut: Future<Output = ()> + Send,
+        F: FnOnce() -> Fut,
+    {
+        let task = unsafe { Task::from_future(creator(), Locality::shared()) };
+
+        unsafe { self.send_task_to_executor(task, executor_id) }
     }
 
     /// Tries to take a batch of tasks from the shared tasks queue if needed.
@@ -673,7 +854,6 @@ impl Executor {
     fn sleep_at_most(&self, max_duration: Duration) {
         // Wait for more work
 
-        // TODO bench it
         thread::sleep(max_duration);
     }
 
@@ -821,7 +1001,7 @@ impl Executor {
 
         loop {
             self.subscribed_state
-                .check_version_and_update_if_needed(self.executor_id);
+                .check_version_and_update_if_needed(self.id, &mut self.interactor);
             if self.subscribed_state.is_stopped() {
                 break;
             }
@@ -829,6 +1009,8 @@ impl Executor {
             self.exec_series = 0;
 
             self.exec_cpu_tasks();
+            self.interactor
+                .do_work(&mut self.local_tasks, &mut self.shared_tasks);
             self.take_work_if_needed();
             self.thread_pool.poll(&mut self.local_tasks);
             let nearest_timeout_option = self.check_sleeping_tasks();
@@ -1035,7 +1217,10 @@ mod tests {
     use super::*;
     use crate as orengine;
     use crate::local::Local;
+    use crate::sync::{AsyncWaitGroup, WaitGroup};
+    use crate::test::sched_future_to_another_thread;
     use crate::yield_now::yield_now;
+    use std::sync::atomic::Ordering::SeqCst;
 
     #[orengine::test::test_local]
     fn test_spawn_local_and_exec_future() {
@@ -1074,6 +1259,99 @@ mod tests {
 
         Executor::init_with_config(Config::default().disable_work_sharing());
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
+    }
+
+    #[orengine::test::test_shared]
+    fn test_send_task() {
+        static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
+
+        let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
+        let another_id_clone = another_id.clone();
+        let cond_var = Arc::new(std::sync::Condvar::new());
+        let cond_var_clone = cond_var.clone();
+        let wg = Arc::new(WaitGroup::new());
+
+        let wg_clone = wg.clone();
+
+        wg_clone.inc();
+        sched_future_to_another_thread(async move {
+            let id = local_executor().id();
+            *another_id_clone.lock().unwrap() = id;
+            cond_var_clone.notify_one();
+
+            wg_clone.wait().await;
+        });
+
+        let another_executor_id = *cond_var
+            .wait_while(another_id.lock().unwrap(), |guard| *guard == usize::MAX)
+            .unwrap();
+
+        yield_now().await;
+
+        let task = unsafe {
+            let wg_clone = wg.clone();
+            wg_clone.inc();
+
+            Task::from_future(
+                async move {
+                    assert_eq!(local_executor().id(), another_executor_id);
+
+                    RESULTED_TASKS.fetch_add(1, SeqCst);
+
+                    wg_clone.done();
+                },
+                Locality::local(),
+            )
+        };
+
+        unsafe {
+            local_executor()
+                .send_task_to_executor(task, another_executor_id)
+                .expect("Failed to send task");
+        };
+
+        // send local future
+        {
+            let wg_clone = wg.clone();
+            wg_clone.inc();
+
+            local_executor()
+                .send_local_future_to_executor(
+                    || async move {
+                        assert_eq!(local_executor().id(), another_executor_id);
+
+                        RESULTED_TASKS.fetch_add(1, SeqCst);
+
+                        wg_clone.done();
+                    },
+                    another_executor_id,
+                )
+                .expect("Failed to send future");
+        }
+
+        // send shared future
+        {
+            let wg_clone = wg.clone();
+            wg_clone.inc();
+
+            local_executor()
+                .send_shared_future_to_executor(
+                    || async move {
+                        assert_eq!(local_executor().id(), another_executor_id);
+
+                        RESULTED_TASKS.fetch_add(1, SeqCst);
+
+                        wg_clone.done();
+                    },
+                    another_executor_id,
+                )
+                .expect("Failed to send future");
+        }
+
+        wg.done();
+        wg.wait().await;
+
+        assert_eq!(RESULTED_TASKS.load(SeqCst), 3);
     }
 
     // TODO put this into a separate test

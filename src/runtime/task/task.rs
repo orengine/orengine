@@ -25,8 +25,14 @@ pub struct Task {
 
 impl Task {
     /// Returns a [`Task`] with the given future.
+    ///
+    /// # Safety
+    ///
+    /// - With [`local locality`](Locality::local) it is always safe;
+    ///
+    /// - With [`shared locality`](Locality::shared) it is safe if the provided [`Future`] is `Send`.
     #[inline(always)]
-    pub fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
+    pub unsafe fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
         task_pool().acquire(future, locality)
     }
 

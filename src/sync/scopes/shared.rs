@@ -66,7 +66,7 @@ impl<'scope> Scope<'scope> {
             fut: future,
         };
 
-        let shared_task = crate::runtime::Task::from_future(handle, Locality::shared());
+        let shared_task = unsafe { crate::runtime::Task::from_future(handle, Locality::shared()) };
         local_executor().exec_task(shared_task);
     }
 

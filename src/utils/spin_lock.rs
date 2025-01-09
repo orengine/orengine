@@ -135,6 +135,7 @@ impl<T: ?Sized> SpinLock<T> {
         loop {
             if let Some(guard) = self.try_lock() {
                 atomic::fence(Acquire);
+
                 return guard;
             }
             backoff.spin();

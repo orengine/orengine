@@ -123,12 +123,14 @@ mod tests {
     fn test_task_data() {
         let res = Local::new(false);
         let res_clone = res.clone();
-        let mut task = Task::from_future(
-            async move {
-                *res_clone.borrow_mut() = true;
-            },
-            Locality::local(),
-        );
+        let mut task = unsafe {
+            Task::from_future(
+                async move {
+                    *res_clone.borrow_mut() = true;
+                },
+                Locality::local(),
+            )
+        };
 
         assert!(task.data.is_local());
         assert!(task.is_local());

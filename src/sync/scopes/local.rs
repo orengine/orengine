@@ -69,7 +69,7 @@ impl<'scope> LocalScope<'scope> {
             no_send_marker: PhantomData,
         };
 
-        let local_task = crate::runtime::Task::from_future(handle, Locality::local());
+        let local_task = unsafe { crate::runtime::Task::from_future(handle, Locality::local()) };
         local_executor().exec_task(local_task);
     }
 
