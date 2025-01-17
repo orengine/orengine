@@ -1,8 +1,9 @@
 use crate::io::{sys, AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
+use crate::net::addr::FromSockAddr;
+use crate::net::unix::unsupport::new_unix_unsupported_error;
 use crate::net::Socket;
 use std::io;
 use std::io::Error;
-use std::net::SocketAddr;
 use std::time::Duration;
 
 /// The `Stream` trait defines common operations for bidirectional communication streams, such as
@@ -17,10 +18,10 @@ use std::time::Duration;
 /// - [`Socket`]
 /// - [`AsyncPollSocket`](crate::io::AsyncPollSocket)
 /// - [`AsyncClose`](crate::io::AsyncSocketClose)
-/// - [`IntoRawSocket`](crate::io::sys::IntoRawSocket)
-/// - [`FromRawSocket`](crate::io::sys::FromRawSocket)
-/// - [`AsSocket`](crate::io::sys::AsSocket)
-/// - [`AsRawSocket`](crate::io::sys::AsRawSocket)
+/// - [`IntoRawSocket`](sys::IntoRawSocket)
+/// - [`FromRawSocket`](sys::FromRawSocket)
+/// - [`AsSocket`](sys::AsSocket)
+/// - [`AsRawSocket`](sys::AsRawSocket)
 /// - [`AsyncConnectStream`]
 /// - [`AsyncRecv`]
 /// - [`AsyncPeek`]
@@ -58,6 +59,11 @@ pub trait Stream:
     /// closing the connection for up to the specified duration. If `None` is provided, the
     /// system will immediately close the connection without attempting to send pending data.
     ///
+    /// # Unix
+    ///
+    /// UNIX sockets do not support setting a linger option,
+    /// therefore this method is empty for those sockets.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -72,6 +78,10 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn set_linger(&self, linger: Option<Duration>) -> io::Result<()> {
+        if self.is_unix() {
+            return Err(new_unix_unsupported_error());
+        }
+
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_linger(linger)
@@ -80,6 +90,11 @@ pub trait Stream:
     /// Returns the current socket linger option. This option indicates whether the stream
     /// is configured to attempt to send unsent data when it is closed and, if so, the
     /// duration for which it will attempt to do so.
+    ///
+    /// # Unix
+    ///
+    /// UNIX sockets do not support linger, therefore this method always returns `Ok(None)`
+    /// for those sockets.
     ///
     /// # Example
     ///
@@ -96,6 +111,10 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn linger(&self) -> io::Result<Option<Duration>> {
+        if self.is_unix() {
+            return Err(new_unix_unsupported_error());
+        }
+
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.linger()
@@ -104,6 +123,10 @@ pub trait Stream:
     /// Sets the `TCP_NODELAY` option for the stream. When enabled (`true`), this option disables
     /// Nagle's algorithm, which reduces latency by sending small packets immediately. If
     /// disabled (`false`), small packets may be combined into larger ones for efficiency.
+    ///
+    /// # Unix
+    ///
+    /// UNIX sockets do not support `TCP_NODELAY`, therefore this method is empty for those sockets.
     ///
     /// # Example
     ///
@@ -119,12 +142,21 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        if self.is_unix() {
+            return Err(new_unix_unsupported_error());
+        }
+
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.set_nodelay(nodelay)
     }
 
     /// Returns the current state of the `TCP_NODELAY` option for the stream.
+    ///
+    /// # Unix
+    ///
+    /// UNIX sockets do not support `TCP_NODELAY`, therefore this method always
+    /// returns `Ok(false)` for those sockets.
     ///
     /// # Example
     ///
@@ -140,6 +172,10 @@ pub trait Stream:
     /// ```
     #[inline(always)]
     fn nodelay(&self) -> io::Result<bool> {
+        if self.is_unix() {
+            return Err(new_unix_unsupported_error());
+        }
+
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
         socket_ref.nodelay()
@@ -164,12 +200,11 @@ pub trait Stream:
     /// # }
     /// ```
     #[inline(always)]
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
+    fn peer_addr(&self) -> io::Result<Self::Addr> {
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
-        socket_ref
-            .peer_addr()?
-            .as_socket()
+
+        Self::Addr::from_sock_addr(socket_ref.peer_addr()?)
             .ok_or_else(|| Error::new(io::ErrorKind::Other, "failed to get local address"))
     }
 }

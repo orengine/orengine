@@ -3,6 +3,8 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{os_sockaddr, AsRawSocket, FromRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::net::addr::FromSockAddr;
+use crate::net::{Socket, Stream};
 use crate::BUG_MESSAGE;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
@@ -10,7 +12,6 @@ use std::future::Future;
 use std::io::Result;
 use std::marker::PhantomData;
 use std::mem;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -151,7 +152,7 @@ unsafe impl<S: FromRawSocket> Send for AcceptWithDeadline<S> {}
 
 /// The `AsyncAccept` trait provides asynchronous methods for accepting new incoming connections.
 ///
-/// It is implemented for types that can be represented as raw file descriptors (via [`AsRawSocket`]).
+/// It is implemented for types that implement the [`Socket`] trait.
 ///
 /// This trait allows the server-side of a socket to accept new connections either indefinitely or
 /// with a specified timeout or deadline.
@@ -178,11 +179,11 @@ unsafe impl<S: FromRawSocket> Send for AcceptWithDeadline<S> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
+pub trait AsyncAccept<S: Stream>: Socket {
     /// Asynchronously accepts a new incoming connection.
     ///
     /// This method listens for and accepts a new connection from a remote client. It returns the
-    /// stream (`S`) and the remote socket address ([`SocketAddr`]) once a connection is successfully
+    /// stream (`S`) and the remote socket address once a connection is successfully
     /// established.
     ///
     /// # Example
@@ -204,9 +205,13 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// # }
     /// ```
     #[inline(always)]
-    async fn accept(&mut self) -> Result<(S, SocketAddr)> {
+    async fn accept(&mut self) -> Result<(S, S::Addr)> {
         let (stream, sock_addr) = Accept::<S>::new(AsRawSocket::as_raw_socket(self)).await?;
-        Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
+
+        Ok((
+            stream,
+            S::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE),
+        ))
     }
 
     /// Asynchronously accepts a new connection, with a specified deadline.
@@ -238,10 +243,13 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// # }
     /// ```
     #[inline(always)]
-    async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, SocketAddr)> {
+    async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, S::Addr)> {
         let (stream, sock_addr) =
             AcceptWithDeadline::<S>::new(AsRawSocket::as_raw_socket(self), deadline).await?;
-        Ok((stream, sock_addr.as_socket().expect(BUG_MESSAGE)))
+        Ok((
+            stream,
+            S::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE),
+        ))
     }
 
     /// Asynchronously accepts a new connection, with a specified timeout.
@@ -272,33 +280,7 @@ pub trait AsyncAccept<S: FromRawSocket>: AsRawSocket {
     /// # }
     /// ```
     #[inline(always)]
-    async fn accept_with_timeout(&mut self, timeout: Duration) -> Result<(S, SocketAddr)> {
+    async fn accept_with_timeout(&mut self, timeout: Duration) -> Result<(S, S::Addr)> {
         self.accept_with_deadline(Instant::now() + timeout).await
     }
 }
-
-// TODO unix
-// pub(crate) trait AsyncAcceptUnix<S: FromRawSocket>: AsRawSocket {
-//     #[inline(always)]
-//     async fn accept(&mut self) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = Accept::<S>::new(sys::AsRawSocket::as_raw_socket(self)).await?;
-//         Ok((stream, addr.as_unix().expect(BUG)))
-//     }
-//
-//     #[inline(always)]
-//     async fn accept_with_deadline(
-//         &mut self,
-//         deadline: Instant
-//     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         let (stream, addr) = AcceptWithDeadline::<S>::new(sys::AsRawSocket::as_raw_socket(self), deadline).await?;
-//         Ok((stream, addr.as_unix().expect(BUG)))
-//     }
-//
-//     #[inline(always)]
-//     async fn accept_with_timeout(
-//         &mut self,
-//         timeout: Duration
-//     ) -> Result<(S, std::os::unix::net::SocketAddr)> {
-//         self.accept_with_deadline(Instant::now() + timeout).await
-//     }
-// }

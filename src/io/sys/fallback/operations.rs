@@ -120,9 +120,9 @@ pub(crate) fn recv_from_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &mut *header_ptr }.get_os_message_header();
-        let slice = unsafe { &mut **header.0.cast::<*mut [MaybeUninit<u8>]>() };
+        let bufs = unsafe { &mut *header.0 };
         let addr_ptr = header.1;
-        socket.recv_from(slice).map(|(n, sock_addr)| {
+        socket.recv_from_vectored(bufs).map(|(n, sock_addr)| {
             unsafe { ptr::write(addr_ptr, sock_addr) };
 
             n
@@ -150,9 +150,9 @@ pub(crate) fn send_to_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &*header_ptr };
-        let slice = unsafe { &**header.0 };
+        let bufs = unsafe { &*header.0 };
 
-        socket.send_to(slice, unsafe { &*header.1 })
+        socket.send_to_vectored(bufs, unsafe { &*header.1 })
     })
 }
 
@@ -172,10 +172,10 @@ pub(crate) fn peek_from_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &mut *header_ptr }.get_os_message_header();
-        let slice = unsafe { &mut **header.0.cast::<*mut [MaybeUninit<u8>]>() };
+        let bufs = unsafe { &mut *header.0 };
         let addr_ptr = header.1;
 
-        socket.peek_from(slice).map(|(n, sock_addr)| {
+        socket.peek_from(bufs).map(|(n, sock_addr)| {
             unsafe { ptr::write(addr_ptr, sock_addr) };
 
             n

@@ -51,7 +51,7 @@ impl BindConfig {
     /// Creates a new `BindConfig` with default values.
     pub const fn new() -> Self {
         Self {
-            backlog_size: 1024,
+            backlog_size: 128,
             only_v6: false,
             reuse_address: true,
             #[cfg(unix)]

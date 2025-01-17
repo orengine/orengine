@@ -1,8 +1,9 @@
 use socket2::SockAddr;
+use std::io::{IoSlice, IoSliceMut};
 use std::ptr;
 
 /// Synonymous with os message header.
-pub(crate) type OsMessageHeader = (*mut *mut [u8], *mut SockAddr);
+pub(crate) type OsMessageHeader = (*mut [IoSliceMut], *mut SockAddr);
 
 /// [`MessageRecvHeader`] keeps the message header for `recvfrom`.
 pub(crate) struct MessageRecvHeader {
@@ -11,16 +12,22 @@ pub(crate) struct MessageRecvHeader {
 
 impl MessageRecvHeader {
     /// Creates a new [`MessageRecvHeader`].
-    pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut *mut [u8]) -> Self {
+    pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut [IoSliceMut]) -> Self {
         Self {
             os_header: (buf_ptr, addr),
         }
     }
 
+    /// Returns a length of an associated addr.
+    #[inline(always)]
+    pub(crate) fn get_addr_len(&self) -> libc::socklen_t {
+        self.header.msg_namelen
+    }
+
     /// Returns a shared reference to the message header.
     #[inline(always)]
-    pub(crate) fn get_os_message_header(&self) -> &OsMessageHeader {
-        &self.os_header
+    pub(crate) fn get_os_message_header(&mut self) -> &OsMessageHeader {
+        &mut self.os_header
     }
 }
 
@@ -40,8 +47,8 @@ impl MessageSendHeader {
 
     /// Initializes the message header.
     #[inline(always)]
-    pub(crate) fn init(&mut self, addr: &SockAddr, buf_ref: *mut *const [u8]) {
-        self.os_header.0 = buf_ref.cast();
+    pub(crate) fn init(&mut self, addr: &SockAddr, buf_ref: *mut [IoSlice]) {
+        self.os_header.0 = buf_ref;
         self.os_header.1 = ptr::from_ref(addr).cast_mut();
     }
 
@@ -50,7 +57,7 @@ impl MessageSendHeader {
     pub(crate) fn get_os_message_header_ptr(
         &mut self,
         addr: &SockAddr,
-        buf_ref: *mut *const [u8],
+        buf_ref: *mut [IoSlice],
     ) -> *mut OsMessageHeader {
         self.init(addr, buf_ref);
 

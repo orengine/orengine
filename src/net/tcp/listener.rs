@@ -7,10 +7,10 @@ use std::mem::ManuallyDrop;
 use std::net::SocketAddr;
 
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
-use crate::io::{sys, AsyncAccept, AsyncBind, AsyncSocketClose};
+use crate::io::{sys, AsyncAccept, AsyncBind, AsyncPollSocket, AsyncSocketClose};
 use crate::net::creators_of_sockets::new_tcp_socket;
 use crate::net::tcp::TcpStream;
-use crate::net::{BindConfig, Listener};
+use crate::net::{BindConfig, Listener, Socket};
 use crate::runtime::local_executor;
 
 /// A TCP socket server, listening for connections.
@@ -115,6 +115,12 @@ impl std::os::windows::io::FromRawSocket for TcpListener {
 }
 
 impl FromRawSocket for TcpListener {}
+
+impl AsyncPollSocket for TcpListener {}
+
+impl Socket for TcpListener {
+    type Addr = SocketAddr;
+}
 
 impl AsyncBind for TcpListener {
     async fn new_socket(addr: &SocketAddr) -> Result<RawSocket> {

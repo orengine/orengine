@@ -12,6 +12,7 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
+use crate::net::Socket;
 
 /// `send` io operation.
 pub struct SendBytes<'buf> {
@@ -218,7 +219,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// It allows for sending data with or without deadlines, and ensures the complete transmission
 /// of data when required.
 ///
-/// This trait can be implemented for any sockets that supports the `AsRawSocket` trait
+/// This trait can be implemented for any sockets that supports the [`Socket`] trait
 /// and can be connected.
 ///
 /// # Example
@@ -238,7 +239,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncSend: AsRawSocket {
+pub trait AsyncSend: Socket {
     /// Asynchronously sends the provided byte slice. Returns the number of bytes sent.
     ///
     /// # Difference between `send` and `send_bytes`

@@ -17,6 +17,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::ffi::c_int;
 use std::io::{Error, ErrorKind};
 use std::net::Shutdown;
+use std::ptr;
 use std::time::{Duration, Instant};
 
 /// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
@@ -180,8 +181,6 @@ impl IOUringWorker {
         Ok(())
     }
 }
-
-// TODO opcode::ProvideBuffers. Read tokio-uring::io::pool for more information
 
 impl IoWorker for IOUringWorker {
     fn new(config: IoWorkerConfig) -> Self {
@@ -439,7 +438,11 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
     ) {
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(raw_socket), &mut msg_header.header).build(),
+            opcode::RecvMsg::new(
+                types::Fd(raw_socket),
+                ptr::from_mut(msg_header.get_os_message_header()),
+            )
+            .build(),
             request_ptr,
         );
     }
@@ -479,15 +482,6 @@ impl IoWorker for IOUringWorker {
         buf_index: u16,
         request_ptr: IoRequestDataPtr,
     ) {
-        // TODO https://github.com/tokio-rs/io-uring/issues/308
-        // if self.is_supported(opcode::SendZc::CODE) {
-        //     self.register_entry(
-        //         opcode::SendZc::new(types::Fd(raw_socket), buf_ptr, len as _).build(),
-        //         request_ptr,
-        //     );
-        //     return;
-        // }
-
         self.register_entry(
             opcode::WriteFixed::new(types::Fd(raw_socket), ptr, len, buf_index).build(),
             request_ptr,
@@ -618,7 +612,7 @@ impl IoWorker for IOUringWorker {
     ) {
         let msg_header = &mut *msg_header;
         self.register_entry(
-            opcode::RecvMsg::new(types::Fd(raw_socket), &mut msg_header.header)
+            opcode::RecvMsg::new(types::Fd(raw_socket), msg_header.get_os_message_header())
                 .flags(libc::MSG_PEEK as u32)
                 .build(),
             request_ptr,

@@ -1,9 +1,9 @@
 use crate::io::sys::{BorrowedSocket, FromRawSocket, RawSocket};
-use crate::net::{BindConfig, ReusePort};
+use crate::net::addr::to_sock_addrs::ToSockAddrs;
+use crate::net::{BindConfig, ReusePort, Socket};
 use crate::utils::each_addr::each_addr;
 use socket2::SockRef;
 use std::io::Result;
-use std::net::{SocketAddr, ToSocketAddrs};
 
 /// The `AsyncBind` trait provides asynchronous methods for creating, binding, and configuring
 /// sockets.
@@ -11,8 +11,8 @@ use std::net::{SocketAddr, ToSocketAddrs};
 /// It is primarily used to bind a socket to a specific address, with options for setting
 /// configuration such as address reuse and port reuse.
 ///
-/// This trait can be implemented for types that represent sockets, and it provides both direct binding
-/// and binding with custom configuration options via [`BindConfig`].
+/// This trait can be implemented for types that represent [`sockets`](Socket), and it provides
+/// both default binding and binding with custom configuration options via [`BindConfig`].
 ///
 /// # Example
 ///
@@ -37,7 +37,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncBind: Sized + FromRawSocket {
+pub trait AsyncBind: Sized + Socket {
     /// Creates a new socket that can be bound to the specified address.
     ///
     /// This method is responsible for creating a raw file descriptor (socket) and returning the
@@ -60,7 +60,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    async fn new_socket(addr: &SocketAddr) -> Result<RawSocket>;
+    async fn new_socket(addr: &Self::Addr) -> Result<RawSocket>;
 
     /// Binds the socket and listens on the provided address if needed, applying the provided
     /// configuration from [`BindConfig`].
@@ -96,7 +96,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
     /// ```
     fn bind_and_listen_if_needed(
         sock_ref: SockRef,
-        addr: SocketAddr,
+        addr: Self::Addr,
         config: &BindConfig,
     ) -> Result<()>;
 
@@ -117,11 +117,14 @@ pub trait AsyncBind: Sized + FromRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    async fn bind_with_config<A: ToSocketAddrs>(addrs: A, config: &BindConfig) -> Result<Self> {
-        each_addr(&addrs, move |addr| async move {
+    async fn bind_with_config<A: ToSockAddrs<Self::Addr>>(
+        addrs: A,
+        config: &BindConfig,
+    ) -> Result<Self> {
+        each_addr(addrs, move |addr| async move {
             let raw_fd = Self::new_socket(&addr).await?;
-            let borrowed_raw_fd = unsafe { BorrowedSocket::borrow_raw(raw_fd) };
-            let socket_ref = socket2::SockRef::from(&borrowed_raw_fd);
+            let borrowed_raw_socket = unsafe { BorrowedSocket::borrow_raw(raw_fd) };
+            let socket_ref = socket2::SockRef::from(&borrowed_raw_socket);
 
             if config.only_v6 {
                 socket_ref.set_only_v6(true)?;
@@ -240,7 +243,7 @@ pub trait AsyncBind: Sized + FromRawSocket {
     /// # }
     /// ```
     #[inline(always)]
-    async fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
+    async fn bind<A: ToSockAddrs<Self::Addr>>(addrs: A) -> Result<Self> {
         Self::bind_with_config(addrs, &BindConfig::default()).await
     }
 }

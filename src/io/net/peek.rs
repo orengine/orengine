@@ -11,6 +11,7 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBufferMut};
+use crate::net::Socket;
 
 /// `peek` io operation.
 pub struct PeekBytes<'buf> {
@@ -218,7 +219,7 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
+/// This trait can be implemented for any [`socket`](Socket) which can be connected.
 ///
 /// # Example
 ///
@@ -235,7 +236,7 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncPeek: AsRawSocket {
+pub trait AsyncPeek: Socket {
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
     /// filling the buffer with available data. Returns the number of bytes peeked.
     ///

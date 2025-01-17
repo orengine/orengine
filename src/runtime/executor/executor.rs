@@ -431,7 +431,7 @@ impl Executor {
     ///
     /// If the stack of calls is too large, [`exec_task`](Executor::exec_task)
     /// spawns a new task and returns.
-    /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task any way.
+    /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task anyway.
     ///
     /// # Attention
     ///

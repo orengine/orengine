@@ -1,30 +1,34 @@
-//! This module contains [`TcpStream`].
+//! This module contains [`UnixStream`].
 
 use crate::io::shutdown::AsyncShutdown;
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::{
     AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
 };
+use crate::net::creators_of_sockets::new_unix_stream;
+use crate::net::unix::unix_impl_socket;
 use crate::net::{Socket, Stream};
 use crate::runtime::local_executor;
-use socket2::{Domain, Protocol, Type};
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem::ManuallyDrop;
-use std::net::SocketAddr;
 
-/// A TCP stream between a local and a remote socket.
+/// A Unix stream socket.
+///
+/// # OS Support
+///
+/// This structure is only supported on Unix platforms and is not available on Windows.
 ///
 /// # Close
 ///
-/// [`TcpStream`] is automatically closed after it is dropped.
+/// [`UnixStream`] is automatically closed after it is dropped.
 ///
 /// # Example
 ///
 /// ```rust
 /// use orengine::io::{full_buffer, AsyncAccept, AsyncBind};
 /// use orengine::local_executor;
-/// use orengine::net::{Stream, TcpListener};
+/// use orengine::net::{Stream, UnixListener};
 ///
 /// async fn handle_stream<S: Stream>(mut stream: S) {
 ///     loop {
@@ -43,7 +47,7 @@ use std::net::SocketAddr;
 /// }
 ///
 /// async fn run_server() -> std::io::Result<()> {
-///     let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+///     let mut listener = UnixListener::bind("/tmp/test").await?;
 ///     while let Ok((stream, addr)) = listener.accept().await {
 ///         local_executor().spawn_local(async move {
 ///             handle_stream(stream).await;
@@ -52,125 +56,85 @@ use std::net::SocketAddr;
 ///     Ok(())
 /// }
 /// ```
-pub struct TcpStream {
+pub struct UnixStream {
     raw_socket: RawSocket,
 }
 
-#[cfg(unix)]
-impl std::os::fd::IntoRawFd for TcpStream {
+impl std::os::fd::IntoRawFd for UnixStream {
     fn into_raw_fd(self) -> std::os::fd::RawFd {
         ManuallyDrop::new(self).raw_socket
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::IntoRawSocket for TcpStream {
-    fn into_raw_socket(self) -> RawSocket {
-        ManuallyDrop::new(self).raw_socket
-    }
-}
+impl IntoRawSocket for UnixStream {}
 
-impl IntoRawSocket for TcpStream {}
-
-#[cfg(unix)]
-impl std::os::fd::AsRawFd for TcpStream {
+impl std::os::fd::AsRawFd for UnixStream {
     fn as_raw_fd(&self) -> std::os::fd::RawFd {
         self.raw_socket
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsRawSocket for TcpStream {
-    fn as_raw_socket(&self) -> RawSocket {
-        self.raw_socket
-    }
-}
+impl AsRawSocket for UnixStream {}
 
-impl AsRawSocket for TcpStream {}
-
-#[cfg(unix)]
-impl std::os::fd::AsFd for TcpStream {
+impl std::os::fd::AsFd for UnixStream {
     fn as_fd(&self) -> std::os::fd::BorrowedFd {
         unsafe { std::os::fd::BorrowedFd::borrow_raw(self.raw_socket) }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::AsSocket for TcpStream {
-    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket {
-        unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.raw_socket) }
-    }
-}
+impl AsSocket for UnixStream {}
 
-impl AsSocket for TcpStream {}
-
-#[cfg(unix)]
-impl std::os::fd::FromRawFd for TcpStream {
+impl std::os::fd::FromRawFd for UnixStream {
     unsafe fn from_raw_fd(raw_fd: std::os::fd::RawFd) -> Self {
         Self { raw_socket: raw_fd }
     }
 }
 
-#[cfg(windows)]
-impl std::os::windows::io::FromRawSocket for TcpStream {
-    unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
-        Self { raw_socket }
-    }
-}
+impl FromRawSocket for UnixStream {}
 
-impl FromRawSocket for TcpStream {}
-
-impl From<TcpStream> for std::net::TcpStream {
-    fn from(stream: TcpStream) -> Self {
+impl From<UnixStream> for std::os::unix::net::UnixStream {
+    fn from(stream: UnixStream) -> Self {
         unsafe { Self::from_raw_socket(ManuallyDrop::new(stream).raw_socket) }
     }
 }
 
-impl From<std::net::TcpStream> for TcpStream {
-    fn from(stream: std::net::TcpStream) -> Self {
+impl From<std::os::unix::net::UnixStream> for UnixStream {
+    fn from(stream: std::os::unix::net::UnixStream) -> Self {
         Self {
             raw_socket: IntoRawSocket::into_raw_socket(stream),
         }
     }
 }
 
-impl AsyncConnectStream for TcpStream {
-    async fn new_for_addr(addr: &Self::Addr) -> Result<Self> {
-        match addr {
-            SocketAddr::V4(_) => Ok(Self {
-                raw_socket: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP)
-                    .await?,
-            }),
+impl AsyncPollSocket for UnixStream {}
 
-            SocketAddr::V6(_) => Ok(Self {
-                raw_socket: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP)
-                    .await?,
-            }),
-        }
+impl Socket for UnixStream {
+    unix_impl_socket!();
+}
+
+impl AsyncConnectStream for UnixStream {
+    async fn new_for_addr(_: &Self::Addr) -> Result<Self> {
+        Ok(Self {
+            raw_socket: new_unix_stream().await?,
+        })
     }
 }
 
-impl AsyncPollSocket for TcpStream {}
+impl AsyncSend for UnixStream {}
 
-impl Socket for TcpStream {
-    type Addr = SocketAddr;
-}
+impl AsyncRecv for UnixStream {}
 
-impl AsyncSend for TcpStream {}
+impl AsyncPeek for UnixStream {}
 
-impl AsyncRecv for TcpStream {}
+impl AsyncShutdown for UnixStream {}
 
-impl AsyncPeek for TcpStream {}
+impl AsyncSocketClose for UnixStream {}
 
-impl AsyncShutdown for TcpStream {}
+impl Stream for UnixStream {}
 
-impl AsyncSocketClose for TcpStream {}
-
-impl Stream for TcpStream {}
-
-impl Debug for TcpStream {
+impl Debug for UnixStream {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut res = f.debug_struct("TcpStream");
+        let mut res = f.debug_struct("UnixStream");
 
         if let Ok(addr) = self.local_addr() {
             res.field("addr", &addr);
@@ -185,11 +149,11 @@ impl Debug for TcpStream {
     }
 }
 
-impl Drop for TcpStream {
+impl Drop for UnixStream {
     fn drop(&mut self) {
         let close_future = self.close();
         local_executor().exec_local_future(async {
-            close_future.await.expect("Failed to close TCP stream");
+            close_future.await.expect("Failed to close UNIX stream");
         });
     }
 }
@@ -201,11 +165,11 @@ mod tests {
         buffer, get_fixed_buffer, AsyncAccept, AsyncBind, AsyncConnectStream, AsyncPeek,
         AsyncPollSocket, AsyncRecv, AsyncSend, FixedBuffer,
     };
-    use crate::local_executor;
-    use crate::net::{BindConfig, Socket, Stream, TcpListener, TcpStream};
+    use crate::net::{BindConfig, UnixListener, UnixStream};
     use crate::sync::{
         AsyncCondVar, AsyncMutex, AsyncWaitGroup, LocalCondVar, LocalMutex, LocalWaitGroup,
     };
+    use crate::{fs, local_executor};
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -216,8 +180,10 @@ mod tests {
     const TIMES: usize = 20;
 
     #[orengine::test::test_local]
-    fn test_tcp_client() {
-        const ADDR: &str = "127.0.0.1:6086";
+    fn test_unix_client() {
+        const ADDR: &str = "/tmp/orengine_test_unix_client";
+
+        let _ = fs::remove_file(ADDR).await;
 
         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -225,7 +191,7 @@ mod tests {
         let server_thread = thread::spawn(move || {
             use std::io::{Read, Write};
 
-            let listener = std::net::TcpListener::bind(ADDR).expect("std bind failed");
+            let listener = std::os::unix::net::UnixListener::bind(ADDR).expect("std bind failed");
 
             {
                 let (is_ready_mu, condvar) = &*is_server_ready;
@@ -260,7 +226,7 @@ mod tests {
             }
         }
 
-        let mut stream = TcpStream::connect(ADDR).await.expect("connect failed");
+        let mut stream = UnixStream::connect(ADDR).await.expect("connect failed");
 
         for _ in 0..TIMES {
             stream.send_all_bytes(REQUEST).await.expect("send failed");
@@ -278,8 +244,10 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    fn test_tcp_server() {
-        const ADDR: &str = "127.0.0.1:6081";
+    fn test_unix_server() {
+        const ADDR: &str = "/tmp/orengine_test_unix_server";
+
+        let _ = fs::remove_file(ADDR).await;
 
         let is_server_ready = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
         let is_server_ready_server_clone = is_server_ready.clone();
@@ -303,7 +271,7 @@ mod tests {
                 }
             }
 
-            let mut stream = std::net::TcpStream::connect(ADDR).expect("connect failed");
+            let mut stream = std::os::unix::net::UnixStream::connect(ADDR).expect("connect failed");
 
             for _ in 0..TIMES {
                 stream.write_all(REQUEST).expect("send failed");
@@ -314,7 +282,7 @@ mod tests {
             }
         });
 
-        let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
+        let mut listener = UnixListener::bind(ADDR).await.expect("bind failed");
 
         *is_server_ready.0.lock().unwrap() = true;
         is_server_ready.1.notify_all();
@@ -336,8 +304,10 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    fn test_tcp_stream() {
-        const ADDR: &str = "127.0.0.1:6082";
+    fn test_unix_stream() {
+        const ADDR: &str = "/tmp/orengine_test_unix_stream";
+
+        let _ = fs::remove_file(ADDR).await;
 
         let mut buffered_request = get_fixed_buffer().await;
         buffered_request.append(REQUEST);
@@ -348,7 +318,7 @@ mod tests {
         let wg_clone = wg.clone();
 
         local_executor().spawn_local(async move {
-            let mut listener = TcpListener::bind(ADDR).await.expect("bind failed");
+            let mut listener = UnixListener::bind(ADDR).await.expect("bind failed");
 
             wg_clone.done();
 
@@ -381,25 +351,9 @@ mod tests {
 
         wg.wait().await;
 
-        let mut stream = TcpStream::connect_with_timeout(ADDR, Duration::from_secs(2))
+        let mut stream = UnixStream::connect_with_timeout(ADDR, Duration::from_secs(2))
             .await
             .expect("connect with timeout failed");
-
-        stream.set_ttl(133).expect("set_ttl failed");
-        assert_eq!(stream.ttl().expect("get_ttl failed"), 133);
-
-        stream.set_nodelay(true).expect("set_nodelay failed");
-        assert!(stream.nodelay().expect("get_nodelay failed"));
-        stream.set_nodelay(false).expect("set_nodelay failed");
-        assert!(!stream.nodelay().expect("get_nodelay failed"));
-
-        stream
-            .set_linger(Some(Duration::from_secs(23)))
-            .expect("set_linger failed");
-        assert_eq!(
-            stream.linger().expect("get_linger failed"),
-            Some(Duration::from_secs(23))
-        );
 
         for _ in 0..TIMES {
             buffered_request.clear();
@@ -438,8 +392,10 @@ mod tests {
     }
 
     #[orengine::test::test_local]
-    fn test_tcp_timeout() {
-        const ADDR: &str = "127.0.0.1:6083";
+    fn test_unix_timeout() {
+        const ADDR: &str = "/tmp/orengine_test_unix_timeout";
+
+        let _ = fs::remove_file(ADDR).await;
 
         const SEND: usize = 0;
         const POLL: usize = 1;
@@ -456,7 +412,7 @@ mod tests {
         let wg_clone = wg.clone();
 
         local_executor().spawn_local(async move {
-            let mut listener = TcpListener::bind_with_config(ADDR, &BindConfig::new())
+            let mut listener = UnixListener::bind_with_config(ADDR, &BindConfig::new())
                 .await
                 .expect("bind failed");
             let mut expected_state = 0;
@@ -493,7 +449,7 @@ mod tests {
 
             match current_state {
                 SEND => {
-                    let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
+                    let mut stream = UnixStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 
@@ -514,7 +470,7 @@ mod tests {
                 }
 
                 POLL => {
-                    let stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
+                    let stream = UnixStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 
@@ -529,7 +485,7 @@ mod tests {
                 }
 
                 RECV => {
-                    let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
+                    let mut stream = UnixStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 
@@ -545,7 +501,7 @@ mod tests {
                 }
 
                 PEEK => {
-                    let mut stream = TcpStream::connect_with_timeout(ADDR, TIMEOUT)
+                    let mut stream = UnixStream::connect_with_timeout(ADDR, TIMEOUT)
                         .await
                         .expect("connect with timeout failed");
 

@@ -12,6 +12,7 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
+use crate::net::Socket;
 
 /// `recv` io operation.
 pub struct RecvBytes<'buf> {
@@ -219,7 +220,7 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// It offers options to recv with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
+/// This trait can be implemented for any [`socket`](Socket) which can be connected.
 ///
 /// # Example
 ///
@@ -236,7 +237,7 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncRecv: AsRawSocket {
+pub trait AsyncRecv: Socket {
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
     /// filling the buffer with available data. Returns the number of bytes received.
     ///

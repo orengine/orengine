@@ -1,6 +1,7 @@
+use crate::net::addr::to_sock_addrs::ToSockAddrs;
+use crate::net::addr::{FromSockAddr, IntoSockAddr};
 use std::future::Future;
 use std::io;
-use std::net::ToSocketAddrs;
 
 /// `EachAddrRes` is used to return results from [`each_addr`].
 ///
@@ -21,12 +22,15 @@ pub(crate) enum EachAddrRes<R> {
     clippy::future_not_send,
     reason = "It is not Send only when Res or Fur or F is not Send, it is right."
 )]
-pub(crate) async fn each_addr<Res, Fut, F>(addrs: impl ToSocketAddrs, f: F) -> io::Result<Res>
+pub(crate) async fn each_addr<Addr: FromSockAddr + IntoSockAddr, Res, Fut, F>(
+    addrs: impl ToSockAddrs<Addr>,
+    f: F,
+) -> io::Result<Res>
 where
     Fut: Future<Output = io::Result<Res>>,
-    F: Fn(std::net::SocketAddr) -> Fut,
+    F: Fn(Addr) -> Fut,
 {
-    let addrs = match ToSocketAddrs::to_socket_addrs(&addrs) {
+    let addrs = match ToSockAddrs::to_sock_addrs(&addrs) {
         Ok(addrs) => addrs,
         Err(e) => return Err(e),
     };
