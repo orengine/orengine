@@ -159,7 +159,7 @@ unsafe impl<S: FromRawSocket> Send for AcceptWithDeadline<S> {}
 ///
 /// The accepted connection is returned as a stream of type `S`
 /// (e.g., [`TcpStream`](crate::net::TcpStream)), along with the
-/// remote socket address ([`SocketAddr`]).
+/// remote socket address ([`SocketAddr`](std::net::SocketAddr)).
 ///
 /// # Example
 ///

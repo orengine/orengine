@@ -4,7 +4,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 
-/// `ToSockAddrs` is a copy of [`std::net::ToSocketAddrs`](ToSocketAddrs),
+/// `ToSockAddrs` is a copy of [`std::net::ToSocketAddrs`],
 /// but with a generic type parameter.
 ///
 /// It allows to use [`UnixAddr`] as a generic type parameter

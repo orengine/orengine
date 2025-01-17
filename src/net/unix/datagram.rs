@@ -149,6 +149,10 @@ impl AsyncBind for UnixDatagram {
         sock_ref.bind(&addr.into_sock_addr())
     }
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not send when the addrs are not, it is fine."
+    )]
     async fn bind_with_config<A: ToSockAddrs<Self::Addr>>(
         addrs: A,
         _config: &BindConfig,
@@ -160,7 +164,7 @@ impl AsyncBind for UnixDatagram {
 
             sock_ref.bind(&addr.into_sock_addr())?;
 
-            Ok(UnixDatagram { raw_socket })
+            Ok(Self { raw_socket })
         })
         .await
     }

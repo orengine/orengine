@@ -7,7 +7,7 @@ pub use stream::Stream;
 pub use tcp::{TcpListener, TcpStream};
 pub use udp::{UdpConnectedSocket, UdpSocket};
 #[cfg(unix)]
-pub use unix::{UnixConnectedDatagram, UnixListener, UnixDatagram, UnixStream};
+pub use unix::{UnixConnectedDatagram, UnixDatagram, UnixListener, UnixStream};
 
 pub mod addr;
 pub mod bind_config;

@@ -127,7 +127,7 @@ unsafe impl Send for SendToWithDeadline<'_> {}
 #[inline(always)]
 /// Returns first resolved address from `ToSocketAddrs`.
 fn sock_addr_from_to_socket_addr<Addr: IntoSockAddr + FromSockAddr, A: ToSockAddrs<Addr>>(
-    to_addr: A,
+    to_addr: &A,
 ) -> Result<SockAddr> {
     let mut addrs = to_addr.to_sock_addrs()?;
     if let Some(addr) = addrs.next() {
@@ -194,7 +194,7 @@ pub trait AsyncSendTo: Socket {
         SendTo::new(
             AsRawSocket::as_raw_socket(self),
             bufs_ptr,
-            &sock_addr_from_to_socket_addr(addr)?,
+            &sock_addr_from_to_socket_addr(&addr)?,
         )
         .await
     }
@@ -234,7 +234,7 @@ pub trait AsyncSendTo: Socket {
         SendToWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
             bufs_ptr,
-            &sock_addr_from_to_socket_addr(addr)?,
+            &sock_addr_from_to_socket_addr(&addr)?,
             deadline,
         )
         .await
@@ -275,7 +275,7 @@ pub trait AsyncSendTo: Socket {
         SendToWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
             bufs_ptr,
-            &sock_addr_from_to_socket_addr(addr)?,
+            &sock_addr_from_to_socket_addr(&addr)?,
             Instant::now() + timeout,
         )
         .await
@@ -307,7 +307,7 @@ pub trait AsyncSendTo: Socket {
         addr: A,
     ) -> Result<usize> {
         let mut sent = 0;
-        let addr = sock_addr_from_to_socket_addr(addr)?;
+        let addr = sock_addr_from_to_socket_addr(&addr)?;
 
         while sent < buf.len() {
             let bufs_ptr = &[IoSlice::new(&buf[sent..])];
@@ -350,7 +350,7 @@ pub trait AsyncSendTo: Socket {
         deadline: Instant,
     ) -> Result<usize> {
         let mut sent = 0;
-        let addr = sock_addr_from_to_socket_addr(addr)?;
+        let addr = sock_addr_from_to_socket_addr(&addr)?;
 
         while sent < buf.len() {
             let bufs_ptr = &[IoSlice::new(&buf[sent..])];

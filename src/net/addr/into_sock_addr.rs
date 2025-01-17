@@ -2,7 +2,7 @@ use crate::net::unix::UnixAddr;
 use socket2::SockAddr;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 
-/// `FromSockAddr` allows to get [`socket2::SockAddr`](SockAddr) from self.
+/// `FromSockAddr` allows to get [`socket2::SockAddr`] from self.
 ///
 /// It is already implemented for [`SocketAddr`], [`SocketAddrV4`],
 /// [`SocketAddrV6`], [`std::os::unix::net::SocketAddr`], [`UnixAddr`].

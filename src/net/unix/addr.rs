@@ -14,7 +14,10 @@ pub(super) fn sockaddr_un(path: &Path) -> io::Result<(sockaddr_storage, socklen_
     // SAFETY: All zeros is a valid representation for `sockaddr_un`.
     let mut storage = unsafe { mem::zeroed::<sockaddr_storage>() };
     let unix_addr_ref = unsafe { &mut *(&raw mut storage).cast::<libc::sockaddr_un>() };
-    unix_addr_ref.sun_family = libc::AF_UNIX as sa_family_t;
+    #[allow(clippy::cast_possible_truncation, reason = "libc::AF_UNIX is 1")]
+    {
+        unix_addr_ref.sun_family = libc::AF_UNIX as sa_family_t;
+    }
 
     let bytes = path.as_os_str().as_bytes();
 
@@ -40,7 +43,7 @@ pub(super) fn sockaddr_un(path: &Path) -> io::Result<(sockaddr_storage, socklen_
             bytes.as_ptr(),
             unix_addr_ref.sun_path.as_mut_ptr().cast(),
             bytes.len(),
-        )
+        );
     };
 
     let mut len = SUN_PATH_OFFSET + bytes.len();
@@ -48,6 +51,7 @@ pub(super) fn sockaddr_un(path: &Path) -> io::Result<(sockaddr_storage, socklen_
         Some(&0) | None => {}
         Some(_) => len += 1,
     }
+    #[allow(clippy::cast_possible_truncation, reason = "len is less than u32::MAX")]
     Ok((storage, len as socklen_t))
 }
 
@@ -280,7 +284,10 @@ impl UnixAddr {
             // SAFETY: All zeros is a valid representation for `sockaddr_un`.
             let mut storage = mem::zeroed::<sockaddr_storage>();
             let unix_addr_ref = &mut *(&raw mut storage).cast::<libc::sockaddr_un>();
-            unix_addr_ref.sun_family = libc::AF_UNIX as sa_family_t;
+            #[allow(clippy::cast_possible_truncation, reason = "libc::AF_UNIX is 1")]
+            {
+                unix_addr_ref.sun_family = libc::AF_UNIX as sa_family_t;
+            }
 
             if name.len() + 1 > unix_addr_ref.sun_path.len() {
                 return Err(io::Error::new(
@@ -291,9 +298,14 @@ impl UnixAddr {
 
             ptr::copy_nonoverlapping(
                 name.as_ptr(),
-                unix_addr_ref.sun_path.as_mut_ptr().add(1) as *mut u8,
+                unix_addr_ref.sun_path.as_mut_ptr().add(1).cast(),
                 name.len(),
             );
+
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "SUN_PATH_OFFSET + 1 + name.len() < u32::MAX"
+            )]
             let len = (SUN_PATH_OFFSET + 1 + name.len()) as socklen_t;
 
             Ok(Self {
