@@ -474,9 +474,6 @@ mod tests {
         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
 
             wg.done();
         }

@@ -313,7 +313,7 @@ impl<'channel, T> LocalSender<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
+impl<T> AsyncSender<T> for LocalSender<'_, T> {
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
@@ -422,7 +422,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
+impl<T> AsyncReceiver<T> for LocalReceiver<'_, T> {
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)

@@ -257,9 +257,6 @@ mod tests {
         fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
             lock.unlock();
 
             wg.done();

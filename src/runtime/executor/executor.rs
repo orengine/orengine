@@ -141,7 +141,7 @@ pub struct Executor {
     rng: Rng,
 
     start_round_time: Instant,
-    /// start_round_time + 100 microseconds
+    /// `start_round_time` + 100 microseconds
     start_round_time_for_deadlines: Instant,
 
     local_tasks: VecDeque<Task>,

@@ -390,7 +390,7 @@ impl<'channel, T> Sender<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncSender<T> for Sender<'channel, T> {
+impl<T> AsyncSender<T> for Sender<'_, T> {
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -506,7 +506,7 @@ impl<'channel, T> Receiver<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncReceiver<T> for Receiver<'channel, T> {
+impl<T> AsyncReceiver<T> for Receiver<'_, T> {
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"

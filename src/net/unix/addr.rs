@@ -458,6 +458,10 @@ mod tests {
 
     #[test]
     fn test_convert_unix_addr() {
+        #[allow(
+            clippy::needless_pass_by_value,
+            reason = "It makes test more readable."
+        )]
         fn test(addr: &SocketAddr, must_be_of_type: AddressKind) {
             let unix_addr = UnixAddr::from(addr.clone());
             assert_eq!(
@@ -473,7 +477,7 @@ mod tests {
                     assert_eq!(socket_addr_from_unix.as_abstract_name(), Some(name));
                 }
                 #[cfg(not(any(target_os = "android", target_os = "linux")))]
-                AddressKind::Abstract(name) => unreachable!(),
+                AddressKind::Abstract(_name) => unreachable!(),
                 AddressKind::Pathname(path) => {
                     assert_eq!(socket_addr_from_unix.as_pathname(), Some(path));
                 }

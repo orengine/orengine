@@ -122,6 +122,10 @@ impl AsyncBind for UnixListener {
         Ok(())
     }
 
+    #[allow(
+        clippy::future_not_send,
+        reason = "It is not `Send` only when A is not `Send`, it is fine"
+    )]
     async fn bind_with_config<A: ToSockAddrs<Self::Addr>>(
         addrs: A,
         config: &BindConfig,
@@ -131,8 +135,7 @@ impl AsyncBind for UnixListener {
             let borrow_socket = unsafe { BorrowedSocket::borrow_raw(raw_socket) };
             let sock_ref = socket2::SockRef::from(&borrow_socket);
 
-            Self::bind_and_listen_if_needed(sock_ref, addr, config)
-                .map(|_| UnixListener { raw_socket })
+            Self::bind_and_listen_if_needed(sock_ref, addr, config).map(|()| Self { raw_socket })
         })
         .await
     }
