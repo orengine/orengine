@@ -11,7 +11,6 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBufferMut};
-use crate::local_executor;
 use crate::net::Socket;
 
 /// `peek` io operation.
@@ -442,10 +441,7 @@ pub trait AsyncPeek: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        self.peek_bytes_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.peek_bytes_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -483,10 +479,7 @@ pub trait AsyncPeek: Socket {
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.peek_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.peek_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -724,10 +717,7 @@ pub trait AsyncPeek: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.peek_bytes_exact_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.peek_bytes_exact_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -766,9 +756,6 @@ pub trait AsyncPeek: Socket {
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.peek_exact_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.peek_exact_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 }

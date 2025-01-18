@@ -12,7 +12,6 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
-use crate::local_executor;
 use crate::net::Socket;
 
 /// `recv` io operation.
@@ -445,10 +444,7 @@ pub trait AsyncRecv: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        self.recv_bytes_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.recv_bytes_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -486,10 +482,7 @@ pub trait AsyncRecv: Socket {
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.recv_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.recv_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -727,10 +720,7 @@ pub trait AsyncRecv: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.recv_bytes_exact_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.recv_bytes_exact_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -769,9 +759,6 @@ pub trait AsyncRecv: Socket {
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.recv_exact_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
+        self.recv_exact_with_deadline(buf, std::time::Instant::now() + timeout)
     }
 }

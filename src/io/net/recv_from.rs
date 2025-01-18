@@ -15,7 +15,7 @@ use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
 use crate::net::addr::FromSockAddr;
 use crate::net::Socket;
-use crate::{local_executor, BUG_MESSAGE};
+use crate::BUG_MESSAGE;
 
 /// `recv_from` io operation.
 pub struct RecvFrom<'fut> {
@@ -334,11 +334,8 @@ pub trait AsyncRecvFrom: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> Result<(usize, Self::Addr)> {
-        self.recv_bytes_from_with_deadline(
-            buf,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
-        .await
+        self.recv_bytes_from_with_deadline(buf, std::time::Instant::now() + timeout)
+            .await
     }
 
     /// Asynchronously receives into the incoming datagram with a timeout, with consuming it,

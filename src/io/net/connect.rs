@@ -12,7 +12,6 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::local_executor;
 use crate::net::addr::{IntoSockAddr, ToSockAddrs};
 use crate::net::{ConnectedDatagram, Socket};
 use crate::utils::each_addr::each_addr;
@@ -255,11 +254,7 @@ pub trait AsyncConnectStream: Sized + Socket {
         addr: A,
         timeout: Duration,
     ) -> Result<Self> {
-        Self::connect_with_deadline(
-            addr,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
-        .await
+        Self::connect_with_deadline(addr, std::time::Instant::now() + timeout).await
     }
 }
 
@@ -405,10 +400,7 @@ pub trait AsyncConnectDatagram<CD: ConnectedDatagram>: Socket + Sized {
         addr: A,
         timeout: Duration,
     ) -> Result<CD> {
-        self.connect_with_deadline(
-            addr,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
-        .await
+        self.connect_with_deadline(addr, std::time::Instant::now() + timeout)
+            .await
     }
 }

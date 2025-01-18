@@ -3,7 +3,6 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, MessageSendHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBuffer;
-use crate::local_executor;
 use crate::net::addr::{FromSockAddr, IntoSockAddr, ToSockAddrs};
 use crate::net::Socket;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
@@ -371,7 +370,7 @@ pub trait AsyncSendTo: Socket {
             AsRawSocket::as_raw_socket(self),
             bufs_ptr,
             &sock_addr_from_to_socket_addr(&addr)?,
-            local_executor().start_round_time_for_deadlines() + timeout,
+            std::time::Instant::now() + timeout,
         )
         .await
     }
@@ -626,12 +625,8 @@ pub trait AsyncSendTo: Socket {
         addr: A,
         timeout: Duration,
     ) -> Result<usize> {
-        self.send_all_bytes_to_with_deadline(
-            buf,
-            addr,
-            local_executor().start_round_time_for_deadlines() + timeout,
-        )
-        .await
+        self.send_all_bytes_to_with_deadline(buf, addr, std::time::Instant::now() + timeout)
+            .await
     }
 
     /// Asynchronously sends all the data in the buffer to the specified address with a timeout.
