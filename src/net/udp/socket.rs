@@ -42,12 +42,12 @@ use crate::runtime::local_executor;
 /// loop {
 ///    socket.poll_recv().await.expect("poll failed");
 ///    let mut buf = full_buffer();
-///    let (n, addr) = socket.recv_from(&mut buf).await.expect("recv_from failed");
+///    let (n, addr) = socket.recv_bytes_from(&mut buf).await.expect("recv_from failed");
 ///    if n == 0 {
 ///        continue;
 ///    }
 ///
-///    socket.send_to(&buf[..n], addr).await.expect("send_to failed");
+///    socket.send_bytes_to(&buf[..n], addr).await.expect("send_to failed");
 /// }
 /// # }
 /// ```
@@ -280,12 +280,15 @@ mod tests {
 
         for _ in 0..TIMES {
             datagram
-                .send_to(REQUEST, SERVER_ADDR)
+                .send_bytes_to(REQUEST, SERVER_ADDR)
                 .await
                 .expect("send failed");
             let mut buf = vec![0u8; RESPONSE.len()];
 
-            datagram.recv_from(&mut buf).await.expect("recv failed");
+            datagram
+                .recv_bytes_from(&mut buf)
+                .await
+                .expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
 
@@ -317,13 +320,13 @@ mod tests {
                     .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
                 let (n, src) = server
-                    .recv_from_with_timeout(&mut buf, Duration::from_secs(10))
+                    .recv_bytes_from_with_timeout(&mut buf, Duration::from_secs(10))
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
                 server
-                    .send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
+                    .send_bytes_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
                     .await
                     .expect("send failed");
             }
@@ -419,13 +422,13 @@ mod tests {
                     .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
                 let (n, src) = server
-                    .recv_from_with_timeout(&mut buf, TIMEOUT)
+                    .recv_bytes_from_with_timeout(&mut buf, TIMEOUT)
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
                 server
-                    .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
+                    .send_bytes_to_with_timeout(RESPONSE, &src, TIMEOUT)
                     .await
                     .expect("send failed");
             }
@@ -492,7 +495,7 @@ mod tests {
 
         for _ in 0..TIMES {
             datagram
-                .send_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
+                .send_bytes_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
                 .await
                 .expect("send failed");
 
@@ -503,11 +506,11 @@ mod tests {
             let mut buf = vec![0u8; RESPONSE.len()];
 
             datagram
-                .peek_from_with_timeout(&mut buf, TIMEOUT)
+                .peek_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("peek failed");
             datagram
-                .peek_from_with_timeout(&mut buf, TIMEOUT)
+                .peek_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("peek failed");
 
@@ -516,7 +519,7 @@ mod tests {
                 .await
                 .expect("poll failed");
             datagram
-                .recv_from_with_timeout(&mut buf, TIMEOUT)
+                .recv_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("recv failed");
         }
@@ -534,12 +537,18 @@ mod tests {
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
         }
 
-        match socket.recv_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
+        match socket
+            .recv_bytes_from_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .await
+        {
             Ok(_) => panic!("recv_from should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }
 
-        match socket.peek_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
+        match socket
+            .peek_bytes_from_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .await
+        {
             Ok(_) => panic!("peek_from should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }

@@ -1,14 +1,18 @@
 use crate::net::addr::{FromSockAddr, IntoSockAddr};
+#[cfg(unix)]
 use crate::net::unix::UnixAddr;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::path::Path;
 
 /// `ToSockAddrs` is a copy of [`std::net::ToSocketAddrs`],
 /// but with a generic type parameter.
 ///
 /// It allows to use [`UnixAddr`] as a generic type parameter
 /// or another custom type that implements [`FromSockAddr`] and [`IntoSockAddr`].
+#[allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "It is valid on linux and is not scare on windows"
+)]
 pub trait ToSockAddrs<Addr: FromSockAddr + IntoSockAddr> {
     /// Returned iterator over socket addresses which this type may correspond to.
     type Iter: Iterator<Item = Addr>;
@@ -32,7 +36,7 @@ impl<T: ToSocketAddrs> ToSockAddrs<SocketAddr> for T {
 }
 
 #[cfg(unix)]
-impl<T: AsRef<Path>> ToSockAddrs<UnixAddr> for T {
+impl<T: AsRef<std::path::Path>> ToSockAddrs<UnixAddr> for T {
     type Iter = std::iter::Once<UnixAddr>;
 
     fn to_sock_addrs(&self) -> io::Result<Self::Iter> {

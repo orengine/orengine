@@ -1,10 +1,10 @@
 use crate::io::sys::{
     self, FromRawFile, FromRawSocket, IntoRawFile, IntoRawSocket, MessageRecvHeader,
-    OsMessageHeader, OsOpenOptions, OsPathPtr, RawFile, RawSocket,
+    OsMessageHeader, OsOpenOptions, OsPathPtr, RawFile, RawSocket, MSG_PEEK_FLAG,
 };
 use positioned_io::{ReadAt, WriteAt};
-use socket2::{Domain, Protocol, SockAddr, Type};
-use std::io::{Read, Write};
+use socket2::{Domain, MaybeUninitSlice, Protocol, SockAddr, Type};
+use std::io::{IoSlice, Read, Write};
 use std::mem::MaybeUninit;
 use std::net::Shutdown;
 #[cfg(unix)]
@@ -120,9 +120,9 @@ pub(crate) fn recv_from_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &mut *header_ptr }.get_os_message_header();
-        let bufs = unsafe { &mut *header.0 };
+        let bufs = unsafe { &mut *(header.0 as *mut [MaybeUninitSlice]) };
         let addr_ptr = header.1;
-        socket.recv_from_vectored(bufs).map(|(n, sock_addr)| {
+        socket.recv_from_vectored(bufs).map(|(n, _, sock_addr)| {
             unsafe { ptr::write(addr_ptr, sock_addr) };
 
             n
@@ -150,7 +150,7 @@ pub(crate) fn send_to_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &*header_ptr };
-        let bufs = unsafe { &*header.0 };
+        let bufs = unsafe { &*(header.0 as *const [IoSlice]) };
 
         socket.send_to_vectored(bufs, unsafe { &*header.1 })
     })
@@ -172,14 +172,16 @@ pub(crate) fn peek_from_op(
 ) -> io::Result<usize> {
     with_socket(raw_socket, |socket| {
         let header = unsafe { &mut *header_ptr }.get_os_message_header();
-        let bufs = unsafe { &mut *header.0 };
+        let bufs = unsafe { &mut *(header.0 as *mut [MaybeUninitSlice]) };
         let addr_ptr = header.1;
 
-        socket.peek_from(bufs).map(|(n, sock_addr)| {
-            unsafe { ptr::write(addr_ptr, sock_addr) };
+        socket
+            .recv_from_vectored_with_flags(bufs, MSG_PEEK_FLAG)
+            .map(|(n, _, sock_addr)| {
+                unsafe { ptr::write(addr_ptr, sock_addr) };
 
-            n
-        })
+                n
+            })
     })
 }
 

@@ -42,11 +42,13 @@ pub(crate) async fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<RawSock
 }
 
 /// Creates a new UNIX socket with [`stream`](Type::STREAM) type.
+#[cfg(unix)]
 pub async fn new_unix_stream() -> std::io::Result<RawSocket> {
     Socket::new(Domain::UNIX, Type::STREAM, Protocol::from(0)).await
 }
 
 /// Creates a new UNIX socket with [`datagram`](Type::DGRAM) type.
+#[cfg(unix)]
 pub async fn new_unix_datagram() -> std::io::Result<RawSocket> {
     Socket::new(Domain::UNIX, Type::DGRAM, Protocol::from(0)).await
 }

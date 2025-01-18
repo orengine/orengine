@@ -1,9 +1,14 @@
+#[cfg(unix)]
 use crate::net::unix::UnixAddr;
 
 /// `FromSockAddr` can be used to convert [`socket2::SockAddr`] to another type.
 ///
 /// It is already implemented for [`std::net::SocketAddr`], [`std::net::SocketAddrV4`],
 /// [`std::net::SocketAddrV6`], [`std::os::unix::net::SocketAddr`], [`UnixAddr`].
+#[allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "It is valid on linux and is not scare on windows"
+)]
 pub trait FromSockAddr: Sized {
     /// Convert `socket2::SockAddr` to `Self`.
     fn from_sock_addr(addr: socket2::SockAddr) -> Option<Self>;

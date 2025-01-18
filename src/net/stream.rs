@@ -1,6 +1,6 @@
 use crate::io::{sys, AsyncConnectStream, AsyncPeek, AsyncRecv, AsyncSend, AsyncShutdown};
 use crate::net::addr::FromSockAddr;
-use crate::net::unix::unsupport::new_unix_unsupported_error;
+use crate::net::new_unix_unsupported_error;
 use crate::net::Socket;
 use std::io;
 use std::io::Error;

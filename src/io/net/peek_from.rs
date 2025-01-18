@@ -11,6 +11,7 @@ use crate as orengine;
 use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, MessageRecvHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::io::FixedBufferMut;
 use crate::net::addr::FromSockAddr;
 use crate::net::Socket;
 use crate::BUG_MESSAGE;
@@ -134,19 +135,23 @@ unsafe impl Send for PeekFromWithDeadline<'_> {}
 /// use orengine::io::{full_buffer, AsyncBind, AsyncPeek, AsyncPeekFrom, AsyncPollSocket};
 /// use orengine::net::UdpSocket;
 ///
-/// async fn foo() -> std::io::Result<()> {
+/// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = UdpSocket::bind("127.0.0.1:8080").await?;
 /// stream.poll_recv().await?;
-/// let mut bufs_ptr = full_buffer();
+/// let mut buf = full_buffer();
 ///
 /// // Peek at the incoming data without consuming it
-/// let bytes_peeked = stream.peek_from(&mut bufs_ptr).await?;
+/// let bytes_peeked = stream.peek_from(&mut buf).await?;
 /// # Ok(())
 /// # }
 /// ```
 pub trait AsyncPeekFrom: Socket {
     /// Asynchronously peeks into the incoming datagram without consuming it, filling the buffer
     /// with available data and returning the number of bytes peeked and the sender's address.
+    ///
+    /// # Difference between `peek_bytes_from` and `peek_from`
+    ///
+    /// Use `peek_from` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -157,21 +162,50 @@ pub trait AsyncPeekFrom: Socket {
     /// async fn foo() -> std::io::Result<()> {
     /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
     /// socket.poll_recv().await?;
-    /// let mut bufs_ptr = full_buffer();
+    /// let mut buf = full_buffer();
     ///
     /// // Peek at the incoming datagram without consuming it
-    /// let (bytes_peeked, addr) = socket.peek_from(&mut bufs_ptr).await?;
+    /// let (bytes_peeked, addr) = socket.peek_bytes_from(&mut buf).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_from(&mut self, bufs_ptr: &mut [u8]) -> Result<(usize, Self::Addr)> {
+    async fn peek_bytes_from(&mut self, buf: &mut [u8]) -> Result<(usize, Self::Addr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
-        let buf_ptr = &mut [IoSliceMut::new(bufs_ptr)];
+        let buf_ptr = &mut [IoSliceMut::new(buf)];
 
         let n = PeekFrom::new(AsRawSocket::as_raw_socket(self), buf_ptr, &mut sock_addr).await?;
 
         Ok((n, Self::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE)))
+    }
+
+    /// Asynchronously peeks into the incoming datagram without consuming it, filling the buffer
+    /// with available data and returning the number of bytes peeked and the sender's address.
+    ///
+    /// # Difference between `peek_from` and `peek_bytes_from`
+    ///
+    /// Use `peek_from` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
+    /// use orengine::net::UdpSocket;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// socket.poll_recv().await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram without consuming it
+    /// let (bytes_peeked, addr) = socket.peek_from(&mut buf).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_from(&mut self, buf: &mut impl FixedBufferMut) -> Result<(usize, Self::Addr)> {
+        // Now `PeekFrom` with `fixed` buffer is unsupported.
+        self.peek_bytes_from(buf.as_bytes_mut()).await
     }
 
     /// Asynchronously peeks into the incoming datagram with a deadline, without consuming it,
@@ -180,6 +214,10 @@ pub trait AsyncPeekFrom: Socket {
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_bytes_from_with_deadline` and `peek_from_with_deadline`
+    ///
+    /// Use `peek_from_with_deadline` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -192,21 +230,21 @@ pub trait AsyncPeekFrom: Socket {
     /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
     /// let deadline = Instant::now() + Duration::from_secs(5);
     /// socket.poll_recv_with_deadline(deadline).await?;
-    /// let mut bufs_ptr = full_buffer();
+    /// let mut buf = full_buffer();
     ///
     /// // Peek at the incoming datagram with a deadline
-    /// let (bytes_peeked, addr) = socket.peek_from_with_deadline(&mut bufs_ptr, deadline).await?;
+    /// let (bytes_peeked, addr) = socket.peek_bytes_from_with_deadline(&mut buf, deadline).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
-    async fn peek_from_with_deadline(
+    async fn peek_bytes_from_with_deadline(
         &mut self,
-        bufs_ptr: &mut [u8],
+        buf: &mut [u8],
         deadline: Instant,
     ) -> Result<(usize, Self::Addr)> {
         let mut sock_addr = unsafe { std::mem::zeroed() };
-        let buf_ptr = &mut [IoSliceMut::new(bufs_ptr)];
+        let buf_ptr = &mut [IoSliceMut::new(buf)];
 
         let n = PeekFromWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
@@ -219,12 +257,56 @@ pub trait AsyncPeekFrom: Socket {
         Ok((n, Self::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE)))
     }
 
+    /// Asynchronously peeks into the incoming datagram with a deadline, without consuming it,
+    /// filling the buffer with available data and returning the number of bytes peeked
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_from_with_deadline` and `peek_bytes_from_with_deadline`
+    ///
+    /// Use `peek_from_with_deadline` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::{Duration, Instant};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    /// socket.poll_recv_with_deadline(deadline).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram with a deadline
+    /// let (bytes_peeked, addr) = socket.peek_from_with_deadline(&mut buf, deadline).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_from_with_deadline(
+        &mut self,
+        buf: &mut impl FixedBufferMut,
+        deadline: Instant,
+    ) -> Result<(usize, Self::Addr)> {
+        // Now `PeekFrom` with `fixed` buffer is unsupported.
+        self.peek_bytes_from_with_deadline(buf.as_bytes_mut(), deadline)
+            .await
+    }
+
     /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,
     /// filling the buffer with available data and returning the number of bytes peeked
     /// and the sender's address.
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_bytes_from_with_timeout` and `peek_from_with_timeout`
+    ///
+    /// Use `peek_from_with_timeout` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -237,20 +319,60 @@ pub trait AsyncPeekFrom: Socket {
     /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
     /// let timeout = Duration::from_secs(5);
     /// socket.poll_recv_with_timeout(timeout).await?;
-    /// let mut bufs_ptr = full_buffer();
+    /// let mut buf = full_buffer();
     ///
     /// // Peek at the incoming datagram with a timeout
-    /// let (bytes_peeked, addr) = socket.peek_from_with_timeout(&mut bufs_ptr, timeout).await?;
+    /// let (bytes_peeked, addr) = socket.peek_bytes_from_with_timeout(&mut buf, timeout).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline(always)]
+    async fn peek_bytes_from_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> Result<(usize, Self::Addr)> {
+        self.peek_bytes_from_with_deadline(buf, Instant::now() + timeout)
+            .await
+    }
+
+    /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,
+    /// filling the buffer with available data and returning the number of bytes peeked
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `peek_from_with_timeout` and `peek_bytes_from_with_timeout`
+    ///
+    /// Use `peek_from_with_timeout` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    /// socket.poll_recv_with_timeout(timeout).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Peek at the incoming datagram with a timeout
+    /// let (bytes_peeked, addr) = socket.peek_from_with_timeout(&mut buf, timeout).await?;
     /// # Ok(())
     /// # }
     /// ```
     #[inline(always)]
     async fn peek_from_with_timeout(
         &mut self,
-        bufs_ptr: &mut [u8],
+        buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> Result<(usize, Self::Addr)> {
-        self.peek_from_with_deadline(bufs_ptr, Instant::now() + timeout)
+        // Now `PeekFrom` with `fixed` buffer is unsupported.
+        self.peek_bytes_from_with_timeout(buf.as_bytes_mut(), timeout)
             .await
     }
 }

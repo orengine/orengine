@@ -10,7 +10,7 @@ use std::{fmt, io, mem, ptr};
 /// An offset to the `sun_path` field of `sockaddr_un`.
 const SUN_PATH_OFFSET: usize = offset_of!(libc::sockaddr_un, sun_path);
 
-pub(super) fn sockaddr_un(path: &Path) -> io::Result<(sockaddr_storage, socklen_t)> {
+pub(in crate::net) fn sockaddr_un(path: &Path) -> io::Result<(sockaddr_storage, socklen_t)> {
     // SAFETY: All zeros is a valid representation for `sockaddr_un`.
     let mut storage = unsafe { mem::zeroed::<sockaddr_storage>() };
     let unix_addr_ref = unsafe { &mut *(&raw mut storage).cast::<libc::sockaddr_un>() };
@@ -326,8 +326,8 @@ impl UnixAddr {
 ///
 /// It is a copy that is used to get offsets of fields.
 pub struct SocketAddrPrototype {
-    pub(super) addr: libc::sockaddr_un,
-    pub(super) len: socklen_t,
+    pub(in crate::net) addr: libc::sockaddr_un,
+    pub(in crate::net) len: socklen_t,
 }
 
 impl From<SocketAddr> for UnixAddr {

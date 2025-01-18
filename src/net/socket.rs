@@ -1,7 +1,7 @@
 use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket};
 use crate::io::{AsyncPollSocket, AsyncSocketClose};
 use crate::net::addr::{FromSockAddr, IntoSockAddr, ToSockAddrs};
-use crate::net::unix::unsupport::new_unix_unsupported_error;
+use crate::net::new_unix_unsupported_error;
 use std::io;
 use std::io::Error;
 

@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use crate::net::unix::UnixAddr;
 use socket2::SockAddr;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -6,6 +7,10 @@ use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 ///
 /// It is already implemented for [`SocketAddr`], [`SocketAddrV4`],
 /// [`SocketAddrV6`], [`std::os::unix::net::SocketAddr`], [`UnixAddr`].
+#[allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "It is valid on linux and is not scare on windows"
+)]
 pub trait IntoSockAddr {
     fn into_sock_addr(self) -> SockAddr;
 }

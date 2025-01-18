@@ -1,6 +1,6 @@
 use crate::io::{sys, AsyncBind, AsyncConnectDatagram, AsyncPeekFrom, AsyncRecvFrom, AsyncSendTo};
 use crate::net::connected_datagram::ConnectedDatagram;
-use crate::net::unix::unsupport::new_unix_unsupported_error;
+use crate::net::new_unix_unsupported_error;
 use crate::net::Socket;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -39,12 +39,12 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 ///     loop {
 ///        datagram.poll_recv().await.expect("poll failed");
 ///        let mut buf = full_buffer();
-///        let (n, addr) = datagram.recv_from(&mut buf).await.expect("recv_from failed");
+///        let (n, addr) = datagram.recv_bytes_from(&mut buf).await.expect("recv_from failed");
 ///        if n == 0 {
 ///            continue;
 ///        }
 ///
-///        datagram.send_to(&buf[..n], addr).await.expect("send_to failed");
+///        datagram.send_bytes_to(&buf[..n], addr).await.expect("send_to failed");
 ///     }
 /// }
 /// ```
