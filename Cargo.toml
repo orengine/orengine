@@ -1,6 +1,6 @@
 [package]
 name = "orengine"
-version = "0.8.1-alpha.1"
+version = "0.9.0-alpha.1"
 license = "MIT"
 description = """
 Optimized ring engine for Rust.
