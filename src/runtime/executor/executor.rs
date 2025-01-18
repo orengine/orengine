@@ -142,6 +142,7 @@ pub struct Executor {
 
     start_round_time: Instant,
     /// `start_round_time` + 100 microseconds
+    #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
     start_round_time_for_deadlines: Instant,
 
     local_tasks: VecDeque<Task>,
@@ -224,6 +225,7 @@ impl Executor {
                 rng: Rng::new(),
 
                 start_round_time: Instant::now(),
+                #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
                 start_round_time_for_deadlines: Instant::now() + Duration::from_micros(100),
 
                 local_tasks: VecDeque::new(),
@@ -928,7 +930,11 @@ impl Executor {
     fn prepare_to_new_round(&mut self) {
         self.exec_series = 0;
         self.start_round_time = Instant::now();
-        self.start_round_time_for_deadlines = self.start_round_time + Duration::from_micros(100);
+        #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+        {
+            self.start_round_time_for_deadlines =
+                self.start_round_time + Duration::from_micros(100);
+        }
     }
 
     /// Executes all ready CPU tasks.
