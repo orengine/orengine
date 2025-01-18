@@ -140,6 +140,10 @@ pub struct Executor {
     subscribed_state: Arc<SubscribedState>,
     rng: Rng,
 
+    start_round_time: Instant,
+    /// start_round_time + 100 microseconds
+    start_round_time_for_deadlines: Instant,
+
     local_tasks: VecDeque<Task>,
     shared_tasks: VecDeque<Task>,
     shared_tasks_list: Option<Arc<ExecutorSharedTaskList>>,
@@ -218,6 +222,9 @@ impl Executor {
                 config: valid_config,
                 subscribed_state: Arc::new(SubscribedState::new()),
                 rng: Rng::new(),
+
+                start_round_time: Instant::now(),
+                start_round_time_for_deadlines: Instant::now() + Duration::from_micros(100),
 
                 local_tasks: VecDeque::new(),
                 shared_tasks: VecDeque::with_capacity(shared_tasks_list_cap),
@@ -333,6 +340,22 @@ impl Executor {
     /// Returns the [`config`](Config) of the executor.
     pub fn config(&self) -> Config {
         Config::from(&self.config)
+    }
+
+    /// Returns when current round started.
+    pub fn start_round_time(&self) -> Instant {
+        self.start_round_time
+    }
+
+    /// Returns the approximate current time.
+    ///
+    /// It is obtained by adding 100 microseconds to the
+    /// [`start time of the current round`](Self::start_round_time).
+    ///
+    /// This method is supposed to be used to set deadlines,
+    /// therefore returning a future time is acceptable.
+    pub fn start_round_time_for_deadlines(&self) -> Instant {
+        self.start_round_time_for_deadlines
     }
 
     /// Returns a reference to the shared tasks list of the executor.
@@ -888,6 +911,13 @@ impl Executor {
         None
     }
 
+    /// Prepares the executor for the next round.
+    fn prepare_to_new_round(&mut self) {
+        self.exec_series = 0;
+        self.start_round_time = Instant::now();
+        self.start_round_time_for_deadlines = self.start_round_time + Duration::from_micros(100);
+    }
+
     /// Executes all ready CPU tasks.
     #[inline(always)]
     fn exec_cpu_tasks(&mut self) {
@@ -1015,7 +1045,7 @@ impl Executor {
                 break;
             }
 
-            self.exec_series = 0;
+            self.prepare_to_new_round();
 
             self.exec_cpu_tasks();
             #[cfg(not(feature = "disable_send_task_to"))]

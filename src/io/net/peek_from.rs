@@ -14,7 +14,7 @@ use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
 use crate::net::addr::FromSockAddr;
 use crate::net::Socket;
-use crate::BUG_MESSAGE;
+use crate::{local_executor, BUG_MESSAGE};
 
 /// `peek_from` io operation.
 pub struct PeekFrom<'fut> {
@@ -332,8 +332,11 @@ pub trait AsyncPeekFrom: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> Result<(usize, Self::Addr)> {
-        self.peek_bytes_from_with_deadline(buf, Instant::now() + timeout)
-            .await
+        self.peek_bytes_from_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
+        .await
     }
 
     /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,

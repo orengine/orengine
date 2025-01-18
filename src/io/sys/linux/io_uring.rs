@@ -210,6 +210,7 @@ impl IoWorker for IOUringWorker {
 
     #[inline(always)]
     fn must_poll(&mut self, timeout_option: Option<Duration>) {
+        let executor = local_executor();
         self.check_deadlines();
         self.submit_and_poll(timeout_option)
             .expect("IOUringWorker::submit() failed");
@@ -217,7 +218,6 @@ impl IoWorker for IOUringWorker {
         let ring = unsafe { &mut *self.ring.get() };
         let mut cq = ring.completion();
         cq.sync();
-        let executor = local_executor();
 
         self.number_of_active_tasks -= cq.len();
         for cqe in cq {

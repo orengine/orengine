@@ -5,7 +5,7 @@ use crate::io::sys::{os_sockaddr, AsRawSocket, FromRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::net::addr::FromSockAddr;
 use crate::net::{Socket, Stream};
-use crate::BUG_MESSAGE;
+use crate::{local_executor, BUG_MESSAGE};
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use socket2::SockAddr;
 use std::future::Future;
@@ -281,6 +281,7 @@ pub trait AsyncAccept<S: Stream>: Socket {
     /// ```
     #[inline(always)]
     async fn accept_with_timeout(&mut self, timeout: Duration) -> Result<(S, S::Addr)> {
-        self.accept_with_deadline(Instant::now() + timeout).await
+        self.accept_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
+            .await
     }
 }
