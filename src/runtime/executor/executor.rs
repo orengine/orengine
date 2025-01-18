@@ -354,8 +354,21 @@ impl Executor {
     ///
     /// This method is supposed to be used to set deadlines,
     /// therefore returning a future time is acceptable.
+    ///
+    /// # Behavior on fallback OS
+    ///
+    /// If fallback uses the feature `fallback_thread_pool`, it works the same way as in Linux.
+    /// Else we can't guarantee the 100 microseconds addition sufficiency and use [`Instant::now`].
     pub fn start_round_time_for_deadlines(&self) -> Instant {
-        self.start_round_time_for_deadlines
+        #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+        {
+            self.start_round_time_for_deadlines
+        }
+
+        #[cfg(not(any(target_os = "linux", feature = "fallback_thread_pool")))]
+        {
+            Instant::now()
+        }
     }
 
     /// Returns a reference to the shared tasks list of the executor.
