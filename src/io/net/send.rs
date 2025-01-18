@@ -12,6 +12,7 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
+use crate::local_executor;
 use crate::net::Socket;
 
 /// `send` io operation.
@@ -436,7 +437,7 @@ pub trait AsyncSend: Socket {
         SendBytesWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
             buf,
-            std::time::Instant::now() + timeout,
+            local_executor().start_round_time_for_deadlines() + timeout,
         )
     }
 
@@ -477,7 +478,10 @@ pub trait AsyncSend: Socket {
         buf: &impl FixedBuffer,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.send_with_deadline(buf, std::time::Instant::now() + timeout)
+        self.send_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously sends the entire provided byte slice.
@@ -703,7 +707,10 @@ pub trait AsyncSend: Socket {
         buf: &[u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.send_all_bytes_with_deadline(buf, std::time::Instant::now() + timeout)
+        self.send_all_bytes_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously sends the entire provided [`Buffer`] with a specified timeout.
@@ -742,6 +749,9 @@ pub trait AsyncSend: Socket {
         buf: &impl FixedBuffer,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.send_all_with_deadline(buf, std::time::Instant::now() + timeout)
+        self.send_all_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 }

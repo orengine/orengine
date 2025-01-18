@@ -332,8 +332,11 @@ pub trait AsyncPeekFrom: Socket {
         buf: &mut [u8],
         timeout: Duration,
     ) -> Result<(usize, Self::Addr)> {
-        self.peek_bytes_from_with_deadline(buf, std::time::Instant::now() + timeout)
-            .await
+        self.peek_bytes_from_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
+        .await
     }
 
     /// Asynchronously peeks into the incoming datagram with a timeout, without consuming it,

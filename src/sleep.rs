@@ -60,7 +60,7 @@ impl Future for Sleep {
 pub fn sleep(duration: Duration) -> Sleep {
     Sleep {
         was_yielded: false,
-        sleep_until: std::time::Instant::now() + duration,
+        sleep_until: local_executor().start_round_time_for_deadlines() + duration,
     }
 }
 

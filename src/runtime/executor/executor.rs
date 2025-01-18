@@ -142,7 +142,7 @@ pub struct Executor {
 
     start_round_time: Instant,
     /// `start_round_time` + 100 microseconds
-    #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+    #[cfg(target_os = "linux")]
     start_round_time_for_deadlines: Instant,
 
     local_tasks: VecDeque<Task>,
@@ -225,7 +225,7 @@ impl Executor {
                 rng: Rng::new(),
 
                 start_round_time: Instant::now(),
-                #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+                #[cfg(target_os = "linux")]
                 start_round_time_for_deadlines: Instant::now() + Duration::from_micros(100),
 
                 local_tasks: VecDeque::new(),
@@ -359,15 +359,15 @@ impl Executor {
     ///
     /// # Behavior on fallback OS
     ///
-    /// If fallback uses the feature `fallback_thread_pool`, it works the same way as in Linux.
-    /// Else we can't guarantee the 100 microseconds addition sufficiency and use [`Instant::now`].
+    /// In fallback, we can't guarantee the 100 microseconds addition sufficiency,
+    /// therefore it is a synonymous to [`Instant::now`] there.
     pub fn start_round_time_for_deadlines(&self) -> Instant {
-        #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+        #[cfg(target_os = "linux")]
         {
             self.start_round_time_for_deadlines
         }
 
-        #[cfg(not(any(target_os = "linux", feature = "fallback_thread_pool")))]
+        #[cfg(not(target_os = "linux"))]
         {
             Instant::now()
         }
@@ -930,7 +930,7 @@ impl Executor {
     fn prepare_to_new_round(&mut self) {
         self.exec_series = 0;
         self.start_round_time = Instant::now();
-        #[cfg(any(target_os = "linux", feature = "fallback_thread_pool"))]
+        #[cfg(target_os = "linux")]
         {
             self.start_round_time_for_deadlines =
                 self.start_round_time + Duration::from_micros(100);

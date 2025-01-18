@@ -2,6 +2,7 @@ use crate as orengine;
 use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::local_executor;
 use orengine_macros::{poll_for_io_request, poll_for_time_bounded_io_request};
 use std::future::Future;
 use std::pin::Pin;
@@ -216,7 +217,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// ```
     #[inline(always)]
     fn poll_recv_with_timeout(&self, timeout: Duration) -> PollRecvWithDeadline {
-        self.poll_recv_with_deadline(std::time::Instant::now() + timeout)
+        self.poll_recv_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
     }
 
     /// Returns future that will be resolved when the file descriptor
@@ -264,6 +265,6 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// on productivity and efficiency.
     #[inline(always)]
     fn poll_send_with_timeout(&self, timeout: Duration) -> PollSendWithDeadline {
-        self.poll_send_with_deadline(std::time::Instant::now() + timeout)
+        self.poll_send_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
     }
 }
