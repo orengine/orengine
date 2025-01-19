@@ -32,13 +32,13 @@ impl MessageRecvHeader {
     }
 
     /// Returns a shared reference to the message header.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_os_message_header(&mut self) -> &mut OsMessageHeader {
         &mut self.os_header
     }
 
     /// Returns a length of an associated addr.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_addr_len(&self) -> libc::socklen_t {
         self.os_header.msg_namelen
     }
@@ -51,7 +51,7 @@ pub(crate) struct MessageSendHeader {
 
 impl MessageSendHeader {
     /// Creates a new [`MessageSendHeader`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new() -> Self {
         Self {
             header: unsafe { mem::zeroed() },
@@ -59,7 +59,7 @@ impl MessageSendHeader {
     }
 
     /// Initializes the message header.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn init(&mut self, addr: &SockAddr, buf_ref: *const [IoSlice]) {
         self.header.msg_name = addr.as_ptr().cast_mut().cast::<libc::c_void>();
         self.header.msg_namelen = addr.len() as _;
@@ -69,7 +69,7 @@ impl MessageSendHeader {
     }
 
     /// Returns a pointer to the message header after its initialization.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_os_message_header_ptr(
         &mut self,
         addr: &SockAddr,

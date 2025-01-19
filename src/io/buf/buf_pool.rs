@@ -46,7 +46,7 @@ pub(crate) fn uninit_local_buf_pool() {
 /// # Undefined behavior
 ///
 /// If [`BufPool`] is not initialized in __release__ build.
-#[inline(always)]
+#[inline]
 pub fn buf_pool() -> &'static mut BufPool {
     BUF_POOL.with(|buf_pool| unsafe {
         let buf_pool_ = &mut *buf_pool.get();
@@ -60,7 +60,7 @@ pub fn buf_pool() -> &'static mut BufPool {
 ///
 /// Please, don't keep the buffer longer than necessary.
 /// After drop, it will be returned to the pool.
-#[inline(always)]
+#[inline]
 pub fn buffer() -> Buffer {
     buf_pool().get()
 }
@@ -91,7 +91,7 @@ pub fn buffer() -> Buffer {
 ///
 /// Please, do not keep the buffer longer than necessary.
 /// After drop, it will be returned to the pool.
-#[inline(always)]
+#[inline]
 pub fn full_buffer() -> Buffer {
     buf_pool().get_full()
 }
@@ -215,7 +215,7 @@ impl BufPool {
     }
 
     /// Returns default buffer capacity.
-    #[inline(always)]
+    #[inline]
     pub fn default_buffer_capacity(&self) -> u32 {
         self.default_buffer_cap
     }
@@ -224,7 +224,7 @@ impl BufPool {
     ///
     /// This method doesn't guarantee any len of the buffer.
     /// Returned buffer is filled with any value (not only 0).
-    #[inline(always)]
+    #[inline]
     pub fn get_buffer_with_any_len(&mut self) -> Buffer {
         #[cfg(not(target_os = "linux"))]
         {
@@ -247,7 +247,7 @@ impl BufPool {
     /// if it is possible.
     ///
     /// Returned buffer is filled with any value (not only 0).
-    #[inline(always)]
+    #[inline]
     pub fn get_full(&mut self) -> Buffer {
         let mut buffer = self.get_buffer_with_any_len();
         buffer.set_len_to_capacity();
@@ -259,7 +259,7 @@ impl BufPool {
     /// if it is possible.
     ///
     /// Returned buffer is filled with any value (not only 0).
-    #[inline(always)]
+    #[inline]
     pub fn get(&mut self) -> Buffer {
         let mut buffer = self.get_buffer_with_any_len();
         buffer.clear();
@@ -271,7 +271,7 @@ impl BufPool {
     ///
     /// If provided [`Buffer`] has no the same capacity as
     /// [`default buffer capacity`](Self::default_buffer_capacity), it will be drooped.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn put(&mut self, buf: Buffer) {
         #[cfg(not(target_os = "linux"))]
         {

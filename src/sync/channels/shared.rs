@@ -1,5 +1,7 @@
 use crate::runtime::call::Call;
-use crate::runtime::{local_executor, Task};
+use crate::runtime::local_executor;
+use crate::sync::channels::pools::{channel_inner_vec_deque_pool, DequesPoolGuard};
+use crate::sync::channels::states::{RecvCallState, SendCallState};
 use crate::sync::mutexes::naive_shared::NaiveMutex;
 use crate::sync::{
     AsyncChannel, AsyncMutex, AsyncReceiver, AsyncSender, RecvInResult, SendResult,
@@ -14,55 +16,14 @@ use std::ptr;
 use std::ptr::copy_nonoverlapping;
 use std::task::{Context, Poll};
 
-/// `SendCallState` is a state machine for [`WaitSend`]. This is used to improve performance.
-enum SendCallState {
-    /// Default state.
-    ///
-    /// # Lock note
-    ///
-    /// It has no lock now.
-    FirstCall,
-    /// Receiver writes the value associated with this task
-    ///
-    /// # Lock note
-    ///
-    /// It has no lock now.
-    WokenToReturnReady,
-    /// This task was enqueued, now it is woken by close, and it has no lock now.
-    WokenByClose,
-}
-
-/// `RecvCallState` is a state machine for [`WaitRecv`]. This is used to improve performance.
-enum RecvCallState {
-    /// Default state.
-    ///
-    /// # Lock note
-    ///
-    /// It has no lock now.
-    FirstCall,
-    /// This task was enqueued, now it is woken for return [`Poll::Ready`],
-    /// because a [`WaitSend`] has written to the slot already.
-    ///
-    /// # Lock note
-    ///
-    /// And it has no lock now.
-    WokenToReturnReady,
-    /// This task was enqueued, now it is woken by close.
-    ///
-    /// # Lock note
-    ///
-    /// It has no lock now.
-    WokenByClose,
-}
-
 /// This is the internal data structure for the [`channel`](Channel).
 /// It holds the actual storage for the values and manages the queue of senders and receivers.
+#[repr(C)]
 struct Inner<T> {
     storage: VecDeque<T>,
     is_closed: bool,
     capacity: usize,
-    senders: VecDeque<(Task, *mut SendCallState, *const T)>,
-    receivers: VecDeque<(Task, *mut T, *mut RecvCallState)>,
+    deques: DequesPoolGuard<T>,
 }
 
 unsafe impl<T: Send> Sync for Inner<T> {}
@@ -104,6 +65,7 @@ macro_rules! acquire_lock {
 /// # Panics or memory leaks
 ///
 /// If [`WaitSend::poll`] is not called.
+#[repr(C)]
 pub struct WaitSend<'future, T> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: SendCallState,
@@ -114,7 +76,7 @@ pub struct WaitSend<'future, T> {
 
 impl<'future, T> WaitSend<'future, T> {
     /// Creates a new [`WaitSend`].
-    #[inline(always)]
+    #[inline]
     fn new(value: T, inner: &'future NaiveMutex<Inner<T>>) -> Self {
         Self {
             inner,
@@ -129,7 +91,7 @@ impl<'future, T> WaitSend<'future, T> {
 impl<T> Future for WaitSend<'_, T> {
     type Output = SendResult<T>;
 
-    #[inline(always)]
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         #[cfg(debug_assertions)]
@@ -147,8 +109,8 @@ impl<T> Future for WaitSend<'_, T> {
                     }));
                 }
 
-                let receiver = inner_lock.receivers.pop_front();
-                if let Some((task, slot, call_state)) = receiver {
+                let receiver = inner_lock.deques.receivers.pop_front();
+                if let Some((task, call_state, slot)) = receiver {
                     unsafe {
                         drop(inner_lock);
 
@@ -163,7 +125,7 @@ impl<T> Future for WaitSend<'_, T> {
                 let len = inner_lock.storage.len();
                 if len >= inner_lock.capacity {
                     let task = unsafe { get_task_from_context!(cx) };
-                    inner_lock.senders.push_back((
+                    inner_lock.deques.senders.push_back((
                         task,
                         &mut this.call_state,
                         ptr::from_ref(&this.value).cast(),
@@ -206,6 +168,7 @@ impl<T> Drop for WaitSend<'_, T> {
 ///
 /// When the future is polled, it either receives the value immediately (if available) or
 /// gets parked in the list of waiting receivers.
+#[repr(C)]
 pub struct WaitRecv<'future, T> {
     inner: &'future NaiveMutex<Inner<T>>,
     call_state: RecvCallState,
@@ -214,7 +177,7 @@ pub struct WaitRecv<'future, T> {
 
 impl<'future, T> WaitRecv<'future, T> {
     /// Creates a new [`WaitRecv`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'future NaiveMutex<Inner<T>>, slot: *mut T) -> Self {
         Self {
             inner,
@@ -227,7 +190,7 @@ impl<'future, T> WaitRecv<'future, T> {
 impl<T> Future for WaitRecv<'_, T> {
     type Output = RecvInResult;
 
-    #[inline(always)]
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         panic_if_local_in_future!(cx, "Channel");
@@ -241,7 +204,7 @@ impl<T> Future for WaitRecv<'_, T> {
 
                 let l = inner_lock.storage.len();
                 if l == 0 {
-                    let sender_ = inner_lock.senders.pop_front();
+                    let sender_ = inner_lock.deques.senders.pop_front();
                     if let Some((task, call_state, value)) = sender_ {
                         unsafe {
                             drop(inner_lock);
@@ -256,8 +219,9 @@ impl<T> Future for WaitRecv<'_, T> {
 
                     let task = unsafe { get_task_from_context!(cx) };
                     inner_lock
+                        .deques
                         .receivers
-                        .push_back((task, this.slot, &mut this.call_state));
+                        .push_back((task, &mut this.call_state, this.slot));
                     return_pending_and_release_lock!(local_executor(), inner_lock);
                 }
 
@@ -266,7 +230,7 @@ impl<T> Future for WaitRecv<'_, T> {
                         .write(inner_lock.storage.pop_front().unwrap_unchecked());
                 }
 
-                let sender_ = inner_lock.senders.pop_front();
+                let sender_ = inner_lock.deques.senders.pop_front();
                 if let Some((task, call_state, value)) = sender_ {
                     unsafe {
                         inner_lock.storage.push_back(ptr::read(value));
@@ -293,7 +257,7 @@ impl<T: RefUnwindSafe> RefUnwindSafe for WaitRecv<'_, T> {}
 // endregion
 
 /// Closes the [`channel`](Channel) and wakes all senders and receivers.
-#[inline(always)]
+#[inline]
 #[allow(
     clippy::future_not_send,
     reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -303,14 +267,14 @@ async fn close<T>(inner: &NaiveMutex<Inner<T>>) {
     inner_lock.is_closed = true;
     let executor = local_executor();
 
-    for (task, call_state, _) in inner_lock.senders.drain(..) {
+    for (task, call_state, _) in inner_lock.deques.senders.drain(..) {
         unsafe {
             call_state.write(SendCallState::WokenByClose);
         }
         executor.spawn_shared_task(task);
     }
 
-    for (task, _, call_state) in inner_lock.receivers.drain(..) {
+    for (task, call_state, _) in inner_lock.deques.receivers.drain(..) {
         unsafe {
             call_state.write(RecvCallState::WokenByClose);
         }
@@ -327,8 +291,8 @@ macro_rules! generate_try_send {
                         return TrySendResult::Closed(value);
                     }
 
-                    let receiver = inner_lock.receivers.pop_front();
-                    if let Some((task, slot, call_state)) = receiver {
+                    let receiver = inner_lock.deques.receivers.pop_front();
+                    if let Some((task, call_state, slot)) = receiver {
                         unsafe {
                             drop(inner_lock);
 
@@ -384,7 +348,7 @@ pub struct Sender<'channel, T> {
 
 impl<'channel, T> Sender<'channel, T> {
     /// Creates a new [`Sender`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
         Self { inner }
     }
@@ -434,7 +398,7 @@ macro_rules! generate_try_recv_in {
 
                     let l = inner_lock.storage.len();
                     if l == 0 {
-                        let sender_ = inner_lock.senders.pop_front();
+                        let sender_ = inner_lock.deques.senders.pop_front();
                         if let Some((task, call_state, value)) = sender_ {
                             unsafe {
                                 drop(inner_lock);
@@ -454,7 +418,7 @@ macro_rules! generate_try_recv_in {
                         slot.write(inner_lock.storage.pop_front().unwrap_unchecked());
                     }
 
-                    let sender_ = inner_lock.senders.pop_front();
+                    let sender_ = inner_lock.deques.senders.pop_front();
                     if let Some((task, call_state, value)) = sender_ {
                         unsafe {
                             inner_lock.storage.push_back(ptr::read(value));
@@ -500,7 +464,7 @@ pub struct Receiver<'channel, T> {
 
 impl<'channel, T> Receiver<'channel, T> {
     /// Creates a new [`Receiver`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'channel NaiveMutex<Inner<T>>) -> Self {
         Self { inner }
     }
@@ -628,8 +592,7 @@ impl<T> AsyncChannel<T> for Channel<T> {
                 storage: VecDeque::with_capacity(capacity),
                 capacity,
                 is_closed: false,
-                senders: VecDeque::with_capacity(0),
-                receivers: VecDeque::with_capacity(0),
+                deques: channel_inner_vec_deque_pool().get(),
             }),
         }
     }
@@ -640,8 +603,7 @@ impl<T> AsyncChannel<T> for Channel<T> {
                 storage: VecDeque::with_capacity(0),
                 capacity: usize::MAX,
                 is_closed: false,
-                senders: VecDeque::with_capacity(0),
-                receivers: VecDeque::with_capacity(0),
+                deques: channel_inner_vec_deque_pool().get(),
             }),
         }
     }

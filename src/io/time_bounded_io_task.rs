@@ -8,6 +8,7 @@ use std::time::Instant;
 
 /// [`TimeBoundedIoTask`] contains the deadline and user data for cancelling the task.
 #[derive(Clone)]
+#[repr(C)]
 pub(crate) struct TimeBoundedIoTask {
     deadline: Instant,
     /// User data is used to cancel the task if needed.
@@ -20,7 +21,7 @@ pub(crate) struct TimeBoundedIoTask {
 
 impl TimeBoundedIoTask {
     /// Creates a new [`TimeBoundedIoTask`]
-    #[inline(always)]
+    #[inline]
     #[cfg(target_os = "linux")]
     pub(crate) fn new(io_request_data: &IoRequestData, deadline: Instant) -> Self {
         Self {
@@ -30,7 +31,7 @@ impl TimeBoundedIoTask {
     }
 
     /// Creates a new [`TimeBoundedIoTask`]
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_os = "linux"))]
     pub(crate) fn new(
         io_request_data: &IoRequestData,
@@ -47,26 +48,26 @@ impl TimeBoundedIoTask {
     }
 
     /// Returns the user data.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn user_data(&self) -> u64 {
         self.user_data
     }
 
     /// Returns the deadline.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn deadline(&self) -> Instant {
         self.deadline
     }
 
     /// Returns the raw socket.
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_os = "linux"))]
     pub(crate) fn raw_socket(&self) -> crate::io::sys::RawSocket {
         self.raw_socket
     }
 
     /// Returns the slot pointer.
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_os = "linux"))]
     pub(crate) fn slot_ptr(&self) -> *mut (IoCall, IoRequestDataPtr) {
         self.slot_ptr
@@ -74,14 +75,14 @@ impl TimeBoundedIoTask {
 }
 
 impl PartialEq for TimeBoundedIoTask {
-    #[inline(always)]
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.deadline == other.deadline
     }
 }
 
 impl PartialOrd for TimeBoundedIoTask {
-    #[inline(always)]
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -90,14 +91,14 @@ impl PartialOrd for TimeBoundedIoTask {
 impl Eq for TimeBoundedIoTask {}
 
 impl Ord for TimeBoundedIoTask {
-    #[inline(always)]
+    #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.deadline.cmp(&other.deadline)
     }
 }
 
 impl Borrow<Instant> for TimeBoundedIoTask {
-    #[inline(always)]
+    #[inline]
     fn borrow(&self) -> &Instant {
         &self.deadline
     }

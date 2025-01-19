@@ -223,7 +223,7 @@ pub trait AsyncBind: Sized + Socket {
 
             Ok(unsafe { <Self as FromRawSocket>::from_raw_socket(raw_fd) })
         })
-        .await
+            .await
     }
 
     /// Asynchronously binds to a socket with default [`configuration`](BindConfig).
@@ -242,7 +242,7 @@ pub trait AsyncBind: Sized + Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn bind<A: ToSockAddrs<Self::Addr>>(addrs: A) -> Result<Self> {
         Self::bind_with_config(addrs, &BindConfig::default()).await
     }

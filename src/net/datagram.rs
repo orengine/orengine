@@ -49,16 +49,16 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// }
 /// ```
 pub trait Datagram:
-    Socket
-    + AsyncConnectDatagram<Self::ConnectedDatagram>
-    + AsyncRecvFrom
-    + AsyncPeekFrom
-    + AsyncSendTo
-    + AsyncBind
+Socket
++ AsyncConnectDatagram<Self::ConnectedDatagram>
++ AsyncRecvFrom
++ AsyncPeekFrom
++ AsyncSendTo
++ AsyncBind
 {
     /// Type of the connected datagram, which allows sending data without specifying the address
     /// for each operation.
-    type ConnectedDatagram: ConnectedDatagram<Addr = Self::Addr>;
+    type ConnectedDatagram: ConnectedDatagram<Addr=Self::Addr>;
 
     /// Enables or disables broadcasting on the socket. When broadcasting is enabled (`true`),
     /// the socket can send packets to the broadcast address.
@@ -67,7 +67,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support broadcasting and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn set_broadcast(&self, broadcast: bool) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -84,7 +84,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support broadcasting and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn broadcast(&self) -> std::io::Result<bool> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -102,7 +102,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn set_multicast_loop_v4(&self, multicast_loop_v4: bool) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -119,7 +119,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn multicast_loop_v4(&self) -> std::io::Result<bool> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -136,7 +136,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn set_multicast_ttl_v4(&self, multicast_ttl_v4: u32) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -153,7 +153,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn multicast_ttl_v4(&self) -> std::io::Result<u32> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -171,7 +171,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn set_multicast_loop_v6(&self, multicast_loop_v6: bool) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -188,7 +188,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn multicast_loop_v6(&self) -> std::io::Result<bool> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -220,7 +220,7 @@ pub trait Datagram:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -238,7 +238,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always returns
     /// Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn join_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -255,7 +255,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn leave_multicast_v4(
         &self,
         multiaddr: &Ipv4Addr,
@@ -276,7 +276,7 @@ pub trait Datagram:
     ///
     /// UNIX sockets do not support multicast and always
     /// returns Err([`ErrorKind::Unsupported`](std::io::ErrorKind::Unsupported)).
-    #[inline(always)]
+    #[inline]
     fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> std::io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());

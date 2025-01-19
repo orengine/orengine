@@ -10,7 +10,7 @@ static CORES_IDS_LIST: LazyLock<Mutex<VecDeque<CoreId>>> = LazyLock::new(|| {
 });
 
 /// Returns core id for executor. It is already balanced between cores.
-#[inline(always)]
+#[inline]
 #[allow(
     clippy::missing_panics_doc,
     reason = "It panics only when a bug is occurred."

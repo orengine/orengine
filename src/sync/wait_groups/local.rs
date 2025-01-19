@@ -1,7 +1,7 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 use crate::sync::wait_groups::AsyncWaitGroup;
+use crate::utils::{acquire_task_vec_from_pool, TaskVecFromPool};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::pin::Pin;
@@ -15,7 +15,7 @@ pub struct WaitLocalWaitGroup<'wait_group> {
 
 impl<'wait_group> WaitLocalWaitGroup<'wait_group> {
     /// Creates a new [`WaitLocalWaitGroup`] future.
-    #[inline(always)]
+    #[inline]
     pub fn new(wait_group: &'wait_group LocalWaitGroup) -> Self {
         Self {
             wait_group,
@@ -44,7 +44,7 @@ impl Future for WaitLocalWaitGroup<'_> {
 /// Inner structure of [`LocalWaitGroup`] for internal use via [`UnsafeCell`].
 struct Inner {
     count: usize,
-    waited_tasks: Vec<Task>,
+    waited_tasks: TaskVecFromPool,
 }
 
 /// `LocalWaitGroup` is a synchronization primitive that allows to [`wait`](Self::wait)
@@ -90,18 +90,18 @@ pub struct LocalWaitGroup {
 
 impl LocalWaitGroup {
     /// Creates a new `LocalWaitGroup`.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: UnsafeCell::new(Inner {
                 count: 0,
-                waited_tasks: Vec::new(),
+                waited_tasks: acquire_task_vec_from_pool(),
             }),
             no_send_marker: std::marker::PhantomData,
         }
     }
 
     /// Returns a mutable reference to the [`Inner`].
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::mut_from_ref, reason = "this is local and Sync")]
     fn get_inner(&self) -> &mut Inner {
         unsafe { &mut *self.inner.get() }
@@ -109,17 +109,22 @@ impl LocalWaitGroup {
 }
 
 impl AsyncWaitGroup for LocalWaitGroup {
-    #[inline(always)]
+    #[inline]
     fn add(&self, count: usize) {
-        self.get_inner().count += count;
+        let inner = self.get_inner();
+        inner.count += count;
+
+        if inner.waited_tasks.capacity() < inner.count {
+            inner.waited_tasks.reserve(inner.count);
+        }
     }
 
-    #[inline(always)]
+    #[inline]
     fn count(&self) -> usize {
         self.get_inner().count
     }
 
-    #[inline(always)]
+    #[inline]
     fn done(&self) -> usize {
         let inner = self.get_inner();
         inner.count -= 1;
@@ -134,7 +139,7 @@ impl AsyncWaitGroup for LocalWaitGroup {
         inner.count
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::future_not_send, reason = "It is `local`")]
     fn wait(&self) -> impl Future<Output = ()> {
         WaitLocalWaitGroup::new(self)

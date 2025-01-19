@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `close` io operation for sockets.
+#[repr(C)]
 pub struct CloseSocket {
     raw_socket: RawSocket,
     io_request_data: Option<IoRequestData>,
@@ -62,6 +63,7 @@ pub trait AsyncSocketClose: AsRawSocket {
 }
 
 /// `close` io operation for files.
+#[repr(C)]
 pub struct CloseFile {
     raw_file: RawFile,
     io_request_data: Option<IoRequestData>,

@@ -7,7 +7,7 @@ use crate::panic_if_local_in_future;
 use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::{AsyncCondVar, AsyncMutex, AsyncMutexGuard, AsyncSubscribableMutex, Mutex};
-use crate::sync_task_queue::SyncTaskList;
+use crate::utils::{acquire_sync_task_list_from_pool, SyncTaskListFromPool};
 
 /// Current state of the [`WaitCondVar`].
 enum WaitState {
@@ -19,6 +19,7 @@ enum WaitState {
 /// `WaitCondVar` represents a future returned by the [`CondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
+#[repr(C)]
 pub struct WaitCondVar<'mutex, 'cond_var, T, Guard>
 where
     T: 'mutex + ?Sized,
@@ -37,7 +38,7 @@ where
     Guard::Mutex: AsyncSubscribableMutex<T>,
 {
     /// Creates a new [`WaitCondVar`].
-    #[inline(always)]
+    #[inline]
     pub fn new(cond_var: &'cond_var CondVar, mutex: &'mutex Guard::Mutex) -> Self {
         WaitCondVar {
             state: WaitState::Sleep,
@@ -64,7 +65,7 @@ where
                 this.state = WaitState::Wake;
                 unsafe {
                     local_executor()
-                        .invoke_call(Call::PushCurrentTaskTo(&this.cond_var.wait_queue));
+                        .invoke_call(Call::PushCurrentTaskTo(&*this.cond_var.wait_queue));
                 };
                 Poll::Pending
             }
@@ -135,15 +136,15 @@ where
 /// # }
 /// ```
 pub struct CondVar {
-    wait_queue: SyncTaskList,
+    wait_queue: SyncTaskListFromPool,
 }
 
 impl CondVar {
     /// Creates a new [`CondVar`].
-    #[inline(always)]
+    #[inline]
     pub fn new() -> Self {
         Self {
-            wait_queue: SyncTaskList::new(),
+            wait_queue: acquire_sync_task_list_from_pool(),
         }
     }
 }
@@ -154,7 +155,6 @@ impl AsyncCondVar for CondVar {
     where
         T: ?Sized;
 
-    #[inline(always)]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -174,14 +174,12 @@ impl AsyncCondVar for CondVar {
         >::new(self, guard.mutex())
     }
 
-    #[inline(always)]
     fn notify_one(&self) {
         if let Some(task) = self.wait_queue.pop() {
             local_executor().spawn_shared_task(task);
         }
     }
 
-    #[inline(always)]
     fn notify_all(&self) {
         let executor = local_executor();
         while let Some(task) = self.wait_queue.pop() {

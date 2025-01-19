@@ -18,6 +18,7 @@ use crate::net::Socket;
 use crate::{local_executor, BUG_MESSAGE};
 
 /// `recv_from` io operation.
+#[repr(C)]
 pub struct RecvFrom<'fut> {
     raw_socket: RawSocket,
     sock_addr: &'fut mut SockAddr,
@@ -67,6 +68,7 @@ impl Future for RecvFrom<'_> {
 unsafe impl Send for RecvFrom<'_> {}
 
 /// `recv_from` io operation with deadline.
+#[repr(C)]
 pub struct RecvFromWithDeadline<'fut> {
     raw_socket: RawSocket,
     sock_addr: &'fut mut SockAddr,
@@ -171,7 +173,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_from(&mut self, buf: &mut [u8]) -> Result<(usize, Self::Addr)> {
         let mut sock_addr = unsafe { mem::zeroed() };
         let buf_ptr = &mut [IoSliceMut::new(buf)];
@@ -204,7 +206,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_from(&mut self, buf: &mut impl FixedBufferMut) -> Result<(usize, Self::Addr)> {
         // Now RecvFrom with `fixed` buffer is unsupported.
         self.recv_bytes_from(buf.as_bytes_mut()).await
@@ -239,7 +241,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_from_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -288,7 +290,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_from_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -328,7 +330,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_from_with_timeout(
         &mut self,
         buf: &mut [u8],
@@ -370,7 +372,7 @@ pub trait AsyncRecvFrom: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_from_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,

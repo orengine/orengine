@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Rename a file or directory from one path to another.
+#[repr(C)]
 pub struct Rename {
     old_path: OsPath,
     new_path: OsPath,

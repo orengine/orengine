@@ -2,7 +2,9 @@ use crate::runtime::interaction_between_executors::{SendTaskResult, SyncBatchOpt
 use crate::runtime::Task;
 use crate::utils::vec_map::VecMap;
 use std::collections::VecDeque;
+use std::mem;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// `OtherSharedTaskList` contains the list and `local` and `shared` task batches.
 pub(crate) struct SharedTaskListForSendTo {
@@ -27,6 +29,7 @@ pub(crate) struct Interactor {
     shared_task_list: Arc<SyncBatchOptimizedTaskQueue>,
     all: VecMap<SharedTaskListForSendTo>,
     id_to_retry: Vec<usize>,
+    last_executed_time: Instant,
 }
 
 impl Interactor {
@@ -36,6 +39,7 @@ impl Interactor {
             shared_task_list: Arc::new(SyncBatchOptimizedTaskQueue::new()),
             all: VecMap::new(),
             id_to_retry: Vec::new(),
+            last_executed_time: unsafe { mem::zeroed() },
         }
     }
 
@@ -144,7 +148,16 @@ impl Interactor {
         &mut self,
         local_tasks: &mut VecDeque<Task>,
         shared_tasks: &mut VecDeque<Task>,
+        now: Instant,
     ) {
+        if now - self.last_executed_time < Duration::from_micros(64) {
+            // We need to limit the number of times this method is called in a short period of time.
+            // Otherwise, Executors would try to acquire NeverWaitLock too often and starve each other.
+            return;
+        }
+
+        self.last_executed_time = now;
+
         let is_success = self.try_to_take_tasks(local_tasks, shared_tasks);
         self.flush();
 

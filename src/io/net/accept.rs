@@ -41,13 +41,14 @@ impl SockAddrRaw {
     }
 
     /// Converts `SockAddrRaw` to [`SockAddr`].
-    #[inline(always)]
+    #[inline]
     fn as_sock_addr(&self) -> SockAddr {
         unsafe { SockAddr::new(self.storage, self.len) }
     }
 }
 
 /// `accept` io operation.
+#[repr(C)]
 pub struct Accept<S: FromRawSocket> {
     raw_socket: RawSocket,
     addr: SockAddrRaw,
@@ -98,6 +99,7 @@ impl<S: FromRawSocket> Future for Accept<S> {
 unsafe impl<S: FromRawSocket> Send for Accept<S> {}
 
 /// `accept` io operation with deadline.
+#[repr(C)]
 pub struct AcceptWithDeadline<S: FromRawSocket> {
     raw_socket: RawSocket,
     addr: SockAddrRaw,
@@ -205,7 +207,7 @@ pub trait AsyncAccept<S: Stream>: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn accept(&mut self) -> Result<(S, S::Addr)> {
         let (stream, sock_addr) = Accept::<S>::new(AsRawSocket::as_raw_socket(self)).await?;
 
@@ -243,7 +245,7 @@ pub trait AsyncAccept<S: Stream>: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn accept_with_deadline(&mut self, deadline: Instant) -> Result<(S, S::Addr)> {
         let (stream, sock_addr) =
             AcceptWithDeadline::<S>::new(AsRawSocket::as_raw_socket(self), deadline).await?;
@@ -280,7 +282,7 @@ pub trait AsyncAccept<S: Stream>: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn accept_with_timeout(&mut self, timeout: Duration) -> Result<(S, S::Addr)> {
         self.accept_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
             .await

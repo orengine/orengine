@@ -12,7 +12,7 @@ pub enum SendTaskResult {
 
 impl SendTaskResult {
     /// Returns `true` if the result is [`Self::Ok`].
-    #[inline(always)]
+    #[inline]
     pub fn is_ok(&self) -> bool {
         matches!(self, Self::Ok)
     }

@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollFd, AsyncRecv, AsyncSend};
+use orengine::io::{full_buffer, AsyncConnectStream, AsyncPollSocket, AsyncRecv, AsyncSend};
 use orengine::runtime::local_executor;
 use orengine::sync::{AsyncWaitGroup, LocalWaitGroup};
 use orengine::utils::get_core_ids;

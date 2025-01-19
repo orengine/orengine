@@ -24,7 +24,7 @@
 ///
 /// - `guard_name`: Name of the guard struct that manages values acquired from the pool.
 ///
-/// - new: A block that defines how to create new instances of the value type when the pool is empty.
+/// - `new`: A block that defines how to create new instances of the value type when the pool is empty.
 ///
 /// # Example
 ///
@@ -100,7 +100,7 @@ macro_rules! new_local_pool {
         impl $guard_name {
             /// Returns the value from the guard, consuming the guard.
             #[allow(dead_code, reason = "We (creators of this macro) don't know will an user use it.")]
-            #[inline(always)]
+            #[inline]
             #[allow(clippy::needless_pub_self, reason = "Cannot write private code in macro else.")]
             $vis fn into_inner(mut self) -> $value_type {
                 let value = unsafe { std::mem::ManuallyDrop::take(&mut self.value) };
@@ -196,7 +196,7 @@ macro_rules! new_local_pool {
             ///
             /// If you want to get value from guard you can use the guard's method `into_inner`.
             #[allow(dead_code, reason = "We (creators of this macro) don't know will an user use it.")]
-            #[inline(always)]
+            #[inline]
             #[allow(clippy::needless_pub_self, reason = "Cannot write private code in macro else.")]
             $vis fn acquire() -> $guard_name {
                 $pool_thread_static_name.with(|pool_cell| -> $guard_name {

@@ -23,7 +23,7 @@ pub type BorrowedFile<'file> = std::os::fd::BorrowedFd<'file>;
 #[cfg(windows)]
 pub trait AsSocket: std::os::windows::io::AsSocket {
     /// Returns a [`BorrowedSocket`] for this socket.
-    #[inline(always)]
+    #[inline]
     fn as_socket(&self) -> BorrowedSocket {
         std::os::windows::io::AsSocket::as_socket(self)
     }
@@ -34,7 +34,7 @@ pub trait AsSocket: std::os::windows::io::AsSocket {
 #[cfg(unix)]
 pub trait AsSocket: std::os::fd::AsFd {
     /// Returns a [`BorrowedSocket`] for this socket.
-    #[inline(always)]
+    #[inline]
     fn as_socket(&self) -> BorrowedSocket {
         self.as_fd()
     }
@@ -45,7 +45,7 @@ pub trait AsSocket: std::os::fd::AsFd {
 #[cfg(windows)]
 pub trait AsFile: std::os::windows::io::AsHandle {
     /// Returns a [`BorrowedFile`] for this file.
-    #[inline(always)]
+    #[inline]
     fn as_file(&self) -> BorrowedFile {
         self.as_handle()
     }
@@ -56,7 +56,7 @@ pub trait AsFile: std::os::windows::io::AsHandle {
 #[cfg(unix)]
 pub trait AsFile: std::os::fd::AsFd {
     /// Returns a [`BorrowedFile`] for this file.
-    #[inline(always)]
+    #[inline]
     fn as_file(&self) -> BorrowedFile {
         self.as_fd()
     }

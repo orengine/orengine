@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `socket` io operation.
+#[repr(C)]
 pub struct Socket {
     domain: Domain,
     socket_type: Type,

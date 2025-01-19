@@ -89,7 +89,7 @@ pub trait AsyncWaitGroup {
     /// }).await;
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn inc(&self) {
         self.add(1);
     }
@@ -167,5 +167,5 @@ pub trait AsyncWaitGroup {
     /// }).await;
     /// # }
     /// ```
-    fn wait(&self) -> impl Future<Output = ()>;
+    fn wait(&self) -> impl Future<Output=()>;
 }

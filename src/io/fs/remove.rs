@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `remove` io operation which allows to remove a file from a given path.
+#[repr(C)]
 pub struct Remove {
     path: OsPath,
     io_request_data: Option<IoRequestData>,

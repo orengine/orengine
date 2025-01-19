@@ -25,7 +25,7 @@ use std::path::Path;
 ///
 /// This function will return an `Err` if the file cannot be opened due to I/O errors
 /// (e.g., file not found, permission denied).
-#[inline(always)]
+#[inline]
 pub async fn open_file<P: AsRef<Path> + Send>(path: P, open_options: &OpenOptions) -> Result<File> {
     File::open(path, open_options).await
 }
@@ -54,7 +54,7 @@ pub async fn open_file<P: AsRef<Path> + Send>(path: P, open_options: &OpenOption
 ///
 /// This function will return an `Err` if the directory cannot be created due to I/O errors
 /// (e.g., permission denied, path does not exist).
-#[inline(always)]
+#[inline]
 pub async fn create_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     DirBuilder::new().create(path).await
 }
@@ -79,7 +79,7 @@ pub async fn create_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
 ///
 /// This function will return an `Err` if any directory in the path cannot be created
 /// due to I/O errors.
-#[inline(always)]
+#[inline]
 pub async fn create_dir_all<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     DirBuilder::new().recursive(true).create(path).await
 }
@@ -106,7 +106,7 @@ pub async fn create_dir_all<P: AsRef<Path> + Send>(path: P) -> Result<()> {
 ///
 /// This function will return an `Err` if the directory is not empty or cannot be deleted
 /// due to I/O errors.
-#[inline(always)]
+#[inline]
 pub async fn remove_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     let path = get_os_path(path.as_ref())?;
     RemoveDir::new(path).await
@@ -134,7 +134,7 @@ pub async fn remove_dir<P: AsRef<Path> + Send>(path: P) -> Result<()> {
 ///
 /// This function will return an `Err` if the file cannot be deleted due to I/O errors
 /// (e.g., permission denied, file not found).
-#[inline(always)]
+#[inline]
 pub async fn remove_file<P: AsRef<Path> + Send>(path: P) -> Result<()> {
     File::remove(path).await
 }
@@ -162,7 +162,7 @@ pub async fn remove_file<P: AsRef<Path> + Send>(path: P) -> Result<()> {
 ///
 /// This function will return an `Err` if the rename operation fails due to I/O errors
 /// (e.g., permission denied, file not found).
-#[inline(always)]
+#[inline]
 pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
 where
     OldPath: AsRef<Path> + Send,

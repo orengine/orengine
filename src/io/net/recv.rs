@@ -16,6 +16,7 @@ use crate::local_executor;
 use crate::net::Socket;
 
 /// `recv` io operation.
+#[repr(C)]
 pub struct RecvBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -59,6 +60,7 @@ impl Future for RecvBytes<'_> {
 unsafe impl Send for RecvBytes<'_> {}
 
 /// `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
+#[repr(C)]
 pub struct RecvFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -109,6 +111,7 @@ impl Future for RecvFixed<'_> {
 unsafe impl Send for RecvFixed<'_> {}
 
 /// `recv` io operation with deadline.
+#[repr(C)]
 pub struct RecvBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -156,6 +159,7 @@ impl Future for RecvBytesWithDeadline<'_> {
 unsafe impl Send for RecvBytesWithDeadline<'_> {}
 
 /// `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
+#[repr(C)]
 pub struct RecvFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -263,7 +267,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
         RecvBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -292,7 +296,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixed::new(
@@ -342,7 +346,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -380,7 +384,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -439,7 +443,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_with_timeout(
         &mut self,
         buf: &mut [u8],
@@ -480,7 +484,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -515,7 +519,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut received = 0;
 
@@ -548,7 +552,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
             let mut received = 0;
@@ -608,7 +612,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_exact_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -654,7 +658,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_exact_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -721,7 +725,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_exact_with_timeout(
         &mut self,
         buf: &mut [u8],
@@ -763,7 +767,7 @@ pub trait AsyncRecv: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_exact_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,

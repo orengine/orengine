@@ -35,6 +35,7 @@ use std::future::Future;
 ///     });
 /// }
 /// ```
+#[repr(C)]
 pub struct LocalOnce {
     state: Cell<OnceState>,
     // impl !Send
@@ -69,13 +70,13 @@ impl LocalOnce {
 }
 
 impl AsyncOnce for LocalOnce {
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::future_not_send, reason = "It is `local`")]
     async fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> CallOnceResult {
         self.call_once_no_send(f, std::marker::PhantomData).await
     }
 
-    #[inline(always)]
+    #[inline]
     fn call_once_sync<F: FnOnce()>(&self, f: F) -> CallOnceResult {
         if self.is_completed() {
             return CallOnceResult::WasAlreadyCompleted;
@@ -87,7 +88,7 @@ impl AsyncOnce for LocalOnce {
         CallOnceResult::Called
     }
 
-    #[inline(always)]
+    #[inline]
     fn state(&self) -> OnceState {
         self.state.get()
     }

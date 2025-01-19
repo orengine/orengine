@@ -17,6 +17,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 /// `send_to` io operation.
+#[repr(C)]
 pub struct SendTo<'fut> {
     raw_socket: RawSocket,
     message_header: MessageSendHeader,
@@ -65,6 +66,7 @@ impl Future for SendTo<'_> {
 unsafe impl Send for SendTo<'_> {}
 
 /// `send_to` io operation with deadline.
+#[repr(C)]
 pub struct SendToWithDeadline<'fut> {
     raw_socket: RawSocket,
     message_header: MessageSendHeader,
@@ -126,7 +128,7 @@ impl Future for SendToWithDeadline<'_> {
 )]
 unsafe impl Send for SendToWithDeadline<'_> {}
 
-#[inline(always)]
+#[inline]
 /// Returns first resolved address from `ToSocketAddrs`.
 fn sock_addr_from_to_socket_addr<Addr: IntoSockAddr + FromSockAddr, A: ToSockAddrs<Addr>>(
     to_addr: &A,
@@ -194,7 +196,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_bytes_to<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -233,7 +235,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_to<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,
@@ -271,7 +273,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_bytes_to_with_deadline<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -318,7 +320,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_to_with_deadline<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,
@@ -358,7 +360,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_bytes_to_with_timeout<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -405,7 +407,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_to_with_timeout<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,
@@ -441,7 +443,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes_to<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -484,7 +486,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_to<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,
@@ -523,7 +525,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes_to_with_deadline<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -578,7 +580,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_to_with_deadline<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,
@@ -619,7 +621,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes_to_with_timeout<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &[u8],
@@ -664,7 +666,7 @@ pub trait AsyncSendTo: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_to_with_timeout<A: ToSockAddrs<Self::Addr>>(
         &mut self,
         buf: &impl FixedBuffer,

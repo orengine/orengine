@@ -10,7 +10,7 @@ pub trait FromRawSocket: std::os::windows::io::FromRawSocket + Sized {
     ///
     /// The fd passed in must be an [owned socket](std::os::windows::io::OwnedSocket);
     /// in particular, it must be open.
-    #[inline(always)]
+    #[inline]
     unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
         <Self as std::os::windows::io::FromRawSocket>::from_raw_socket(raw_socket)
     }
@@ -26,7 +26,7 @@ pub trait FromRawSocket: std::os::fd::FromRawFd + Sized {
     ///
     /// The fd passed in must be an [owned socket](std::os::fd::OwnedFd);
     /// in particular, it must be open.
-    #[inline(always)]
+    #[inline]
     unsafe fn from_raw_socket(raw_socket: RawSocket) -> Self {
         std::os::fd::FromRawFd::from_raw_fd(raw_socket)
     }
@@ -42,7 +42,7 @@ pub trait FromRawFile: std::os::windows::io::FromRawHandle + Sized {
     ///
     /// The fd passed in must be an [owned file](std::os::windows::io::OwnedHandle);
     /// in particular, it must be open.
-    #[inline(always)]
+    #[inline]
     unsafe fn from_raw_file(raw_file: RawFile) -> Self {
         std::os::windows::io::FromRawHandle::from_raw_handle(raw_file)
     }
@@ -58,7 +58,7 @@ pub trait FromRawFile: std::os::fd::FromRawFd + Sized {
     ///
     /// The fd passed in must be an [owned file](std::os::fd::OwnedFd);
     /// in particular, it must be open.
-    #[inline(always)]
+    #[inline]
     unsafe fn from_raw_file(raw_file: RawFile) -> Self {
         std::os::fd::FromRawFd::from_raw_fd(raw_file)
     }

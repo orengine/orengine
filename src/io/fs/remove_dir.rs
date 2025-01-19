@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `remove_dir` io operation from a given path.
+#[repr(C)]
 pub struct RemoveDir {
     path: OsPath,
     io_request_data: Option<IoRequestData>,

@@ -15,6 +15,7 @@ use crate::local_executor;
 use crate::net::Socket;
 
 /// `peek` io operation.
+#[repr(C)]
 pub struct PeekBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -58,6 +59,7 @@ impl Future for PeekBytes<'_> {
 unsafe impl Send for PeekBytes<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`].
+#[repr(C)]
 pub struct PeekFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -108,6 +110,7 @@ impl Future for PeekFixed<'_> {
 unsafe impl Send for PeekFixed<'_> {}
 
 /// `peek` io operation with deadline.
+#[repr(C)]
 pub struct PeekBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -155,6 +158,7 @@ impl Future for PeekBytesWithDeadline<'_> {
 unsafe impl Send for PeekBytesWithDeadline<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`] with deadline.
+#[repr(C)]
 pub struct PeekFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -261,7 +265,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
         PeekBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -289,7 +293,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixed::new(
@@ -339,7 +343,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -377,7 +381,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -436,7 +440,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_with_timeout(
         &mut self,
         buf: &mut [u8],
@@ -477,7 +481,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -512,7 +516,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut peeked = 0;
 
@@ -545,7 +549,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
             let mut peeked = 0;
@@ -605,7 +609,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_bytes_exact_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -651,7 +655,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_exact_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -718,7 +722,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_exact_with_timeout(
         &mut self,
         buf: &mut [u8],
@@ -760,7 +764,7 @@ pub trait AsyncPeek: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_exact_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,

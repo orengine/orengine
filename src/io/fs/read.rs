@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Future for the `read` operation.
+#[repr(C)]
 pub struct ReadBytes<'buf> {
     raw_file: RawFile,
     buf: &'buf mut [u8],
@@ -54,6 +55,7 @@ impl Future for ReadBytes<'_> {
 unsafe impl Send for ReadBytes<'_> {}
 
 /// Future for the `read` operation with __fixed__ [`Buffer`].
+#[repr(C)]
 pub struct ReadFixed<'buf> {
     raw_file: RawFile,
     ptr: *mut u8,
@@ -109,6 +111,7 @@ unsafe impl Send for ReadFixed<'_> {}
 ///
 /// This is a variation of `read` that allows
 /// to specify the offset from which the data should be read.
+#[repr(C)]
 pub struct PositionedReadBytes<'buf> {
     raw_file: RawFile,
     buf: &'buf mut [u8],
@@ -160,6 +163,7 @@ unsafe impl Send for PositionedReadBytes<'_> {}
 ///
 /// This is a variation of `read` that allows
 /// to specify the offset from which the data should be read.
+#[repr(C)]
 pub struct PositionedReadFixed<'buf> {
     raw_file: RawFile,
     ptr: *mut u8,
@@ -276,7 +280,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn read_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
         ReadBytes::new(self.as_raw_file(), buf)
     }
@@ -305,7 +309,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn read(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             ReadFixed::new(
@@ -349,7 +353,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn pread_bytes(
         &mut self,
         buf: &mut [u8],
@@ -381,7 +385,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pread(&mut self, buf: &mut impl FixedBufferMut, offset: usize) -> Result<u32> {
         if buf.is_fixed() {
             PositionedReadFixed::new(
@@ -426,7 +430,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn read_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut read = 0;
 
@@ -460,7 +464,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn read_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
             let mut read = 0;
@@ -514,7 +518,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pread_bytes_exact(&mut self, buf: &mut [u8], offset: usize) -> Result<()> {
         let mut read = 0;
 
@@ -550,7 +554,7 @@ pub trait AsyncRead: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pread_exact(&mut self, buf: &mut impl FixedBufferMut, offset: usize) -> Result<()> {
         if buf.is_fixed() {
             let mut read = 0;

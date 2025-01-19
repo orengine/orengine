@@ -22,7 +22,7 @@ impl ExecutorSharedTaskList {
     }
 
     /// Returns the executor id of this `SharedExecutorTaskList`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn executor_id(&self) -> usize {
         self.executor_id
     }
@@ -34,7 +34,7 @@ impl ExecutorSharedTaskList {
     }
 
     /// Takes at most `limit` tasks from the list and puts them in `other_list`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn take_batch(&self, other_list: &mut VecDeque<Task>, limit: usize) {
         if let Some(mut guard) = self.list.try_lock() {
             let number_of_elems = guard.len().min(limit);

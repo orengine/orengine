@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 macro_rules! generate_poll {
     ($name:ident, $name_with_deadline:ident, $method:expr, $method_with_deadline:expr) => {
         /// `poll_raw_socket` io operation.
+        #[repr(C)]
         pub struct $name {
             raw_socket: RawSocket,
             io_request_data: Option<IoRequestData>,
@@ -47,6 +48,7 @@ macro_rules! generate_poll {
         unsafe impl Send for $name {}
 
         /// `poll_raw_socket` io operation with deadline.
+        #[repr(C)]
         pub struct $name_with_deadline {
             raw_socket: RawSocket,
             io_request_data: Option<IoRequestData>,
@@ -137,7 +139,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn poll_recv(&self) -> PollRecv {
         PollRecv::new(AsRawSocket::as_raw_socket(self))
     }
@@ -176,7 +178,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn poll_recv_with_deadline(&self, deadline: Instant) -> PollRecvWithDeadline {
         PollRecvWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
@@ -215,7 +217,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn poll_recv_with_timeout(&self, timeout: Duration) -> PollRecvWithDeadline {
         self.poll_recv_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
     }
@@ -229,7 +231,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv`](Self::poll_recv) it does not have a significant impact
     /// on productivity and efficiency.
-    #[inline(always)]
+    #[inline]
     fn poll_send(&self) -> PollSend {
         PollSend::new(AsRawSocket::as_raw_socket(self))
     }
@@ -246,7 +248,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv_with_deadline`](Self::poll_recv_with_deadline) it does not have a significant impact
     /// on productivity and efficiency.
-    #[inline(always)]
+    #[inline]
     fn poll_send_with_deadline(&self, deadline: Instant) -> PollSendWithDeadline {
         PollSendWithDeadline::new(AsRawSocket::as_raw_socket(self), deadline)
     }
@@ -263,7 +265,7 @@ pub trait AsyncPollSocket: AsRawSocket {
     /// and send to the stream. After send release (drop) the [`buffer`](crate::io::Buffer).
     /// As opposed to [`poll_recv_with_timeout`](Self::poll_recv_with_timeout) it does not have a significant impact
     /// on productivity and efficiency.
-    #[inline(always)]
+    #[inline]
     fn poll_send_with_timeout(&self, timeout: Duration) -> PollSendWithDeadline {
         self.poll_send_with_deadline(local_executor().start_round_time_for_deadlines() + timeout)
     }

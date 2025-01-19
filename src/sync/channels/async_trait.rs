@@ -264,7 +264,7 @@ pub trait AsyncSender<T> {
     ///     }).await;
     /// }
     /// ```
-    fn send(&self, value: T) -> impl Future<Output = SendResult<T>>;
+    fn send(&self, value: T) -> impl Future<Output=SendResult<T>>;
 
     /// Tries to send a value into the [`channel`](AsyncChannel).
     ///
@@ -296,7 +296,7 @@ pub trait AsyncSender<T> {
     fn try_send(&self, value: T) -> TrySendResult<T>;
 
     /// Closes the [`channel`](AsyncChannel) associated with this sender.
-    fn sender_close(&self) -> impl Future<Output = ()>;
+    fn sender_close(&self) -> impl Future<Output=()>;
 }
 
 /// The `AsyncReceiver` allows receiving values from the [`channel`](AsyncChannel).
@@ -369,7 +369,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult>;
+    unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output=RecvInResult>;
 
     /// Tries to receive a value from the [`channel`](AsyncChannel) to the provided `slot`.
     ///
@@ -477,8 +477,8 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
-    fn recv_in(&self, slot: &mut T) -> impl Future<Output = RecvInResult> {
+    #[inline]
+    fn recv_in(&self, slot: &mut T) -> impl Future<Output=RecvInResult> {
         unsafe {
             drop_in_place(slot);
 
@@ -542,7 +542,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn try_recv_in(&self, slot: &mut T) -> TryRecvInResult {
         unsafe {
             drop_in_place(slot);
@@ -590,8 +590,8 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
-    fn recv(&self) -> impl Future<Output = RecvResult<T>> {
+    #[inline]
+    fn recv(&self) -> impl Future<Output=RecvResult<T>> {
         async {
             let mut slot = MaybeUninit::uninit();
             unsafe {
@@ -636,7 +636,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn try_recv(&self) -> TryRecvResult<T> {
         let mut slot = MaybeUninit::uninit();
         unsafe {
@@ -650,7 +650,7 @@ pub trait AsyncReceiver<T> {
     }
 
     /// Closes the [`channel`](AsyncChannel) associated with this receiver.
-    fn receiver_close(&self) -> impl Future<Output = ()>;
+    fn receiver_close(&self) -> impl Future<Output=()>;
 }
 
 /// The `Channel` provides an asynchronous communication channel between tasks.
@@ -786,5 +786,5 @@ pub trait AsyncChannel<T>: AsyncSender<T> + AsyncReceiver<T> {
     fn split(&self) -> (Self::Sender<'_>, Self::Receiver<'_>);
 
     /// Closes the [`channel`](AsyncChannel).
-    fn close(&self) -> impl Future<Output = ()>;
+    fn close(&self) -> impl Future<Output=()>;
 }

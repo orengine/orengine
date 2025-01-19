@@ -16,6 +16,7 @@ use crate::local_executor;
 use crate::net::Socket;
 
 /// `send` io operation.
+#[repr(C)]
 pub struct SendBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf [u8],
@@ -59,6 +60,7 @@ impl Future for SendBytes<'_> {
 unsafe impl Send for SendBytes<'_> {}
 
 /// `send` io operation.
+#[repr(C)]
 pub struct SendFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *const u8,
@@ -109,6 +111,7 @@ impl Future for SendFixed<'_> {
 unsafe impl Send for SendFixed<'_> {}
 
 /// `send` io operation with deadline.
+#[repr(C)]
 pub struct SendBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf [u8],
@@ -156,6 +159,7 @@ impl Future for SendBytesWithDeadline<'_> {
 unsafe impl Send for SendBytesWithDeadline<'_> {}
 
 /// `send` io operation with deadline.
+#[repr(C)]
 pub struct SendFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *const u8,
@@ -260,7 +264,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
         SendBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -289,7 +293,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             SendFixed::new(
@@ -336,7 +340,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes_with_deadline(
         &mut self,
         buf: &[u8],
@@ -376,7 +380,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_with_deadline(
         &mut self,
         buf: &impl FixedBuffer,
@@ -428,7 +432,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes_with_timeout(
         &mut self,
         buf: &[u8],
@@ -472,7 +476,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_with_timeout(
         &mut self,
         buf: &impl FixedBuffer,
@@ -504,7 +508,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes(&mut self, buf: &[u8]) -> Result<()> {
         let mut sent = 0;
         while sent < buf.len() {
@@ -539,7 +543,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all(&mut self, buf: &impl FixedBuffer) -> Result<()> {
         if buf.is_fixed() {
             let mut sent = 0;
@@ -594,7 +598,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes_with_deadline(&mut self, buf: &[u8], deadline: Instant) -> Result<()> {
         let mut sent = 0;
 
@@ -637,7 +641,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_with_deadline(
         &mut self,
         buf: &impl FixedBuffer,
@@ -701,7 +705,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_all_bytes_with_timeout(
         &mut self,
         buf: &[u8],
@@ -743,7 +747,7 @@ pub trait AsyncSend: Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_all_with_timeout(
         &mut self,
         buf: &impl FixedBuffer,

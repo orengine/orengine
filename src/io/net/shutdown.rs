@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `shutdown` io operation.
+#[repr(C)]
 pub struct Shutdown {
     raw_socket: RawSocket,
     how: ShutdownHow,

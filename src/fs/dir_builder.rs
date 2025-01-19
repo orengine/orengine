@@ -98,7 +98,7 @@ impl DirBuilder {
     /// # Ok(())
     /// # }
     async fn create_dir_all(path: &Path, mode: u32) -> io::Result<()> {
-        #[inline(always)]
+        #[inline]
         fn get_offset<const STACK_CAP: usize>(
             offsets: &mut SmallVec<usize, STACK_CAP>,
             path: &Path,

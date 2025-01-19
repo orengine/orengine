@@ -2,7 +2,7 @@ use std::alloc::{alloc, Layout};
 use std::marker::PhantomData;
 use std::ptr;
 
-#[repr(align(32))]
+#[repr(C)]
 pub(crate) struct FixedBuffer {
     len: u32,
     // cap is a default buffer capacity of pool. But we cache it here to avoid calling thread_static
@@ -15,12 +15,13 @@ pub(crate) struct FixedBuffer {
 
 impl FixedBuffer {
     /// Returns the index associated with the buffer.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn index(&self) -> u16 {
         self.index
     }
 }
 
+#[repr(C)]
 pub(crate) enum LinuxBuffer {
     Fixed(FixedBuffer),
     NonFixed(Vec<u8>),
@@ -37,7 +38,7 @@ impl LinuxBuffer {
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new_non_fixed(size: u32) -> Self {
         debug_assert!(
             size > 0,
@@ -50,7 +51,7 @@ impl LinuxBuffer {
 
         Self::NonFixed(unsafe { Vec::from_raw_parts(alloc(layout), 0, size as _) })
     }
-    #[inline(always)]
+    #[inline]
     pub(crate) fn len(&self) -> u32 {
         match self {
             Self::Fixed(f) => f.len,
@@ -62,7 +63,7 @@ impl LinuxBuffer {
     /// # Safety
     ///
     /// `len` must be less than or equal to `capacity`.
-    #[inline(always)]
+    #[inline]
     pub(crate) unsafe fn set_len(&mut self, len: u32) {
         match self {
             Self::Fixed(f) => f.len = len,
@@ -70,7 +71,7 @@ impl LinuxBuffer {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn capacity(&self) -> u32 {
         match self {
             Self::Fixed(f) => f.cap,
@@ -79,7 +80,7 @@ impl LinuxBuffer {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn as_ptr(&self) -> *const u8 {
         match self {
             Self::Fixed(f) => f.ptr,
@@ -87,7 +88,7 @@ impl LinuxBuffer {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
         match self {
             Self::Fixed(f) => f.ptr,
@@ -97,7 +98,7 @@ impl LinuxBuffer {
 }
 
 impl AsRef<[u8]> for LinuxBuffer {
-    #[inline(always)]
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         match self {
             Self::Fixed(f) => unsafe { &*ptr::slice_from_raw_parts(f.ptr, f.len as usize) },
@@ -107,7 +108,7 @@ impl AsRef<[u8]> for LinuxBuffer {
 }
 
 impl AsMut<[u8]> for LinuxBuffer {
-    #[inline(always)]
+    #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
         match self {
             Self::Fixed(f) => unsafe { &mut *ptr::slice_from_raw_parts_mut(f.ptr, f.len as usize) },

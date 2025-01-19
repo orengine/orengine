@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 /// and creates a socket accordingly.
 ///
 /// This is an asynchronous function that returns a raw file descriptor representing the new socket.
-#[inline(always)]
+#[inline]
 pub(crate) async fn new_socket(
     addr: &SocketAddr,
     socket_type: Type,
@@ -26,7 +26,7 @@ pub(crate) async fn new_socket(
 /// that sets the socket type to [`Type::STREAM`] ([`TCP`](Protocol::TCP)).
 ///
 /// This function determines whether to create an IPv4 or IPv6 socket based on the address type.
-#[inline(always)]
+#[inline]
 pub(crate) async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawSocket> {
     new_socket(addr, Type::STREAM, Protocol::TCP).await
 }
@@ -36,7 +36,7 @@ pub(crate) async fn new_tcp_socket(addr: &SocketAddr) -> std::io::Result<RawSock
 /// that sets the socket type to [`Type::DGRAM`] ([`UDP`](Protocol::UDP)).
 ///
 /// This function determines whether to create an IPv4 or IPv6 socket based on the address type.
-#[inline(always)]
+#[inline]
 pub(crate) async fn new_udp_socket(addr: &SocketAddr) -> std::io::Result<RawSocket> {
     new_socket(addr, Type::DGRAM, Protocol::UDP).await
 }

@@ -7,7 +7,7 @@ use crate::io::sys::{
 use crate::io::time_bounded_io_task::TimeBoundedIoTask;
 use crate::io::worker::IoWorker;
 use crate::runtime::local_executor;
-use crate::BUG_MESSAGE;
+use crate::{Executor, BUG_MESSAGE};
 use io_uring::squeue::Entry;
 use io_uring::types::{OpenHow, SubmitArgs, Timespec};
 use io_uring::{cqueue, opcode, types, IoUring, Probe};
@@ -21,6 +21,7 @@ use std::ptr;
 use std::time::{Duration, Instant};
 
 /// [`IOUringWorker`] implements [`IoWorker`] using `io_uring`.
+#[repr(C)]
 pub(crate) struct IOUringWorker {
     /// # Why we need some cell?
     ///
@@ -47,7 +48,7 @@ const ASYNC_CLOSE_DATA: u64 = u64::MAX;
 
 impl IOUringWorker {
     /// Get whether a specific opcode is supported.
-    #[inline(always)]
+    #[inline]
     fn is_supported(&self, opcode: u8) -> bool {
         self.probe.is_supported(opcode)
     }
@@ -65,7 +66,7 @@ impl IOUringWorker {
     }
 
     /// Add a new sqe to the submission queue.
-    #[inline(always)]
+    #[inline]
     fn add_sqe(&mut self, sqe: Entry) {
         self.number_of_active_tasks += 1;
         let ring = unsafe { &mut *self.ring.get() };
@@ -77,20 +78,20 @@ impl IOUringWorker {
     }
 
     /// Add a new sqe to the submission queue with setting `user_data`.
-    #[inline(always)]
+    #[inline]
     fn register_entry_with_u64_data(&mut self, sqe: Entry, data: u64) {
         let sqe = sqe.user_data(data);
         self.add_sqe(sqe);
     }
 
     /// Add a new sqe to the submission queue with setting `user_data`.
-    #[inline(always)]
+    #[inline]
     fn register_entry(&mut self, sqe: Entry, data: IoRequestDataPtr) {
         self.register_entry_with_u64_data(sqe, data.as_u64());
     }
 
     /// Cancels a request with the given `user_data`.
-    #[inline(always)]
+    #[inline]
     fn cancel_entry(&mut self, data: u64) {
         self.add_sqe(
             opcode::AsyncCancel::new(data)
@@ -100,16 +101,13 @@ impl IOUringWorker {
     }
 
     /// Cancels requests that have expired.
-    #[inline(always)]
-    fn check_deadlines(&mut self) {
+    fn check_deadlines(&mut self, executor: &Executor) {
         if self.time_bounded_io_task_queue.is_empty() {
             return;
         }
 
-        let now = Instant::now();
-
         while let Some(time_bounded_io_task) = self.time_bounded_io_task_queue.pop_first() {
-            if time_bounded_io_task.deadline() <= now {
+            if time_bounded_io_task.deadline() <= executor.start_round_time() {
                 self.cancel_entry(time_bounded_io_task.user_data());
             } else {
                 self.time_bounded_io_task_queue.insert(time_bounded_io_task);
@@ -123,7 +121,7 @@ impl IOUringWorker {
     ///
     /// It takes `&mut Instant` as a deadline because it increments the deadline by 1 nanosecond
     /// if it is not unique.
-    #[inline(always)]
+    #[inline]
     fn register_time_bounded_io_task(
         &mut self,
         io_request_data: &IoRequestData,
@@ -137,7 +135,6 @@ impl IOUringWorker {
     }
 
     /// Submits all accumulated requests and waits for completions or a timeout.
-    #[inline(always)]
     fn submit_and_poll(&mut self, timeout_option: Option<Duration>) -> Result<(), Error> {
         let ring = unsafe { &mut *self.ring.get() };
         let mut sq = unsafe { ring.submission_shared() };
@@ -198,20 +195,19 @@ impl IoWorker for IOUringWorker {
         s
     }
 
-    #[inline(always)]
+    #[inline]
     fn deregister_time_bounded_io_task(&mut self, deadline: &Instant) {
         self.time_bounded_io_task_queue.remove(deadline);
     }
 
-    #[inline(always)]
+    #[inline]
     fn has_work(&self) -> bool {
         self.number_of_active_tasks > 0
     }
 
-    #[inline(always)]
     fn must_poll(&mut self, timeout_option: Option<Duration>) {
         let executor = local_executor();
-        self.check_deadlines();
+        self.check_deadlines(executor);
         self.submit_and_poll(timeout_option)
             .expect("IOUringWorker::submit() failed");
 
@@ -220,7 +216,7 @@ impl IoWorker for IOUringWorker {
         cq.sync();
 
         self.number_of_active_tasks -= cq.len();
-        for cqe in cq {
+        for cqe in &mut cq {
             if cqe.user_data() == ASYNC_CLOSE_DATA {
                 continue;
             }
@@ -229,15 +225,13 @@ impl IoWorker for IOUringWorker {
             let io_request_ptr = IoRequestDataPtr::from_u64(cqe.user_data());
             let io_request = io_request_ptr.get_mut();
 
-            if ret < 0 {
-                if ret == -libc::ECANCELED {
-                    io_request.set_ret(Err(Error::from(ErrorKind::TimedOut)));
-                } else {
-                    io_request.set_ret(Err(Error::from_raw_os_error(-ret)));
-                }
-            } else {
+            if ret >= 0 {
                 #[allow(clippy::cast_sign_loss, reason = "the sing was checked above")]
                 io_request.set_ret(Ok(ret as _));
+            } else if ret == -libc::ECANCELED {
+                io_request.set_ret(Err(Error::from(ErrorKind::TimedOut)));
+            } else {
+                io_request.set_ret(Err(Error::from_raw_os_error(-ret)));
             }
 
             let task = unsafe { io_request.task() };
@@ -249,7 +243,7 @@ impl IoWorker for IOUringWorker {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn socket(
         &mut self,
         domain: socket2::Domain,
@@ -282,7 +276,7 @@ impl IoWorker for IOUringWorker {
         local_executor().spawn_local_task(unsafe { request.task() });
     }
 
-    #[inline(always)]
+    #[inline]
     fn accept(
         &mut self,
         raw_socket: RawSocket,
@@ -296,7 +290,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn accept_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -309,7 +303,7 @@ impl IoWorker for IOUringWorker {
         self.accept(raw_socket, addr_ptr, addr_len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn connect(
         &mut self,
         raw_socket: RawSocket,
@@ -323,7 +317,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn connect_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -336,7 +330,7 @@ impl IoWorker for IOUringWorker {
         self.connect(raw_socket, addr_ptr, addr_len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::PollAdd::new(types::Fd(raw_socket), libc::POLLIN as _).build(),
@@ -344,7 +338,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_read_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -355,7 +349,7 @@ impl IoWorker for IOUringWorker {
         self.poll_socket_read(raw_socket, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::PollAdd::new(types::Fd(raw_socket), libc::POLLOUT as _).build(),
@@ -363,7 +357,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_write_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -374,7 +368,7 @@ impl IoWorker for IOUringWorker {
         self.poll_socket_write(raw_socket, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv(
         &mut self,
         raw_socket: RawSocket,
@@ -388,7 +382,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -403,7 +397,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -416,7 +410,7 @@ impl IoWorker for IOUringWorker {
         self.recv(raw_socket, ptr, len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -430,7 +424,7 @@ impl IoWorker for IOUringWorker {
         self.recv_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_from(
         &mut self,
         raw_socket: RawSocket,
@@ -447,7 +441,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_from_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -459,7 +453,7 @@ impl IoWorker for IOUringWorker {
         self.recv_from(raw_socket, msg_header, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send(
         &mut self,
         raw_socket: RawSocket,
@@ -473,7 +467,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -488,7 +482,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -501,7 +495,7 @@ impl IoWorker for IOUringWorker {
         self.send(raw_socket, ptr, len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -515,7 +509,7 @@ impl IoWorker for IOUringWorker {
         self.send_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_to(
         &mut self,
         raw_socket: RawSocket,
@@ -528,7 +522,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_to_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -540,7 +534,7 @@ impl IoWorker for IOUringWorker {
         self.send_to(raw_socket, msg_header, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek(
         &mut self,
         raw_socket: RawSocket,
@@ -556,7 +550,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -576,7 +570,7 @@ impl IoWorker for IOUringWorker {
         self.peek(raw_socket, ptr, len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -589,7 +583,7 @@ impl IoWorker for IOUringWorker {
         self.peek(raw_socket, ptr, len, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -603,7 +597,7 @@ impl IoWorker for IOUringWorker {
         self.peek_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_from(
         &mut self,
         raw_socket: RawSocket,
@@ -619,7 +613,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_from_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -631,7 +625,7 @@ impl IoWorker for IOUringWorker {
         self.peek_from(raw_socket, msg, request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr) {
         let how = match how {
             Shutdown::Read => libc::SHUT_RD,
@@ -644,7 +638,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn open(&mut self, path: OsPathPtr, open_how: *const OpenHow, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::OpenAt2::new(types::Fd(libc::AT_FDCWD), path, open_how).build(),
@@ -652,7 +646,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn fallocate(
         &mut self,
         raw_file: RawFile,
@@ -670,12 +664,12 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.register_entry(opcode::Fsync::new(types::Fd(raw_file)).build(), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::Fsync::new(types::Fd(raw_file))
@@ -685,7 +679,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr) {
         #[allow(clippy::cast_sign_loss, reason = "we have to cast it")]
         self.register_entry(
@@ -696,7 +690,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn read_fixed(
         &mut self,
         raw_file: RawFile,
@@ -714,7 +708,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pread(
         &mut self,
         raw_file: RawFile,
@@ -731,7 +725,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pread_fixed(
         &mut self,
         raw_file: RawFile,
@@ -750,7 +744,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn write(
         &mut self,
         raw_file: RawFile,
@@ -767,7 +761,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_fixed(
         &mut self,
         raw_file: RawFile,
@@ -785,7 +779,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pwrite(
         &mut self,
         raw_file: RawFile,
@@ -802,7 +796,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pwrite_fixed(
         &mut self,
         raw_file: RawFile,
@@ -821,12 +815,12 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         self.register_entry(opcode::Close::new(types::Fd(raw_file)).build(), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::Close::new(types::Fd(raw_socket)).build(),
@@ -834,7 +828,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::RenameAt::new(
@@ -848,7 +842,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::MkDirAt::new(types::Fd(libc::AT_FDCWD), path)
@@ -858,7 +852,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path).build(),
@@ -866,7 +860,7 @@ impl IoWorker for IOUringWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         self.register_entry(
             opcode::UnlinkAt::new(types::Fd(libc::AT_FDCWD), path)

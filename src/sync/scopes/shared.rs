@@ -58,7 +58,7 @@ impl<'scope> Scope<'scope> {
     /// assert_eq!(a.load(SeqCst), 10);
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn exec<F: Future<Output = ()> + Send>(&'scope self, future: F) {
         self.wg.inc();
         let handle = ScopedHandle {
@@ -105,7 +105,7 @@ impl<'scope> Scope<'scope> {
     /// assert_eq!(a.load(SeqCst), 10);
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn spawn<F: Future<Output = ()> + Send>(&'scope self, future: F) {
         self.wg.inc();
         let handle = ScopedHandle {
@@ -122,6 +122,7 @@ unsafe impl Sync for Scope<'_> {}
 
 /// `ScopedHandle` is a wrapper of `Future<Output = ()>`
 /// to decrement the wait group when the future is done.
+#[repr(C)]
 pub(crate) struct ScopedHandle<'scope, Fut: Future<Output = ()> + Send> {
     scope: &'scope Scope<'scope>,
     fut: Fut,
@@ -193,7 +194,7 @@ unsafe impl<F: Future<Output = ()> + Send> Sync for ScopedHandle<'_, F> {}
 /// assert_eq!(a.load(SeqCst), 10);
 /// # }
 /// ```
-#[inline(always)]
+#[inline]
 #[allow(
     clippy::future_not_send,
     reason = "It is not `Send` only when F is not `Send`, it is fine"

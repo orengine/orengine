@@ -1,7 +1,7 @@
-use crate::local_executor;
 use crate::runtime::call::Call;
 use crate::runtime::task::task_data::TaskData;
-use crate::runtime::{task_pool, Locality};
+use crate::runtime::{Locality, TaskPool};
+use crate::{local_executor, Executor};
 use std::future::Future;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 ///
 /// # Be careful
 ///
-/// `Task` __must__ be executed via [`Executor::exec_task`](crate::Executor::exec_task).
+/// `Task` __must__ be executed via [`Executor::exec_task`](Executor::exec_task).
 pub struct Task {
     pub(crate) data: TaskData,
     #[cfg(debug_assertions)]
@@ -31,9 +31,9 @@ impl Task {
     /// - With [`local locality`](Locality::local) it is always safe;
     ///
     /// - With [`shared locality`](Locality::shared) it is safe if the provided [`Future`] is `Send`.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn from_future<F: Future<Output = ()>>(future: F, locality: Locality) -> Self {
-        task_pool().acquire(future, locality)
+        TaskPool::acquire(future, locality)
     }
 
     /// Returns the future that are wrapped by this [`Task`].
@@ -43,27 +43,27 @@ impl Task {
     /// It is safe because it returns a pointer without dereferencing it.
     ///
     /// Deref it only if you know what you are doing and remember that [`Task`] can be executed
-    /// only by [`Executor::exec_task`](crate::Executor::exec_task) and it can't be cloned, only moved.
-    #[inline(always)]
+    /// only by [`Executor::exec_task`](Executor::exec_task) and it can't be cloned, only moved.
+    #[inline]
     pub fn future_ptr(&self) -> *mut dyn Future<Output = ()> {
         self.data.future_ptr()
     }
 
     /// Returns whether the task is local or not.
-    #[inline(always)]
+    #[inline]
     pub fn is_local(&self) -> bool {
         self.data.is_local()
     }
 
-    /// Puts it back to the [`TaskPool`](crate::runtime::TaskPool). It is unsafe because you
+    /// Puts it back to the [`TaskPool`](TaskPool). It is unsafe because you
     /// have to think about making sure it is no longer used.
     ///
     /// # Safety
     ///
     /// Provided [`Task`] is no longer used.
-    #[inline(always)]
-    pub(crate) unsafe fn release(self) {
-        task_pool().put(self);
+    #[inline]
+    pub(crate) unsafe fn release(self, executor: &mut Executor) {
+        executor.task_pool().put(self);
     }
 
     /// Checks if the task is safe to be executed.

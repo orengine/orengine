@@ -1,3 +1,4 @@
+use orengine::io::sys::FallbackConfig;
 use orengine::io::{full_buffer, IOUringConfig, IoWorkerConfig};
 use orengine::runtime::Config;
 use orengine::utils::{get_core_ids, CoreId};
@@ -55,9 +56,8 @@ fn may() {
     fn handle_client(mut stream: may::net::TcpStream) -> io::Result<()> {
         use std::io::{Read, Write};
 
-        let mut buf = vec![0u8; MSG_SIZE];
-
         loop {
+            let mut buf = vec![0u8; MSG_SIZE];
             let mut read = 0;
             while read < MSG_SIZE {
                 let n = stream.read(&mut buf[read..])?;
@@ -154,12 +154,11 @@ fn async_std() {
     });
 }
 
-fn orengine_fixed() {
-    println!("Using orengine with fixed buffers.");
+fn orengine() {
+    println!("Using orengine.");
 
     use orengine::io::{AsyncAccept, AsyncBind};
 
-    #[inline(always)]
     async fn handle_client<S: orengine::net::Stream>(mut stream: S) {
         loop {
             stream.poll_recv().await.unwrap();
@@ -187,65 +186,22 @@ fn orengine_fixed() {
                 .set_io_worker_config(Some(IoWorkerConfig {
                     number_of_fixed_buffers: 128,
                     io_uring: IOUringConfig::default(),
+                    fallback: FallbackConfig::default(),
                 }))
                 .unwrap()
                 .set_buffer_cap(MSG_SIZE as u32),
         );
-        let _ = ex.run_and_block_on_local(async {
+
+        async fn run_listener() {
             let mut listener = orengine::net::TcpListener::bind::<&str>(ADDR.as_ref())
                 .await
                 .unwrap();
             while let Ok((stream, _)) = listener.accept().await {
                 orengine::local_executor().spawn_local(handle_client(stream));
             }
-        });
-    }
-
-    let mut cores = get_core_ids().unwrap();
-    for core in cores.drain(1..cores.len()) {
-        thread::spawn(move || {
-            run_server(core);
-        });
-    }
-    run_server(cores[0]);
-}
-
-fn orengine() {
-    println!("Using orengine without fixed buffers.");
-
-    use orengine::io::{AsyncAccept, AsyncBind};
-
-    #[inline(always)]
-    async fn handle_client<S: orengine::net::Stream>(mut stream: S) {
-        loop {
-            stream.poll_recv().await.unwrap();
-            let mut buf = vec![0u8; MSG_SIZE];
-
-            let mut read = 0;
-            while read < MSG_SIZE {
-                let n = stream.recv_bytes(&mut buf[read..]).await.unwrap();
-                if n == 0 {
-                    return;
-                }
-
-                read += n;
-            }
-
-            stream.send_all_bytes(&buf).await.unwrap();
         }
-    }
 
-    fn run_server(core_id: CoreId) {
-        let ex =
-            Executor::init_on_core_with_config(core_id, Config::default().disable_work_sharing());
-        let _ = ex.run_and_block_on_local(async {
-            let mut listener = orengine::net::TcpListener::bind::<&str>(ADDR.as_ref())
-                .await
-                .unwrap();
-            while let Ok((stream, _)) = listener.accept().await {
-                orengine::local_executor().spawn_local(handle_client(stream));
-            }
-        });
+        let _ = ex.run_and_block_on_local(run_listener());
     }
 
     let mut cores = get_core_ids().unwrap();
@@ -264,7 +220,7 @@ fn main() {
         "tokio" => tokio(),
         "async_std" => async_std(),
         "may" => may(),
-        "orengine" => orengine_fixed(),
+        "orengine" => orengine(),
         _ => {
             println!(
                 "Unknown server: {}, use one of: std, may, tokio, async_std, orengine",

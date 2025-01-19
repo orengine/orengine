@@ -5,7 +5,7 @@ mod unix_impl_socket {
         () => {
             type Addr = crate::net::unix::UnixAddr;
 
-            #[inline(always)]
+            #[inline]
             fn is_unix(&self) -> bool {
                 true
             }

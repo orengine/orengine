@@ -23,7 +23,7 @@ pub type RawFile = std::os::fd::RawFd;
 #[cfg(unix)]
 pub trait AsRawSocket: std::os::fd::AsRawFd {
     /// Returns [`RawSocket`] for this socket.
-    #[inline(always)]
+    #[inline]
     fn as_raw_socket(&self) -> RawSocket {
         std::os::fd::AsRawFd::as_raw_fd(self)
     }
@@ -34,7 +34,7 @@ pub trait AsRawSocket: std::os::fd::AsRawFd {
 #[cfg(windows)]
 pub trait AsRawSocket: std::os::windows::io::AsRawSocket {
     /// Returns [`RawSocket`] for this socket.
-    #[inline(always)]
+    #[inline]
     fn as_raw_socket(&self) -> RawSocket {
         std::os::windows::io::AsRawSocket::as_raw_socket(self)
     }
@@ -45,7 +45,7 @@ pub trait AsRawSocket: std::os::windows::io::AsRawSocket {
 #[cfg(unix)]
 pub trait AsRawFile: std::os::fd::AsRawFd {
     /// Returns [`RawFile`] for this socket.
-    #[inline(always)]
+    #[inline]
     fn as_raw_file(&self) -> RawFile {
         std::os::fd::AsRawFd::as_raw_fd(self)
     }
@@ -56,7 +56,7 @@ pub trait AsRawFile: std::os::fd::AsRawFd {
 #[cfg(windows)]
 pub trait AsRawFile: std::os::windows::io::AsRawHandle {
     /// Returns [`RawFile`] for this file.
-    #[inline(always)]
+    #[inline]
     fn as_raw_file(&self) -> RawFile {
         std::os::windows::io::AsRawHandle::as_raw_handle(self)
     }

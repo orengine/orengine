@@ -112,7 +112,7 @@ impl SubscribedState {
     /// Compares the version with [`global state`] and updates it if needed.
     ///
     /// [`global state`]: crate::runtime::global_state::global_state::GLOBAL_STATE
-    #[inline(always)]
+    #[inline]
     pub(crate) fn check_version_and_update_if_needed(
         &self,
         executor_id: usize,

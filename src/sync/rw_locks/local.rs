@@ -5,8 +5,8 @@
 //! ownership-based locking through [`LocalReadLockGuard`] and [`LocalWriteLockGuard`].
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 use crate::sync::{AsyncRWLock, AsyncReadLockGuard, AsyncWriteLockGuard, LockStatus};
+use crate::utils::{acquire_task_vec_from_pool, TaskVecFromPool};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
@@ -29,7 +29,7 @@ pub struct LocalReadLockGuard<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> LocalReadLockGuard<'rw_lock, T> {
     /// Creates a new `LocalReadLockGuard`.
-    #[inline(always)]
+    #[inline]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             local_rw_lock,
@@ -45,7 +45,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for LocalReadLockGuard
         self.local_rw_lock
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
         ManuallyDrop::new(self).local_rw_lock
     }
@@ -80,7 +80,7 @@ pub struct LocalWriteLockGuard<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> LocalWriteLockGuard<'rw_lock, T> {
     /// Creates a new `LocalWriteLockGuard`.
-    #[inline(always)]
+    #[inline]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             local_rw_lock,
@@ -96,7 +96,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for LocalWriteLockGua
         self.local_rw_lock
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
         ManuallyDrop::new(self).local_rw_lock
     }
@@ -129,6 +129,7 @@ impl<T: ?Sized> Drop for LocalWriteLockGuard<'_, T> {
 // region futures
 
 /// `ReadLockWait` is a future that will be resolved when the read lock is acquired.
+#[repr(C)]
 pub struct ReadLockWait<'rw_lock, T: ?Sized> {
     was_called: bool,
     local_rw_lock: &'rw_lock LocalRWLock<T>,
@@ -138,7 +139,7 @@ pub struct ReadLockWait<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> ReadLockWait<'rw_lock, T> {
     /// Creates a new `ReadLockWait`.
-    #[inline(always)]
+    #[inline]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             was_called: false,
@@ -165,6 +166,7 @@ impl<'rw_lock, T: ?Sized> Future for ReadLockWait<'rw_lock, T> {
 }
 
 /// `WriteLockWait` is a future that will be resolved when the write lock is acquired.
+#[repr(C)]
 pub struct WriteLockWait<'rw_lock, T: ?Sized> {
     was_called: bool,
     local_rw_lock: &'rw_lock LocalRWLock<T>,
@@ -174,7 +176,7 @@ pub struct WriteLockWait<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> WriteLockWait<'rw_lock, T> {
     /// Creates a new `WriteLockWait`.
-    #[inline(always)]
+    #[inline]
     fn new(local_rw_lock: &'rw_lock LocalRWLock<T>) -> Self {
         Self {
             was_called: false,
@@ -203,9 +205,10 @@ impl<'rw_lock, T: ?Sized> Future for WriteLockWait<'rw_lock, T> {
 // endregion
 
 /// Inner structure of [`LocalRWLock`] for internal use via [`UnsafeCell`].
+#[repr(C)]
 struct Inner<T: ?Sized> {
-    wait_queue_read: Vec<Task>,
-    wait_queue_write: Vec<Task>,
+    wait_queue_read: TaskVecFromPool,
+    wait_queue_write: TaskVecFromPool,
     number_of_readers: isize,
     value: T,
 }
@@ -287,15 +290,14 @@ pub struct LocalRWLock<T: ?Sized> {
 
 impl<T: ?Sized> LocalRWLock<T> {
     /// Creates a new `LocalRWLock`.
-    #[inline(always)]
-    pub const fn new(value: T) -> Self
+    pub fn new(value: T) -> Self
     where
         T: Sized,
     {
         Self {
             inner: UnsafeCell::new(Inner {
-                wait_queue_read: Vec::new(),
-                wait_queue_write: Vec::new(),
+                wait_queue_read: acquire_task_vec_from_pool(),
+                wait_queue_write: acquire_task_vec_from_pool(),
                 number_of_readers: 0,
                 value,
             }),
@@ -304,7 +306,7 @@ impl<T: ?Sized> LocalRWLock<T> {
     }
 
     /// Returns a mutable reference to the inner value.
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::mut_from_ref, reason = "It is Sync and `local`")]
     fn get_inner(&self) -> &mut Inner<T> {
         unsafe { &mut *self.inner.get() }
@@ -323,7 +325,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         T: 'rw_lock,
         Self: 'rw_lock;
 
-    #[inline(always)]
+    #[inline]
     fn get_lock_status(&self) -> LockStatus {
         #[allow(clippy::cast_sign_loss, reason = "false positive")]
         match self.get_inner().number_of_readers {
@@ -333,7 +335,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn write<'rw_lock>(&'rw_lock self) -> Self::WriteLockGuard<'rw_lock>
     where
@@ -351,7 +353,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         WriteLockWait::new(self).await
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn read<'rw_lock>(&'rw_lock self) -> Self::ReadLockGuard<'rw_lock>
     where
@@ -367,7 +369,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         ReadLockWait::new(self).await
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_write(&self) -> Option<Self::WriteLockGuard<'_>> {
         let inner = self.get_inner();
 
@@ -381,7 +383,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_read(&self) -> Option<Self::ReadLockGuard<'_>> {
         let inner = self.get_inner();
         if inner.number_of_readers > -1 {
@@ -392,12 +394,12 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_mut(&mut self) -> &mut T {
         &mut self.inner.get_mut().value
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
             assert_ne!(
@@ -426,7 +428,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
             assert_ne!(
@@ -462,7 +464,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_read_locked(&self) -> Self::ReadLockGuard<'_> {
         if cfg!(debug_assertions) {
             assert_ne!(
@@ -481,7 +483,7 @@ impl<T: ?Sized> AsyncRWLock<T> for LocalRWLock<T> {
         LocalReadLockGuard::new(self)
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_write_locked(&self) -> Self::WriteLockGuard<'_> {
         if cfg!(debug_assertions) {
             assert_ne!(

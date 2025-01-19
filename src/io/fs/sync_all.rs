@@ -10,6 +10,7 @@ use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `sync_all` io operation.
+#[repr(C)]
 pub struct SyncAll {
     raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
@@ -80,7 +81,7 @@ pub trait AsyncSyncAll: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn sync_all(&self) -> SyncAll {
         SyncAll::new(self.as_raw_file())
     }

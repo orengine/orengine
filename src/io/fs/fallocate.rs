@@ -10,6 +10,7 @@ use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `fallocate` io operation which allows to allocate space in a file from a given offset.
+#[repr(C)]
 pub struct Fallocate {
     raw_file: RawFile,
     offset: usize,
@@ -83,7 +84,7 @@ pub trait AsyncFallocate: AsRawFile {
     /// f.fallocate(0, 1024, libc::FALLOC_FL_KEEP_SIZE).await.unwrap();
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn fallocate(&self, offset: usize, len: usize, flags: i32) -> impl Future<Output = Result<()>> {
         Fallocate::new(self.as_raw_file(), offset, len, flags)
     }

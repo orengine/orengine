@@ -56,7 +56,7 @@ impl Future for Sleep {
 ///     println!("Hello after at least 100 millis!");
 /// });
 /// ```
-#[inline(always)]
+#[inline]
 pub fn sleep(duration: Duration) -> Sleep {
     Sleep {
         was_yielded: false,

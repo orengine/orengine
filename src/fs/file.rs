@@ -103,7 +103,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub async fn rename<OldPath, NewPath>(old_path: OldPath, new_path: NewPath) -> Result<()>
     where
         OldPath: AsRef<Path> + Send,
@@ -139,7 +139,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub async fn remove<P: AsRef<Path> + Send>(path: P) -> Result<()> {
         let path = get_os_path(path.as_ref())?;
         Remove::new(path).await
@@ -148,7 +148,7 @@ impl File {
     /// Executes a closure with a shared reference to the underlying `std::fs::File` object.
     ///
     /// It allows to call sync methods on the file from standard library.
-    #[inline(always)]
+    #[inline]
     pub fn with_std_file<Ret, F: FnOnce(&std::fs::File) -> Ret>(&self, f: F) -> Ret {
         unsafe {
             let std_file = std::fs::File::from_raw_file(self.raw_file);
@@ -162,7 +162,7 @@ impl File {
     /// Executes a closure with a mutable reference to the underlying `std::fs::File` object.
     ///
     /// It allows to call sync methods on the file from standard library.
-    #[inline(always)]
+    #[inline]
     pub fn with_std_mut_file<Ret, F: FnOnce(&mut std::fs::File) -> Ret>(&mut self, f: F) -> Ret {
         unsafe {
             let mut std_file = std::fs::File::from_raw_file(self.raw_file);
@@ -347,8 +347,8 @@ mod tests {
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-        .await
-        .expect("Can't rename file");
+            .await
+            .expect("Can't rename file");
         assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
         File::remove(test_file_dir_path.to_string() + "/test2.txt")
@@ -472,8 +472,8 @@ mod tests {
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-        .await
-        .expect("Can't rename file");
+            .await
+            .expect("Can't rename file");
         assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
         File::remove(test_file_dir_path.to_string() + "/test2.txt")

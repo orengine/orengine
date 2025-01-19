@@ -52,7 +52,7 @@ use std::time::Duration;
 /// }
 /// ```
 pub trait Stream:
-    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown
+Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown
 {
     /// Sets the socket linger option, which controls the behavior when the stream is closed.
     /// If `Some(duration)` is provided, the system will try to send any unsent data before
@@ -76,7 +76,7 @@ pub trait Stream:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn set_linger(&self, linger: Option<Duration>) -> io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -109,7 +109,7 @@ pub trait Stream:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn linger(&self) -> io::Result<Option<Duration>> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -140,7 +140,7 @@ pub trait Stream:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -170,7 +170,7 @@ pub trait Stream:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn nodelay(&self) -> io::Result<bool> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -199,7 +199,7 @@ pub trait Stream:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peer_addr(&self) -> io::Result<Self::Addr> {
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);

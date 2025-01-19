@@ -22,7 +22,7 @@ use std::io::Error;
 /// - [`AsSocket`]
 /// - [`AsyncPollSocket`]
 pub trait Socket:
-    IntoRawSocket + AsRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
+IntoRawSocket + AsRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
 {
     /// The address type associated with the socket. It is expected to be represented as a
     /// `std::net::SocketAddr` or `std::os::unix::net::SocketAddr` but can be any type that
@@ -31,7 +31,7 @@ pub trait Socket:
     type Addr: IntoSockAddr + FromSockAddr + ToSockAddrs<Self::Addr>;
 
     /// Returns whether the `Socket` is a unix socket.
-    #[inline(always)]
+    #[inline]
     fn is_unix(&self) -> bool {
         false
     }
@@ -53,7 +53,7 @@ pub trait Socket:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn local_addr(&self) -> io::Result<Self::Addr> {
         let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
@@ -85,7 +85,7 @@ pub trait Socket:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn set_ttl(&self, ttl: u32) -> io::Result<()> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -120,7 +120,7 @@ pub trait Socket:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn ttl(&self) -> io::Result<u32> {
         if self.is_unix() {
             return Err(new_unix_unsupported_error());
@@ -151,7 +151,7 @@ pub trait Socket:
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn take_error(&self) -> io::Result<Option<Error>> {
         let borrow_socket = AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);

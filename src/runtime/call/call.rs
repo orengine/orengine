@@ -123,7 +123,7 @@ pub enum Call {
 
 impl Call {
     /// Returns `true` if the `Call` is [`None`](Self::None).
-    #[inline(always)]
+    #[inline]
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }

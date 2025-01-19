@@ -18,6 +18,7 @@ use crate::net::{ConnectedDatagram, Socket};
 use crate::utils::each_addr::each_addr;
 
 /// `connect` io operation.
+#[repr(C)]
 pub struct Connect<'fut> {
     raw_fd: RawSocket,
     addr: &'fut SockAddr,
@@ -62,6 +63,7 @@ impl Future for Connect<'_> {
 unsafe impl Send for Connect<'_> {}
 
 /// `connect` io operation with deadline.
+#[repr(C)]
 pub struct ConnectWithDeadline<'fut> {
     raw_fd: RawSocket,
     addr: &'fut SockAddr,
@@ -181,7 +183,7 @@ pub trait AsyncConnectStream: Sized + Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect<A: ToSockAddrs<Self::Addr>>(addr: A) -> Result<Self> {
         each_addr(addr, move |addr| async move {
             let stream = Self::new_for_addr(&addr).await?;
@@ -214,7 +216,7 @@ pub trait AsyncConnectStream: Sized + Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect_with_deadline<A: ToSockAddrs<Self::Addr>>(
         addr: A,
         deadline: Instant,
@@ -250,7 +252,7 @@ pub trait AsyncConnectStream: Sized + Socket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect_with_timeout<A: ToSockAddrs<Self::Addr>>(
         addr: A,
         timeout: Duration,
@@ -315,7 +317,7 @@ pub trait AsyncConnectDatagram<CD: ConnectedDatagram>: Socket + Sized {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect<A: ToSockAddrs<CD::Addr>>(self, addr: A) -> Result<CD> {
         let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
         each_addr(addr, move |addr| async move {
@@ -355,7 +357,7 @@ pub trait AsyncConnectDatagram<CD: ConnectedDatagram>: Socket + Sized {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect_with_deadline<A: ToSockAddrs<CD::Addr>>(
         self,
         addr: A,
@@ -399,7 +401,7 @@ pub trait AsyncConnectDatagram<CD: ConnectedDatagram>: Socket + Sized {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn connect_with_timeout<A: ToSockAddrs<CD::Addr>>(
         self,
         addr: A,
