@@ -926,6 +926,7 @@ impl Executor {
     fn check_sleeping_tasks(&mut self) -> Option<Duration> {
         if !self.local_sleeping_tasks.is_empty() {
             self.start_round_time = Instant::now();
+
             while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
                 if time_to_wake <= self.start_round_time {
                     if task.is_local() {

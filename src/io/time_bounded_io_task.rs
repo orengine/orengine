@@ -1,4 +1,4 @@
-use crate::io::io_request_data::IoRequestData;
+use crate::io::io_request_data::IoRequestDataPtr;
 #[cfg(not(target_os = "linux"))]
 use crate::io::io_request_data::IoRequestDataPtr;
 #[cfg(not(target_os = "linux"))]
@@ -23,10 +23,10 @@ impl TimeBoundedIoTask {
     /// Creates a new [`TimeBoundedIoTask`]
     #[inline]
     #[cfg(target_os = "linux")]
-    pub(crate) fn new(io_request_data: &IoRequestData, deadline: Instant) -> Self {
+    pub(crate) fn new(io_request_data: IoRequestDataPtr, deadline: Instant) -> Self {
         Self {
             deadline,
-            user_data: std::ptr::from_ref(io_request_data) as u64,
+            user_data: io_request_data.as_u64(),
         }
     }
 

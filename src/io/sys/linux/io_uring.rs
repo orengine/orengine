@@ -1,5 +1,5 @@
 use crate::io::config::IoWorkerConfig;
-use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
+use crate::io::io_request_data::IoRequestDataPtr;
 use crate::io::sys;
 use crate::io::sys::{
     os_sockaddr, MessageRecvHeader, OsMessageHeader, OsPathPtr, RawFile, RawSocket,
@@ -124,7 +124,7 @@ impl IOUringWorker {
     #[inline]
     fn register_time_bounded_io_task(
         &mut self,
-        io_request_data: &IoRequestData,
+        io_request_data: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
         let mut time_bounded_io_task = TimeBoundedIoTask::new(io_request_data, *deadline);
@@ -299,7 +299,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut() as _, deadline);
+        self.register_time_bounded_io_task(request_ptr as _, deadline);
         self.accept(raw_socket, addr_ptr, addr_len, request_ptr);
     }
 
@@ -326,7 +326,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.connect(raw_socket, addr_ptr, addr_len, request_ptr);
     }
 
@@ -345,7 +345,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.poll_socket_read(raw_socket, request_ptr);
     }
 
@@ -364,7 +364,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.poll_socket_write(raw_socket, request_ptr);
     }
 
@@ -406,7 +406,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.recv(raw_socket, ptr, len, request_ptr);
     }
 
@@ -420,7 +420,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.recv_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
@@ -449,7 +449,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.recv_from(raw_socket, msg_header, request_ptr);
     }
 
@@ -491,7 +491,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.send(raw_socket, ptr, len, request_ptr);
     }
 
@@ -505,7 +505,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.send_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
@@ -530,7 +530,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.send_to(raw_socket, msg_header, request_ptr);
     }
 
@@ -579,7 +579,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.peek(raw_socket, ptr, len, request_ptr);
     }
 
@@ -593,7 +593,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.peek_fixed(raw_socket, ptr, len, buf_index, request_ptr);
     }
 
@@ -621,7 +621,7 @@ impl IoWorker for IOUringWorker {
         request_ptr: IoRequestDataPtr,
         deadline: &mut Instant,
     ) {
-        self.register_time_bounded_io_task(request_ptr.get_mut(), deadline);
+        self.register_time_bounded_io_task(request_ptr, deadline);
         self.peek_from(raw_socket, msg, request_ptr);
     }
 
