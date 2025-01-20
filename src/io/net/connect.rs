@@ -43,8 +43,8 @@ impl Future for Connect<'_> {
         clippy::cast_ptr_alignment,
         reason = "sys::os_sockaddr is aligned rightly"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
@@ -90,8 +90,8 @@ impl Future for ConnectWithDeadline<'_> {
         clippy::cast_ptr_alignment,
         reason = "sys::os_sockaddr is aligned rightly"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;

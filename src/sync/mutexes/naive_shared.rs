@@ -163,7 +163,7 @@ impl<T: ?Sized> NaiveMutex<T> {
 
 impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
     type Guard<'mutex>
-    = NaiveMutexGuard<'mutex, T>
+        = NaiveMutexGuard<'mutex, T>
     where
         Self: 'mutex;
 

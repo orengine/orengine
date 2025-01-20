@@ -27,6 +27,10 @@ struct Inner<T> {
 }
 
 unsafe impl<T: Send> Sync for Inner<T> {}
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "We guarantee that `Inner<T>` is `Send`"
+)]
 unsafe impl<T: Send> Send for Inner<T> {}
 
 // region futures

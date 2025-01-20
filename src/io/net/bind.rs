@@ -223,7 +223,7 @@ pub trait AsyncBind: Sized + Socket {
 
             Ok(unsafe { <Self as FromRawSocket>::from_raw_socket(raw_fd) })
         })
-            .await
+        .await
     }
 
     /// Asynchronously binds to a socket with default [`configuration`](BindConfig).

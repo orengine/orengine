@@ -16,8 +16,8 @@ pub struct Sleep {
 impl Future for Sleep {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         if this.was_yielded {
             // [`Executor`](crate::Executor) will wake this future up when it should be woken up.
             Poll::Ready(())

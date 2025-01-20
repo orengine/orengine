@@ -70,16 +70,14 @@ impl FallbackWorker {
     ///    the result will be returned and the deadline will be deregistered
     pub(crate) fn register_deadline(&mut self, slot_ptr: *mut (IoCall, IoRequestDataPtr)) {
         let slot = unsafe { &mut *slot_ptr };
-        let io_request_data = slot.1.get_mut();
         let deadline = slot.0.deadline_mut().unwrap();
         let raw_socket = slot.0.raw_socket().unwrap();
 
         let mut time_bounded_io_task =
-            TimeBoundedIoTask::new(io_request_data, *deadline, raw_socket, slot_ptr);
+            TimeBoundedIoTask::new(slot.1, *deadline, raw_socket, slot_ptr);
         while !self.time_bounded_io_task_queue.insert(time_bounded_io_task) {
             *deadline += Duration::from_nanos(1);
-            time_bounded_io_task =
-                TimeBoundedIoTask::new(io_request_data, *deadline, raw_socket, slot_ptr);
+            time_bounded_io_task = TimeBoundedIoTask::new(slot.1, *deadline, raw_socket, slot_ptr);
         }
     }
 

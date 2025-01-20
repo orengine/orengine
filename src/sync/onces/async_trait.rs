@@ -58,7 +58,7 @@ pub trait AsyncOnce {
     ///     }).await;
     /// }
     /// ```
-    fn call_once<Fut: Future<Output=()>>(&self, f: Fut) -> impl Future<Output=CallOnceResult>;
+    fn call_once<Fut: Future<Output = ()>>(&self, f: Fut) -> impl Future<Output = CallOnceResult>;
 
     /// Calls the function only once.
     ///

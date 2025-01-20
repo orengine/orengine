@@ -41,8 +41,8 @@ impl Future for RecvBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -91,8 +91,8 @@ impl Future for RecvFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -138,8 +138,8 @@ impl Future for RecvBytesWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -198,8 +198,8 @@ impl Future for RecvFixedWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 

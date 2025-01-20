@@ -36,8 +36,8 @@ impl Future for ReadBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never read more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -86,8 +86,8 @@ impl Future for ReadFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never read more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -138,8 +138,8 @@ impl Future for PositionedReadBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never read more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -196,8 +196,8 @@ impl Future for PositionedReadFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never read more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((

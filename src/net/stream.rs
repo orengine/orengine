@@ -52,7 +52,7 @@ use std::time::Duration;
 /// }
 /// ```
 pub trait Stream:
-Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown
+    Socket + AsyncConnectStream + AsyncRecv + AsyncPeek + AsyncSend + AsyncShutdown
 {
     /// Sets the socket linger option, which controls the behavior when the stream is closed.
     /// If `Some(duration)` is provided, the system will try to send any unsent data before

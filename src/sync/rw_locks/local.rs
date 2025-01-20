@@ -152,8 +152,8 @@ impl<'rw_lock, T: ?Sized> ReadLockWait<'rw_lock, T> {
 impl<'rw_lock, T: ?Sized> Future for ReadLockWait<'rw_lock, T> {
     type Output = LocalReadLockGuard<'rw_lock, T>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         if !this.was_called {
             let task = unsafe { get_task_from_context!(cx) };
             this.local_rw_lock.get_inner().wait_queue_read.push(task);
@@ -189,8 +189,8 @@ impl<'rw_lock, T: ?Sized> WriteLockWait<'rw_lock, T> {
 impl<'rw_lock, T: ?Sized> Future for WriteLockWait<'rw_lock, T> {
     type Output = LocalWriteLockGuard<'rw_lock, T>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         if !this.was_called {
             let task = unsafe { get_task_from_context!(cx) };
             this.local_rw_lock.get_inner().wait_queue_write.push(task);
