@@ -11,8 +11,11 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBufferMut};
+use crate::local_executor;
+use crate::net::Socket;
 
 /// `peek` io operation.
+#[repr(C)]
 pub struct PeekBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -37,8 +40,8 @@ impl Future for PeekBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never peek more than u32::MAX"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -56,6 +59,7 @@ impl Future for PeekBytes<'_> {
 unsafe impl Send for PeekBytes<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`].
+#[repr(C)]
 pub struct PeekFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -86,8 +90,8 @@ impl Future for PeekFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never peek more than u32::MAX"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -106,6 +110,7 @@ impl Future for PeekFixed<'_> {
 unsafe impl Send for PeekFixed<'_> {}
 
 /// `peek` io operation with deadline.
+#[repr(C)]
 pub struct PeekBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -132,8 +137,8 @@ impl Future for PeekBytesWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never peek more than u32::MAX"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -153,6 +158,7 @@ impl Future for PeekBytesWithDeadline<'_> {
 unsafe impl Send for PeekBytesWithDeadline<'_> {}
 
 /// `peek` io operation with __fixed__ [`Buffer`] with deadline.
+#[repr(C)]
 pub struct PeekFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -191,8 +197,8 @@ impl Future for PeekFixedWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never peek more than u32::MAX"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -218,7 +224,7 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
+/// This trait can be implemented for any [`socket`](Socket) which can be connected.
 ///
 /// # Example
 ///
@@ -235,7 +241,7 @@ unsafe impl Send for PeekFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncPeek: AsRawSocket {
+pub trait AsyncPeek: Socket {
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
     /// filling the buffer with available data. Returns the number of bytes peeked.
     ///
@@ -259,7 +265,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
         PeekBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -287,7 +293,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             PeekFixed::new(
@@ -337,7 +343,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -375,7 +381,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -434,13 +440,16 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_with_timeout(
         &mut self,
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        self.peek_bytes_with_deadline(buf, Instant::now() + timeout)
+        self.peek_bytes_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -472,13 +481,16 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.peek_with_deadline(buf, Instant::now() + timeout)
+        self.peek_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -504,7 +516,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut peeked = 0;
 
@@ -537,7 +549,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
             let mut peeked = 0;
@@ -597,7 +609,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_bytes_exact_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -643,7 +655,7 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn peek_exact_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -710,13 +722,16 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_bytes_exact_with_timeout(
         &mut self,
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.peek_bytes_exact_with_deadline(buf, Instant::now() + timeout)
+        self.peek_bytes_exact_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data without consuming it,
@@ -749,12 +764,15 @@ pub trait AsyncPeek: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn peek_exact_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.peek_exact_with_deadline(buf, Instant::now() + timeout)
+        self.peek_exact_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 }

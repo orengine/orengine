@@ -24,7 +24,7 @@ pub struct NaiveMutexGuard<'mutex, T: ?Sized> {
 
 impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
     /// Creates a new [`NaiveMutexGuard`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(mutex: &'mutex NaiveMutex<T>) -> Self {
         Self { mutex }
     }
@@ -39,7 +39,7 @@ impl<'mutex, T: ?Sized> NaiveMutexGuard<'mutex, T> {
     /// The mutex is locked now and will be unlocked by calling [`NaiveMutex::unlock`] or
     /// [calling](crate::Executor::invoke_call)
     /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
-    #[inline(always)]
+    #[inline]
     pub unsafe fn leak_to_atomic(self) -> &'static CachePadded<AtomicBool> {
         debug_assert!(self.mutex.is_locked.load(Acquire));
         let static_mutex = unsafe {
@@ -167,12 +167,12 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
     where
         Self: 'mutex;
 
-    #[inline(always)]
+    #[inline]
     fn is_locked(&self) -> bool {
         self.is_locked.load(Acquire)
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -196,7 +196,7 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_lock(&self) -> Option<Self::Guard<'_>> {
         if self
             .is_locked
@@ -209,12 +209,12 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn unlock(&self) {
         debug_assert!(
             self.is_locked.load(Acquire),
@@ -224,7 +224,7 @@ impl<T: ?Sized> AsyncMutex<T> for NaiveMutex<T> {
         self.is_locked.store(false, Release);
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::mut_from_ref,
         reason = "The caller guarantees safety using this code"
@@ -380,9 +380,6 @@ mod tests {
         async fn work_with_lock(mutex: &NaiveMutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
 
             wg.done();
         }

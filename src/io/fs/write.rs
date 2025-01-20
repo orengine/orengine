@@ -12,6 +12,7 @@ use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
 
 /// `write` io operation.
+#[repr(C)]
 pub struct WriteBytes<'buf> {
     raw_file: RawFile,
     buf: &'buf [u8],
@@ -36,8 +37,8 @@ impl Future for WriteBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never write more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -55,6 +56,7 @@ impl Future for WriteBytes<'_> {
 unsafe impl Send for WriteBytes<'_> {}
 
 /// `write` io operation with __fixed__ [`Buffer`].
+#[repr(C)]
 pub struct WriteFixed<'buf> {
     raw_file: RawFile,
     ptr: *const u8,
@@ -85,8 +87,8 @@ impl Future for WriteFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never write more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -105,6 +107,7 @@ impl Future for WriteFixed<'_> {
 unsafe impl Send for WriteFixed<'_> {}
 
 /// `pwrite` io operation.
+#[repr(C)]
 pub struct PositionedWriteBytes<'buf> {
     raw_file: RawFile,
     buf: &'buf [u8],
@@ -131,8 +134,8 @@ impl Future for PositionedWriteBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never write more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -151,6 +154,7 @@ impl Future for PositionedWriteBytes<'_> {
 unsafe impl Send for PositionedWriteBytes<'_> {}
 
 /// `pwrite` io operation with __fixed__ [`Buffer`].
+#[repr(C)]
 pub struct PositionedWriteFixed<'buf> {
     raw_file: RawFile,
     ptr: *const u8,
@@ -189,8 +193,8 @@ impl Future for PositionedWriteFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never write more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -261,7 +265,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn write_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
         WriteBytes::new(self.as_raw_file(), buf)
     }
@@ -295,7 +299,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn write(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             WriteFixed::new(
@@ -341,7 +345,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn pwrite_bytes(&mut self, buf: &[u8], offset: usize) -> impl Future<Output = Result<usize>> {
         PositionedWriteBytes::new(self.as_raw_file(), buf, offset)
     }
@@ -376,7 +380,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pwrite(&mut self, buf: &impl FixedBuffer, offset: usize) -> Result<u32> {
         if buf.is_fixed() {
             PositionedWriteFixed::new(
@@ -422,7 +426,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn write_all_bytes(&mut self, buf: &[u8]) -> Result<()> {
         let mut written = 0;
 
@@ -462,7 +466,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn write_all(&mut self, buf: &impl FixedBuffer) -> Result<()> {
         if buf.is_fixed() {
             let mut written = 0;
@@ -517,7 +521,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pwrite_all_bytes(&mut self, buf: &[u8], offset: usize) -> Result<()> {
         let mut written = 0;
         while written < buf.len() {
@@ -557,7 +561,7 @@ pub trait AsyncWrite: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn pwrite_all(&mut self, buf: &impl FixedBuffer, offset: usize) -> Result<()> {
         if buf.is_fixed() {
             let mut written = 0;

@@ -28,13 +28,13 @@ pub struct SpinLockGuard<'spin_lock, T: ?Sized> {
 
 impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// Creates a new [`SpinLockGuard`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(spin_lock: &'spin_lock SpinLock<T>) -> Self {
         Self { spin_lock }
     }
 
     /// Returns a reference to the original [`SpinLock`].
-    #[inline(always)]
+    #[inline]
     pub fn spin_lock(&self) -> &SpinLock<T> {
         self.spin_lock
     }
@@ -46,7 +46,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     ///
     /// Even if you doesn't call `guard.unlock()`,
     /// the [`spin_lock`](SpinLock) will be unlocked after the `guard` is dropped.
-    #[inline(always)]
+    #[inline]
     pub fn unlock(self) {}
 
     /// Returns a reference to the original [`SpinLock`].
@@ -56,7 +56,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// # Safety
     ///
     /// The mutex is unlocked by calling [`SpinLock::unlock`] later.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn leak(self) -> *const CachePadded<AtomicBool> {
         &ManuallyDrop::new(self).spin_lock.is_locked
     }
@@ -71,7 +71,7 @@ impl<'spin_lock, T: ?Sized> SpinLockGuard<'spin_lock, T> {
     /// The mutex is unlocked by calling [`SpinLock::unlock`] later
     /// or by [calling](crate::Executor::invoke_call)
     /// [`ReleaseAtomicBool`](crate::runtime::call::Call::ReleaseAtomicBool).
-    #[inline(always)]
+    #[inline]
     pub unsafe fn leak_to_atomic(self) -> &'spin_lock CachePadded<AtomicBool> {
         &ManuallyDrop::new(self).spin_lock.is_locked
     }
@@ -129,7 +129,7 @@ impl<T: ?Sized> SpinLock<T> {
     }
 
     /// Blocks the current __thread__ until it acquires the lock.
-    #[inline(always)]
+    #[inline]
     pub fn lock(&self) -> SpinLockGuard<T> {
         let backoff = Backoff::new();
         loop {
@@ -144,7 +144,7 @@ impl<T: ?Sized> SpinLock<T> {
 
     /// If `SpinLock` is unlocked, returns [`SpinLockGuard`] that allows access to the inner value,
     /// otherwise returns [`None`].
-    #[inline(always)]
+    #[inline]
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
         if self
             .is_locked
@@ -158,7 +158,7 @@ impl<T: ?Sized> SpinLock<T> {
     }
 
     /// Returns a reference to the underlying data. It is safe because it uses `&mut self`.
-    #[inline(always)]
+    #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
@@ -170,7 +170,7 @@ impl<T: ?Sized> SpinLock<T> {
     /// - The `SpinLock` must be locked.
     ///
     /// - No other threads has an ownership of this `lock`.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn unlock(&self) {
         debug_assert!(self.is_locked.load(Acquire));
         self.is_locked.store(false, Release);
@@ -183,7 +183,7 @@ impl<T: ?Sized> SpinLock<T> {
     /// - The `SpinLock` must be locked.
     ///
     /// - And only current task has an ownership of this `SpinLock`.
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::mut_from_ref,
         reason = "The caller guarantees safety using this code"
@@ -257,9 +257,6 @@ mod tests {
         fn work_with_lock(mutex: &SpinLock<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock();
             *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
             lock.unlock();
 
             wg.done();

@@ -51,8 +51,8 @@ impl Job {
 impl Future for Job {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, mut cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, mut cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let this = &mut *self;
 
         let mut unwind_safe_cx = panic::AssertUnwindSafe(&mut cx);
         let mut unwind_safe_future =

@@ -1,8 +1,6 @@
 use std::future::Future;
-use std::io::Result;
-use std::marker::PhantomData;
+use std::io::{IoSliceMut, Result};
 use std::mem;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -14,24 +12,32 @@ use crate as orengine;
 use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, MessageRecvHeader, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
-use crate::BUG_MESSAGE;
+use crate::io::FixedBufferMut;
+use crate::net::addr::FromSockAddr;
+use crate::net::Socket;
+use crate::{local_executor, BUG_MESSAGE};
 
 /// `recv_from` io operation.
+#[repr(C)]
 pub struct RecvFrom<'fut> {
     raw_socket: RawSocket,
+    sock_addr: &'fut mut SockAddr,
     msg_header: MessageRecvHeader,
     io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> RecvFrom<'fut> {
     /// Creates a new `recv_from` io operation.
-    pub fn new(raw_socket: RawSocket, buf_ptr: *mut *mut [u8], addr: &'fut mut SockAddr) -> Self {
+    pub fn new(
+        raw_socket: RawSocket,
+        buf_ptr: *mut [IoSliceMut],
+        addr: &'fut mut SockAddr,
+    ) -> Self {
         Self {
             raw_socket,
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
+            sock_addr: addr,
             io_request_data: None,
-            phantom_data: PhantomData,
         }
     }
 }
@@ -39,15 +45,18 @@ impl<'fut> RecvFrom<'fut> {
 impl Future for RecvFrom<'_> {
     type Output = Result<usize>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
             local_worker().recv_from(this.raw_socket, &mut this.msg_header, unsafe {
                 IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked())
             }),
-            ret
+            {
+                unsafe { this.sock_addr.set_length(this.msg_header.get_addr_len()) };
+                ret
+            }
         ));
     }
 }
@@ -59,28 +68,29 @@ impl Future for RecvFrom<'_> {
 unsafe impl Send for RecvFrom<'_> {}
 
 /// `recv_from` io operation with deadline.
+#[repr(C)]
 pub struct RecvFromWithDeadline<'fut> {
     raw_socket: RawSocket,
+    sock_addr: &'fut mut SockAddr,
     msg_header: MessageRecvHeader,
     deadline: Instant,
     io_request_data: Option<IoRequestData>,
-    phantom_data: PhantomData<&'fut [u8]>,
 }
 
 impl<'fut> RecvFromWithDeadline<'fut> {
     /// Creates a new `recv_from` io operation with deadline.
     pub fn new(
         raw_socket: RawSocket,
-        buf_ptr: *mut *mut [u8],
+        buf_ptr: *mut [IoSliceMut],
         addr: &'fut mut SockAddr,
         deadline: Instant,
     ) -> Self {
         Self {
             raw_socket,
             msg_header: MessageRecvHeader::new(addr, buf_ptr),
+            sock_addr: addr,
             deadline,
             io_request_data: None,
-            phantom_data: PhantomData,
         }
     }
 }
@@ -88,8 +98,8 @@ impl<'fut> RecvFromWithDeadline<'fut> {
 impl Future for RecvFromWithDeadline<'_> {
     type Output = Result<usize>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -100,7 +110,10 @@ impl Future for RecvFromWithDeadline<'_> {
                 unsafe { IoRequestDataPtr::new(this.io_request_data.as_mut().unwrap_unchecked()) },
                 &mut this.deadline
             ),
-            ret
+            {
+                unsafe { this.sock_addr.set_length(this.msg_header.get_addr_len()) };
+                ret
+            }
         ));
     }
 }
@@ -114,11 +127,11 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 /// The `AsyncRecvFrom` trait provides asynchronous methods for receiving at the incoming data
 /// with consuming it from the socket (datagram).
 ///
-/// It returns [`SocketAddr`] of the sender.
+/// It returns [`SocketAddr`](std::net::SocketAddr) of the sender.
 /// It offers options to peek with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any datagram-oriented socket that supports the `AsRawSocket`.
+/// This trait can be implemented for any datagram-oriented [`socket`](Socket).
 ///
 /// # Example
 ///
@@ -126,7 +139,7 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 /// use orengine::io::{full_buffer, AsyncBind, AsyncPeekFrom, AsyncPollSocket, AsyncRecvFrom};
 /// use orengine::net::UdpSocket;
 ///
-/// async fn foo() -> std::io::Result<()> {
+/// # async fn foo() -> std::io::Result<()> {
 /// let mut stream = UdpSocket::bind("127.0.0.1:8080").await?;
 /// stream.poll_recv().await?;
 /// let mut buf = full_buffer();
@@ -136,9 +149,46 @@ unsafe impl Send for RecvFromWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncRecvFrom: AsRawSocket {
+pub trait AsyncRecvFrom: Socket {
     /// Asynchronously receives into the incoming datagram with consuming it, filling the buffer
     /// with available data and returning the number of bytes received and the sender's address.
+    ///
+    /// # Difference between `recv_bytes_from` and `recv_from`
+    ///
+    /// Use `recv_from` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollSocket, AsyncRecvFrom};
+    /// use orengine::net::UdpSocket;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// socket.poll_recv().await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Receive at the incoming datagram without consuming it
+    /// let (bytes_peeked, addr) = socket.recv_bytes_from(&mut buf).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    async fn recv_bytes_from(&mut self, buf: &mut [u8]) -> Result<(usize, Self::Addr)> {
+        let mut sock_addr = unsafe { mem::zeroed() };
+        let buf_ptr = &mut [IoSliceMut::new(buf)];
+
+        let n = RecvFrom::new(AsRawSocket::as_raw_socket(self), buf_ptr, &mut sock_addr).await?;
+
+        Ok((n, Self::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE)))
+    }
+
+    /// Asynchronously receives into the incoming datagram with consuming it, filling the buffer
+    /// with available data and returning the number of bytes received and the sender's address.
+    ///
+    /// # Difference between `recv_from` and `recv_bytes_from`
+    ///
+    /// Use `recv_from` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -156,17 +206,10 @@ pub trait AsyncRecvFrom: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFrom::new(
-            AsRawSocket::as_raw_socket(self),
-            &mut std::ptr::from_mut::<[u8]>(buf),
-            &mut sock_addr,
-        )
-        .await?;
-
-        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
+    #[inline]
+    async fn recv_from(&mut self, buf: &mut impl FixedBufferMut) -> Result<(usize, Self::Addr)> {
+        // Now RecvFrom with `fixed` buffer is unsupported.
+        self.recv_bytes_from(buf.as_bytes_mut()).await
     }
 
     /// Asynchronously receives into the incoming datagram with a deadline, with consuming it,
@@ -175,6 +218,59 @@ pub trait AsyncRecvFrom: AsRawSocket {
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_bytes_from_with_deadline` and `recv_from_with_deadline`
+    ///
+    /// Use `recv_from_with_deadline` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollSocket, AsyncRecvFrom};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::{Duration, Instant};
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let deadline = Instant::now() + Duration::from_secs(5);
+    /// socket.poll_recv_with_deadline(deadline).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Receive at the incoming datagram with a deadline
+    /// let (bytes_peeked, addr) = socket.recv_bytes_from_with_deadline(&mut buf, deadline).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    async fn recv_bytes_from_with_deadline(
+        &mut self,
+        buf: &mut [u8],
+        deadline: Instant,
+    ) -> Result<(usize, Self::Addr)> {
+        let mut sock_addr = unsafe { mem::zeroed() };
+        let buf_ptr = &mut [IoSliceMut::new(buf)];
+
+        let n = RecvFromWithDeadline::new(
+            AsRawSocket::as_raw_socket(self),
+            buf_ptr,
+            &mut sock_addr,
+            deadline,
+        )
+        .await?;
+
+        Ok((n, Self::Addr::from_sock_addr(sock_addr).expect(BUG_MESSAGE)))
+    }
+
+    /// Asynchronously receives into the incoming datagram with a deadline, with consuming it,
+    /// filling the buffer with available data and returning the number of bytes received
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_from_with_deadline` and `recv_bytes_from_with_deadline`
+    ///
+    /// Use `recv_from_with_deadline` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -194,22 +290,15 @@ pub trait AsyncRecvFrom: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_from_with_deadline(
         &mut self,
-        buf: &mut [u8],
+        buf: &mut impl FixedBufferMut,
         deadline: Instant,
-    ) -> Result<(usize, SocketAddr)> {
-        let mut sock_addr = unsafe { mem::zeroed() };
-        let n = RecvFromWithDeadline::new(
-            AsRawSocket::as_raw_socket(self),
-            &mut std::ptr::from_mut::<[u8]>(buf),
-            &mut sock_addr,
-            deadline,
-        )
-        .await?;
-
-        Ok((n, sock_addr.as_socket().expect(BUG_MESSAGE)))
+    ) -> Result<(usize, Self::Addr)> {
+        // Now RecvFrom with `fixed` buffer is unsupported.
+        self.recv_bytes_from_with_deadline(buf.as_bytes_mut(), deadline)
+            .await
     }
 
     /// Asynchronously receives into the incoming datagram with a timeout, with consuming it,
@@ -218,6 +307,10 @@ pub trait AsyncRecvFrom: AsRawSocket {
     ///
     /// If the deadline is exceeded, the method will return an error with
     /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_bytes_from_with_timeout` and `recv_from_with_timeout`
+    ///
+    /// Use `recv_from_with_timeout` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
     ///
     /// # Example
     ///
@@ -232,18 +325,61 @@ pub trait AsyncRecvFrom: AsRawSocket {
     /// socket.poll_recv_with_timeout(timeout).await?;
     /// let mut buf = full_buffer();
     ///
-    /// // Peek at the incoming datagram with a timeout
+    /// // Receive at the incoming datagram with a timeout
+    /// let (bytes_peeked, addr) = socket.recv_bytes_from_with_timeout(&mut buf, timeout).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    async fn recv_bytes_from_with_timeout(
+        &mut self,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> Result<(usize, Self::Addr)> {
+        self.recv_bytes_from_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
+        .await
+    }
+
+    /// Asynchronously receives into the incoming datagram with a timeout, with consuming it,
+    /// filling the buffer with available data and returning the number of bytes received
+    /// and the sender's address.
+    ///
+    /// If the deadline is exceeded, the method will return an error with
+    /// kind [`ErrorKind::TimedOut`](std::io::ErrorKind::TimedOut).
+    ///
+    /// # Difference between `recv_from_with_timeout` and `recv_bytes_from_with_timeout`
+    ///
+    /// Use `recv_from_with_timeout` if it is possible, because [`Buffer`](crate::io::Buffer) can be __fixed__.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use orengine::io::{full_buffer, AsyncBind, AsyncPollSocket, AsyncRecvFrom};
+    /// use orengine::net::UdpSocket;
+    /// use std::time::Duration;
+    ///
+    /// async fn foo() -> std::io::Result<()> {
+    /// let mut socket = UdpSocket::bind("127.0.0.1:8080").await?;
+    /// let timeout = Duration::from_secs(5);
+    /// socket.poll_recv_with_timeout(timeout).await?;
+    /// let mut buf = full_buffer();
+    ///
+    /// // Receive at the incoming datagram with a timeout
     /// let (bytes_peeked, addr) = socket.recv_from_with_timeout(&mut buf, timeout).await?;
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_from_with_timeout(
         &mut self,
-        buf: &mut [u8],
+        buf: &mut impl FixedBufferMut,
         timeout: Duration,
-    ) -> Result<(usize, SocketAddr)> {
-        self.recv_from_with_deadline(buf, Instant::now() + timeout)
+    ) -> Result<(usize, Self::Addr)> {
+        // Now RecvFrom with `fixed` buffer is unsupported.
+        self.recv_bytes_from_with_timeout(buf.as_bytes_mut(), timeout)
             .await
     }
 }

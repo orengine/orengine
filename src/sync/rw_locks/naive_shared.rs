@@ -25,7 +25,7 @@ pub struct ReadLockGuard<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> ReadLockGuard<'rw_lock, T> {
     /// Creates a new `ReadLockGuard`.
-    #[inline(always)]
+    #[inline]
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
         Self { rw_lock }
     }
@@ -38,7 +38,7 @@ impl<'rw_lock, T: ?Sized> AsyncReadLockGuard<'rw_lock, T> for ReadLockGuard<'rw_
         self.rw_lock
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
         ManuallyDrop::new(self).rw_lock
     }
@@ -74,7 +74,7 @@ pub struct WriteLockGuard<'rw_lock, T: ?Sized> {
 
 impl<'rw_lock, T: ?Sized> WriteLockGuard<'rw_lock, T> {
     /// Creates a new `WriteLockGuard`.
-    #[inline(always)]
+    #[inline]
     fn new(rw_lock: &'rw_lock RWLock<T>) -> Self {
         Self { rw_lock }
     }
@@ -87,7 +87,7 @@ impl<'rw_lock, T: ?Sized> AsyncWriteLockGuard<'rw_lock, T> for WriteLockGuard<'r
         self.rw_lock
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn leak(self) -> &'rw_lock Self::RWLock {
         ManuallyDrop::new(self).rw_lock
     }
@@ -163,6 +163,7 @@ unsafe impl<T: ?Sized + Send> Send for WriteLockGuard<'_, T> {}
 ///     // read lock is released when `guard` goes out of scope
 /// }
 /// ```
+#[repr(C)]
 pub struct RWLock<T: ?Sized> {
     number_of_readers: CachePadded<AtomicIsize>,
     value: UnsafeCell<T>,
@@ -193,7 +194,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         T: 'rw_lock,
         Self: 'rw_lock;
 
-    #[inline(always)]
+    #[inline]
     fn get_lock_status(&self) -> LockStatus {
         #[allow(clippy::cast_sign_loss, reason = "false positive")]
         match self.number_of_readers.load(Acquire) {
@@ -203,7 +204,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -220,7 +221,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -237,7 +238,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_write(&self) -> Option<Self::WriteLockGuard<'_>> {
         let was_swapped = self
             .number_of_readers
@@ -250,7 +251,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_read(&self) -> Option<Self::ReadLockGuard<'_>> {
         loop {
             let number_of_readers = self.number_of_readers.load(Acquire);
@@ -268,12 +269,12 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn read_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
@@ -284,7 +285,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         self.number_of_readers.fetch_sub(1, Release);
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn write_unlock(&self) {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
@@ -295,7 +296,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         self.number_of_readers.store(0, Release);
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_read_locked(&self) -> Self::ReadLockGuard<'_> {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);
@@ -306,7 +307,7 @@ impl<T: ?Sized> AsyncRWLock<T> for RWLock<T> {
         ReadLockGuard::new(self)
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_write_locked(&self) -> Self::WriteLockGuard<'_> {
         if cfg!(debug_assertions) {
             let current = self.number_of_readers.load(Acquire);

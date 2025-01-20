@@ -60,7 +60,7 @@ impl<'scope> LocalScope<'scope> {
     /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn exec<F: Future<Output = ()>>(&'scope self, future: F) {
         self.wg.inc();
         let handle = LocalScopedHandle {
@@ -109,7 +109,7 @@ impl<'scope> LocalScope<'scope> {
     /// assert_eq!(*a.borrow(), 10);
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn spawn<F: Future<Output = ()>>(&'scope self, future: F) {
         self.wg.inc();
         let handle = LocalScopedHandle {
@@ -124,6 +124,7 @@ impl<'scope> LocalScope<'scope> {
 
 /// `LocalScopedHandle` is a wrapper of `Future<Output = ()>`
 /// to decrement the wait group when the future is done.
+#[repr(C)]
 pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
     scope: &'scope LocalScope<'scope>,
     fut: Fut,
@@ -134,7 +135,7 @@ pub(crate) struct LocalScopedHandle<'scope, Fut: Future<Output = ()>> {
 impl<Fut: Future<Output = ()>> Future for LocalScopedHandle<'_, Fut> {
     type Output = ();
 
-    #[inline(always)]
+    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
@@ -194,7 +195,7 @@ impl<Fut: Future<Output = ()>> Future for LocalScopedHandle<'_, Fut> {
 /// assert_eq!(*a.borrow(), 10);
 /// # }
 /// ```
-#[inline(always)]
+#[inline]
 #[allow(clippy::future_not_send, reason = "Because it is `local`")]
 pub async fn local_scope<'scope, Fut, F>(f: F)
 where

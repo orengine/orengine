@@ -6,6 +6,8 @@ __Before the pull request, do the following:__
 
 - Also check on other platforms:
 
+  __Example__
+
     - Run for Windows: `cargo build --target x86_64-pc-windows-msvc`,
       `cargo build --all-features --target x86_64-pc-windows-msvc`,
       `cargo clippy --target x86_64-pc-windows-msvc`, `cargo doc --target x86_64-pc-windows-msvc`;

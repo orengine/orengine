@@ -9,7 +9,7 @@ pub struct Ptr<T> {
 
 impl<T> Ptr<T> {
     /// Create a new `Ptr` with the given value.
-    #[inline(always)]
+    #[inline]
     pub fn new(value: T) -> Self {
         let ptr = unsafe { alloc(Layout::new::<T>()) }.cast::<T>();
         unsafe { ptr.write(value) };
@@ -17,7 +17,7 @@ impl<T> Ptr<T> {
     }
 
     /// Create a null `Ptr`.
-    #[inline(always)]
+    #[inline]
     pub fn null() -> Self {
         Self {
             ptr: ptr::null_mut(),
@@ -25,13 +25,13 @@ impl<T> Ptr<T> {
     }
 
     /// Check if the pointer is null.
-    #[inline(always)]
+    #[inline]
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
 
     /// Get the raw pointer.
-    #[inline(always)]
+    #[inline]
     pub fn as_ptr(&self) -> *mut T {
         self.ptr
     }
@@ -45,7 +45,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn as_ref<'pointer>(self) -> &'pointer T {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -61,7 +61,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn as_mut<'pointer>(self) -> &'pointer mut T {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -70,7 +70,7 @@ impl<T> Ptr<T> {
 
     /// Returns the pointer as an u64.
     /// Use [`Ptr::from`](#method.from) to convert it back.
-    #[inline(always)]
+    #[inline]
     pub fn as_u64(&self) -> u64 {
         self.ptr as u64
     }
@@ -105,7 +105,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.  
-    #[inline(always)]
+    #[inline]
     pub unsafe fn deallocate(self) {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -123,7 +123,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.  
-    #[inline(always)]
+    #[inline]
     pub unsafe fn drop_and_deallocate(self) {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -142,7 +142,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.  
-    #[inline(always)]
+    #[inline]
     pub unsafe fn read(self) -> T {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -162,7 +162,7 @@ impl<T> Ptr<T> {
     /// #  Write with drop
     ///
     /// Call [`Ptr::write_with_drop`] instead.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn write(self, value: T) {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -182,7 +182,7 @@ impl<T> Ptr<T> {
     /// #  Write no drop
     ///
     /// Call [`Ptr::write`] instead.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn write_with_drop(self, value: T) {
         assert!(!self.ptr.is_null(), "ptr is null");
 
@@ -201,7 +201,7 @@ impl<T> Ptr<T> {
     /// # Panics
     ///
     /// If the pointer is null.  
-    #[inline(always)]
+    #[inline]
     pub unsafe fn replace(self, value: T) -> T {
         assert!(!self.ptr.is_null(), "ptr is null");
 

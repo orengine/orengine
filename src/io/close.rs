@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `close` io operation for sockets.
+#[repr(C)]
 pub struct CloseSocket {
     raw_socket: RawSocket,
     io_request_data: Option<IoRequestData>,
@@ -28,8 +29,8 @@ impl CloseSocket {
 impl Future for CloseSocket {
     type Output = Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
@@ -62,6 +63,7 @@ pub trait AsyncSocketClose: AsRawSocket {
 }
 
 /// `close` io operation for files.
+#[repr(C)]
 pub struct CloseFile {
     raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
@@ -80,8 +82,8 @@ impl CloseFile {
 impl Future for CloseFile {
     type Output = Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 

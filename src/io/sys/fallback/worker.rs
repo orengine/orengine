@@ -70,16 +70,14 @@ impl FallbackWorker {
     ///    the result will be returned and the deadline will be deregistered
     pub(crate) fn register_deadline(&mut self, slot_ptr: *mut (IoCall, IoRequestDataPtr)) {
         let slot = unsafe { &mut *slot_ptr };
-        let io_request_data = slot.1.get_mut();
         let deadline = slot.0.deadline_mut().unwrap();
         let raw_socket = slot.0.raw_socket().unwrap();
 
         let mut time_bounded_io_task =
-            TimeBoundedIoTask::new(io_request_data, *deadline, raw_socket, slot_ptr);
+            TimeBoundedIoTask::new(slot.1, *deadline, raw_socket, slot_ptr);
         while !self.time_bounded_io_task_queue.insert(time_bounded_io_task) {
             *deadline += Duration::from_nanos(1);
-            time_bounded_io_task =
-                TimeBoundedIoTask::new(io_request_data, *deadline, raw_socket, slot_ptr);
+            time_bounded_io_task = TimeBoundedIoTask::new(slot.1, *deadline, raw_socket, slot_ptr);
         }
     }
 
@@ -375,17 +373,17 @@ impl IoWorker for FallbackWorker {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn deregister_time_bounded_io_task(&mut self, deadline: &Instant) {
         self.time_bounded_io_task_queue.remove(deadline);
     }
 
-    #[inline(always)]
+    #[inline]
     fn has_work(&self) -> bool {
         self.number_of_active_tasks > 0
     }
 
-    #[inline(always)]
+    #[inline]
     fn must_poll(&mut self, mut timeout_option: Option<Duration>) {
         if self.number_of_active_tasks == 0 {
             return;
@@ -408,7 +406,7 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || socket_op(domain, sock_type, protocol), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn accept(
         &mut self,
         raw_socket: RawSocket,
@@ -419,7 +417,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Accept(raw_socket, addr_ptr, addr_len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn accept_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -436,7 +434,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn connect(
         &mut self,
         raw_socket: RawSocket,
@@ -447,7 +445,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Connect(raw_socket, addr_ptr, addr_len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn connect_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -464,7 +462,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_read(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.number_of_active_tasks += 1;
         self.poller.register(
@@ -473,7 +471,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_read_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -493,7 +491,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_write(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         self.number_of_active_tasks += 1;
         self.poller.register(
@@ -502,7 +500,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn poll_socket_write_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -522,7 +520,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv(
         &mut self,
         raw_socket: RawSocket,
@@ -533,7 +531,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Recv(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -545,7 +543,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Recv(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -562,7 +560,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -580,7 +578,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_from(
         &mut self,
         raw_socket: RawSocket,
@@ -590,7 +588,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::RecvFrom(raw_socket, msg_header), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn recv_from_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -606,7 +604,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn send(
         &mut self,
         raw_socket: RawSocket,
@@ -617,7 +615,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Send(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -629,7 +627,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Send(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -646,7 +644,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -664,7 +662,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_to(
         &mut self,
         raw_socket: RawSocket,
@@ -674,7 +672,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::SendTo(raw_socket, msg_header), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn send_to_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -690,7 +688,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek(
         &mut self,
         raw_socket: RawSocket,
@@ -701,7 +699,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Peek(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_fixed(
         &mut self,
         raw_socket: RawSocket,
@@ -713,7 +711,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::Peek(raw_socket, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -730,7 +728,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_fixed_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -748,7 +746,7 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_from(
         &mut self,
         raw_socket: RawSocket,
@@ -758,7 +756,7 @@ impl IoWorker for FallbackWorker {
         self.handle_io_call(IoCall::PeekFrom(raw_socket, msg), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn peek_from_with_deadline(
         &mut self,
         raw_socket: RawSocket,
@@ -774,12 +772,12 @@ impl IoWorker for FallbackWorker {
         });
     }
 
-    #[inline(always)]
+    #[inline]
     fn shutdown(&mut self, raw_socket: RawSocket, how: Shutdown, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || shutdown_op(raw_socket, how), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn open(
         &mut self,
         path: OsPathPtr,
@@ -789,7 +787,7 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || open_op(path, open_how), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn fallocate(
         &mut self,
         _raw_file: RawFile,
@@ -801,22 +799,22 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || Ok(0), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn sync_all(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || fsync_op(raw_file), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn sync_data(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || fsync_data_op(raw_file), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn read(&mut self, raw_file: RawFile, ptr: *mut u8, len: u32, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn read_fixed(
         &mut self,
         raw_file: RawFile,
@@ -828,7 +826,7 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || read_op(raw_file, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn pread(
         &mut self,
         raw_file: RawFile,
@@ -843,7 +841,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pread_fixed(
         &mut self,
         raw_file: RawFile,
@@ -859,7 +857,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn write(
         &mut self,
         raw_file: RawFile,
@@ -870,7 +868,7 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_fixed(
         &mut self,
         raw_file: RawFile,
@@ -882,7 +880,7 @@ impl IoWorker for FallbackWorker {
         Self::handle_io_operation(move || write_op(raw_file, ptr, len), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn pwrite(
         &mut self,
         raw_file: RawFile,
@@ -897,7 +895,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn pwrite_fixed(
         &mut self,
         raw_file: RawFile,
@@ -913,7 +911,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn close_file(&mut self, raw_file: RawFile, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(
             move || {
@@ -924,7 +922,7 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn close_socket(&mut self, raw_socket: RawSocket, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(
             move || {
@@ -935,22 +933,22 @@ impl IoWorker for FallbackWorker {
         );
     }
 
-    #[inline(always)]
+    #[inline]
     fn rename(&mut self, old_path: OsPathPtr, new_path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || rename_op(old_path, new_path), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn create_dir(&mut self, path: OsPathPtr, mode: u32, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || mkdir_op(path, mode), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn remove_file(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || unlink_op(path), request_ptr);
     }
 
-    #[inline(always)]
+    #[inline]
     fn remove_dir(&mut self, path: OsPathPtr, request_ptr: IoRequestDataPtr) {
         Self::handle_io_operation(move || rmdir_op(path), request_ptr);
     }

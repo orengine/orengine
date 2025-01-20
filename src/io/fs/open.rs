@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `open` io operation which opens a file at the given path with the given options.
+#[repr(C)]
 pub struct Open<F: FromRawFile> {
     path: OsPath,
     os_open_options: OsOpenOptions,

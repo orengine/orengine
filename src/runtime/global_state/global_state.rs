@@ -51,7 +51,7 @@ impl GlobalState {
 
     /// Registers the executor of the current thread (by calling
     /// [`local_executor()`](local_executor)) and notifies all executors.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn register_local_executor(&mut self) {
         self.version += 1;
         let executor = local_executor();

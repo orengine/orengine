@@ -81,7 +81,7 @@ pub trait AsyncOnce {
     fn state(&self) -> OnceState;
 
     /// Returns whether the `AsyncOnce` has been called or not.
-    #[inline(always)]
+    #[inline]
     fn is_completed(&self) -> bool {
         self.state() == OnceState::Called
     }

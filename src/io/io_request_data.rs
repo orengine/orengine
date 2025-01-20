@@ -1,12 +1,13 @@
 use crate::runtime::task::Task;
 use std::io::Result;
-use std::{mem, ptr};
+use std::ptr;
 
 /// Default value of [`IoRequestData::ret`].
 pub(crate) const UNINIT_RESULT: Result<usize> = Ok((1 << 32) - 1);
 
 /// Data of io request. It contains a result and a task.
 /// After the task is done, the result will be set and the task will be executed.
+#[repr(C)]
 pub(crate) struct IoRequestData {
     ret: Result<usize>,
     task: Task,
@@ -16,7 +17,7 @@ pub(crate) struct IoRequestData {
 
 impl IoRequestData {
     /// Returns a new [`IoRequestData`] with the given task.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(task: Task) -> Self {
         Self {
             ret: UNINIT_RESULT,
@@ -27,7 +28,7 @@ impl IoRequestData {
     }
 
     /// Checks whether an associated task has been read to execute. If yes, it panics.
-    #[inline(always)]
+    #[inline]
     fn check_if_executed_in_debug(&mut self) {
         #[cfg(debug_assertions)]
         {
@@ -44,9 +45,17 @@ impl IoRequestData {
     }
 
     /// Returns the result.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn ret(&mut self) -> Result<usize> {
-        mem::replace(&mut self.ret, UNINIT_RESULT)
+        #[cfg(debug_assertions)]
+        {
+            std::mem::replace(&mut self.ret, UNINIT_RESULT)
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            unsafe { std::ptr::read(&self.ret) }
+        }
     }
 
     /// Returns an associated task.
@@ -54,7 +63,7 @@ impl IoRequestData {
     /// # Safety
     ///
     /// This method calls only once for one instance of [`IoRequestData`].
-    #[inline(always)]
+    #[inline]
     pub(crate) unsafe fn task(&mut self) -> Task {
         self.check_if_executed_in_debug();
 
@@ -73,21 +82,20 @@ impl IoRequestDataPtr {
     }
 
     /// Creates a new [`IoRequestDataPtr`] from `u64`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn from_u64(ptr: u64) -> Self {
         Self(ptr as *mut IoRequestData)
     }
 
     /// Returns a mutable reference to [`IoRequestData`].
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::mut_from_ref, reason = "It is a pointer.")]
     pub(crate) fn get_mut(&self) -> &mut IoRequestData {
         unsafe { &mut *self.0 }
     }
 
     /// Returns `u64` of the pointer.
-    #[inline(always)]
-    #[cfg(target_os = "linux")]
+    #[inline]
     pub(crate) fn as_u64(&self) -> u64 {
         self.0 as u64
     }

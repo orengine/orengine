@@ -477,7 +477,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_in(&self, slot: &mut T) -> impl Future<Output = RecvInResult> {
         unsafe {
             drop_in_place(slot);
@@ -542,7 +542,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn try_recv_in(&self, slot: &mut T) -> TryRecvInResult {
         unsafe {
             drop_in_place(slot);
@@ -590,7 +590,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv(&self) -> impl Future<Output = RecvResult<T>> {
         async {
             let mut slot = MaybeUninit::uninit();
@@ -636,7 +636,7 @@ pub trait AsyncReceiver<T> {
     ///     }
     /// }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn try_recv(&self) -> TryRecvResult<T> {
         let mut slot = MaybeUninit::uninit();
         unsafe {

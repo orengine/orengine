@@ -1,70 +1,31 @@
+use crate::local_executor;
 use crate::runtime::task::task_data::TaskData;
 use crate::runtime::{Locality, Task};
 use ahash::AHashMap;
-use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::size_of;
 
 /// A pool of tasks.
-pub struct TaskPool {
+#[derive(Default)]
+pub(crate) struct TaskPool {
     /// Key is a size.
     storage: AHashMap<usize, Vec<Task>>,
 }
 
-thread_local! {
-    /// A thread-local task pool. So it is lockless.
-    pub static THREAD_LOCAL_TASK_POOL: UnsafeCell<Option<TaskPool>> = const {
-        UnsafeCell::new(None)
-    };
-}
-
-/// Returns the thread-local task pool wrapped in an [`Option`].
-#[inline(always)]
-pub fn get_task_pool_ref() -> &'static mut Option<TaskPool> {
-    THREAD_LOCAL_TASK_POOL.with(|task_pool| unsafe { &mut *task_pool.get() })
-}
-
-/// Returns `&'static mut TaskPool` of the current thread.
-///
-/// # Panics or Undefined Behavior
-///
-/// If [`THREAD_LOCAL_TASK_POOL`] is not initialized.
-#[inline(always)]
-#[allow(clippy::missing_panics_doc, reason = "false positive")]
-pub fn task_pool() -> &'static mut TaskPool {
-    #[cfg(debug_assertions)]
-    {
-        get_task_pool_ref().as_mut().expect(crate::BUG_MESSAGE)
-    }
-
-    #[cfg(not(debug_assertions))]
-    unsafe {
-        get_task_pool_ref().as_mut().unwrap_unchecked()
-    }
-}
-
 impl TaskPool {
-    /// Initializes a new `TaskPool` in the current thread if it is not initialized.
-    pub fn init() {
-        if get_task_pool_ref().is_none() {
-            *get_task_pool_ref() = Some(Self {
-                storage: AHashMap::new(),
-            });
-        }
-    }
-
     /// Returns a [`Task`] with the given future.
-    #[inline(always)]
-    pub fn acquire<F: Future<Output = ()>>(&mut self, future: F, locality: Locality) -> Task {
+    #[inline]
+    pub(crate) fn acquire<F: Future<Output = ()>>(future: F, locality: Locality) -> Task {
+        let executor = local_executor();
         let size = size_of::<F>();
         #[cfg(debug_assertions)]
         let executor_id = if cfg!(test) {
             usize::MAX
         } else {
-            crate::local_executor().id()
+            executor.id()
         };
 
-        let pool = self.storage.entry(size).or_default();
+        let pool = executor.task_pool().storage.entry(size).or_default();
         if let Some(task) = pool.pop() {
             let future_ptr: *mut F = unsafe { &mut *task.future_ptr().cast::<F>() };
             unsafe {
@@ -85,7 +46,7 @@ impl TaskPool {
     }
 
     /// Puts a task into the pool.
-    #[inline(always)]
+    #[inline]
     pub fn put(&mut self, task: Task) {
         let size = size_of_val(unsafe { &*task.future_ptr() });
         if let Some(pool) = self.storage.get_mut(&size) {

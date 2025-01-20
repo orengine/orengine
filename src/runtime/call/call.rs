@@ -101,8 +101,8 @@ pub enum Call {
     /// impl Future for UpdateCurrentTaskLocality {
     ///     type Output = ();
     ///
-    ///     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-    ///         let this = unsafe { self.get_unchecked_mut() };
+    ///     fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+    ///         let this = &mut *self;
     ///
     ///         if !this.was_called {
     ///             this.was_called = true;
@@ -123,7 +123,7 @@ pub enum Call {
 
 impl Call {
     /// Returns `true` if the `Call` is [`None`](Self::None).
-    #[inline(always)]
+    #[inline]
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }

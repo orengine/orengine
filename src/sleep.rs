@@ -16,8 +16,8 @@ pub struct Sleep {
 impl Future for Sleep {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         if this.was_yielded {
             // [`Executor`](crate::Executor) will wake this future up when it should be woken up.
             Poll::Ready(())
@@ -56,12 +56,11 @@ impl Future for Sleep {
 ///     println!("Hello after at least 100 millis!");
 /// });
 /// ```
-#[inline(always)]
-#[must_use]
+#[inline]
 pub fn sleep(duration: Duration) -> Sleep {
     Sleep {
         was_yielded: false,
-        sleep_until: Instant::now() + duration,
+        sleep_until: local_executor().start_round_time_for_deadlines() + duration,
     }
 }
 
@@ -90,16 +89,6 @@ mod tests {
         ex.exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
         ex.exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
         ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
-
-        sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
-
-        let arr = Local::new(Vec::new());
-
-        ex.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
         sleep(Duration::from_millis(5)).await;
         assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());

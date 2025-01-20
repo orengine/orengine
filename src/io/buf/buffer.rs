@@ -73,7 +73,7 @@ impl Buffer {
     /// # Safety
     ///
     /// - size > 0
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(size: u32) -> Self {
         Self {
             #[cfg(not(target_os = "linux"))]
@@ -86,7 +86,7 @@ impl Buffer {
 
     /// Creates new fixed buffer with given buffer.
     #[cfg(target_os = "linux")]
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new_fixed(ptr: *mut u8, cap: u32, index: u16) -> Self {
         Self {
             #[cfg(target_os = "linux")]
@@ -96,13 +96,13 @@ impl Buffer {
     }
 
     /// Creates a new buffer from a pool with the given size.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new_from_pool(pool: &BufPool) -> Self {
         Self::new(pool.default_buffer_capacity())
     }
 
     /// Returns `true` if the buffer is empty.
-    #[inline(always)]
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len_u32() == 0
     }
@@ -112,7 +112,7 @@ impl Buffer {
     /// # Safety
     ///
     /// `len` must be less than or equal to `capacity`.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn set_len_unchecked(&mut self, len: u32) {
         #[cfg(not(target_os = "linux"))]
         unsafe {
@@ -126,7 +126,7 @@ impl Buffer {
     }
 
     /// Sets [`len`](#field.len). Returns `Err<()>` if `len` is greater than `capacity`.
-    #[inline(always)]
+    #[inline]
     pub fn set_len(&mut self, len: u32) -> Result<(), LenIsGreaterThanCapacity> {
         if len <= self.capacity() {
             unsafe { self.set_len_unchecked(len) };
@@ -142,7 +142,7 @@ impl Buffer {
     /// # Safety
     ///
     /// `len` + `diff` must be less than or equal to `capacity`.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn add_len(&mut self, diff: u32) {
         let new_len = self.len_u32() + diff;
 
@@ -152,7 +152,7 @@ impl Buffer {
     }
 
     /// Returns a real capacity of the buffer.
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::cast_possible_truncation,
         reason = "Buffer capacity is less than u32::MAX"
@@ -162,7 +162,7 @@ impl Buffer {
     }
 
     /// Sets [`len`](#field.len) to [`real_cap`](#method.real_cap).
-    #[inline(always)]
+    #[inline]
     pub fn set_len_to_capacity(&mut self) {
         let cap = self.capacity() as _;
 
@@ -172,7 +172,7 @@ impl Buffer {
     }
 
     /// Returns `true` if the buffer is full.
-    #[inline(always)]
+    #[inline]
     pub fn is_full(&self) -> bool {
         self.capacity() == self.len_u32()
     }
@@ -203,7 +203,7 @@ impl Buffer {
     ///     assert_eq!(buf.as_ref(), &[1, 2, 3]);
     /// }).unwrap();
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn resize(&mut self, new_size: u32) {
         if new_size < self.len_u32() {
             unsafe {
@@ -229,7 +229,7 @@ impl Buffer {
 
     /// Appends data to the buffer.
     /// If a capacity is not enough, the buffer will be resized.
-    #[inline(always)]
+    #[inline]
     pub fn append(&mut self, buf: &[u8]) {
         #[allow(clippy::cast_possible_truncation, reason = "we have to cast it")]
         let diff_len = buf.len() as u32;
@@ -248,7 +248,7 @@ impl Buffer {
     }
 
     /// Clears the buffer.
-    #[inline(always)]
+    #[inline]
     pub fn clear(&mut self) {
         unsafe {
             self.set_len_unchecked(0);
@@ -279,7 +279,7 @@ impl Buffer {
     /// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn slice<R: RangeBounds<u32>>(&self, range: R) -> Slice<'_> {
         let start = match range.start_bound() {
             Bound::Included(s) => *s,
@@ -311,7 +311,7 @@ impl Buffer {
     /// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn slice_mut<R: RangeBounds<u32>>(&mut self, range: R) -> SliceMut<'_> {
         let start = match range.start_bound() {
             Bound::Included(s) => *s,
@@ -329,13 +329,13 @@ impl Buffer {
     }
 
     /// Puts the buffer to the pool. You can not to use it, and then this method will be called automatically by drop.
-    #[inline(always)]
+    #[inline]
     pub fn release(self) {
         buf_pool().put(self);
     }
 
     /// Deallocates the buffer.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn deallocate(mut self) {
         #[cfg(not(target_os = "linux"))]
         {
@@ -359,12 +359,12 @@ impl Buffer {
 impl Sealed for Buffer {}
 
 impl FixedBuffer for Buffer {
-    #[inline(always)]
+    #[inline]
     fn as_ptr(&self) -> *const u8 {
         self.os_buffer.as_ptr().cast()
     }
 
-    #[inline(always)]
+    #[inline]
     fn len_u32(&self) -> u32 {
         #[cfg(not(target_os = "linux"))]
         #[allow(
@@ -381,7 +381,7 @@ impl FixedBuffer for Buffer {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn fixed_index(&self) -> u16 {
         #[cfg(not(target_os = "linux"))]
         {
@@ -397,7 +397,7 @@ impl FixedBuffer for Buffer {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_fixed(&self) -> bool {
         #[cfg(not(target_os = "linux"))]
         {
@@ -415,7 +415,7 @@ impl FixedBuffer for Buffer {
 }
 
 impl FixedBufferMut for Buffer {
-    #[inline(always)]
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         self.os_buffer.as_mut_ptr().cast()
     }
@@ -424,14 +424,14 @@ impl FixedBufferMut for Buffer {
 impl Deref for Buffer {
     type Target = [u8];
 
-    #[inline(always)]
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
 }
 
 impl DerefMut for Buffer {
-    #[inline(always)]
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
@@ -440,35 +440,35 @@ impl DerefMut for Buffer {
 impl<I: SliceIndex<[u8]>> Index<I> for Buffer {
     type Output = I::Output;
 
-    #[inline(always)]
+    #[inline]
     fn index(&self, index: I) -> &Self::Output {
         self.as_ref().index(index)
     }
 }
 
 impl<I: SliceIndex<[u8]>> IndexMut<I> for Buffer {
-    #[inline(always)]
+    #[inline]
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         self.as_mut().index_mut(index)
     }
 }
 
 impl AsRef<[u8]> for Buffer {
-    #[inline(always)]
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         self.os_buffer.as_ref()
     }
 }
 
 impl AsMut<[u8]> for Buffer {
-    #[inline(always)]
+    #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
         self.os_buffer.as_mut()
     }
 }
 
 impl PartialEq<&[u8]> for Buffer {
-    #[inline(always)]
+    #[inline]
     fn eq(&self, other: &&[u8]) -> bool {
         self.as_ref() == *other
     }
@@ -533,7 +533,7 @@ impl From<Vec<u8>> for Buffer {
 }
 
 impl Drop for Buffer {
-    #[inline(always)]
+    #[inline]
     fn drop(&mut self) {
         let buf_pool = buf_pool();
         unsafe { buf_pool.put(ptr::read(self)) };

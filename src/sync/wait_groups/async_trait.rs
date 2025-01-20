@@ -89,7 +89,7 @@ pub trait AsyncWaitGroup {
     /// }).await;
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn inc(&self) {
         self.add(1);
     }

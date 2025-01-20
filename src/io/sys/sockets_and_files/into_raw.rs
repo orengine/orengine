@@ -18,7 +18,7 @@ pub trait IntoRawSocket: std::os::fd::IntoRawFd + Sized {
     /// This function is typically used to transfer ownership of the underlying raw file
     /// to the caller. When used in this way, callers are then the unique owners of
     /// the raw file and must close it once it's no longer needed.
-    #[inline(always)]
+    #[inline]
     fn into_raw_socket(self) -> RawSocket {
         std::os::fd::IntoRawFd::into_raw_fd(self)
     }

@@ -18,7 +18,7 @@ use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
-use crate::sync_task_queue::SyncTaskList;
+use crate::utils::{acquire_sync_task_list_from_pool, SyncTaskListFromPool};
 use crate::{get_task_from_context, panic_if_local_in_future};
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
@@ -35,7 +35,7 @@ pub struct MutexGuard<'mutex, T: ?Sized> {
 
 impl<'mutex, T: ?Sized> MutexGuard<'mutex, T> {
     /// Creates a new [`MutexGuard`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(mutex: &'mutex Mutex<T>) -> Self {
         Self { mutex }
     }
@@ -77,6 +77,7 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for MutexGuard<'_, T> {}
 unsafe impl<T: ?Sized + Send> Send for MutexGuard<'_, T> {}
 
 /// `MutexWait` is a future that will be resolved when the lock is acquired.
+#[repr(C)]
 pub struct MutexWait<'mutex, T: ?Sized> {
     was_called: bool,
     mutex: &'mutex Mutex<T>,
@@ -84,7 +85,7 @@ pub struct MutexWait<'mutex, T: ?Sized> {
 
 impl<'mutex, T: ?Sized> MutexWait<'mutex, T> {
     /// Creates a new [`MutexWait`].
-    #[inline(always)]
+    #[inline]
     fn new(local_mutex: &'mutex Mutex<T>) -> Self {
         Self {
             was_called: false,
@@ -97,8 +98,8 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
     type Output = MutexGuard<'mutex, T>;
 
     #[allow(unused, reason = "Here we use #[cfg(debug_assertions)].")]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         unsafe { panic_if_local_in_future!(cx, "Mutex") };
 
         if !this.was_called {
@@ -112,7 +113,7 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
 
             this.was_called = true;
             unsafe {
-                local_executor().invoke_call(Call::PushCurrentTaskTo(&this.mutex.wait_queue));
+                local_executor().invoke_call(Call::PushCurrentTaskTo(&*this.mutex.wait_queue));
             };
 
             Poll::Pending
@@ -169,22 +170,23 @@ impl<'mutex, T: ?Sized> Future for MutexWait<'mutex, T> {
 ///     // lock is released when `guard` goes out of scope
 /// }
 /// ```
+#[repr(C)]
 pub struct Mutex<T: ?Sized> {
     counter: CachePadded<AtomicUsize>,
-    wait_queue: SyncTaskList,
+    wait_queue: SyncTaskListFromPool,
     expected_count: Cell<usize>,
     value: UnsafeCell<T>,
 }
 
 impl<T: ?Sized> Mutex<T> {
     /// Creates a new [`Mutex`].
-    pub const fn new(value: T) -> Self
+    pub fn new(value: T) -> Self
     where
         T: Sized,
     {
         Self {
             counter: CachePadded::new(AtomicUsize::new(0)),
-            wait_queue: SyncTaskList::new(),
+            wait_queue: acquire_sync_task_list_from_pool(),
             value: UnsafeCell::new(value),
             expected_count: Cell::new(1),
         }
@@ -198,7 +200,7 @@ impl<T: ?Sized> Mutex<T> {
     /// `try_lock_with_spinning` tries to acquire the lock in a loop with a small delay a few times.
     /// It can be more useful in cases where the lock is very likely to be locked for
     /// __less than 30 nanoseconds__.
-    #[inline(always)]
+    #[inline]
     pub fn try_lock_with_spinning(&self) -> Option<MutexGuard<T>> {
         for step in 0..=6 {
             let lock_res = self.counter.compare_exchange(0, 1, Acquire, Acquire);
@@ -228,12 +230,12 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
     where
         Self: 'mutex;
 
-    #[inline(always)]
+    #[inline]
     fn is_locked(&self) -> bool {
         self.counter.load(Acquire) != 0
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when T is not `Send`, it is fine"
@@ -245,7 +247,7 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
         MutexWait::new(self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_lock(&self) -> Option<Self::Guard<'_>> {
         if self
             .counter
@@ -258,12 +260,12 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn unlock(&self) {
         debug_assert!(self.counter.load(Acquire) != 0, "Mutex is already unlocked");
         // fast path
@@ -294,7 +296,7 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             self.counter.load(Acquire) != 0,
@@ -306,7 +308,7 @@ impl<T: ?Sized> AsyncMutex<T> for Mutex<T> {
 }
 
 impl<T: ?Sized> AsyncSubscribableMutex<T> for Mutex<T> {
-    #[inline(always)]
+    #[inline]
     fn low_level_subscribe(&self, cx: &Context) {
         let task = unsafe { get_task_from_context!(cx) };
 
@@ -474,9 +476,6 @@ mod tests {
         async fn work_with_lock(mutex: &Mutex<usize>, wg: &WaitGroup) {
             let mut lock = mutex.lock().await;
             *lock += 1;
-            if *lock % 500 == 0 {
-                println!("{} of {}", *lock, TRIES * PAR);
-            }
 
             wg.done();
         }

@@ -89,7 +89,7 @@ impl LocalThreadWorkerPool {
     }
 
     /// Pushes a task to the [`pool`](LocalThreadWorkerPool).
-    #[inline(always)]
+    #[inline]
     pub(crate) fn push(&mut self, task: Task, job: *mut dyn Fn()) {
         let worker = &self.workers[self.wait % self.workers.len()];
         worker.send(ThreadWorkerTask::new(task, job)).expect(
@@ -101,7 +101,7 @@ impl LocalThreadWorkerPool {
 
     /// Polls the [`pool`](LocalThreadWorkerPool) and returns whether
     /// the [`pool`](LocalThreadWorkerPool) has work to do.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn poll(&mut self, other_list: &mut VecDeque<Task>) -> bool {
         if self.wait == 0 {
             return false;

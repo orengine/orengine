@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `sync_data` io operation.
+#[repr(C)]
 pub struct SyncData {
     raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
@@ -75,7 +76,7 @@ pub trait AsyncSyncData: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn sync_data(&self) -> impl Future<Output = Result<usize>> {
         SyncData::new(self.as_raw_file())
     }

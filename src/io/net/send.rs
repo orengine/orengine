@@ -12,8 +12,11 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::{Buffer, FixedBuffer};
+use crate::local_executor;
+use crate::net::Socket;
 
 /// `send` io operation.
+#[repr(C)]
 pub struct SendBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf [u8],
@@ -38,8 +41,8 @@ impl Future for SendBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never send more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -57,6 +60,7 @@ impl Future for SendBytes<'_> {
 unsafe impl Send for SendBytes<'_> {}
 
 /// `send` io operation.
+#[repr(C)]
 pub struct SendFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *const u8,
@@ -87,8 +91,8 @@ impl Future for SendFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never send more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -107,6 +111,7 @@ impl Future for SendFixed<'_> {
 unsafe impl Send for SendFixed<'_> {}
 
 /// `send` io operation with deadline.
+#[repr(C)]
 pub struct SendBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf [u8],
@@ -133,8 +138,8 @@ impl Future for SendBytesWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never send more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -154,6 +159,7 @@ impl Future for SendBytesWithDeadline<'_> {
 unsafe impl Send for SendBytesWithDeadline<'_> {}
 
 /// `send` io operation with deadline.
+#[repr(C)]
 pub struct SendFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *const u8,
@@ -192,8 +198,8 @@ impl Future for SendFixedWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never send more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -218,7 +224,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// It allows for sending data with or without deadlines, and ensures the complete transmission
 /// of data when required.
 ///
-/// This trait can be implemented for any sockets that supports the `AsRawSocket` trait
+/// This trait can be implemented for any sockets that supports the [`Socket`] trait
 /// and can be connected.
 ///
 /// # Example
@@ -238,7 +244,7 @@ unsafe impl Send for SendFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncSend: AsRawSocket {
+pub trait AsyncSend: Socket {
     /// Asynchronously sends the provided byte slice. Returns the number of bytes sent.
     ///
     /// # Difference between `send` and `send_bytes`
@@ -258,7 +264,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes(&mut self, buf: &[u8]) -> impl Future<Output = Result<usize>> {
         SendBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -287,7 +293,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send(&mut self, buf: &impl FixedBuffer) -> Result<u32> {
         if buf.is_fixed() {
             SendFixed::new(
@@ -334,7 +340,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes_with_deadline(
         &mut self,
         buf: &[u8],
@@ -374,7 +380,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_with_deadline(
         &mut self,
         buf: &impl FixedBuffer,
@@ -426,7 +432,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_bytes_with_timeout(
         &mut self,
         buf: &[u8],
@@ -435,7 +441,7 @@ pub trait AsyncSend: AsRawSocket {
         SendBytesWithDeadline::new(
             AsRawSocket::as_raw_socket(self),
             buf,
-            Instant::now() + timeout,
+            local_executor().start_round_time_for_deadlines() + timeout,
         )
     }
 
@@ -470,13 +476,16 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_with_timeout(
         &mut self,
         buf: &impl FixedBuffer,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.send_with_deadline(buf, Instant::now() + timeout)
+        self.send_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously sends the entire provided byte slice.
@@ -499,7 +508,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes(&mut self, buf: &[u8]) -> Result<()> {
         let mut sent = 0;
         while sent < buf.len() {
@@ -534,7 +543,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all(&mut self, buf: &impl FixedBuffer) -> Result<()> {
         if buf.is_fixed() {
             let mut sent = 0;
@@ -589,7 +598,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_bytes_with_deadline(&mut self, buf: &[u8], deadline: Instant) -> Result<()> {
         let mut sent = 0;
 
@@ -632,7 +641,7 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn send_all_with_deadline(
         &mut self,
         buf: &impl FixedBuffer,
@@ -696,13 +705,16 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_all_bytes_with_timeout(
         &mut self,
         buf: &[u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.send_all_bytes_with_deadline(buf, Instant::now() + timeout)
+        self.send_all_bytes_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously sends the entire provided [`Buffer`] with a specified timeout.
@@ -735,12 +747,15 @@ pub trait AsyncSend: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn send_all_with_timeout(
         &mut self,
         buf: &impl FixedBuffer,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.send_all_with_deadline(buf, Instant::now() + timeout)
+        self.send_all_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 }

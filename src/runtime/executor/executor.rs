@@ -12,7 +12,7 @@ use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
-use crate::utils::{assert_hint, CoreId};
+use crate::utils::{assert_hint, CoreId, ProgressiveTimeout};
 use fastrand::Rng;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, VecDeque};
@@ -96,7 +96,7 @@ pub const MSG_LOCAL_EXECUTOR_IS_NOT_INIT: &str = "\
 /// If the local executor is not initialized and the program is in `release` mode.
 ///
 /// Read [`MSG_LOCAL_EXECUTOR_IS_NOT_INIT`] for more details.
-#[inline(always)]
+#[inline]
 pub fn local_executor() -> &'static mut Executor {
     #[cfg(debug_assertions)]
     {
@@ -133,12 +133,22 @@ pub fn local_executor() -> &'static mut Executor {
 /// shares the half of work with other executors.
 ///
 /// When `Executor` has no work, it tries to take tasks from other executors.
+#[repr(C)]
 pub struct Executor {
     core_id: CoreId,
     id: usize,
     config: ValidConfig,
     subscribed_state: Arc<SubscribedState>,
+    task_pool: TaskPool,
     rng: Rng,
+    progressive_timeout: ProgressiveTimeout<64, 131_072>,
+
+    exec_series: usize,
+    current_call: Call,
+    start_round_time: Instant,
+    /// `start_round_time` + 100 microseconds
+    #[cfg(target_os = "linux")]
+    start_round_time_for_deadlines: Instant,
 
     local_tasks: VecDeque<Task>,
     shared_tasks: VecDeque<Task>,
@@ -146,10 +156,9 @@ pub struct Executor {
     #[cfg(not(feature = "disable_send_task_to"))]
     interactor: Interactor,
 
-    exec_series: usize,
     local_worker: &'static mut Option<WorkerSys>,
     thread_pool: LocalThreadWorkerPool,
-    current_call: Call,
+
     local_sleeping_tasks: BTreeMap<Instant, Task>,
 }
 
@@ -193,7 +202,6 @@ impl Executor {
         let valid_config = config.validate();
         crate::utils::core::set_for_current(core_id);
         let executor_id = FREE_EXECUTOR_ID.fetch_add(1, Ordering::Relaxed);
-        TaskPool::init();
         let (shared_tasks, shared_tasks_list_cap) = if valid_config.is_work_sharing_enabled() {
             (
                 Some(Arc::new(ExecutorSharedTaskList::new(executor_id))),
@@ -216,17 +224,23 @@ impl Executor {
                 core_id,
                 id: executor_id,
                 config: valid_config,
+                current_call: Call::default(),
+                task_pool: TaskPool::default(),
                 subscribed_state: Arc::new(SubscribedState::new()),
                 rng: Rng::new(),
+                progressive_timeout: ProgressiveTimeout::new(),
+
+                exec_series: 0,
+                start_round_time: Instant::now(),
+                #[cfg(target_os = "linux")]
+                start_round_time_for_deadlines: Instant::now() + Duration::from_micros(100),
 
                 local_tasks: VecDeque::new(),
                 shared_tasks: VecDeque::with_capacity(shared_tasks_list_cap),
                 shared_tasks_list: shared_tasks,
+
                 #[cfg(not(feature = "disable_send_task_to"))]
                 interactor: Interactor::new(),
-
-                current_call: Call::default(),
-                exec_series: 0,
                 local_worker: get_local_worker_ref(),
                 thread_pool: LocalThreadWorkerPool::new(number_of_thread_workers),
                 local_sleeping_tasks: BTreeMap::new(),
@@ -298,8 +312,13 @@ impl Executor {
         self.id
     }
 
+    /// Returns a reference to the [`TaskPool`] of the executor.
+    pub(crate) fn task_pool(&mut self) -> &mut TaskPool {
+        &mut self.task_pool
+    }
+
     /// Add a task to the beginning of the local lifo queue.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn add_task_at_the_start_of_lifo_local_queue(&mut self, task: Task) {
         debug_assert!(task.is_local());
 
@@ -307,7 +326,7 @@ impl Executor {
     }
 
     /// Add a task to the beginning of the shared lifo queue.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn add_task_at_the_start_of_lifo_shared_queue(&mut self, task: Task) {
         debug_assert!(!task.is_local());
 
@@ -335,19 +354,48 @@ impl Executor {
         Config::from(&self.config)
     }
 
+    /// Returns when current round started.
+    pub fn start_round_time(&self) -> Instant {
+        self.start_round_time
+    }
+
+    /// Returns the approximate current time.
+    ///
+    /// It is obtained by adding 100 microseconds to the
+    /// [`start time of the current round`](Self::start_round_time).
+    ///
+    /// This method is supposed to be used to set deadlines,
+    /// therefore returning a future time is acceptable.
+    ///
+    /// # Behavior on fallback OS
+    ///
+    /// In fallback, we can't guarantee the 100 microseconds addition sufficiency,
+    /// therefore it is a synonymous to [`Instant::now`] there.
+    pub fn start_round_time_for_deadlines(&self) -> Instant {
+        #[cfg(target_os = "linux")]
+        {
+            self.start_round_time_for_deadlines
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            Instant::now()
+        }
+    }
+
     /// Returns a reference to the shared tasks list of the executor.
     pub(crate) fn shared_task_list(&self) -> Option<&Arc<ExecutorSharedTaskList>> {
         self.shared_tasks_list.as_ref()
     }
 
     /// Returns a reference to the local tasks queue.
-    #[inline(always)]
+    #[inline]
     pub fn local_queue(&mut self) -> &mut VecDeque<Task> {
         &mut self.local_tasks
     }
 
     /// Returns a reference to the `sleeping_tasks`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn sleeping_tasks(&mut self) -> &mut BTreeMap<Instant, Task> {
         &mut self.local_sleeping_tasks
     }
@@ -364,7 +412,7 @@ impl Executor {
     /// This function is unsafe because it can break the program if provided [`Call`] is used
     /// with wrong arguments. Think twice before using [`Calls`](Call) and twice read the `Safety`
     /// region of provided [`Call`] before using it.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn invoke_call(&mut self, call: Call) {
         debug_assert!(self.current_call.is_none());
 
@@ -373,6 +421,7 @@ impl Executor {
 
     /// Processing current [`Call`]. It is taken out [`exec_task_now`](Executor::exec_task_now)
     /// to allow the compiler to decide whether to inline this function.
+    #[inline(never)]
     fn handle_call(&mut self, mut task: Task) {
         match mem::take(&mut self.current_call) {
             Call::None => {}
@@ -431,12 +480,11 @@ impl Executor {
     ///
     /// If the stack of calls is too large, [`exec_task`](Executor::exec_task)
     /// spawns a new task and returns.
-    /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task any way.
+    /// Otherwise, [`exec_task_now`](Executor::exec_task_now) executes the task anyway.
     ///
     /// # Attention
     ///
     /// Execute [`tasks`](Task) only by this method or [`exec_task`](Executor::exec_task)!
-    #[inline(always)]
     pub fn exec_task_now(&mut self, mut task: Task) {
         self.exec_series += 1;
 
@@ -464,7 +512,7 @@ impl Executor {
                     Call::None,
                     "Call is not None, but the task is ready."
                 );
-                unsafe { task.release() };
+                unsafe { task.release(self) };
             }
 
             Poll::Pending => {
@@ -483,7 +531,7 @@ impl Executor {
     /// # Attention
     ///
     /// Execute [`tasks`](Task) only by this method or [`exec_task_now`](Executor::exec_task_now)!
-    #[inline(always)]
+    #[inline]
     pub fn exec_task(&mut self, task: Task) {
         if self.exec_series < 63 {
             self.exec_task_now(task);
@@ -505,7 +553,7 @@ impl Executor {
     /// # Attention
     ///
     /// Execute [`Future`] only by this method!
-    #[inline(always)]
+    #[inline]
     pub fn exec_local_future<F>(&mut self, future: F)
     where
         F: Future<Output = ()>,
@@ -520,7 +568,7 @@ impl Executor {
     /// # Attention
     ///
     /// Execute [`Future`] only by this method!
-    #[inline(always)]
+    #[inline]
     pub fn exec_shared_future<F>(&mut self, future: F)
     where
         F: Future<Output = ()> + Send,
@@ -538,7 +586,7 @@ impl Executor {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn spawn_local<F>(&mut self, future: F)
     where
         F: Future<Output = ()>,
@@ -556,7 +604,7 @@ impl Executor {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn spawn_local_task(&mut self, task: Task) {
         debug_assert!(task.is_local(), "Try to spawn `shared` task as `local`!");
 
@@ -572,7 +620,7 @@ impl Executor {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn spawn_shared<F>(&mut self, future: F)
     where
         F: Future<Output = ()> + Send,
@@ -590,26 +638,33 @@ impl Executor {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn spawn_shared_task(&mut self, task: Task) {
+        fn try_flush(executor: &mut Executor) {
+            if let Some(mut shared_tasks_list) = unsafe {
+                executor
+                    .shared_tasks_list
+                    .as_ref()
+                    .unwrap_unchecked()
+                    .try_lock_and_return_as_vec()
+            } {
+                let number_of_shared = (executor.shared_tasks.len() >> 1) + 1;
+                for task in executor.shared_tasks.drain(..number_of_shared) {
+                    shared_tasks_list.push(task);
+                }
+            }
+        }
+
         debug_assert!(!task.is_local(), "Try to spawn `local` task as `shared`!");
 
         #[allow(clippy::branches_sharing_code, reason = "It is more readable")]
         if self.config.is_work_sharing_enabled() {
             if self.shared_tasks.len() <= self.config.work_sharing_level {
+                // Fast path
                 self.shared_tasks.push_back(task);
             } else {
-                if let Some(mut shared_tasks_list) = unsafe {
-                    self.shared_tasks_list
-                        .as_ref()
-                        .unwrap_unchecked()
-                        .try_lock_and_return_as_vec()
-                } {
-                    let number_of_shared = (self.shared_tasks.len() >> 1) + 1;
-                    for task in self.shared_tasks.drain(..number_of_shared) {
-                        shared_tasks_list.push(task);
-                    }
-                }
+                // Slow path
+                try_flush(self);
 
                 self.shared_tasks.push_back(task);
             }
@@ -623,7 +678,7 @@ impl Executor {
     /// the [`locality`](Locality) of the provided [`task`](Task).
     ///
     /// It is a little bit slower than calling them directly.
-    #[inline(always)]
+    #[inline]
     pub fn spawn_task(&mut self, task: Task) {
         if task.is_local() {
             self.spawn_local_task(task);
@@ -678,7 +733,7 @@ impl Executor {
     ///     let number_of_shard = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
     ///
     ///     let key = u32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
-    ///     
+    ///
     ///     drop(buffer); // release buffer in this thread
     ///
     ///     let task = unsafe {
@@ -701,7 +756,7 @@ impl Executor {
     /// fn main() {
     ///     run_local_future_on_all_cores(|| async {
     ///         let mut listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
-    ///         let executor = local_executor();        
+    ///         let executor = local_executor();
     ///
     ///         loop {
     ///             let (stream, _) = listener.accept().await.unwrap();
@@ -808,7 +863,7 @@ impl Executor {
     }
 
     /// Tries to take a batch of tasks from the shared tasks queue if needed.
-    #[inline(always)]
+    #[inline]
     fn take_work_if_needed(&mut self) {
         if self.shared_tasks.len() >= self.config.work_sharing_level {
             return;
@@ -855,7 +910,7 @@ impl Executor {
     /// Allows the OS to run other threads.
     ///
     /// It is used only when no work is available.
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::unused_self, reason = "It will be used in the future")]
     fn sleep_at_most(&self, max_duration: Duration) {
         // Wait for more work
@@ -867,12 +922,13 @@ impl Executor {
     ///
     /// Returns the duration for the nearest deadline of the sleeping tasks or None
     /// if there are no sleeping tasks.
-    #[inline(always)]
+    #[inline]
     fn check_sleeping_tasks(&mut self) -> Option<Duration> {
         if !self.local_sleeping_tasks.is_empty() {
-            let instant = Instant::now();
+            self.start_round_time = Instant::now();
+
             while let Some((time_to_wake, task)) = self.local_sleeping_tasks.pop_first() {
-                if time_to_wake <= instant {
+                if time_to_wake <= self.start_round_time {
                     if task.is_local() {
                         self.exec_task(task);
                     } else {
@@ -880,7 +936,7 @@ impl Executor {
                     }
                 } else {
                     self.local_sleeping_tasks.insert(time_to_wake, task);
-                    return Some(instant - time_to_wake);
+                    return Some(self.start_round_time - time_to_wake);
                 }
             }
         }
@@ -888,8 +944,19 @@ impl Executor {
         None
     }
 
+    /// Prepares the executor for the next round.
+    fn prepare_to_new_round(&mut self) {
+        self.exec_series = 0;
+        self.start_round_time = Instant::now();
+        #[cfg(target_os = "linux")]
+        {
+            self.start_round_time_for_deadlines =
+                self.start_round_time + Duration::from_micros(100);
+        }
+    }
+
     /// Executes all ready CPU tasks.
-    #[inline(always)]
+    #[inline]
     fn exec_cpu_tasks(&mut self) {
         // A round is a number of tasks that must be completed before the next background_work call.
         // It is needed to avoid case like:
@@ -1015,14 +1082,17 @@ impl Executor {
                 break;
             }
 
-            self.exec_series = 0;
+            self.prepare_to_new_round();
 
-            self.exec_cpu_tasks();
             #[cfg(not(feature = "disable_send_task_to"))]
             {
-                self.interactor
-                    .do_work(&mut self.local_tasks, &mut self.shared_tasks);
+                self.interactor.do_work(
+                    &mut self.local_tasks,
+                    &mut self.shared_tasks,
+                    self.start_round_time,
+                );
             }
+            self.exec_cpu_tasks();
             self.take_work_if_needed();
             self.thread_pool.poll(&mut self.local_tasks);
             let nearest_timeout_option = self.check_sleeping_tasks();
@@ -1035,51 +1105,62 @@ impl Executor {
                 let worker = unsafe { self.local_worker.as_mut().unwrap_unchecked() };
                 if worker.has_work() {
                     if !has_cpu_work {
+                        let max_timeout = self.progressive_timeout.timeout_with_shift(2);
                         if let Some(nearest_timeout) = nearest_timeout_option {
                             // case 1: we don't have cpu work, but we have sleeping tasks and io work
-                            worker.must_poll(Some(nearest_timeout.min(Duration::from_millis(500))));
+                            worker.must_poll(Some(nearest_timeout.min(max_timeout)));
                         } else {
                             // case 2: we don't have cpu work nor sleeping tasks, but we io work
-                            worker.must_poll(Some(Duration::from_millis(500)));
+                            worker.must_poll(Some(max_timeout));
                         }
                     } else {
                         // It proceeds 2 cases:
                         // case 3: we have cpu work, sleeping tasks and io work
                         // case 4: we have cpu work, io work, but we don't have sleeping tasks
+                        self.progressive_timeout.reset();
                         worker.must_poll(None);
                     }
                 } else if !has_cpu_work {
+                    let max_timeout = self.progressive_timeout.timeout();
                     if let Some(nearest_timeout) = nearest_timeout_option {
                         // case 5: we don't have io work nor cpu work, but we have sleeping tasks
-                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                        self.sleep_at_most(nearest_timeout.min(max_timeout));
                     } else {
                         // case 6: we don't have any work
-                        self.sleep_at_most(Duration::from_millis(100));
+                        self.sleep_at_most(max_timeout);
                     }
                 } else {
                     // It proceeds 2 cases:
                     // case 7: we have cpu work, sleeping tasks, but don't have io work
                     // case 8: we have cpu work, but don't have io work nor sleeping tasks
 
+                    self.progressive_timeout.reset();
+
                     // Continue processing cpu tasks
                 }
             } else {
                 // Here we don't have worker, therefore we need to consider only 4 cases
+
+                let max_timeout = self.progressive_timeout.timeout();
 
                 if let Some(nearest_timeout) = nearest_timeout_option {
                     if has_cpu_work {
                         // case 1: we have cpu work and sleeping tasks
                         // Continue processing cpu tasks
                     } else {
-                        // case 2: we have cpu work, but we don't have sleeping tasks
-                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                        // case 2: we have sleeping tasks, but we don't have cpu work
+                        self.sleep_at_most(nearest_timeout.min(max_timeout));
                     }
+
+                    self.progressive_timeout.reset();
                 } else if has_cpu_work {
                     // case 3: we have cpu work, but we don't have sleeping tasks
                     // Continue processing cpu tasks
+
+                    self.progressive_timeout.reset();
                 } else {
                     // case 4: we don't have cpu work nor sleeping tasks
-                    self.sleep_at_most(Duration::from_millis(100));
+                    self.sleep_at_most(max_timeout);
                 }
             }
 
@@ -1270,104 +1351,6 @@ mod tests {
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
 
-    #[orengine::test::test_shared]
-    #[cfg(not(feature = "disable_send_task_to"))]
-    fn test_send_task() {
-        use crate::sync::{AsyncWaitGroup, WaitGroup};
-        use crate::test::sched_future_to_another_thread;
-        use std::sync::atomic::Ordering::SeqCst;
-
-        static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
-
-        let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
-        let another_id_clone = another_id.clone();
-        let cond_var = Arc::new(std::sync::Condvar::new());
-        let cond_var_clone = cond_var.clone();
-        let wg = Arc::new(WaitGroup::new());
-
-        let wg_clone = wg.clone();
-
-        wg_clone.inc();
-        sched_future_to_another_thread(async move {
-            let id = local_executor().id();
-            *another_id_clone.lock().unwrap() = id;
-            cond_var_clone.notify_one();
-
-            wg_clone.wait().await;
-        });
-
-        let another_executor_id = *cond_var
-            .wait_while(another_id.lock().unwrap(), |guard| *guard == usize::MAX)
-            .unwrap();
-
-        yield_now().await;
-
-        let task = unsafe {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            Task::from_future(
-                async move {
-                    assert_eq!(local_executor().id(), another_executor_id);
-
-                    RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                    wg_clone.done();
-                },
-                Locality::local(),
-            )
-        };
-
-        unsafe {
-            local_executor()
-                .send_task_to_executor(task, another_executor_id)
-                .expect("Failed to send task");
-        };
-
-        // send local future
-        {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            local_executor()
-                .send_local_future_to_executor(
-                    || async move {
-                        assert_eq!(local_executor().id(), another_executor_id);
-
-                        RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                        wg_clone.done();
-                    },
-                    another_executor_id,
-                )
-                .expect("Failed to send future");
-        }
-
-        // send shared future
-        {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            local_executor()
-                .send_shared_future_to_executor(
-                    || async move {
-                        assert_eq!(local_executor().id(), another_executor_id);
-
-                        RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                        wg_clone.done();
-                    },
-                    another_executor_id,
-                )
-                .expect("Failed to send future");
-        }
-
-        wg.done();
-        wg.wait().await;
-
-        assert_eq!(RESULTED_TASKS.load(SeqCst), 3);
-    }
-
     // TODO put this into a separate test
     // fn wait_for_config_tests_ready() {
     //     let _unused = config::tests::WAS_READY
@@ -1450,5 +1433,103 @@ mod tests {
     // #[test]
     // fn test_work_sharing_large_level() {
     //     test_with_work_sharing_level(255);
+    // }
+    //
+    // #[orengine::test::test_shared]
+    // #[cfg(not(feature = "disable_send_task_to"))]
+    // fn test_send_task() {
+    //     use crate::sync::{AsyncWaitGroup, WaitGroup};
+    //     use crate::test::sched_future_to_another_thread;
+    //     use std::sync::atomic::Ordering::SeqCst;
+    //
+    //     static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
+    //
+    //     let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
+    //     let another_id_clone = another_id.clone();
+    //     let cond_var = Arc::new(std::sync::Condvar::new());
+    //     let cond_var_clone = cond_var.clone();
+    //     let wg = Arc::new(WaitGroup::new());
+    //
+    //     let wg_clone = wg.clone();
+    //
+    //     wg_clone.inc();
+    //     sched_future_to_another_thread(async move {
+    //         let id = local_executor().id();
+    //         *another_id_clone.lock().unwrap() = id;
+    //         cond_var_clone.notify_one();
+    //
+    //         wg_clone.wait().await;
+    //     });
+    //
+    //     let another_executor_id = *cond_var
+    //         .wait_while(another_id.lock().unwrap(), |guard| *guard == usize::MAX)
+    //         .unwrap();
+    //
+    //     yield_now().await;
+    //
+    //     let task = unsafe {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         Task::from_future(
+    //             async move {
+    //                 assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                 RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                 wg_clone.done();
+    //             },
+    //             Locality::local(),
+    //         )
+    //     };
+    //
+    //     unsafe {
+    //         local_executor()
+    //             .send_task_to_executor(task, another_executor_id)
+    //             .expect("Failed to send task");
+    //     };
+    //
+    //     // send local future
+    //     {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         local_executor()
+    //             .send_local_future_to_executor(
+    //                 || async move {
+    //                     assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                     RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                     wg_clone.done();
+    //                 },
+    //                 another_executor_id,
+    //             )
+    //             .expect("Failed to send future");
+    //     }
+    //
+    //     // send shared future
+    //     {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         local_executor()
+    //             .send_shared_future_to_executor(
+    //                 || async move {
+    //                     assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                     RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                     wg_clone.done();
+    //                 },
+    //                 another_executor_id,
+    //             )
+    //             .expect("Failed to send future");
+    //     }
+    //
+    //     wg.done();
+    //     wg.wait().await;
+    //
+    //     assert_eq!(RESULTED_TASKS.load(SeqCst), 3);
     // }
 }

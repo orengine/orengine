@@ -42,12 +42,12 @@ use crate::runtime::local_executor;
 /// loop {
 ///    socket.poll_recv().await.expect("poll failed");
 ///    let mut buf = full_buffer();
-///    let (n, addr) = socket.recv_from(&mut buf).await.expect("recv_from failed");
+///    let (n, addr) = socket.recv_bytes_from(&mut buf).await.expect("recv_from failed");
 ///    if n == 0 {
 ///        continue;
 ///    }
 ///
-///    socket.send_to(&buf[..n], addr).await.expect("send_to failed");
+///    socket.send_bytes_to(&buf[..n], addr).await.expect("send_to failed");
 /// }
 /// # }
 /// ```
@@ -156,13 +156,13 @@ impl std::os::windows::io::FromRawSocket for UdpSocket {
 impl FromRawSocket for UdpSocket {}
 
 impl AsyncBind for UdpSocket {
-    async fn new_socket(addr: &SocketAddr) -> Result<RawSocket> {
+    async fn new_socket(addr: &Self::Addr) -> Result<RawSocket> {
         new_udp_socket(addr).await
     }
 
     fn bind_and_listen_if_needed(
         sock_ref: SockRef<'_>,
-        addr: SocketAddr,
+        addr: Self::Addr,
         _config: &BindConfig,
     ) -> Result<()> {
         sock_ref.bind(&SockAddr::from(addr))
@@ -181,7 +181,9 @@ impl AsyncSendTo for UdpSocket {}
 
 impl AsyncSocketClose for UdpSocket {}
 
-impl Socket for UdpSocket {}
+impl Socket for UdpSocket {
+    type Addr = SocketAddr;
+}
 
 impl Datagram for UdpSocket {
     type ConnectedDatagram = UdpConnectedSocket;
@@ -272,18 +274,21 @@ mod tests {
             }
         }
 
-        let mut stream = UdpSocket::bind("127.0.0.1:9081")
+        let mut datagram = UdpSocket::bind("127.0.0.1:9081")
             .await
             .expect("bind failed");
 
         for _ in 0..TIMES {
-            stream
-                .send_to(REQUEST, SERVER_ADDR)
+            datagram
+                .send_bytes_to(REQUEST, SERVER_ADDR)
                 .await
                 .expect("send failed");
             let mut buf = vec![0u8; RESPONSE.len()];
 
-            stream.recv_from(&mut buf).await.expect("recv failed");
+            datagram
+                .recv_bytes_from(&mut buf)
+                .await
+                .expect("recv failed");
             assert_eq!(RESPONSE, buf);
         }
 
@@ -315,13 +320,13 @@ mod tests {
                     .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
                 let (n, src) = server
-                    .recv_from_with_timeout(&mut buf, Duration::from_secs(10))
+                    .recv_bytes_from_with_timeout(&mut buf, Duration::from_secs(10))
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
                 server
-                    .send_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
+                    .send_bytes_to_with_timeout(RESPONSE, &src, Duration::from_secs(10))
                     .await
                     .expect("send failed");
             }
@@ -417,13 +422,13 @@ mod tests {
                     .expect("poll failed");
                 let mut buf = vec![0u8; REQUEST.len()];
                 let (n, src) = server
-                    .recv_from_with_timeout(&mut buf, TIMEOUT)
+                    .recv_bytes_from_with_timeout(&mut buf, TIMEOUT)
                     .await
                     .expect("accept failed");
                 assert_eq!(REQUEST, &buf[..n]);
 
                 server
-                    .send_to_with_timeout(RESPONSE, &src, TIMEOUT)
+                    .send_bytes_to_with_timeout(RESPONSE, &src, TIMEOUT)
                     .await
                     .expect("send failed");
             }
@@ -437,47 +442,49 @@ mod tests {
             }
         }
 
-        let mut stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
+        let mut datagram = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
 
         assert_eq!(
-            stream.local_addr().expect("Failed to get local addr"),
+            datagram.local_addr().expect("Failed to get local addr"),
             SocketAddr::from_str(CLIENT_ADDR).unwrap()
         );
 
-        stream
+        datagram
             .set_broadcast(false)
             .expect("Failed to set broadcast");
-        assert!(!stream.broadcast().expect("Failed to get broadcast"));
-        stream.set_broadcast(true).expect("Failed to set broadcast");
-        assert!(stream.broadcast().expect("Failed to get broadcast"));
+        assert!(!datagram.broadcast().expect("Failed to get broadcast"));
+        datagram
+            .set_broadcast(true)
+            .expect("Failed to set broadcast");
+        assert!(datagram.broadcast().expect("Failed to get broadcast"));
 
-        stream
+        datagram
             .set_multicast_loop_v4(false)
             .expect("Failed to set multicast_loop_v4");
-        assert!(!stream
+        assert!(!datagram
             .multicast_loop_v4()
             .expect("Failed to get multicast_loop_v4"));
-        stream
+        datagram
             .set_multicast_loop_v4(true)
             .expect("Failed to set multicast_loop_v4");
-        assert!(stream
+        assert!(datagram
             .multicast_loop_v4()
             .expect("Failed to get multicast_loop_v4"));
 
-        stream
+        datagram
             .set_multicast_ttl_v4(124)
             .expect("Failed to set multicast_ttl_v4");
         assert_eq!(
-            stream
+            datagram
                 .multicast_ttl_v4()
                 .expect("Failed to get multicast_ttl_v4"),
             124
         );
 
-        stream.set_ttl(144).expect("Failed to set ttl");
-        assert_eq!(stream.ttl().expect("Failed to get ttl"), 144);
+        datagram.set_ttl(144).expect("Failed to set ttl");
+        assert_eq!(datagram.ttl().expect("Failed to get ttl"), 144);
 
-        match stream.take_error() {
+        match datagram.take_error() {
             Ok(err_) => {
                 if let Some(err) = err_ {
                     panic!("Take error returned with an error: {err:?}")
@@ -487,32 +494,32 @@ mod tests {
         }
 
         for _ in 0..TIMES {
-            stream
-                .send_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
+            datagram
+                .send_bytes_to_with_timeout(REQUEST, SERVER_ADDR, TIMEOUT)
                 .await
                 .expect("send failed");
 
-            stream
+            datagram
                 .poll_recv_with_timeout(TIMEOUT)
                 .await
                 .expect("poll failed");
             let mut buf = vec![0u8; RESPONSE.len()];
 
-            stream
-                .peek_from_with_timeout(&mut buf, TIMEOUT)
+            datagram
+                .peek_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("peek failed");
-            stream
-                .peek_from_with_timeout(&mut buf, TIMEOUT)
+            datagram
+                .peek_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("peek failed");
 
-            stream
+            datagram
                 .poll_recv_with_timeout(TIMEOUT)
                 .await
                 .expect("poll failed");
-            stream
-                .recv_from_with_timeout(&mut buf, TIMEOUT)
+            datagram
+                .recv_bytes_from_with_timeout(&mut buf, TIMEOUT)
                 .await
                 .expect("recv failed");
         }
@@ -530,12 +537,18 @@ mod tests {
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut),
         }
 
-        match socket.recv_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
+        match socket
+            .recv_bytes_from_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .await
+        {
             Ok(_) => panic!("recv_from should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }
 
-        match socket.peek_from_with_timeout(&mut [0u8; 10], TIMEOUT).await {
+        match socket
+            .peek_bytes_from_with_timeout(&mut [0u8; 10], TIMEOUT)
+            .await
+        {
             Ok(_) => panic!("peek_from should timeout"),
             Err(err) => assert_eq!(err.kind(), io::ErrorKind::TimedOut, "{err}"),
         }

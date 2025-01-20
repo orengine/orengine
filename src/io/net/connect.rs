@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::io::Result;
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -13,9 +12,13 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys;
 use crate::io::sys::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::local_executor;
+use crate::net::addr::{IntoSockAddr, ToSockAddrs};
+use crate::net::{ConnectedDatagram, Socket};
 use crate::utils::each_addr::each_addr;
 
 /// `connect` io operation.
+#[repr(C)]
 pub struct Connect<'fut> {
     raw_fd: RawSocket,
     addr: &'fut SockAddr,
@@ -40,8 +43,8 @@ impl Future for Connect<'_> {
         clippy::cast_ptr_alignment,
         reason = "sys::os_sockaddr is aligned rightly"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
@@ -60,6 +63,7 @@ impl Future for Connect<'_> {
 unsafe impl Send for Connect<'_> {}
 
 /// `connect` io operation with deadline.
+#[repr(C)]
 pub struct ConnectWithDeadline<'fut> {
     raw_fd: RawSocket,
     addr: &'fut SockAddr,
@@ -86,8 +90,8 @@ impl Future for ConnectWithDeadline<'_> {
         clippy::cast_ptr_alignment,
         reason = "sys::os_sockaddr is aligned rightly"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
@@ -110,9 +114,6 @@ unsafe impl Send for ConnectWithDeadline<'_> {}
 /// The `AsyncConnectStream` trait provides asynchronous methods for creating and connecting
 /// stream-oriented sockets (like TCP) to a remote address.
 ///
-/// It supports both IPv4 and IPv6, as well
-/// as connection timeouts and deadlines.
-///
 /// This trait can be implemented for stream-oriented socket types that need
 /// asynchronous connection functionality.
 ///
@@ -131,71 +132,43 @@ unsafe impl Send for ConnectWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectStream: Sized + AsRawSocket {
-    /// Creates a new IPv4 socket for stream-based communication.
+pub trait AsyncConnectStream: Sized + Socket {
+    /// Creates a new socket based on the provided [`Addr`](Socket::Addr).
     ///
     /// # Warning
     ///
-    /// Not connect returning stream, therefore you need to connect it.
+    /// Creates a socket, without connecting it, therefore you need to connect it.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use orengine::net::TcpStream;
-    /// use orengine::io::AsyncConnectStream;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let stream = TcpStream::new_ip4().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    async fn new_ip4() -> Result<Self>;
-    /// Creates a new IPv6 socket for stream-based communication.
-    ///
-    /// # Warning
-    ///
-    /// Not connect returning stream, therefore you need to connect it.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use orengine::net::TcpStream;
-    /// use orengine::io::AsyncConnectStream;
-    ///
-    /// # async fn foo() -> std::io::Result<()> {
-    /// let stream = TcpStream::new_ip6().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    async fn new_ip6() -> Result<Self>;
-
-    /// Creates a new socket based on the provided [`SocketAddr`], automatically choosing between
-    /// IPv4 and IPv6.
-    ///
-    /// # Warning
-    ///
-    /// Not connect returning stream, therefore you need to connect it.
-    ///
-    /// # Example
-    ///
-    /// ```rust
+    /// use std::io;
+    /// use std::io::ErrorKind;
     /// use std::net::SocketAddr;
     /// use orengine::net::TcpStream;
-    /// use orengine::io::AsyncConnectStream;
+    /// use orengine::io::{AsyncConnectStream, Connect};
+    /// use orengine::io::sys::AsRawSocket;
+    /// use orengine::net::addr::IntoSockAddr;
     ///
-    /// # async fn foo() -> std::io::Result<()> {
+    /// async fn foo() -> io::Result<()> {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    /// let stream = TcpStream::new_for_addr(&addr).await?;
+    /// let stream = {
+    ///     match TcpStream::new_for_addr(&addr).await {
+    ///         Ok(not_connected_stream) => {
+    ///             Connect::new(
+    ///                 AsRawSocket::as_raw_socket(&not_connected_stream),
+    ///                 &addr.into_sock_addr(),
+    ///             )
+    ///             .await
+    ///             .map(|_| not_connected_stream)
+    ///         }
+    ///         Err(e) => Err(e)
+    ///     }
+    /// };
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn new_for_addr(addr: &SocketAddr) -> Result<Self> {
-        match addr {
-            SocketAddr::V4(_) => Self::new_ip4().await,
-            SocketAddr::V6(_) => Self::new_ip6().await,
-        }
-    }
+    async fn new_for_addr(addr: &Self::Addr) -> Result<Self>;
 
     /// Asynchronously connects a stream socket to the specified address.
     ///
@@ -210,13 +183,13 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
-        each_addr(&addr, move |addr: SocketAddr| async move {
+    #[inline]
+    async fn connect<A: ToSockAddrs<Self::Addr>>(addr: A) -> Result<Self> {
+        each_addr(addr, move |addr| async move {
             let stream = Self::new_for_addr(&addr).await?;
             Connect::new(
                 <Self as AsRawSocket>::as_raw_socket(&stream),
-                &SockAddr::from(addr),
+                &addr.into_sock_addr(),
             )
             .await?;
 
@@ -243,13 +216,16 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect_with_deadline<A: ToSocketAddrs>(addr: A, deadline: Instant) -> Result<Self> {
-        each_addr(&addr, move |addr: SocketAddr| async move {
+    #[inline]
+    async fn connect_with_deadline<A: ToSockAddrs<Self::Addr>>(
+        addr: A,
+        deadline: Instant,
+    ) -> Result<Self> {
+        each_addr(addr, move |addr| async move {
             let stream = Self::new_for_addr(&addr).await?;
             ConnectWithDeadline::new(
                 <Self as AsRawSocket>::as_raw_socket(&stream),
-                &SockAddr::from(addr),
+                &addr.into_sock_addr(),
                 deadline,
             )
             .await?;
@@ -276,9 +252,16 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect_with_timeout<A: ToSocketAddrs>(addr: A, timeout: Duration) -> Result<Self> {
-        Self::connect_with_deadline(addr, Instant::now() + timeout).await
+    #[inline]
+    async fn connect_with_timeout<A: ToSockAddrs<Self::Addr>>(
+        addr: A,
+        timeout: Duration,
+    ) -> Result<Self> {
+        Self::connect_with_deadline(
+            addr,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
+        .await
     }
 }
 
@@ -307,7 +290,7 @@ pub trait AsyncConnectStream: Sized + AsRawSocket {
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized {
+pub trait AsyncConnectDatagram<CD: ConnectedDatagram>: Socket + Sized {
     /// Asynchronously connects a datagram socket to the specified address.
     ///
     /// # Example
@@ -334,12 +317,12 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect<A: ToSocketAddrs>(self, addr: A) -> Result<S> {
+    #[inline]
+    async fn connect<A: ToSockAddrs<CD::Addr>>(self, addr: A) -> Result<CD> {
         let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
-        each_addr(&addr, move |addr: SocketAddr| async move {
-            Connect::new(new_datagram_socket_raw_fd, &SockAddr::from(addr)).await?;
-            Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
+        each_addr(addr, move |addr| async move {
+            Connect::new(new_datagram_socket_raw_fd, &addr.into_sock_addr()).await?;
+            Ok(unsafe { <CD as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
         .await
     }
@@ -374,17 +357,17 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect_with_deadline<A: ToSocketAddrs>(
+    #[inline]
+    async fn connect_with_deadline<A: ToSockAddrs<CD::Addr>>(
         self,
         addr: A,
         deadline: Instant,
-    ) -> Result<S> {
+    ) -> Result<CD> {
         let new_datagram_socket_raw_fd = IntoRawSocket::into_raw_socket(self);
-        each_addr(&addr, move |addr: SocketAddr| async move {
-            ConnectWithDeadline::new(new_datagram_socket_raw_fd, &SockAddr::from(addr), deadline)
+        each_addr(addr, move |addr| async move {
+            ConnectWithDeadline::new(new_datagram_socket_raw_fd, &addr.into_sock_addr(), deadline)
                 .await?;
-            Ok(unsafe { <S as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
+            Ok(unsafe { <CD as FromRawSocket>::from_raw_socket(new_datagram_socket_raw_fd) })
         })
         .await
     }
@@ -418,9 +401,16 @@ pub trait AsyncConnectDatagram<S: FromRawSocket + Sized>: IntoRawSocket + Sized 
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    async fn connect_with_timeout<A: ToSocketAddrs>(self, addr: A, timeout: Duration) -> Result<S> {
-        self.connect_with_deadline(addr, Instant::now() + timeout)
-            .await
+    #[inline]
+    async fn connect_with_timeout<A: ToSockAddrs<CD::Addr>>(
+        self,
+        addr: A,
+        timeout: Duration,
+    ) -> Result<CD> {
+        self.connect_with_deadline(
+            addr,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
+        .await
     }
 }

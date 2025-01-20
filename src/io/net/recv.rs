@@ -12,8 +12,11 @@ use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
 use crate::io::FixedBufferMut;
+use crate::local_executor;
+use crate::net::Socket;
 
 /// `recv` io operation.
+#[repr(C)]
 pub struct RecvBytes<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -38,8 +41,8 @@ impl Future for RecvBytes<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -57,6 +60,7 @@ impl Future for RecvBytes<'_> {
 unsafe impl Send for RecvBytes<'_> {}
 
 /// `recv` io operation with __fixed__ [`Buffer`](crate::io::Buffer).
+#[repr(C)]
 pub struct RecvFixed<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -87,8 +91,8 @@ impl Future for RecvFixed<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -107,6 +111,7 @@ impl Future for RecvFixed<'_> {
 unsafe impl Send for RecvFixed<'_> {}
 
 /// `recv` io operation with deadline.
+#[repr(C)]
 pub struct RecvBytesWithDeadline<'buf> {
     raw_socket: RawSocket,
     buf: &'buf mut [u8],
@@ -133,8 +138,8 @@ impl Future for RecvBytesWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -154,6 +159,7 @@ impl Future for RecvBytesWithDeadline<'_> {
 unsafe impl Send for RecvBytesWithDeadline<'_> {}
 
 /// `recv` io operation with deadline and __fixed__ [`Buffer`](crate::io::Buffer).
+#[repr(C)]
 pub struct RecvFixedWithDeadline<'buf> {
     raw_socket: RawSocket,
     ptr: *mut u8,
@@ -192,8 +198,8 @@ impl Future for RecvFixedWithDeadline<'_> {
         clippy::cast_possible_truncation,
         reason = "It never receive more than u32::MAX bytes"
     )]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         let ret;
 
@@ -219,7 +225,7 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// It offers options to recv with deadlines, timeouts, and to ensure
 /// reading an exact number of bytes.
 ///
-/// This trait can be implemented for any socket that supports the `AsRawSocket` and can be connected.
+/// This trait can be implemented for any [`socket`](Socket) which can be connected.
 ///
 /// # Example
 ///
@@ -236,7 +242,7 @@ unsafe impl Send for RecvFixedWithDeadline<'_> {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncRecv: AsRawSocket {
+pub trait AsyncRecv: Socket {
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
     /// filling the buffer with available data. Returns the number of bytes received.
     ///
@@ -261,7 +267,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize>> {
         RecvBytes::new(AsRawSocket::as_raw_socket(self), buf)
     }
@@ -290,7 +296,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv(&mut self, buf: &mut impl FixedBufferMut) -> Result<u32> {
         if buf.is_fixed() {
             RecvFixed::new(
@@ -340,7 +346,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -378,7 +384,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -437,13 +443,16 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_with_timeout(
         &mut self,
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<usize>> {
-        self.recv_bytes_with_deadline(buf, Instant::now() + timeout)
+        self.recv_bytes_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -475,13 +484,16 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<u32>> {
-        self.recv_with_deadline(buf, Instant::now() + timeout)
+        self.recv_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -507,7 +519,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         let mut received = 0;
 
@@ -540,7 +552,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_exact(&mut self, buf: &mut impl FixedBufferMut) -> Result<()> {
         if buf.is_fixed() {
             let mut received = 0;
@@ -600,7 +612,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_bytes_exact_with_deadline(
         &mut self,
         buf: &mut [u8],
@@ -646,7 +658,7 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     async fn recv_exact_with_deadline(
         &mut self,
         buf: &mut impl FixedBufferMut,
@@ -713,13 +725,16 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_bytes_exact_with_timeout(
         &mut self,
         buf: &mut [u8],
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.recv_bytes_exact_with_deadline(buf, Instant::now() + timeout)
+        self.recv_bytes_exact_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 
     /// Asynchronously receives into the provided byte slice the incoming data with consuming it,
@@ -752,12 +767,15 @@ pub trait AsyncRecv: AsRawSocket {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn recv_exact_with_timeout(
         &mut self,
         buf: &mut impl FixedBufferMut,
         timeout: Duration,
     ) -> impl Future<Output = Result<()>> {
-        self.recv_exact_with_deadline(buf, Instant::now() + timeout)
+        self.recv_exact_with_deadline(
+            buf,
+            local_executor().start_round_time_for_deadlines() + timeout,
+        )
     }
 }

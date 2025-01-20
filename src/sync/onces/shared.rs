@@ -37,6 +37,7 @@ use crossbeam::utils::CachePadded;
 ///     });
 /// }
 /// ```
+#[repr(C)]
 pub struct Once {
     state: CachePadded<AtomicIsize>,
 }
@@ -51,7 +52,7 @@ impl Once {
 }
 
 impl AsyncOnce for Once {
-    #[inline(always)]
+    #[inline]
     #[allow(
         clippy::future_not_send,
         reason = "It is not `Send` only when Fut is not `Send`, it is fine"
@@ -74,7 +75,7 @@ impl AsyncOnce for Once {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn call_once_sync<F: FnOnce()>(&self, f: F) -> CallOnceResult {
         if self
             .state
@@ -94,7 +95,7 @@ impl AsyncOnce for Once {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn state(&self) -> OnceState {
         #[cfg(debug_assertions)]
         {

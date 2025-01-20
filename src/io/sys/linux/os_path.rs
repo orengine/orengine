@@ -10,7 +10,7 @@ pub(crate) type OsPath = CString;
 pub(crate) type OsPathPtr = *const libc::c_char;
 
 /// Gets os path from path.
-#[inline(always)]
+#[inline]
 pub(crate) fn get_os_path(path: &Path) -> io::Result<OsPath> {
     match CString::new(path.as_os_str().as_bytes()) {
         Ok(path) => Ok(path),

@@ -1,5 +1,7 @@
 use crate::get_task_from_context;
-use crate::runtime::{local_executor, Task};
+use crate::runtime::local_executor;
+use crate::sync::channels::pools::{channel_inner_vec_deque_pool, DequesPoolGuard};
+use crate::sync::channels::states::{RecvCallState, SendCallState};
 use crate::sync::{
     AsyncChannel, AsyncReceiver, AsyncSender, RecvInResult, SendResult, TryRecvInResult,
     TrySendResult,
@@ -11,35 +13,14 @@ use std::mem::ManuallyDrop;
 use std::ptr;
 use std::task::{Context, Poll};
 
-/// `SendCallState` is a state machine for [`WaitLocalSend`]. This is used to improve performance.
-enum SendCallState {
-    /// Default state.
-    FirstCall,
-    /// Receiver writes the value associated with this task
-    WokenToReturnReady,
-    /// This task was enqueued, now it is woken by close, and it has no lock now.
-    WokenByClose,
-}
-
-/// `RecvCallState` is a state machine for [`WaitLocalRecv`]. This is used to improve performance.
-enum RecvCallState {
-    /// Default state.
-    FirstCall,
-    /// This task was enqueued, now it is woken for return [`Poll::Ready`],
-    /// because a [`WaitLocalSend`] has written to the slot already.
-    WokenToReturnReady,
-    /// This task was enqueued, now it is woken by close.
-    WokenByClose,
-}
-
 /// This is the internal data structure for the [`local channel`](LocalChannel).
 /// It holds the actual storage for the values and manages the queue of senders and receivers.
+#[repr(C)]
 struct Inner<T> {
     storage: VecDeque<T>,
     is_closed: bool,
     capacity: usize,
-    senders: VecDeque<(Task, *mut SendCallState, *const T)>,
-    receivers: VecDeque<(Task, *mut T, *mut RecvCallState)>,
+    deques: DequesPoolGuard<T>,
 }
 
 // region futures
@@ -53,6 +34,7 @@ struct Inner<T> {
 /// # Panics or memory leaks
 ///
 /// If [`WaitLocalSend::poll`] is not called.
+#[repr(C)]
 pub struct WaitLocalSend<'future, T> {
     inner: &'future mut Inner<T>,
     call_state: SendCallState,
@@ -63,7 +45,7 @@ pub struct WaitLocalSend<'future, T> {
 
 impl<'future, T> WaitLocalSend<'future, T> {
     /// Creates a new [`WaitLocalSend`].
-    #[inline(always)]
+    #[inline]
     fn new(value: T, inner: &'future mut Inner<T>) -> Self {
         Self {
             inner,
@@ -78,7 +60,7 @@ impl<'future, T> WaitLocalSend<'future, T> {
 impl<T> Future for WaitLocalSend<'_, T> {
     type Output = SendResult<T>;
 
-    #[inline(always)]
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
         #[cfg(debug_assertions)]
@@ -94,9 +76,9 @@ impl<T> Future for WaitLocalSend<'_, T> {
                     }));
                 }
 
-                if !this.inner.receivers.is_empty() {
-                    let (task, slot, call_state) =
-                        unsafe { this.inner.receivers.pop_front().unwrap_unchecked() };
+                if !this.inner.deques.receivers.is_empty() {
+                    let (task, call_state, slot) =
+                        unsafe { this.inner.deques.receivers.pop_front().unwrap_unchecked() };
                     unsafe {
                         ptr::copy_nonoverlapping(&*this.value, slot, 1);
                         call_state.write(RecvCallState::WokenToReturnReady);
@@ -108,7 +90,7 @@ impl<T> Future for WaitLocalSend<'_, T> {
                 let len = this.inner.storage.len();
                 if len >= this.inner.capacity {
                     let task = unsafe { get_task_from_context!(cx) };
-                    this.inner.senders.push_back((
+                    this.inner.deques.senders.push_back((
                         task,
                         &mut this.call_state,
                         ptr::from_ref(&this.value).cast(),
@@ -146,6 +128,7 @@ impl<T> Drop for WaitLocalSend<'_, T> {
 ///
 /// When the future is polled, it either receives the value immediately (if available) or
 /// gets parked in the list of waiting receivers.
+#[repr(C)]
 pub struct WaitLocalRecv<'future, T> {
     inner: &'future mut Inner<T>,
     call_state: RecvCallState,
@@ -154,7 +137,7 @@ pub struct WaitLocalRecv<'future, T> {
 
 impl<'future, T> WaitLocalRecv<'future, T> {
     /// Creates a new [`WaitLocalRecv`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'future mut Inner<T>, slot: *mut T) -> Self {
         Self {
             inner,
@@ -167,7 +150,7 @@ impl<'future, T> WaitLocalRecv<'future, T> {
 impl<T> Future for WaitLocalRecv<'_, T> {
     type Output = RecvInResult;
 
-    #[inline(always)]
+    #[inline]
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
@@ -179,7 +162,7 @@ impl<T> Future for WaitLocalRecv<'_, T> {
 
                 let l = this.inner.storage.len();
                 if l == 0 {
-                    let sender_ = this.inner.senders.pop_front();
+                    let sender_ = this.inner.deques.senders.pop_front();
                     if let Some((task, call_state, value_ptr)) = sender_ {
                         unsafe {
                             call_state.write(SendCallState::WokenToReturnReady);
@@ -192,8 +175,9 @@ impl<T> Future for WaitLocalRecv<'_, T> {
 
                     let task = unsafe { get_task_from_context!(cx) };
                     this.inner
+                        .deques
                         .receivers
-                        .push_back((task, this.slot, &mut this.call_state));
+                        .push_back((task, &mut this.call_state, this.slot));
                     return Poll::Pending;
                 }
 
@@ -202,7 +186,7 @@ impl<T> Future for WaitLocalRecv<'_, T> {
                         .write(this.inner.storage.pop_front().unwrap_unchecked());
                 }
 
-                let sender_ = this.inner.senders.pop_front();
+                let sender_ = this.inner.deques.senders.pop_front();
                 if let Some((task, call_state, value)) = sender_ {
                     unsafe {
                         call_state.write(SendCallState::WokenToReturnReady);
@@ -224,19 +208,19 @@ impl<T> Future for WaitLocalRecv<'_, T> {
 // endregion
 
 /// Closes the [`local channel`](LocalChannel) and wakes all senders and receivers.
-#[inline(always)]
+#[inline]
 fn close<T>(inner: &mut Inner<T>) {
     inner.is_closed = true;
     let executor = local_executor();
 
-    for (task, state_ptr, _) in inner.senders.drain(..) {
+    for (task, state_ptr, _) in inner.deques.senders.drain(..) {
         unsafe {
             state_ptr.write(SendCallState::WokenByClose);
         };
         executor.exec_task(task);
     }
 
-    for (task, _, state_ptr) in inner.receivers.drain(..) {
+    for (task, state_ptr, _) in inner.deques.receivers.drain(..) {
         unsafe {
             state_ptr.write(RecvCallState::WokenByClose);
         }
@@ -252,7 +236,7 @@ macro_rules! generate_try_send {
                 return TrySendResult::Closed(value);
             }
 
-            if let Some((task, slot, call_state)) = inner.receivers.pop_front() {
+            if let Some((task, call_state, slot)) = inner.deques.receivers.pop_front() {
                 unsafe {
                     slot.write(value);
                     call_state.write(RecvCallState::WokenToReturnReady);
@@ -304,7 +288,7 @@ pub struct LocalSender<'channel, T> {
 
 impl<'channel, T> LocalSender<'channel, T> {
     /// Creates a new [`LocalSender`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
             inner,
@@ -313,7 +297,7 @@ impl<'channel, T> LocalSender<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncSender<T> for LocalSender<'channel, T> {
+impl<T> AsyncSender<T> for LocalSender<'_, T> {
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     fn send(&self, value: T) -> impl Future<Output = SendResult<T>> {
         WaitLocalSend::new(value, unsafe { &mut *self.inner.get() })
@@ -379,7 +363,7 @@ macro_rules! generate_try_recv_in_ptr {
 
             let l = inner.storage.len();
             if l == 0 {
-                let sender_ = inner.senders.pop_front();
+                let sender_ = inner.deques.senders.pop_front();
                 if let Some((task, call_state, value_ptr)) = sender_ {
                     unsafe {
                         call_state.write(SendCallState::WokenToReturnReady);
@@ -397,7 +381,7 @@ macro_rules! generate_try_recv_in_ptr {
                 slot.write(inner.storage.pop_front().unwrap_unchecked());
             };
 
-            let sender_ = inner.senders.pop_front();
+            let sender_ = inner.deques.senders.pop_front();
             if let Some((task, call_state, value)) = sender_ {
                 unsafe {
                     call_state.write(SendCallState::WokenToReturnReady);
@@ -413,7 +397,7 @@ macro_rules! generate_try_recv_in_ptr {
 
 impl<'channel, T> LocalReceiver<'channel, T> {
     /// Creates a new [`LocalReceiver`].
-    #[inline(always)]
+    #[inline]
     fn new(inner: &'channel UnsafeCell<Inner<T>>) -> Self {
         Self {
             inner,
@@ -422,7 +406,7 @@ impl<'channel, T> LocalReceiver<'channel, T> {
     }
 }
 
-impl<'channel, T> AsyncReceiver<T> for LocalReceiver<'channel, T> {
+impl<T> AsyncReceiver<T> for LocalReceiver<'_, T> {
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     unsafe fn recv_in_ptr(&self, slot: *mut T) -> impl Future<Output = RecvInResult> {
         WaitLocalRecv::new(unsafe { &mut *self.inner.get() }, slot)
@@ -517,35 +501,33 @@ impl<T> AsyncChannel<T> for LocalChannel<T> {
     where
         Self: 'channel;
 
-    #[inline(always)]
+    #[inline]
     fn bounded(capacity: usize) -> Self {
         Self {
             inner: UnsafeCell::new(Inner {
                 storage: VecDeque::with_capacity(capacity),
                 capacity,
                 is_closed: false,
-                senders: VecDeque::with_capacity(0),
-                receivers: VecDeque::with_capacity(0),
+                deques: channel_inner_vec_deque_pool().get(),
             }),
             no_send_marker: std::marker::PhantomData,
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn unbounded() -> Self {
         Self {
             inner: UnsafeCell::new(Inner {
                 storage: VecDeque::with_capacity(0),
                 capacity: usize::MAX,
                 is_closed: false,
-                senders: VecDeque::with_capacity(0),
-                receivers: VecDeque::with_capacity(0),
+                deques: channel_inner_vec_deque_pool().get(),
             }),
             no_send_marker: std::marker::PhantomData,
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn split(&self) -> (Self::Sender<'_>, Self::Receiver<'_>) {
         (
             LocalSender::new(&self.inner),

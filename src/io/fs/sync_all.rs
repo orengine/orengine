@@ -10,6 +10,7 @@ use crate::io::sys::{AsRawFile, RawFile};
 use crate::io::worker::{local_worker, IoWorker};
 
 /// `sync_all` io operation.
+#[repr(C)]
 pub struct SyncAll {
     raw_file: RawFile,
     io_request_data: Option<IoRequestData>,
@@ -28,8 +29,8 @@ impl SyncAll {
 impl Future for SyncAll {
     type Output = Result<usize>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let ret;
 
         poll_for_io_request!((
@@ -80,7 +81,7 @@ pub trait AsyncSyncAll: AsRawFile {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
+    #[inline]
     fn sync_all(&self) -> SyncAll {
         SyncAll::new(self.as_raw_file())
     }

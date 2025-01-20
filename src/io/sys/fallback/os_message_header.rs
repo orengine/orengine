@@ -1,8 +1,9 @@
 use socket2::SockAddr;
+use std::io::{IoSlice, IoSliceMut};
 use std::ptr;
 
 /// Synonymous with os message header.
-pub(crate) type OsMessageHeader = (*mut *mut [u8], *mut SockAddr);
+pub(crate) type OsMessageHeader = (*mut [IoSliceMut<'static>], *mut SockAddr);
 
 /// [`MessageRecvHeader`] keeps the message header for `recvfrom`.
 pub(crate) struct MessageRecvHeader {
@@ -11,16 +12,23 @@ pub(crate) struct MessageRecvHeader {
 
 impl MessageRecvHeader {
     /// Creates a new [`MessageRecvHeader`].
-    pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut *mut [u8]) -> Self {
+    pub(crate) fn new(addr: *mut SockAddr, buf_ptr: *mut [IoSliceMut<'_>]) -> Self {
+        #[allow(clippy::unnecessary_cast, reason = "False positive.")]
         Self {
-            os_header: (buf_ptr, addr),
+            os_header: (buf_ptr as *mut [IoSliceMut<'static>], addr),
         }
     }
 
+    /// Returns a length of an associated addr.
+    #[inline]
+    pub(crate) fn get_addr_len(&self) -> crate::io::sys::socklen_t {
+        unsafe { &*self.os_header.1 }.len()
+    }
+
     /// Returns a shared reference to the message header.
-    #[inline(always)]
-    pub(crate) fn get_os_message_header(&self) -> &OsMessageHeader {
-        &self.os_header
+    #[inline]
+    pub(crate) fn get_os_message_header(&mut self) -> &OsMessageHeader {
+        &mut self.os_header
     }
 }
 
@@ -31,28 +39,31 @@ pub(crate) struct MessageSendHeader {
 
 impl MessageSendHeader {
     /// Creates a new [`MessageSendHeader`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new() -> Self {
         Self {
-            os_header: (ptr::null_mut(), ptr::null_mut()),
+            os_header: (
+                ptr::slice_from_raw_parts_mut(ptr::null_mut(), 0),
+                ptr::null_mut(),
+            ),
         }
     }
 
     /// Initializes the message header.
-    #[inline(always)]
-    pub(crate) fn init(&mut self, addr: &SockAddr, buf_ref: *mut *const [u8]) {
-        self.os_header.0 = buf_ref.cast();
+    #[inline]
+    pub(crate) fn init(&mut self, addr: &SockAddr, buf_ref: *mut [IoSlice<'_>]) {
+        self.os_header.0 = buf_ref as *mut [IoSliceMut<'static>];
         self.os_header.1 = ptr::from_ref(addr).cast_mut();
     }
 
     /// Returns a pointer to the message header after its initialization.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_os_message_header_ptr(
         &mut self,
         addr: &SockAddr,
-        buf_ref: *mut *const [u8],
+        buf_ref: *const [IoSlice],
     ) -> *mut OsMessageHeader {
-        self.init(addr, buf_ref);
+        self.init(addr, buf_ref.cast_mut());
 
         ptr::from_mut(&mut self.os_header)
     }

@@ -1,4 +1,6 @@
-use crate::runtime::{Locality, IS_LOCAL_MASK, TASK_MASK};
+use crate::runtime::Locality;
+#[cfg(target_pointer_width = "64")]
+use crate::runtime::{IS_LOCAL_MASK, TASK_MASK};
 use std::future::Future;
 
 /// `*mut dyn Future<Output = ()>` and the [`locality`](Locality) information associated
@@ -20,7 +22,7 @@ pub(crate) struct TaskData {
 
 impl TaskData {
     /// Creates a new `TaskData`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(future: *mut dyn Future<Output = ()>, locality: Locality) -> Self {
         #[cfg(not(target_pointer_width = "64"))]
         return Self {
@@ -46,7 +48,7 @@ impl TaskData {
     }
 
     /// Returns the future pointer associated with the `TaskData`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn future_ptr(&self) -> *mut dyn Future<Output = ()> {
         #[cfg(not(target_pointer_width = "64"))]
         return self.future_ptr;
@@ -68,7 +70,7 @@ impl TaskData {
     }
 
     /// Returns whether the `TaskData` is local or not.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn is_local(&self) -> bool {
         #[cfg(not(target_pointer_width = "64"))]
         return self.is_local;
@@ -85,7 +87,7 @@ impl TaskData {
     }
 
     /// Sets locality for the `TaskData`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn set_locality(&mut self, locality: Locality) {
         #[cfg(not(target_pointer_width = "64"))]
         {

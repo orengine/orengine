@@ -2,6 +2,7 @@ use crate as orengine;
 use crate::io::io_request_data::{IoRequestData, IoRequestDataPtr};
 use crate::io::sys::{AsRawSocket, RawSocket};
 use crate::io::worker::{local_worker, IoWorker};
+use crate::net::Socket;
 use orengine_macros::poll_for_io_request;
 use std::future::Future;
 use std::io::Result;
@@ -10,6 +11,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `shutdown` io operation.
+#[repr(C)]
 pub struct Shutdown {
     raw_socket: RawSocket,
     how: ShutdownHow,
@@ -30,8 +32,8 @@ impl Shutdown {
 impl Future for Shutdown {
     type Output = Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
@@ -49,7 +51,7 @@ unsafe impl Send for Shutdown {}
 /// The `AsyncShutdown` trait provides a method for asynchronously shutting down part or all of a
 /// connection.
 ///
-/// It can be implemented for sockets or connections that implement the `AsRawSocket` trait.
+/// It can be implemented for any [`sockets`](Socket).
 /// The trait leverages different shutdown options [`Shutdown`](std::net::Shutdown)
 /// to control which aspects of the connection to shut down, such as reading, writing, or both.
 ///
@@ -68,7 +70,7 @@ unsafe impl Send for Shutdown {}
 /// # Ok(())
 /// # }
 /// ```
-pub trait AsyncShutdown: AsRawSocket {
+pub trait AsyncShutdown: Socket {
     /// Shuts down part or all of the connection. The shutdown behavior is determined by the
     /// [`Shutdown`](std::net::Shutdown) enum, which specifies whether to shut down reading,
     /// writing, or both.

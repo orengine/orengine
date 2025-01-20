@@ -1,8 +1,8 @@
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncCondVar, AsyncMutex, AsyncMutexGuard, LocalMutex};
+use crate::utils::{acquire_task_vec_from_pool, TaskVecFromPool};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -23,6 +23,7 @@ enum WaitState {
 /// `WaitLocalCondVar` represents a future returned by the [`LocalCondVar::wait`] method.
 ///
 /// It is used to wait for a notification from a condition variable.
+#[repr(C)]
 pub struct WaitLocalCondVar<'mutex, 'cond_var, T, Guard>
 where
     T: 'mutex + ?Sized,
@@ -44,7 +45,7 @@ where
     Guard::Mutex: AsyncSubscribableMutex<T>,
 {
     /// Creates a new [`WaitLocalCondVar`].
-    #[inline(always)]
+    #[inline]
     pub fn new(cond_var: &'cond_var LocalCondVar, mutex: &'mutex Guard::Mutex) -> Self {
         WaitLocalCondVar {
             state: WaitState::Sleep,
@@ -134,17 +135,16 @@ where
 /// # }
 /// ```
 pub struct LocalCondVar {
-    wait_queue: UnsafeCell<Vec<Task>>,
+    wait_queue: UnsafeCell<TaskVecFromPool>,
     // impl !Send
     no_send_marker: PhantomData<*const ()>,
 }
 
 impl LocalCondVar {
     /// Creates a new [`LocalCondVar`].
-    #[inline(always)]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            wait_queue: UnsafeCell::new(Vec::new()),
+            wait_queue: UnsafeCell::new(acquire_task_vec_from_pool()),
             no_send_marker: PhantomData,
         }
     }
@@ -156,7 +156,6 @@ impl AsyncCondVar for LocalCondVar {
     where
         T: ?Sized;
 
-    #[inline(always)]
     #[allow(clippy::future_not_send, reason = "LocalCondVar is !Send")]
     fn wait<'mutex, T>(
         &self,
@@ -173,7 +172,6 @@ impl AsyncCondVar for LocalCondVar {
         >::new(self, guard.mutex())
     }
 
-    #[inline(always)]
     fn notify_one(&self) {
         let wait_queue = unsafe { &mut *self.wait_queue.get() };
         if let Some(task) = wait_queue.pop() {
@@ -181,7 +179,6 @@ impl AsyncCondVar for LocalCondVar {
         }
     }
 
-    #[inline(always)]
     fn notify_all(&self) {
         let executor = local_executor();
         let wait_queue = unsafe { &mut *self.wait_queue.get() };

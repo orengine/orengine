@@ -1,12 +1,12 @@
 //! This module provides an asynchronous mutex (e.g. [`std::sync::Mutex`]) type [`LocalMutex`].
 //!
 //! It allows for asynchronous locking and unlocking, and provides
-//! ownership-based lockin + ?Sizedg through [`LocalMutexGuard`].
+//! ownership-based locking through [`LocalMutexGuard`].
 use crate::get_task_from_context;
 use crate::runtime::local_executor;
-use crate::runtime::task::Task;
 use crate::sync::mutexes::AsyncSubscribableMutex;
 use crate::sync::{AsyncMutex, AsyncMutexGuard};
+use crate::utils::{acquire_task_vec_from_pool, TaskVecFromPool};
 use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
@@ -30,7 +30,7 @@ pub struct LocalMutexGuard<'mutex, T: ?Sized> {
 
 impl<'mutex, T: ?Sized> LocalMutexGuard<'mutex, T> {
     /// Creates a new [`LocalMutexGuard`].
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self {
             local_mutex,
@@ -41,7 +41,7 @@ impl<'mutex, T: ?Sized> LocalMutexGuard<'mutex, T> {
     /// Returns a reference to the original [`LocalMutex`].
     ///
     /// The mutex will be unlocked.
-    #[inline(always)]
+    #[inline]
     pub fn into_local_mutex(self) -> &'mutex LocalMutex<T> {
         self.local_mutex
     }
@@ -80,6 +80,7 @@ impl<T: ?Sized> Drop for LocalMutexGuard<'_, T> {
 }
 
 /// `LocalMutexWait` is a future that will be resolved when the lock is acquired.
+#[repr(C)]
 pub struct LocalMutexWait<'mutex, T: ?Sized> {
     was_called: bool,
     local_mutex: &'mutex LocalMutex<T>,
@@ -88,7 +89,7 @@ pub struct LocalMutexWait<'mutex, T: ?Sized> {
 
 impl<'mutex, T: ?Sized> LocalMutexWait<'mutex, T> {
     /// Creates a new [`LocalMutexWait`].
-    #[inline(always)]
+    #[inline]
     pub fn new(local_mutex: &'mutex LocalMutex<T>) -> Self {
         Self {
             was_called: false,
@@ -101,8 +102,8 @@ impl<'mutex, T: ?Sized> LocalMutexWait<'mutex, T> {
 impl<'mutex, T: ?Sized> Future for LocalMutexWait<'mutex, T> {
     type Output = LocalMutexGuard<'mutex, T>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         if !this.was_called {
             let task = unsafe { get_task_from_context!(cx) };
             let wait_queue = unsafe { &mut *this.local_mutex.wait_queue.get() };
@@ -174,9 +175,10 @@ impl<'mutex, T: ?Sized> Future for LocalMutexWait<'mutex, T> {
 ///     // lock is released when `guard` goes out of scope
 /// }
 /// ```
+#[repr(C)]
 pub struct LocalMutex<T: ?Sized> {
     is_locked: UnsafeCell<bool>,
-    wait_queue: UnsafeCell<Vec<Task>>,
+    wait_queue: UnsafeCell<TaskVecFromPool>,
     // impl !Send
     no_send_marker: std::marker::PhantomData<*const ()>,
     value: UnsafeCell<T>,
@@ -184,11 +186,10 @@ pub struct LocalMutex<T: ?Sized> {
 
 impl<T> LocalMutex<T> {
     /// Creates a new [`LocalMutex`].
-    #[inline(always)]
-    pub const fn new(value: T) -> Self {
+    pub fn new(value: T) -> Self {
         Self {
             is_locked: UnsafeCell::new(false),
-            wait_queue: UnsafeCell::new(Vec::new()),
+            wait_queue: UnsafeCell::new(acquire_task_vec_from_pool()),
             value: UnsafeCell::new(value),
             no_send_marker: std::marker::PhantomData,
         }
@@ -201,12 +202,12 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
     where
         Self: 'mutex;
 
-    #[inline(always)]
+    #[inline]
     fn is_locked(&self) -> bool {
         unsafe { *self.is_locked.get() }
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(clippy::future_not_send, reason = "Because it is `local`")]
     async fn lock<'mutex>(&'mutex self) -> Self::Guard<'mutex>
     where
@@ -222,7 +223,7 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_lock(&self) -> Option<Self::Guard<'_>> {
         let is_locked = unsafe { &mut *self.is_locked.get() };
         if !*is_locked {
@@ -234,12 +235,11 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.value.get() }
     }
 
-    #[inline(always)]
     unsafe fn unlock(&self) {
         debug_assert!(unsafe { self.is_locked.get().read() });
 
@@ -253,7 +253,7 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_locked(&self) -> Self::Guard<'_> {
         debug_assert!(
             unsafe { self.is_locked.get().read() },
@@ -265,7 +265,7 @@ impl<T: ?Sized> AsyncMutex<T> for LocalMutex<T> {
 }
 
 impl<T: ?Sized> AsyncSubscribableMutex<T> for LocalMutex<T> {
-    #[inline(always)]
+    #[inline]
     fn low_level_subscribe(&self, cx: &Context) {
         let task = unsafe { get_task_from_context!(cx) };
         let wait_queue = unsafe { &mut *self.wait_queue.get() };

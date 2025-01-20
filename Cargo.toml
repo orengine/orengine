@@ -1,6 +1,6 @@
 [package]
 name = "orengine"
-version = "0.8.1-alpha.1"
+version = "0.9.0-alpha.2"
 license = "MIT"
 description = """
 Optimized ring engine for Rust.
@@ -23,10 +23,10 @@ disable_send_task_to = []
 [dependencies]
 orengine-macros = { version = "4.1.0", path = "./orengine-macros" }
 core_affinity = "0.8.1"
-socket2 = { version = "0.5.7", features = ["all"] }
-smallvec = "2.0.0-alpha.7"
+socket2 = { version = "0.5.8", features = ["all"] }
+smallvec = "2.0.0-alpha.10"
 ahash = "0.8.11"
-fastrand = "2.1.1"
+fastrand = "2.3.0"
 crossbeam = "0.8.4"
 libc = "0.2.169"
 
@@ -37,5 +37,8 @@ windows-sys = "0.52.0"
 positioned-io = "0.3.3"
 mio = { version = "1.0.3", features = ["net", "os-ext", "os-poll", "default"] }
 
+[target.'cfg(unix)'.dependencies]
+memchr = "2.7.4"
+
 [target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.7.0"
+io-uring = "0.7.3"

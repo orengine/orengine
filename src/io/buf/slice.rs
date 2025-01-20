@@ -8,13 +8,13 @@ macro_rules! impl_shared_slice {
         $(
             impl<'buf> $ty {
                 #[doc = "Returns what byte of the [`Buffer`] does the slice start from."]
-                #[inline(always)]
+                #[inline]
                 pub fn start(&self) -> u32 {
                     self.start
                 }
 
                 #[doc = "Returns what byte of the [`Buffer`] does the slice end at."]
-                #[inline(always)]
+                #[inline]
                 pub fn end(&self) -> u32 {
                     self.end
                 }
@@ -23,7 +23,7 @@ macro_rules! impl_shared_slice {
             impl Sealed for $ty {}
 
             impl FixedBuffer for $ty {
-                #[inline(always)]
+                #[inline]
                 fn as_ptr(&self) -> *const u8 {
                     #[allow(
                         clippy::cast_possible_wrap,
@@ -32,17 +32,17 @@ macro_rules! impl_shared_slice {
                     unsafe { self.buf.as_ptr().offset(self.start as isize) }
                 }
 
-                #[inline(always)]
+                #[inline]
                 fn len_u32(&self) -> u32 {
                     self.end - self.start
                 }
 
-                #[inline(always)]
+                #[inline]
                 fn fixed_index(&self) -> u16 {
                     self.buf.fixed_index()
                 }
 
-                #[inline(always)]
+                #[inline]
                 fn is_fixed(&self) -> bool {
                     self.buf.is_fixed()
                 }
@@ -51,7 +51,7 @@ macro_rules! impl_shared_slice {
         impl<'buf> Deref for $ty {
                 type Target = [u8];
 
-                #[inline(always)]
+                #[inline]
                 fn deref(&self) -> &Self::Target {
                     unsafe { &*ptr::slice_from_raw_parts(self.as_ptr(), self.len_u32() as usize) }
                 }
@@ -77,6 +77,7 @@ macro_rules! impl_shared_slice {
 /// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
 /// # }
 /// ```
+#[repr(C)]
 pub struct Slice<'buf> {
     buf: &'buf Buffer,
     start: u32,
@@ -105,6 +106,7 @@ impl<'buf> Slice<'buf> {
 /// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
 /// # }
 /// ```
+#[repr(C)]
 pub struct SliceMut<'buf> {
     buf: &'buf mut Buffer,
     start: u32,
@@ -119,14 +121,14 @@ impl<'buf> SliceMut<'buf> {
 }
 
 impl DerefMut for SliceMut<'_> {
-    #[inline(always)]
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *ptr::slice_from_raw_parts_mut(self.as_mut_ptr(), self.len_u32() as usize) }
     }
 }
 
 impl FixedBufferMut for SliceMut<'_> {
-    #[inline(always)]
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         #[allow(
             clippy::cast_possible_wrap,
@@ -155,6 +157,7 @@ impl_shared_slice! { Slice<'_>, SliceMut<'_> }
 ///
 /// file.read_exact(&mut buf.slice_mut(..100)).await.unwrap(); // read exactly 100 bytes
 /// # }).unwrap();
+#[repr(C)]
 pub struct SendableSlice<'buf> {
     buf: &'buf SendableBuffer,
     start: u32,
@@ -186,6 +189,7 @@ impl<'buf> SendableSlice<'buf> {
 /// file.write_all(&mut buf.slice(..100)).await.unwrap(); // write exactly 100 bytes
 /// # }).unwrap();
 /// ```
+#[repr(C)]
 pub struct SendableSliceMut<'buf> {
     buf: &'buf mut SendableBuffer,
     start: u32,
@@ -200,14 +204,14 @@ impl<'buf> SendableSliceMut<'buf> {
 }
 
 impl DerefMut for SendableSliceMut<'_> {
-    #[inline(always)]
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *ptr::slice_from_raw_parts_mut(self.as_mut_ptr(), self.len_u32() as usize) }
     }
 }
 
 impl FixedBufferMut for SendableSliceMut<'_> {
-    #[inline(always)]
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut u8 {
         #[allow(
             clippy::cast_possible_wrap,

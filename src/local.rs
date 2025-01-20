@@ -89,7 +89,7 @@ impl<'borrow, T> LocalRef<'borrow, T> {
 impl<T> Deref for LocalRef<'_, T> {
     type Target = T;
 
-    #[inline(always)]
+    #[inline]
     fn deref(&self) -> &Self::Target {
         #[cfg(debug_assertions)]
         unsafe {
@@ -102,7 +102,7 @@ impl<T> Deref for LocalRef<'_, T> {
 }
 
 impl<T: Display> Display for LocalRef<'_, T> {
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (**self).fmt(f)
     }
@@ -162,7 +162,7 @@ impl<'borrow, T> LocalRefMut<'borrow, T> {
 impl<T> Deref for LocalRefMut<'_, T> {
     type Target = T;
 
-    #[inline(always)]
+    #[inline]
     fn deref(&self) -> &Self::Target {
         #[cfg(debug_assertions)]
         unsafe {
@@ -175,7 +175,7 @@ impl<T> Deref for LocalRefMut<'_, T> {
 }
 
 impl<T> DerefMut for LocalRefMut<'_, T> {
-    #[inline(always)]
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         #[cfg(debug_assertions)]
         unsafe {
@@ -188,7 +188,7 @@ impl<T> DerefMut for LocalRefMut<'_, T> {
 }
 
 impl<T: Display> Display for LocalRefMut<'_, T> {
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (**self).fmt(f)
     }
@@ -330,7 +330,7 @@ impl<T> Local<T> {
     /// Increments the internal reference counter.
     /// This is called when a new reference to the [`Local`] is created
     /// (e.g., when `clone()` is called).
-    #[inline(always)]
+    #[inline]
     fn inc_counter(&self) {
         debug_check_parent_executor_id!(self);
 
@@ -342,7 +342,7 @@ impl<T> Local<T> {
     /// Decrements the internal reference counter. This is called when a reference is dropped
     /// (e.g., when the [`Local`] is dropped).
     /// If the reference count reaches zero, the data is cleaned up.
-    #[inline(always)]
+    #[inline]
     fn dec_counter(&self) -> usize {
         debug_check_parent_executor_id!(self);
 
@@ -351,7 +351,7 @@ impl<T> Local<T> {
         reference.counter
     }
 
-    #[inline(always)]
+    #[inline]
     /// Returns [`LocalRef`] that allows shared access to the data.
     ///
     /// Read more in [`LocalRef`].
@@ -382,7 +382,7 @@ impl<T> Local<T> {
         LocalRef::new(self)
     }
 
-    #[inline(always)]
+    #[inline]
     /// Returns [`LocalRefMut`] that allows mutable access to the data.
     ///
     /// Read more in [`LocalRefMut`].
@@ -420,7 +420,7 @@ impl<T: Default> Default for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn default() -> Self {
         Self::new(T::default())
     }
@@ -431,7 +431,7 @@ impl<T: Debug> Debug for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         debug_check_parent_executor_id!(self);
 
@@ -444,7 +444,7 @@ impl<T: Display> Display for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         debug_check_parent_executor_id!(self);
 
@@ -457,7 +457,7 @@ impl<T: PartialEq> PartialEq for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         debug_check_parent_executor_id!(self);
 
@@ -472,7 +472,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         debug_check_parent_executor_id!(self);
 
@@ -483,7 +483,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn lt(&self, other: &Self) -> bool {
         *self.borrow() < *other.borrow()
     }
@@ -492,7 +492,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn le(&self, other: &Self) -> bool {
         *self.borrow() <= *other.borrow()
     }
@@ -501,7 +501,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn gt(&self, other: &Self) -> bool {
         *self.borrow() > *other.borrow()
     }
@@ -510,7 +510,7 @@ impl<T: PartialOrd> PartialOrd for Local<T> {
     ///
     /// Panics with `debug_assertions` if the value in either `Local` is currently mutably borrowed or if
     /// `Local` has been moved to another thread.
-    #[inline(always)]
+    #[inline]
     fn ge(&self, other: &Self) -> bool {
         *self.borrow() >= *other.borrow()
     }

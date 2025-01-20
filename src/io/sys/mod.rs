@@ -15,9 +15,13 @@ pub use worker_configs::*;
 pub use libc::sockaddr_storage;
 #[cfg(not(windows))]
 pub use libc::socklen_t;
+#[cfg(not(windows))]
+pub use libc::MSG_PEEK as MSG_PEEK_FLAG;
 
 #[cfg(windows)]
 pub use windows_sys::Win32::Networking::WinSock::socklen_t;
+#[cfg(windows)]
+pub use windows_sys::Win32::Networking::WinSock::MSG_PEEK as MSG_PEEK_FLAG;
 #[cfg(windows)]
 pub use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE as sockaddr_storage;
 

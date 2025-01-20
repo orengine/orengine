@@ -38,7 +38,7 @@ impl Locality {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn local() -> Self {
         #[cfg(not(target_pointer_width = "64"))]
         {
@@ -56,7 +56,7 @@ impl Locality {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn shared() -> Self {
         #[cfg(not(target_pointer_width = "64"))]
         {
@@ -72,7 +72,7 @@ impl Locality {
     /// # The difference between shared and local tasks
     ///
     /// Read it in [`crate::Executor`].
-    #[inline(always)]
+    #[inline]
     pub fn is_local(&self) -> bool {
         #[cfg(not(target_pointer_width = "64"))]
         {

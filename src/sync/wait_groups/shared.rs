@@ -2,7 +2,10 @@ use crate::panic_if_local_in_future;
 use crate::runtime::call::Call;
 use crate::runtime::local_executor;
 use crate::sync::wait_groups::AsyncWaitGroup;
-use crate::sync_task_queue::SyncTaskList;
+use crate::utils::{
+    acquire_sync_task_list_from_pool, acquire_task_vec_from_pool, SyncTaskListFromPool,
+};
+use crossbeam::utils::CachePadded;
 use std::future::Future;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
@@ -11,6 +14,7 @@ use std::sync::atomic::Ordering::{Acquire, Release};
 use std::task::{Context, Poll};
 
 /// A [`Future`] to wait for all tasks in the [`WaitGroup`] to complete.
+#[repr(C)]
 pub struct WaitSharedWaitGroup<'wait_group> {
     wait_group: &'wait_group WaitGroup,
     was_called: bool,
@@ -18,7 +22,7 @@ pub struct WaitSharedWaitGroup<'wait_group> {
 
 impl<'wait_group> WaitSharedWaitGroup<'wait_group> {
     /// Creates a new [`WaitSharedWaitGroup`] future.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(wait_group: &'wait_group WaitGroup) -> Self {
         Self {
             wait_group,
@@ -31,8 +35,8 @@ impl Future for WaitSharedWaitGroup<'_> {
     type Output = ();
 
     #[allow(unused, reason = "Here we use #[cfg(debug_assertions)].")]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         unsafe { panic_if_local_in_future!(cx, "WaitGroup") };
 
         if !this.was_called {
@@ -49,8 +53,8 @@ impl Future for WaitSharedWaitGroup<'_> {
             // So, I enqueue the task first, and only then do the check.
             unsafe {
                 local_executor().invoke_call(Call::PushCurrentTaskToAndRemoveItIfCounterIsZero(
-                    &this.wait_group.waited_tasks,
-                    &this.wait_group.counter,
+                    &*this.wait_group.waited_tasks,
+                    &*this.wait_group.counter,
                     Acquire,
                 ));
             }
@@ -99,32 +103,32 @@ impl Future for WaitSharedWaitGroup<'_> {
 /// # }
 /// ```
 pub struct WaitGroup {
-    counter: AtomicUsize,
-    waited_tasks: SyncTaskList,
+    counter: CachePadded<AtomicUsize>,
+    waited_tasks: SyncTaskListFromPool,
 }
 
 impl WaitGroup {
     /// Creates a new `WaitGroup`.
     pub fn new() -> Self {
         Self {
-            counter: AtomicUsize::new(0),
-            waited_tasks: SyncTaskList::new(),
+            counter: CachePadded::new(AtomicUsize::new(0)),
+            waited_tasks: acquire_sync_task_list_from_pool(),
         }
     }
 }
 
 impl AsyncWaitGroup for WaitGroup {
-    #[inline(always)]
+    #[inline]
     fn add(&self, count: usize) {
         self.counter.fetch_add(count, Acquire);
     }
 
-    #[inline(always)]
+    #[inline]
     fn count(&self) -> usize {
         self.counter.load(Acquire)
     }
 
-    #[inline(always)]
+    #[inline]
     fn done(&self) -> usize {
         let prev_count = self.counter.fetch_sub(1, Release);
         debug_assert!(
@@ -134,9 +138,10 @@ impl AsyncWaitGroup for WaitGroup {
 
         if prev_count == 1 {
             let executor = local_executor();
-            let mut tasks = Vec::new();
+            let mut tasks = acquire_task_vec_from_pool();
+
             self.waited_tasks.pop_all_in(&mut tasks);
-            for task in tasks {
+            for task in tasks.drain(..) {
                 executor.spawn_shared_task(task);
             }
         }
@@ -144,7 +149,7 @@ impl AsyncWaitGroup for WaitGroup {
         prev_count
     }
 
-    #[inline(always)]
+    #[inline]
     fn wait(&self) -> impl Future<Output = ()> {
         WaitSharedWaitGroup::new(self)
     }

@@ -2,135 +2,72 @@ use crate::runtime::Task;
 use crate::utils::never_wait_lock::NeverWaitLock;
 use std::collections::VecDeque;
 
+/// `LocalAndSharedTaskDeque` stores `local` and `shared` tasks deque.
+struct LocalAndSharedTaskDeque {
+    local_tasks: VecDeque<Task>,
+    shared_tasks: VecDeque<Task>,
+}
+
 /// `SyncBatchOptimizedTaskQueue` is a struct that provides a thread-safe ways to appends `local`
 /// or `shared` tasks or to take them. It is optimized to work with batches of tasks.
 pub(crate) struct SyncBatchOptimizedTaskQueue {
-    local_tasks: NeverWaitLock<VecDeque<Task>>,
-    shared_tasks: NeverWaitLock<VecDeque<Task>>,
+    task_deque: NeverWaitLock<LocalAndSharedTaskDeque>,
 }
 
 impl SyncBatchOptimizedTaskQueue {
     /// Creates a new `SyncBatchOptimizedTaskQueue`.
     pub(crate) const fn new() -> Self {
         Self {
-            local_tasks: NeverWaitLock::new(VecDeque::new()),
-            shared_tasks: NeverWaitLock::new(VecDeque::new()),
+            task_deque: NeverWaitLock::new(LocalAndSharedTaskDeque {
+                local_tasks: VecDeque::new(),
+                shared_tasks: VecDeque::new(),
+            }),
         }
     }
 
-    /// [`Appends`](VecDeque::append) the accumulated tasks to the `local` tasks queue
+    /// [`Appends`](VecDeque::append) the accumulated tasks to the [`LocalAndSharedTaskDeque`]
     /// if it is available.
     ///
     /// Else doesn't do anything.
     ///
-    /// Returns `true` if the `local` tasks queue is available or if there are no tasks.
+    /// Returns `true` if the [`LocalAndSharedTaskDeque`] is available or if there are no tasks.
     ///
     /// # Panics
     ///
-    /// If there are `shared` task with `debug_assertions`.
-    fn try_to_append_local_tasks(
-        &self,
-        tasks: &mut VecDeque<Task>,
-        #[cfg(debug_assertions)] executor_id: usize,
-    ) -> bool {
-        if tasks.is_empty() {
-            return true;
-        }
-
-        if let Some(mut guard) = self.local_tasks.try_lock() {
-            #[cfg(not(debug_assertions))]
-            {
-                guard.append(tasks);
-            }
-
-            #[cfg(debug_assertions)]
-            {
-                for mut task in tasks.drain(..) {
-                    assert!(task.is_local());
-
-                    task.executor_id = executor_id;
-
-                    guard.push_back(task);
-                }
-            }
-
-            return true;
-        }
-
-        false
-    }
-
-    /// [`Appends`](VecDeque::append) the accumulated tasks to the `shared` tasks queue
-    /// if it is available.
-    ///
-    /// Else doesn't do anything.
-    ///
-    /// Returns `true` if the `shared` tasks queue is available or if there are no tasks.
-    ///
-    /// # Panics
-    ///
-    /// If there are `local` task with `debug_assertions`.
-    fn try_to_append_shared_tasks(
-        &self,
-        tasks: &mut VecDeque<Task>,
-        #[cfg(debug_assertions)] executor_id: usize,
-    ) -> bool {
-        if tasks.is_empty() {
-            return true;
-        }
-
-        if let Some(mut guard) = self.shared_tasks.try_lock() {
-            #[cfg(not(debug_assertions))]
-            {
-                guard.append(tasks);
-            }
-
-            #[cfg(debug_assertions)]
-            {
-                for mut task in tasks.drain(..) {
-                    assert!(!task.is_local());
-
-                    task.executor_id = executor_id;
-
-                    guard.push_back(task);
-                }
-            }
-
-            return true;
-        }
-
-        false
-    }
-
-    /// Calls [`try_to_append_local_tasks`](Self::try_to_append_local_tasks) and
-    /// [`try_to_append_shared_tasks`](Self::try_to_append_shared_tasks).
-    ///
-    /// Returns `true` if both queues are available or if there are no tasks.
+    /// If the `shared` task is in `local` task queue with `debug_assertions`.
     pub(crate) fn try_to_append_tasks(
         &self,
         local_tasks: &mut VecDeque<Task>,
         shared_tasks: &mut VecDeque<Task>,
         #[cfg(debug_assertions)] executor_id: usize,
     ) -> bool {
-        self.try_to_append_local_tasks(
-            local_tasks,
-            #[cfg(debug_assertions)]
-            executor_id,
-        ) && self.try_to_append_shared_tasks(
-            shared_tasks,
-            #[cfg(debug_assertions)]
-            executor_id,
-        )
-    }
+        if local_tasks.is_empty() && shared_tasks.is_empty() {
+            return true;
+        }
 
-    /// Takes all `local` tasks from the `local` tasks queue if it is available.
-    ///
-    /// Else doesn't do anything.
-    ///
-    /// Returns if the take operation was success.
-    fn try_to_take_batch_of_local_tasks(&self, storage: &mut VecDeque<Task>) -> bool {
-        if let Some(mut guard) = self.local_tasks.try_lock() {
-            storage.append(&mut guard);
+        if let Some(mut guard) = self.task_deque.try_lock() {
+            #[cfg(not(debug_assertions))]
+            {
+                guard.local_tasks.append(local_tasks);
+                guard.shared_tasks.append(shared_tasks);
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                for mut task in local_tasks.drain(..) {
+                    assert!(task.is_local());
+
+                    task.executor_id = executor_id;
+
+                    guard.local_tasks.push_back(task);
+                }
+
+                for task in shared_tasks.drain(..) {
+                    assert!(!task.is_local());
+
+                    guard.shared_tasks.push_back(task);
+                }
+            }
 
             return true;
         }
@@ -138,32 +75,30 @@ impl SyncBatchOptimizedTaskQueue {
         false
     }
 
-    /// Takes all `shared` tasks from the `shared` tasks queue if it is available.
+    /// Takes all tasks to the `local` and `shared` task queues if [`LocalAndSharedTaskDeque`]
+    /// is available.
     ///
     /// Else doesn't do anything.
     ///
-    /// Returns if the take operation was success.
-    fn try_to_take_batch_of_shared_tasks(&self, storage: &mut VecDeque<Task>) -> bool {
-        if let Some(mut guard) = self.shared_tasks.try_lock() {
-            storage.append(&mut guard);
-
-            return true;
-        }
-
-        false
-    }
-
-    /// Calls [`take_batch_of_local_tasks`](Self::try_to_take_batch_of_local_tasks) and
-    /// [`take_batch_of_shared_tasks`](Self::try_to_take_batch_of_shared_tasks).
-    ///
-    /// Returns `true` if both queues are available or if there are no tasks.
+    /// Returns whether the take operation was success.
     pub(crate) fn try_to_take_batch_of_tasks(
         &self,
-        local_task_storage: &mut VecDeque<Task>,
-        shared_task_storage: &mut VecDeque<Task>,
+        local_tasks: &mut VecDeque<Task>,
+        shared_tasks: &mut VecDeque<Task>,
     ) -> bool {
-        self.try_to_take_batch_of_local_tasks(local_task_storage)
-            && self.try_to_take_batch_of_shared_tasks(shared_task_storage)
+        if let Some(mut guard) = self.task_deque.try_lock() {
+            if !guard.local_tasks.is_empty() {
+                local_tasks.append(&mut guard.local_tasks);
+            }
+
+            if !guard.shared_tasks.is_empty() {
+                shared_tasks.append(&mut guard.shared_tasks);
+            }
+
+            return true;
+        }
+
+        false
     }
 }
 

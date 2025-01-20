@@ -1,8 +1,8 @@
 use crate::io::{sys, AsyncPeek, AsyncRecv, AsyncSend};
+use crate::net::addr::FromSockAddr;
 use crate::net::Socket;
 use std::io;
 use std::io::Error;
-use std::net::SocketAddr;
 
 /// The `ConnectedDatagram` trait represents a datagram socket that has been connected to a specific
 /// remote address.
@@ -15,10 +15,10 @@ use std::net::SocketAddr;
 /// - [`Socket`]
 /// - [`AsyncPollSocket`](crate::io::AsyncPollSocket)
 /// - [`AsyncClose`](crate::io::AsyncSocketClose)
-/// - [`IntoRawSocket`](crate::io::sys::IntoRawSocket)
-/// - [`FromRawSocket`](crate::io::sys::FromRawSocket)
-/// - [`AsSocket`](crate::io::sys::AsSocket)
-/// - [`AsRawSocket`](crate::io::sys::AsRawSocket)
+/// - [`IntoRawSocket`](sys::IntoRawSocket)
+/// - [`FromRawSocket`](sys::FromRawSocket)
+/// - [`AsSocket`](sys::AsSocket)
+/// - [`AsRawSocket`](sys::AsRawSocket)
 /// - [`AsyncRecv`]
 /// - [`AsyncPeek`]
 /// - [`AsyncSend`]
@@ -59,13 +59,11 @@ pub trait ConnectedDatagram: Socket + AsyncRecv + AsyncPeek + AsyncSend {
     /// # Ok(())
     /// # }
     /// ```
-    #[inline(always)]
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
+    #[inline]
+    fn peer_addr(&self) -> io::Result<Self::Addr> {
         let borrow_socket = sys::AsSocket::as_socket(self);
         let socket_ref = socket2::SockRef::from(&borrow_socket);
-        socket_ref
-            .peer_addr()?
-            .as_socket()
+        Self::Addr::from_sock_addr(socket_ref.peer_addr()?)
             .ok_or_else(|| Error::new(io::ErrorKind::Other, "failed to get local address"))
     }
 }

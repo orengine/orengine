@@ -21,6 +21,24 @@ impl SyncTaskList {
         }
     }
 
+    /// Returns the number of tasks in the list.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.lock().len()
+    }
+
+    /// Returns whether the list is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().is_empty()
+    }
+
+    /// Shrinks capacity of the list to `min_capacity`.
+    #[inline]
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.inner.lock().shrink_to(min_capacity);
+    }
+
     /// Pushes a task at the end of the list.
     ///
     /// # Safety
@@ -46,20 +64,20 @@ impl SyncTaskList {
     }
 
     /// Pops the first task from the list.
-    #[inline(always)]
+    #[inline]
     pub fn pop(&self) -> Option<Task> {
         self.inner.lock().pop()
     }
 
     /// Pops all tasks from the list and appends them to `tasks`.
-    #[inline(always)]
+    #[inline]
     pub fn pop_all_in(&self, tasks: &mut Vec<Task>) {
         let mut guard = self.inner.lock();
         tasks.append(&mut guard);
     }
 
     /// Pops all tasks from the list and appends them to provided [`VecDeque`].
-    #[inline(always)]
+    #[inline]
     pub fn pop_all_in_deque(&self, other_list: &mut VecDeque<Task>) {
         let mut guard = self.inner.lock();
 

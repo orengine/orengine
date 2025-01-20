@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// `remove` io operation which allows to remove a file from a given path.
+#[repr(C)]
 pub struct Remove {
     path: OsPath,
     io_request_data: Option<IoRequestData>,
@@ -27,8 +28,8 @@ impl Remove {
 impl Future for Remove {
     type Output = Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 

@@ -1,17 +1,17 @@
 //! This module contains [`TcpStream`].
 
+use crate::io::shutdown::AsyncShutdown;
+use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
+use crate::io::{
+    AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
+};
+use crate::net::{Socket, Stream};
+use crate::runtime::local_executor;
 use socket2::{Domain, Protocol, Type};
 use std::fmt::{Debug, Formatter};
 use std::io::Result;
 use std::mem::ManuallyDrop;
-
-use crate::io::shutdown::AsyncShutdown;
-use crate::io::sys::{AsRawSocket, AsSocket, FromRawSocket, IntoRawSocket, RawSocket};
-use crate::io::{
-    sys, AsyncConnectStream, AsyncPeek, AsyncPollSocket, AsyncRecv, AsyncSend, AsyncSocketClose,
-};
-use crate::net::{Socket, Stream};
-use crate::runtime::local_executor;
+use std::net::SocketAddr;
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -129,26 +129,32 @@ impl From<TcpStream> for std::net::TcpStream {
 impl From<std::net::TcpStream> for TcpStream {
     fn from(stream: std::net::TcpStream) -> Self {
         Self {
-            raw_socket: sys::IntoRawSocket::into_raw_socket(stream),
+            raw_socket: IntoRawSocket::into_raw_socket(stream),
         }
     }
 }
 
 impl AsyncConnectStream for TcpStream {
-    async fn new_ip4() -> Result<Self> {
-        Ok(Self {
-            raw_socket: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP).await?,
-        })
-    }
+    async fn new_for_addr(addr: &Self::Addr) -> Result<Self> {
+        match addr {
+            SocketAddr::V4(_) => Ok(Self {
+                raw_socket: crate::io::Socket::new(Domain::IPV4, Type::STREAM, Protocol::TCP)
+                    .await?,
+            }),
 
-    async fn new_ip6() -> Result<Self> {
-        Ok(Self {
-            raw_socket: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP).await?,
-        })
+            SocketAddr::V6(_) => Ok(Self {
+                raw_socket: crate::io::Socket::new(Domain::IPV6, Type::STREAM, Protocol::TCP)
+                    .await?,
+            }),
+        }
     }
 }
 
 impl AsyncPollSocket for TcpStream {}
+
+impl Socket for TcpStream {
+    type Addr = SocketAddr;
+}
 
 impl AsyncSend for TcpStream {}
 
@@ -159,8 +165,6 @@ impl AsyncPeek for TcpStream {}
 impl AsyncShutdown for TcpStream {}
 
 impl AsyncSocketClose for TcpStream {}
-
-impl Socket for TcpStream {}
 
 impl Stream for TcpStream {}
 

@@ -6,6 +6,7 @@ use crate::net::{ConnectedDatagram, Socket};
 use crate::runtime::local_executor;
 use std::fmt::{Debug, Formatter};
 use std::mem::ManuallyDrop;
+use std::net::SocketAddr;
 
 /// A UDP socket.
 ///
@@ -121,6 +122,10 @@ impl FromRawSocket for UdpConnectedSocket {}
 
 impl AsyncPollSocket for UdpConnectedSocket {}
 
+impl Socket for UdpConnectedSocket {
+    type Addr = SocketAddr;
+}
+
 impl AsyncRecv for UdpConnectedSocket {}
 
 impl AsyncPeek for UdpConnectedSocket {}
@@ -130,8 +135,6 @@ impl AsyncSend for UdpConnectedSocket {}
 impl AsyncShutdown for UdpConnectedSocket {}
 
 impl AsyncSocketClose for UdpConnectedSocket {}
-
-impl Socket for UdpConnectedSocket {}
 
 impl ConnectedDatagram for UdpConnectedSocket {}
 
@@ -218,8 +221,8 @@ mod tests {
             drop(is_server_ready);
         }
 
-        let stream = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
-        let mut connected_stream = stream.connect(SERVER_ADDR).await.expect("connect failed");
+        let datagram = UdpSocket::bind(CLIENT_ADDR).await.expect("bind failed");
+        let mut connected_stream = datagram.connect(SERVER_ADDR).await.expect("connect failed");
 
         assert_eq!(
             connected_stream.local_addr().expect(CLIENT_ADDR),
