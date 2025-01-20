@@ -35,8 +35,8 @@ impl Future for WaitSharedWaitGroup<'_> {
     type Output = ();
 
     #[allow(unused, reason = "Here we use #[cfg(debug_assertions)].")]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         unsafe { panic_if_local_in_future!(cx, "WaitGroup") };
 
         if !this.was_called {

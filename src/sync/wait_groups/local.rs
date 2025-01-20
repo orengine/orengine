@@ -27,8 +27,8 @@ impl<'wait_group> WaitLocalWaitGroup<'wait_group> {
 impl Future for WaitLocalWaitGroup<'_> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let inner = this.wait_group.get_inner();
         if inner.count != 0 {
             let task = unsafe { get_task_from_context!(cx) };

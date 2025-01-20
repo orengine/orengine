@@ -41,8 +41,8 @@ impl<'fut> SendTo<'fut> {
 
 impl Future for SendTo<'_> {
     type Output = Result<usize>;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;
 
@@ -100,8 +100,8 @@ impl<'fut> SendToWithDeadline<'fut> {
 impl Future for SendToWithDeadline<'_> {
     type Output = Result<usize>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut *self;
         let worker = local_worker();
         #[allow(unused, reason = "Cannot write proc_macro else to make it readable.")]
         let ret;

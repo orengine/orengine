@@ -22,7 +22,7 @@ use std::io::Error;
 /// - [`AsSocket`]
 /// - [`AsyncPollSocket`]
 pub trait Socket:
-IntoRawSocket + AsRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
+    IntoRawSocket + AsRawSocket + FromRawSocket + AsSocket + AsyncPollSocket + AsyncSocketClose
 {
     /// The address type associated with the socket. It is expected to be represented as a
     /// `std::net::SocketAddr` or `std::os::unix::net::SocketAddr` but can be any type that

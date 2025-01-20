@@ -347,8 +347,8 @@ mod tests {
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-            .await
-            .expect("Can't rename file");
+        .await
+        .expect("Can't rename file");
         assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
         File::remove(test_file_dir_path.to_string() + "/test2.txt")
@@ -472,8 +472,8 @@ mod tests {
             test_file_dir_path.to_string() + "test.txt",
             test_file_dir_path.to_string() + "test2.txt",
         )
-            .await
-            .expect("Can't rename file");
+        .await
+        .expect("Can't rename file");
         assert!(is_exists(test_file_dir_path.to_string() + "/test2.txt"));
 
         File::remove(test_file_dir_path.to_string() + "/test2.txt")

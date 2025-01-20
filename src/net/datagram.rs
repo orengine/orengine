@@ -49,16 +49,16 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// }
 /// ```
 pub trait Datagram:
-Socket
-+ AsyncConnectDatagram<Self::ConnectedDatagram>
-+ AsyncRecvFrom
-+ AsyncPeekFrom
-+ AsyncSendTo
-+ AsyncBind
+    Socket
+    + AsyncConnectDatagram<Self::ConnectedDatagram>
+    + AsyncRecvFrom
+    + AsyncPeekFrom
+    + AsyncSendTo
+    + AsyncBind
 {
     /// Type of the connected datagram, which allows sending data without specifying the address
     /// for each operation.
-    type ConnectedDatagram: ConnectedDatagram<Addr=Self::Addr>;
+    type ConnectedDatagram: ConnectedDatagram<Addr = Self::Addr>;
 
     /// Enables or disables broadcasting on the socket. When broadcasting is enabled (`true`),
     /// the socket can send packets to the broadcast address.

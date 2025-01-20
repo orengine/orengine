@@ -167,5 +167,5 @@ pub trait AsyncWaitGroup {
     /// }).await;
     /// # }
     /// ```
-    fn wait(&self) -> impl Future<Output=()>;
+    fn wait(&self) -> impl Future<Output = ()>;
 }

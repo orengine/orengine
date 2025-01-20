@@ -24,8 +24,8 @@ impl<'future> Asyncify<'future> {
 impl Future for Asyncify<'_> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let this = &mut *self;
         if !this.was_called {
             this.was_called = true;
             let ptr = unsafe {
