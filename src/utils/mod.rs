@@ -9,10 +9,12 @@ pub(crate) mod sealed;
 pub mod spin_lock;
 #[macro_use]
 pub mod task_structures_pool;
+pub(crate) mod progressive_timeout;
 pub(crate) mod vec_map;
 
 pub(crate) use assert_hint::assert_hint;
 pub use core::*;
+pub(crate) use progressive_timeout::*;
 pub use ptr::*;
 pub(crate) use sealed::Sealed;
 pub use spin_lock::*;

@@ -85,7 +85,7 @@ macro_rules! new_local_pool {
         ///
         /// let mut guard = MyPool::acquire();
         ///
-        /// assert_eq!(*guard.deref().capacity(), 1024);
+        /// assert_eq!(guard.deref().capacity(), 1024);
         /// guard.push_str("Hello, world!");
         /// assert_eq!(*guard, "Hello, world!");
         ///

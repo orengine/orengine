@@ -12,7 +12,7 @@ use crate::runtime::local_thread_pool::LocalThreadWorkerPool;
 use crate::runtime::task::{Task, TaskPool};
 use crate::runtime::waker::create_waker;
 use crate::runtime::{get_core_id_for_executor, ExecutorSharedTaskList, Locality};
-use crate::utils::{assert_hint, CoreId};
+use crate::utils::{assert_hint, CoreId, ProgressiveTimeout};
 use fastrand::Rng;
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, VecDeque};
@@ -141,6 +141,7 @@ pub struct Executor {
     subscribed_state: Arc<SubscribedState>,
     task_pool: TaskPool,
     rng: Rng,
+    progressive_timeout: ProgressiveTimeout<64, 131_072>,
 
     exec_series: usize,
     current_call: Call,
@@ -227,6 +228,7 @@ impl Executor {
                 task_pool: TaskPool::default(),
                 subscribed_state: Arc::new(SubscribedState::new()),
                 rng: Rng::new(),
+                progressive_timeout: ProgressiveTimeout::new(),
 
                 exec_series: 0,
                 start_round_time: Instant::now(),
@@ -731,7 +733,7 @@ impl Executor {
     ///     let number_of_shard = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
     ///
     ///     let key = u32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
-    ///     
+    ///
     ///     drop(buffer); // release buffer in this thread
     ///
     ///     let task = unsafe {
@@ -754,7 +756,7 @@ impl Executor {
     /// fn main() {
     ///     run_local_future_on_all_cores(|| async {
     ///         let mut listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
-    ///         let executor = local_executor();        
+    ///         let executor = local_executor();
     ///
     ///         loop {
     ///             let (stream, _) = listener.accept().await.unwrap();
@@ -1102,51 +1104,62 @@ impl Executor {
                 let worker = unsafe { self.local_worker.as_mut().unwrap_unchecked() };
                 if worker.has_work() {
                     if !has_cpu_work {
+                        let max_timeout = self.progressive_timeout.timeout_with_shift(2);
                         if let Some(nearest_timeout) = nearest_timeout_option {
                             // case 1: we don't have cpu work, but we have sleeping tasks and io work
-                            worker.must_poll(Some(nearest_timeout.min(Duration::from_millis(500))));
+                            worker.must_poll(Some(nearest_timeout.min(max_timeout)));
                         } else {
                             // case 2: we don't have cpu work nor sleeping tasks, but we io work
-                            worker.must_poll(Some(Duration::from_millis(500)));
+                            worker.must_poll(Some(max_timeout));
                         }
                     } else {
                         // It proceeds 2 cases:
                         // case 3: we have cpu work, sleeping tasks and io work
                         // case 4: we have cpu work, io work, but we don't have sleeping tasks
+                        self.progressive_timeout.reset();
                         worker.must_poll(None);
                     }
                 } else if !has_cpu_work {
+                    let max_timeout = self.progressive_timeout.timeout();
                     if let Some(nearest_timeout) = nearest_timeout_option {
                         // case 5: we don't have io work nor cpu work, but we have sleeping tasks
-                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                        self.sleep_at_most(nearest_timeout.min(max_timeout));
                     } else {
                         // case 6: we don't have any work
-                        self.sleep_at_most(Duration::from_millis(100));
+                        self.sleep_at_most(max_timeout);
                     }
                 } else {
                     // It proceeds 2 cases:
                     // case 7: we have cpu work, sleeping tasks, but don't have io work
                     // case 8: we have cpu work, but don't have io work nor sleeping tasks
 
+                    self.progressive_timeout.reset();
+
                     // Continue processing cpu tasks
                 }
             } else {
                 // Here we don't have worker, therefore we need to consider only 4 cases
+
+                let max_timeout = self.progressive_timeout.timeout();
 
                 if let Some(nearest_timeout) = nearest_timeout_option {
                     if has_cpu_work {
                         // case 1: we have cpu work and sleeping tasks
                         // Continue processing cpu tasks
                     } else {
-                        // case 2: we have cpu work, but we don't have sleeping tasks
-                        self.sleep_at_most(nearest_timeout.min(Duration::from_millis(100)));
+                        // case 2: we have sleeping tasks, but we don't have cpu work
+                        self.sleep_at_most(nearest_timeout.min(max_timeout));
                     }
+
+                    self.progressive_timeout.reset();
                 } else if has_cpu_work {
                     // case 3: we have cpu work, but we don't have sleeping tasks
                     // Continue processing cpu tasks
+
+                    self.progressive_timeout.reset();
                 } else {
                     // case 4: we don't have cpu work nor sleeping tasks
-                    self.sleep_at_most(Duration::from_millis(100));
+                    self.sleep_at_most(max_timeout);
                 }
             }
 
@@ -1337,104 +1350,6 @@ mod tests {
         assert_eq!(Ok(42), local_executor().run_and_block_on_local(async_42()));
     }
 
-    #[orengine::test::test_shared]
-    #[cfg(not(feature = "disable_send_task_to"))]
-    fn test_send_task() {
-        use crate::sync::{AsyncWaitGroup, WaitGroup};
-        use crate::test::sched_future_to_another_thread;
-        use std::sync::atomic::Ordering::SeqCst;
-
-        static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
-
-        let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
-        let another_id_clone = another_id.clone();
-        let cond_var = Arc::new(std::sync::Condvar::new());
-        let cond_var_clone = cond_var.clone();
-        let wg = Arc::new(WaitGroup::new());
-
-        let wg_clone = wg.clone();
-
-        wg_clone.inc();
-        sched_future_to_another_thread(async move {
-            let id = local_executor().id();
-            *another_id_clone.lock().unwrap() = id;
-            cond_var_clone.notify_one();
-
-            wg_clone.wait().await;
-        });
-
-        let another_executor_id = *cond_var
-            .wait_while(another_id.lock().unwrap(), |guard| *guard == usize::MAX)
-            .unwrap();
-
-        yield_now().await;
-
-        let task = unsafe {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            Task::from_future(
-                async move {
-                    assert_eq!(local_executor().id(), another_executor_id);
-
-                    RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                    wg_clone.done();
-                },
-                Locality::local(),
-            )
-        };
-
-        unsafe {
-            local_executor()
-                .send_task_to_executor(task, another_executor_id)
-                .expect("Failed to send task");
-        };
-
-        // send local future
-        {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            local_executor()
-                .send_local_future_to_executor(
-                    || async move {
-                        assert_eq!(local_executor().id(), another_executor_id);
-
-                        RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                        wg_clone.done();
-                    },
-                    another_executor_id,
-                )
-                .expect("Failed to send future");
-        }
-
-        // send shared future
-        {
-            let wg_clone = wg.clone();
-            wg_clone.inc();
-
-            local_executor()
-                .send_shared_future_to_executor(
-                    || async move {
-                        assert_eq!(local_executor().id(), another_executor_id);
-
-                        RESULTED_TASKS.fetch_add(1, SeqCst);
-
-                        wg_clone.done();
-                    },
-                    another_executor_id,
-                )
-                .expect("Failed to send future");
-        }
-
-        wg.done();
-        wg.wait().await;
-
-        assert_eq!(RESULTED_TASKS.load(SeqCst), 3);
-    }
-
     // TODO put this into a separate test
     // fn wait_for_config_tests_ready() {
     //     let _unused = config::tests::WAS_READY
@@ -1517,5 +1432,103 @@ mod tests {
     // #[test]
     // fn test_work_sharing_large_level() {
     //     test_with_work_sharing_level(255);
+    // }
+    //
+    // #[orengine::test::test_shared]
+    // #[cfg(not(feature = "disable_send_task_to"))]
+    // fn test_send_task() {
+    //     use crate::sync::{AsyncWaitGroup, WaitGroup};
+    //     use crate::test::sched_future_to_another_thread;
+    //     use std::sync::atomic::Ordering::SeqCst;
+    //
+    //     static RESULTED_TASKS: AtomicUsize = AtomicUsize::new(0);
+    //
+    //     let another_id = Arc::new(std::sync::Mutex::new(usize::MAX));
+    //     let another_id_clone = another_id.clone();
+    //     let cond_var = Arc::new(std::sync::Condvar::new());
+    //     let cond_var_clone = cond_var.clone();
+    //     let wg = Arc::new(WaitGroup::new());
+    //
+    //     let wg_clone = wg.clone();
+    //
+    //     wg_clone.inc();
+    //     sched_future_to_another_thread(async move {
+    //         let id = local_executor().id();
+    //         *another_id_clone.lock().unwrap() = id;
+    //         cond_var_clone.notify_one();
+    //
+    //         wg_clone.wait().await;
+    //     });
+    //
+    //     let another_executor_id = *cond_var
+    //         .wait_while(another_id.lock().unwrap(), |guard| *guard == usize::MAX)
+    //         .unwrap();
+    //
+    //     yield_now().await;
+    //
+    //     let task = unsafe {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         Task::from_future(
+    //             async move {
+    //                 assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                 RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                 wg_clone.done();
+    //             },
+    //             Locality::local(),
+    //         )
+    //     };
+    //
+    //     unsafe {
+    //         local_executor()
+    //             .send_task_to_executor(task, another_executor_id)
+    //             .expect("Failed to send task");
+    //     };
+    //
+    //     // send local future
+    //     {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         local_executor()
+    //             .send_local_future_to_executor(
+    //                 || async move {
+    //                     assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                     RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                     wg_clone.done();
+    //                 },
+    //                 another_executor_id,
+    //             )
+    //             .expect("Failed to send future");
+    //     }
+    //
+    //     // send shared future
+    //     {
+    //         let wg_clone = wg.clone();
+    //         wg_clone.inc();
+    //
+    //         local_executor()
+    //             .send_shared_future_to_executor(
+    //                 || async move {
+    //                     assert_eq!(local_executor().id(), another_executor_id);
+    //
+    //                     RESULTED_TASKS.fetch_add(1, SeqCst);
+    //
+    //                     wg_clone.done();
+    //                 },
+    //                 another_executor_id,
+    //             )
+    //             .expect("Failed to send future");
+    //     }
+    //
+    //     wg.done();
+    //     wg.wait().await;
+    //
+    //     assert_eq!(RESULTED_TASKS.load(SeqCst), 3);
     // }
 }

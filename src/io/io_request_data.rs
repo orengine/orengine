@@ -1,6 +1,6 @@
 use crate::runtime::task::Task;
 use std::io::Result;
-use std::{mem, ptr};
+use std::ptr;
 
 /// Default value of [`IoRequestData::ret`].
 pub(crate) const UNINIT_RESULT: Result<usize> = Ok((1 << 32) - 1);
@@ -49,7 +49,7 @@ impl IoRequestData {
     pub(crate) fn ret(&mut self) -> Result<usize> {
         #[cfg(debug_assertions)]
         {
-            mem::replace(&mut self.ret, UNINIT_RESULT)
+            std::mem::replace(&mut self.ret, UNINIT_RESULT)
         }
 
         #[cfg(not(debug_assertions))]
