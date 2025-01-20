@@ -80,27 +80,19 @@ mod tests {
             arr.borrow_mut().push(number);
         }
 
-        let arr = Local::new(Vec::new());
-        let ex = local_executor();
+        for _ in 0..100 {
+            let arr = Local::new(Vec::new());
+            let ex = local_executor();
 
-        yield_now().await; // release exec_series
+            yield_now().await; // release exec_series
 
-        ex.exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        ex.exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        ex.exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
+            ex.exec_local_future(sleep_for(Duration::from_millis(1), 1, arr.clone()));
+            ex.exec_local_future(sleep_for(Duration::from_millis(4), 4, arr.clone()));
+            ex.exec_local_future(sleep_for(Duration::from_millis(3), 3, arr.clone()));
+            ex.exec_local_future(sleep_for(Duration::from_millis(2), 2, arr.clone()));
 
-        sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
-
-        let arr = Local::new(Vec::new());
-
-        ex.spawn_local(sleep_for(Duration::from_millis(1), 1, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(4), 4, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(3), 3, arr.clone()));
-        ex.spawn_local(sleep_for(Duration::from_millis(2), 2, arr.clone()));
-
-        sleep(Duration::from_millis(5)).await;
-        assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
+            sleep(Duration::from_millis(5)).await;
+            assert_eq!(&vec![1, 2, 3, 4], &*arr.borrow());
+        }
     }
 }
