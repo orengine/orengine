@@ -35,8 +35,14 @@ impl TaskPool {
             task
         } else {
             let future_ptr: *mut F = unsafe { &mut *(Box::into_raw(Box::new(future))) as *mut _ };
+            let future_ptr = unsafe {
+                std::mem::transmute::<
+                    *mut (dyn Future<Output = ()> + '_),
+                    *mut (dyn Future<Output = ()> + 'static),
+                >(future_ptr)
+            };
             Task {
-                data: TaskData::new(future_ptr as *mut _, locality),
+                data: TaskData::new(future_ptr, locality),
                 #[cfg(debug_assertions)]
                 executor_id,
                 #[cfg(debug_assertions)]
