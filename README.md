@@ -1,6 +1,6 @@
-# Orengine: The Fastest and Most Memory-Efficient Async Engine in Rust
+# Orengine: The Fastest and Most Memory-Efficient Async Runtime in Rust
 
-Orengine is a blazing fast, memory-efficient, and highly flexible asynchronous engine built for the modern
+Orengine is a blazing fast, memory-efficient, and highly flexible asynchronous runtime built for the modern
 age of Rust development. Whether you're building applications with a shared-nothing architecture
 or a shared-all architecture, Orengine provides you with the tools to reach maximum performance.
 
@@ -17,7 +17,7 @@ Wait for `v1.0.0` and media posts.
 
 # Why Orengine?
 
-- __Speed:__ Orengine is designed from the ground up to be the fastest async engine available in the Rust ecosystem.
+- __Speed:__ Orengine is designed from the ground up to be the fastest async runtime available in the Rust ecosystem.
 
 - __Memory Efficiency:__ Optimized for low-latency and high-throughput workloads, Orengine ensures minimal
   memory overhead, allowing your application to scale very well.
