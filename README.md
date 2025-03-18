@@ -22,6 +22,8 @@ Wait for `v1.0.0` and media posts.
 - __Memory Efficiency:__ Optimized for low-latency and high-throughput workloads, Orengine ensures minimal
   memory overhead, allowing your application to scale very well.
 
+- __Full asynchronous:__ Orengine can work with both files and network asynchronously and supports thread pool which it works with asynchronously too. 
+
 - __Flexible Architecture:__ Whether you need to go fully distributed with a shared-nothing architecture
   or centralize resources with a shared-all approach, Orengine adapts to your requirements.
 
