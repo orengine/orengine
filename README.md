@@ -11,9 +11,16 @@ production use and its API can be changed.
 
 Wait for `v1.0.0` and media posts.
 
+__It is being released this winter.__
+
 # Before release
 
-- add more docs.
+- add more docs;
+- add the `select` macro for the channels;
+- refactor `work-sharing`;
+- refactor `SyncTaskList`;
+- refactor `io::{AsyncWrite, AsyncRead, AsyncSend, AsyncRecv}`;
+- refactor `Call`. 
 
 # Why Orengine?
 
